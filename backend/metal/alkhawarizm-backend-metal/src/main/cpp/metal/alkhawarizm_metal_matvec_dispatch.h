@@ -18,6 +18,9 @@ int alkhawarizm_metal_dispatch_matvec_tb_int4(
 int alkhawarizm_metal_dispatch_matvec_tb_q4_k(
     void *C, const void *A, const void *B, int K, int N,
     id<MTLComputePipelineState> pipeline, NSUInteger threads);
+int alkhawarizm_metal_dispatch_matvec_tb_q6_k(
+    void *C, const void *A, const void *B, int K, int N,
+    id<MTLComputePipelineState> pipeline, NSUInteger threads);
 int alkhawarizm_metal_dispatch_matvec_tb_q8_0(
     void *C, const void *A, const void *B, int K, int N,
     id<MTLComputePipelineState> pipeline, NSUInteger threads);
@@ -57,6 +60,7 @@ int alkhawarizm_metal_dispatch_matvec_tb_half_triple_mixed(
   alkhawarizm_metal_dispatch_matvec_tb_half_triple_mixed
 #define dispatch_matvec_tb_int4 alkhawarizm_metal_dispatch_matvec_tb_int4
 #define dispatch_matvec_tb_q4_k alkhawarizm_metal_dispatch_matvec_tb_q4_k
+#define dispatch_matvec_tb_q6_k alkhawarizm_metal_dispatch_matvec_tb_q6_k
 #define dispatch_matvec_tb_q8_0 alkhawarizm_metal_dispatch_matvec_tb_q8_0
 #define dispatch_matvec_tb_nf4 alkhawarizm_metal_dispatch_matvec_tb_nf4
 

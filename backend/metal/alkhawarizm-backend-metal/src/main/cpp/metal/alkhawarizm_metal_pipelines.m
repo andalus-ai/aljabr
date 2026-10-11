@@ -137,6 +137,8 @@ void alkhawarizm_metal_compile_runtime_pipelines(
     // GGML block-quantized kernels
     pipelines->matvec_tb_q4_k = compile_pipeline(
         matvec256Library, @"alkhawarizm_matvec_tb_q4_k_kernel");
+    pipelines->matvec_tb_q6_k = compile_pipeline(
+        matvec256Library, @"alkhawarizm_matvec_tb_q6_k_kernel");
     pipelines->matvec_tb_q8_0 = compile_pipeline(
         matvec256Library, @"alkhawarizm_matvec_tb_q8_0_kernel");
     pipelines->matvec_bf16 = compile_pipeline(

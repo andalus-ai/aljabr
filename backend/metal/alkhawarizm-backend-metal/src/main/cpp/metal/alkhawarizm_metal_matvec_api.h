@@ -28,6 +28,8 @@ int alkhawarizm_metal_matvec_tb_int4(void *C, const void *A,
 // GGML-format quantized kernels (block formats from GGUF)
 int alkhawarizm_metal_matvec_tb_q4_k(void *C, const void *A, const void *B,
                                      int K, int N);
+int alkhawarizm_metal_matvec_tb_q6_k(void *C, const void *A, const void *B,
+                                     int K, int N);
 int alkhawarizm_metal_matvec_tb_q8_0(void *C, const void *A, const void *B,
                                      int K, int N);
 

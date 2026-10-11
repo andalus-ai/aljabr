@@ -76,6 +76,7 @@ public class MetalBinding {
     private static final String FN_MATVEC_TB_NF4 = "alkhawarizm_metal_matvec_tb_nf4";
     private static final String FN_MATVEC_TB_INT4 = "alkhawarizm_metal_matvec_tb_int4";
     private static final String FN_MATVEC_TB_Q4_K = "alkhawarizm_metal_matvec_tb_q4_k";
+    private static final String FN_MATVEC_TB_Q6_K = "alkhawarizm_metal_matvec_tb_q6_k";
     private static final String FN_MATVEC_TB_Q8_0 = "alkhawarizm_metal_matvec_tb_q8_0";
     private static final String FN_MATVEC_T_HALF = "alkhawarizm_metal_matvec_t_half";
     private static final String FN_MATVEC_TB_HALF_PAIR = "alkhawarizm_metal_matvec_tb_half_pair";
@@ -775,6 +776,14 @@ public class MetalBinding {
         return (int) invoke(FN_MATVEC_TB_Q4_K, C, A, B, K, N);
     }
 
+    public int matvecTransposedRightQ6K(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N) {
+        if (useCpuFallback())
+            throw new UnsupportedOperationException("Metal Q6_K not available in CPU fallback");
+        if (!handles.containsKey(FN_MATVEC_TB_Q6_K))
+            return -2;
+        return (int) invoke(FN_MATVEC_TB_Q6_K, C, A, B, K, N);
+    }
+
     public int matvecTransposedRightQ8_0(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N) {
         if (useCpuFallback())
             throw new UnsupportedOperationException("Metal Q8_0 not available in CPU fallback");
@@ -1390,6 +1399,9 @@ public class MetalBinding {
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
         bind(FN_MATVEC_TB_Q4_K, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+        bind(FN_MATVEC_TB_Q6_K, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
         bind(FN_MATVEC_TB_Q8_0, FunctionDescriptor.of(ValueLayout.JAVA_INT,

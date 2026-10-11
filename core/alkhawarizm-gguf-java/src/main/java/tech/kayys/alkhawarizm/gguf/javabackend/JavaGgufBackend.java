@@ -143,13 +143,23 @@ final class JavaGgufBackend implements GgufBackend {
 
             int pos = 0;
             float[] logits = null;
-            for (long tokenId : promptTokens) {
-                logits = decodeStep.forward((int) tokenId, pos, cache);
+            long t0 = System.currentTimeMillis();
+            System.err.printf("[java-engine] Prefilling %d prompt tokens...%n", promptTokens.length);
+            for (int pIdx = 0; pIdx < promptTokens.length; pIdx++) {
+                long tokenId = promptTokens[pIdx];
+                boolean isLast = (pIdx == promptTokens.length - 1);
+                logits = decodeStep.forward((int) tokenId, pos, cache, isLast);
                 history.add((int) tokenId);
                 pos++;
+                if (pos % 5 == 0 || pos == promptTokens.length) {
+                    System.err.printf("[java-engine] Prompt prefill: %d/%d tokens (%.1f tok/s)%n",
+                            pos, promptTokens.length, (pos * 1000.0) / Math.max(1, System.currentTimeMillis() - t0));
+                }
             }
 
             InferenceResponse.FinishReason finishReason = InferenceResponse.FinishReason.LENGTH;
+            System.err.println("[java-engine] Generating tokens...");
+            long genStart = System.currentTimeMillis();
             for (int i = 0; i < sampling.maxTokens() && pos < cfg.contextLength(); i++) {
                 int nextToken = sampler.sample(logits, history);
                 if (tokenizer.isEosToken(nextToken)) {
@@ -158,8 +168,17 @@ final class JavaGgufBackend implements GgufBackend {
                 }
                 generated.add(nextToken);
                 history.add(nextToken);
-                logits = decodeStep.forward(nextToken, pos, cache);
+                String chunk = tokenizer.decode(new long[]{nextToken}, DecodeOptions.builder().build());
+                System.out.print(chunk);
+                System.out.flush();
+                logits = decodeStep.forward(nextToken, pos, cache, true);
                 pos++;
+            }
+            System.out.println();
+            long genElapsed = System.currentTimeMillis() - genStart;
+            if (!generated.isEmpty()) {
+                System.err.printf("[java-engine] Generated %d tokens in %d ms (%.2f tok/s)%n",
+                        generated.size(), genElapsed, (generated.size() * 1000.0) / Math.max(1, genElapsed));
             }
 
             long[] generatedTokens = generated.stream().mapToLong(Integer::longValue).toArray();
@@ -183,7 +202,8 @@ final class JavaGgufBackend implements GgufBackend {
         } catch (InferenceException ie) {
             throw ie;
         } catch (Exception e) {
-            throw new InferenceException("Java GGUF generation failed: " + e.getMessage(), e);
+            e.printStackTrace();
+            throw new InferenceException("Java GGUF generation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
     }
 
@@ -229,7 +249,7 @@ final class JavaGgufBackend implements GgufBackend {
                 GgufRuntimeProbe.selectDecoderPreparedMatrixCache(
                         model,
                         0,
-                        Boolean.parseBoolean(System.getProperty("alkhawarizm.gguf.java.auto_prepare", "true")),
+                        Boolean.parseBoolean(System.getProperty("alkhawarizm.gguf.java.auto_prepare", "false")),
                         autoMinRows,
                         budgetBytes));
     }

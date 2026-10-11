@@ -200,6 +200,67 @@ public final class GGUFVectorOps {
         for (; i < len; i++) out[i] = x[i] * scale * weight[i];
     }
 
+    /**
+     * Root-mean-square normalisation on sub-ranges: {@code out[outOff..outOff+len) = norm(x[xOff..xOff+len)) * weight[0..len)}.
+     */
+    public static void rmsNorm(float[] x, int xOff, float[] weight, float[] out, int outOff, int len, float eps) {
+        var acc = FloatVector.zero(S);
+        int i = 0, bound = S.loopBound(len);
+        for (; i < bound; i += S.length()) {
+            var v = FloatVector.fromArray(S, x, xOff + i);
+            acc = v.fma(v, acc);
+        }
+        float ss = acc.reduceLanes(VectorOperators.ADD);
+        for (; i < len; i++) {
+            float val = x[xOff + i];
+            ss += val * val;
+        }
+
+        float scale = 1.0f / (float) Math.sqrt(ss / len + eps);
+
+        var vscale = FloatVector.broadcast(S, scale);
+        i = 0;
+        for (; i < bound; i += S.length()) {
+            FloatVector.fromArray(S, x, xOff + i)
+                       .mul(vscale)
+                       .mul(FloatVector.fromArray(S, weight, i))
+                       .intoArray(out, outOff + i);
+        }
+        for (; i < len; i++) {
+            out[outOff + i] = x[xOff + i] * scale * weight[i];
+        }
+    }
+
+    /**
+     * Root-mean-square normalisation on sub-ranges with unit weights (no weight tensor).
+     */
+    public static void rmsNormUnit(float[] x, int xOff, float[] out, int outOff, int len, float eps) {
+        var acc = FloatVector.zero(S);
+        int i = 0, bound = S.loopBound(len);
+        for (; i < bound; i += S.length()) {
+            var v = FloatVector.fromArray(S, x, xOff + i);
+            acc = v.fma(v, acc);
+        }
+        float ss = acc.reduceLanes(VectorOperators.ADD);
+        for (; i < len; i++) {
+            float val = x[xOff + i];
+            ss += val * val;
+        }
+
+        float scale = 1.0f / (float) Math.sqrt(ss / len + eps);
+
+        var vscale = FloatVector.broadcast(S, scale);
+        i = 0;
+        for (; i < bound; i += S.length()) {
+            FloatVector.fromArray(S, x, xOff + i)
+                       .mul(vscale)
+                       .intoArray(out, outOff + i);
+        }
+        for (; i < len; i++) {
+            out[outOff + i] = x[xOff + i] * scale;
+        }
+    }
+
     // ── Softmax ───────────────────────────────────────────────────────────
 
     /**
@@ -240,6 +301,18 @@ public final class GGUFVectorOps {
         for (int i = 0; i < len; i++) {
             float g = gate[i] / (1f + (float) Math.exp(-gate[i]));
             dst[i] = g * up[i];
+        }
+    }
+
+    /**
+     * GeGLU (approximate 'tanh'): {@code dst[i] = gelu(gate[i]) * up[i]}.
+     */
+    public static void geGLU(float[] gate, float[] up, float[] dst, int len) {
+        float k = 0.7978845608f; // sqrt(2/pi)
+        for (int i = 0; i < len; i++) {
+            float g = gate[i];
+            float gelu = 0.5f * g * (1.0f + (float) Math.tanh(k * (g + 0.044715f * g * g * g)));
+            dst[i] = gelu * up[i];
         }
     }
 

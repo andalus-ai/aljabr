@@ -355,6 +355,7 @@ int alkhawarizm_metal_matvec_tb_int4(void *C, const void *A,
 }
 
 #define g_matvec_tb_q4_k_pipeline g_pipelines.matvec_tb_q4_k
+#define g_matvec_tb_q6_k_pipeline g_pipelines.matvec_tb_q6_k
 #define g_matvec_tb_q8_0_pipeline g_pipelines.matvec_tb_q8_0
 
 int alkhawarizm_metal_matvec_tb_q4_k(void *C, const void *A, const void *B,
@@ -366,6 +367,18 @@ int alkhawarizm_metal_matvec_tb_q4_k(void *C, const void *A, const void *B,
   if (g_matvec_tb_q4_k_pipeline == nil)
     return -3;
   return dispatch_matvec_tb_q4_k(C, A, B, K, N, g_matvec_tb_q4_k_pipeline,
+                                 ALKHAWARIZM_MATVEC_THREADS_256);
+}
+
+int alkhawarizm_metal_matvec_tb_q6_k(void *C, const void *A, const void *B,
+                                     int K, int N) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N <= 0)
+    return -2;
+  if (g_matvec_tb_q6_k_pipeline == nil)
+    return -3;
+  return dispatch_matvec_tb_q6_k(C, A, B, K, N, g_matvec_tb_q6_k_pipeline,
                                  ALKHAWARIZM_MATVEC_THREADS_256);
 }
 

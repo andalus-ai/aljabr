@@ -148,6 +148,48 @@ int alkhawarizm_metal_dispatch_matvec_tb_q4_k(
   }
 }
 
+int alkhawarizm_metal_dispatch_matvec_tb_q6_k(
+    void *C, const void *A, const void *B, int K, int N,
+    id<MTLComputePipelineState> pipeline, NSUInteger threads) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N <= 0)
+    return -2;
+  if (pipeline == nil)
+    return -3;
+  if (pipeline.maxTotalThreadsPerThreadgroup < threads)
+    return -3;
+
+  @autoreleasepool {
+    id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
+    id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
+    // Q6_K block is 210 bytes for 256 elements
+    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K / 256 * 210);
+    if (bufC == nil || bufA == nil || bufB == nil) {
+      return -4;
+    }
+
+    uint32_t kk = (uint32_t)K;
+    uint32_t nn = (uint32_t)N;
+    id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:pipeline];
+    [enc setBuffer:bufC offset:0 atIndex:0];
+    [enc setBuffer:bufA offset:0 atIndex:1];
+    [enc setBuffer:bufB offset:0 atIndex:2];
+    [enc setBytes:&kk length:sizeof(kk) atIndex:3];
+    [enc setBytes:&nn length:sizeof(nn) atIndex:4];
+
+    NSUInteger groups = (NSUInteger)N;
+    [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+        threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+    [enc endEncoding];
+    [cmd commit];
+    [cmd waitUntilCompleted];
+    return ([cmd status] == MTLCommandBufferStatusCompleted) ? 0 : -1;
+  }
+}
+
 int alkhawarizm_metal_dispatch_matvec_tb_q8_0(
     void *C, const void *A, const void *B, int K, int N,
     id<MTLComputePipelineState> pipeline, NSUInteger threads) {
