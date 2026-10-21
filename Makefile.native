@@ -1,13 +1,13 @@
 # Native Library Installation Makefile
-# Helps copy native libraries to standard Alkhawarizm location (~/.alkhawarizm/libs/)
+# Helps copy native libraries to standard Aljabr location (~/.aljabr/libs/)
 
 .PHONY: help install-native-libs install-gguf-libs install-onnx-libs install-libtorch-libs install-litert-libs clean-native-libs
 
-ALKHAWARIZM_LIBS_DIR ?= $(HOME)/.alkhawarizm/libs
-LLAMA_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/llama
-ONNX_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/onnxruntime
-LIBTORCH_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/libtorch
-TFLITE_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/litert
+ALJABR_LIBS_DIR ?= $(HOME)/.aljabr/libs
+LLAMA_LIBS_DIR = $(ALJABR_LIBS_DIR)/llama
+ONNX_LIBS_DIR = $(ALJABR_LIBS_DIR)/onnxruntime
+LIBTORCH_LIBS_DIR = $(ALJABR_LIBS_DIR)/libtorch
+TFLITE_LIBS_DIR = $(ALJABR_LIBS_DIR)/litert
 
 # Detect OS
 UNAME_S := $(shell uname -s)
@@ -24,7 +24,7 @@ else
 endif
 
 help:
-	@echo "Alkhawarizm Native Library Installation"
+	@echo "Aljabr Native Library Installation"
 	@echo "==================================="
 	@echo ""
 	@echo "Usage:"
@@ -35,23 +35,23 @@ help:
 	@echo "  make install-litert-libs     - Install TensorFlow Lite libraries"
 	@echo "  make clean-native-libs       - Remove all installed libraries"
 	@echo ""
-	@echo "Standard location: $(ALKHAWARIZM_LIBS_DIR)"
+	@echo "Standard location: $(ALJABR_LIBS_DIR)"
 	@echo ""
 
 # Install all native libraries
 install-native-libs: install-gguf-libs install-onnx-libs install-libtorch-libs install-litert-libs
-	@echo "✓ All native libraries installed to $(ALKHAWARIZM_LIBS_DIR)"
+	@echo "✓ All native libraries installed to $(ALJABR_LIBS_DIR)"
 
 # Install GGUF / llama.cpp libraries
 install-gguf-libs:
 	@echo "Installing GGUF/llama.cpp libraries..."
 	@mkdir -p $(LLAMA_LIBS_DIR)
 	@# Try multiple source locations
-	@if [ -d "plugins/runner/gguf/alkhawarizm-ext-runner-gguf/src/main/resources/native-libs/cpu" ]; then \
-		cp plugins/runner/gguf/alkhawarizm-ext-runner-gguf/src/main/resources/native-libs/cpu/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "plugins/runner/gguf/aljabr-ext-runner-gguf/src/main/resources/native-libs/cpu" ]; then \
+		cp plugins/runner/gguf/aljabr-ext-runner-gguf/src/main/resources/native-libs/cpu/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
-	@if [ -d "extension/format/gguf/alkhawarizm-ext-runner-gguf/target/llama-cpp/lib" ]; then \
-		cp extension/format/gguf/alkhawarizm-ext-runner-gguf/target/llama-cpp/lib/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "extension/format/gguf/aljabr-ext-runner-gguf/target/llama-cpp/lib" ]; then \
+		cp extension/format/gguf/aljabr-ext-runner-gguf/target/llama-cpp/lib/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
 	@if [ -d "plugins/runner/gguf/source/llama-cpp/lib/cpu" ]; then \
 		cp plugins/runner/gguf/source/llama-cpp/lib/cpu/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
@@ -76,8 +76,8 @@ install-onnx-libs:
 	@echo "Installing ONNX Runtime libraries..."
 	@mkdir -p $(ONNX_LIBS_DIR)
 	@# Try multiple source locations
-	@if [ -d "plugins/runner/onnx/alkhawarizm-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib" ]; then \
-		cp plugins/runner/onnx/alkhawarizm-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib/*$(LIB_EXT)* $(ONNX_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "plugins/runner/onnx/aljabr-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib" ]; then \
+		cp plugins/runner/onnx/aljabr-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib/*$(LIB_EXT)* $(ONNX_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
 	@if [ -d "inference/format/onnx/onnxruntime/build/lib" ]; then \
 		cp inference/format/onnx/onnxruntime/build/lib/*$(LIB_EXT)* $(ONNX_LIBS_DIR)/ 2>/dev/null || true; \
@@ -119,8 +119,8 @@ install-litert-libs:
 	@echo "Installing TensorFlow Lite libraries..."
 	@mkdir -p $(TFLITE_LIBS_DIR)
 	@# Try multiple source locations
-	@if [ -d "plugins/runner/litert/alkhawarizm-runner-litert/src/main/resources/native-libs" ]; then \
-		cp plugins/runner/litert/alkhawarizm-runner-litert/src/main/resources/native-libs/*$(LIB_EXT)* $(TFLITE_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "plugins/runner/litert/aljabr-runner-litert/src/main/resources/native-libs" ]; then \
+		cp plugins/runner/litert/aljabr-runner-litert/src/main/resources/native-libs/*$(LIB_EXT)* $(TFLITE_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
 	@if [ -d "extension/runner/litert/build/lib" ]; then \
 		cp extension/runner/litert/build/lib/*$(LIB_EXT)* $(TFLITE_LIBS_DIR)/ 2>/dev/null || true; \
@@ -137,11 +137,11 @@ install-litert-libs:
 # Clean all installed libraries
 clean-native-libs:
 	@echo "Removing all installed native libraries..."
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/llama
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/onnxruntime
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/libtorch
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/litert
-	@echo "✓ All native libraries removed from $(ALKHAWARIZM_LIBS_DIR)"
+	@rm -rf $(ALJABR_LIBS_DIR)/llama
+	@rm -rf $(ALJABR_LIBS_DIR)/onnxruntime
+	@rm -rf $(ALJABR_LIBS_DIR)/libtorch
+	@rm -rf $(ALJABR_LIBS_DIR)/litert
+	@echo "✓ All native libraries removed from $(ALJABR_LIBS_DIR)"
 
 # Verify installation
 verify-libs:

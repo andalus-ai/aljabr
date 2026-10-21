@@ -1,0 +1,16 @@
+{
+  "id": "model-family/pegasus_x",
+  "name": "Pegasus-X Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Pegasus-X long-context seq2seq metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.pegasusx.PegasusXModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["pegasus_x", "pegasus-x"]
+  }
+}

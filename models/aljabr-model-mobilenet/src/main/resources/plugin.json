@@ -1,0 +1,16 @@
+{
+  "id": "model-family/mobilenet",
+  "name": "MobileNet Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "MobileNet V1/V2 image backbone metadata and image processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.mobilenet.MobileNetModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["mobilenet_v1", "mobilenet-v1", "mobilenet_v2", "mobilenet-v2"]
+  }
+}

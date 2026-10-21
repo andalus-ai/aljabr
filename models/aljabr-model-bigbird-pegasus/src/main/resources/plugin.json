@@ -1,0 +1,16 @@
+{
+  "id": "model-family/bigbird_pegasus",
+  "name": "BigBird-Pegasus Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "BigBird-Pegasus long-context seq2seq metadata and SentencePiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.bigbirdpegasus.BigBirdPegasusModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["bigbird_pegasus", "bigbird-pegasus"]
+  }
+}

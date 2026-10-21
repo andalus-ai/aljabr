@@ -1,0 +1,16 @@
+{
+  "id": "model-family/x_clip",
+  "name": "X-CLIP Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "X-CLIP video-text metadata with CLIP tokenizer and temporal processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.xclip.XClipModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["x_clip", "xclip", "xclip_text_model", "xclip_vision_model"]
+  }
+}

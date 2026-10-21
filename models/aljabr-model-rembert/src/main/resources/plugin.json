@@ -1,0 +1,16 @@
+{
+  "id": "model-family/rembert",
+  "name": "RemBERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "RemBERT multilingual encoder metadata with SentencePiece Unigram tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.rembert.RemBertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["rembert"],
+    "tokenizerKind": "sentencepiece"
+  }
+}

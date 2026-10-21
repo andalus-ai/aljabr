@@ -1,0 +1,16 @@
+{
+  "id": "model-family/jina_embeddings_v3",
+  "name": "Jina Embeddings v3 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Jina Embeddings v3 encoder metadata with reusable embedding tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.jinaembeddingsv3.JinaEmbeddingsV3ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["jina_embeddings_v3"]
+  }
+}

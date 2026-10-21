@@ -1,0 +1,16 @@
+{
+  "id": "model-family/marian",
+  "name": "MarianMT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "MarianMT translation metadata with SentencePiece tokenizer profile",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.marian.MarianModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["marian"],
+    "tokenizerKind": "sentencepiece"
+  }
+}

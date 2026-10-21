@@ -1,0 +1,24 @@
+{
+  "id": "model-family/phi",
+  "name": "Microsoft Phi Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Phi, Phi 3, and Phi 4 model-family adapters",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.PhiModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "core",
+    "families": [
+      "phi",
+      "phi3",
+      "phi4"
+    ],
+    "tokenizerKind": "sentencepiece",
+    "tokenizerKinds": [
+      "sentencepiece",
+      "hf-bpe"
+    ]
+  }
+}

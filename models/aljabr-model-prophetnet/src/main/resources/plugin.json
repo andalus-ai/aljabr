@@ -1,0 +1,16 @@
+{
+  "id": "model-family/prophetnet",
+  "name": "ProphetNet Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "ProphetNet sequence-to-sequence metadata and WordPiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.prophetnet.ProphetNetModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "wordpiece",
+    "families": ["prophetnet", "xlm-prophetnet", "xlm_prophetnet"]
+  }
+}

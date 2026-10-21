@@ -1,0 +1,20 @@
+{
+  "id": "model-family/kimi",
+  "name": "Moonshot Kimi Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Kimi model-family metadata for future architecture/tokenizer adapters",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.KimiModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "experimental",
+    "families": [
+      "kimi",
+      "kimi_k2"
+    ],
+    "tokenizerMetadataStatus": "pending",
+    "tokenizerMetadataPendingReason": "tokenizer adapter pending descriptor stabilization"
+  }
+}

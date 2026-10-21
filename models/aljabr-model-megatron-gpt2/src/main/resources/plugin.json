@@ -1,0 +1,16 @@
+{
+  "id": "model-family/megatron_gpt2",
+  "name": "Megatron GPT-2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Megatron GPT-2 conversion metadata and byte-level BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.megatrongpt2.MegatronGpt2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["megatron_gpt2", "megatron-gpt2"]
+  }
+}

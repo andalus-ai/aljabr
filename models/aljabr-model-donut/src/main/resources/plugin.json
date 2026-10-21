@@ -1,0 +1,16 @@
+{
+  "id": "model-family/donut",
+  "name": "Donut Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Donut model-family metadata and OCR processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.donut.DonutModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-text-processor",
+    "families": ["donut-swin", "donut_swin"]
+  }
+}

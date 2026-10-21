@@ -1,0 +1,9 @@
+{
+  "id": "aljabr-model-afmoe",
+  "version": "0.1.0-SNAPSHOT",
+  "name": "AFMOE Model Family Plugin",
+  "description": "AFMOE model family descriptor for aljabr runtime.",
+  "provider": "kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.afmoe.AfmoeModelFamilyPlugin",
+  "dependencies": []
+}

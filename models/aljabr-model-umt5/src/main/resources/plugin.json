@@ -1,0 +1,16 @@
+{
+  "id": "model-family/umt5",
+  "name": "UMT5 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "UMT5 encoder-decoder metadata and SentencePiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.umt5.UMT5ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["umt5"],
+    "tokenizerKind": "sentencepiece"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "model-family/yi",
+  "name": "01.AI Yi Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Yi and Yi 1.5 model-family adapters",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.YiModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "optional",
+    "families": [
+      "yi",
+      "yi_1_5"
+    ],
+    "tokenizerKind": "sentencepiece"
+  }
+}

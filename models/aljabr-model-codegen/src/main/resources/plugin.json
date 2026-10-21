@@ -1,0 +1,16 @@
+{
+  "id": "model-family/codegen",
+  "name": "CodeGen Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Salesforce CodeGen model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.codegen.CodeGenModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["codegen"]
+  }
+}

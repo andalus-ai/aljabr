@@ -1,8 +1,8 @@
-# Alkhawarizm Architecture
+# Aljabr Architecture
 
 ## Vision: A General-Purpose ML Framework
 
-Alkhawarizm is the **foundational ML framework** for the Wayang platform — analogous to PyTorch in the Python ecosystem. It provides everything an inference/serving engine needs to be built on top of it, with zero engine-specific assumptions.
+Aljabr is the **foundational ML framework** for the Wayang platform — analogous to PyTorch in the Python ecosystem. It provides everything an inference/serving engine needs to be built on top of it, with zero engine-specific assumptions.
 
 ```
 ┌───────────────────────────────────────────────────────┐
@@ -10,16 +10,16 @@ Alkhawarizm is the **foundational ML framework** for the Wayang platform — ana
 ├───────────────────────────────────────────────────────┤
 │           Aqli / Any Future Serving Engine          │ ← Pure runtime: runners, repos, SDK
 ├───────────────────────────────────────────────────────┤
-│                   Alkhawarizm SPI                     │ ← Inference + serving contracts
+│                   Aljabr SPI                     │ ← Inference + serving contracts
 │  (ModelRunner, InferenceRequest, PluginSPI, ...)      │
 ├───────────────────────────────────────────────────────┤
-│                Alkhawarizm Core                       │ ← Tensors, ops, data types, errors
+│                Aljabr Core                       │ ← Tensors, ops, data types, errors
 ├───────────────────────────────────────────────────────┤
-│              Alkhawarizm Backends                     │ ← CPU / CUDA / Metal / ROCm / HAT
+│              Aljabr Backends                     │ ← CPU / CUDA / Metal / ROCm / HAT
 └───────────────────────────────────────────────────────┘
 ```
 
-The key design rule: **any compliant serving engine** (Aqli, or a future hypothetical engine) should be implementable using only Alkhawarizm contracts, without touching engine-specific code.
+The key design rule: **any compliant serving engine** (Aqli, or a future hypothetical engine) should be implementable using only Aljabr contracts, without touching engine-specific code.
 
 ---
 
@@ -29,72 +29,72 @@ The key design rule: **any compliant serving engine** (Aqli, or a future hypothe
 
 | Module | Purpose | Nature |
 |---|---|---|
-| `alkhawarizm-tensor` | `Tensor`, `DefaultTensor`, `Shape`, `DType`, `DeviceType`, `TensorOps` | Foundation |
-| `alkhawarizm-core` | Root API surface, exposes tensor + spi-model | API umbrella |
-| `alkhawarizm-error-code` | `ErrorCode` enum, error taxonomy | Foundation |
-| `alkhawarizm-nn` | Neural network layer ops (linear, softmax, attention) | Foundation |
-| `alkhawarizm-spi-model` | **Model-level contracts**: `ModelConfig`, `ModelArchitecture`, `ModelRunner`, `MultimodalRequest/Response`, `ModelRegistry`, `ModelRepository`, `RunnerMetadata` | SPI |
-| `alkhawarizm-gguf-api` | GGUF format API/contracts | SPI |
-| `alkhawarizm-gguf-core` | GGUF parsing implementation | Runtime |
-| `alkhawarizm-gguf-converter` | GGUF format converter | Runtime |
-| `alkhawarizm-safetensor-api` | Safetensor format contracts | SPI |
-| `alkhawarizm-safetensor-spi` | Safetensor loader SPI | SPI |
-| `alkhawarizm-safetensor-core` | Safetensor loading implementation | Runtime |
-| `alkhawarizm-rocksdb` | RocksDB KV store binding | Runtime |
-| `alkhawarizm-helixdb` | HelixDB vector store binding | Runtime |
-| `alkhawarizm-3d` | 3D tensor/rendering ops | Optional |
+| `aljabr-tensor` | `Tensor`, `DefaultTensor`, `Shape`, `DType`, `DeviceType`, `TensorOps` | Foundation |
+| `aljabr-core` | Root API surface, exposes tensor + spi-model | API umbrella |
+| `aljabr-error-code` | `ErrorCode` enum, error taxonomy | Foundation |
+| `aljabr-nn` | Neural network layer ops (linear, softmax, attention) | Foundation |
+| `aljabr-spi-model` | **Model-level contracts**: `ModelConfig`, `ModelArchitecture`, `ModelRunner`, `MultimodalRequest/Response`, `ModelRegistry`, `ModelRepository`, `RunnerMetadata` | SPI |
+| `aljabr-gguf-api` | GGUF format API/contracts | SPI |
+| `aljabr-gguf-core` | GGUF parsing implementation | Runtime |
+| `aljabr-gguf-converter` | GGUF format converter | Runtime |
+| `aljabr-safetensor-api` | Safetensor format contracts | SPI |
+| `aljabr-safetensor-spi` | Safetensor loader SPI | SPI |
+| `aljabr-safetensor-core` | Safetensor loading implementation | Runtime |
+| `aljabr-rocksdb` | RocksDB KV store binding | Runtime |
+| `aljabr-helixdb` | HelixDB vector store binding | Runtime |
+| `aljabr-3d` | 3D tensor/rendering ops | Optional |
 | `autograd` | Autograd engine (training only — excluded from inference builds) | Training |
 
 ### `backend/` — Hardware Compute Backends
 
-All backends implement `ComputeBackend` from `alkhawarizm-tensor`.
+All backends implement `ComputeBackend` from `aljabr-tensor`.
 
 | Module | Hardware | Nature |
 |---|---|---|
-| `backend/cpu/alkhawarizm-backend-cpu` | CPU (Java Vector API) | Runtime |
-| `backend/cuda/alkhawarizm-backend-cuda` | NVIDIA CUDA | Runtime |
-| `backend/cuda/alkhawarizm-kernel-cuda` | CUDA kernel implementations | Runtime |
-| `backend/metal/alkhawarizm-backend-metal` | Apple Metal (macOS/iOS) | Runtime |
-| `backend/hat/alkhawarizm-backend-hat` | Oracle Project Babylon HAT | Experimental |
-| `backend/rocm/alkhawarizm-kernel-rocm` | AMD ROCm | Runtime |
+| `backend/cpu/aljabr-backend-cpu` | CPU (Java Vector API) | Runtime |
+| `backend/cuda/aljabr-backend-cuda` | NVIDIA CUDA | Runtime |
+| `backend/cuda/aljabr-kernel-cuda` | CUDA kernel implementations | Runtime |
+| `backend/metal/aljabr-backend-metal` | Apple Metal (macOS/iOS) | Runtime |
+| `backend/hat/aljabr-backend-hat` | Oracle Project Babylon HAT | Experimental |
+| `backend/rocm/aljabr-kernel-rocm` | AMD ROCm | Runtime |
 
-**Backend boundary rule**: backends depend only on `core/alkhawarizm-tensor` and `core/alkhawarizm-error-code`. They must never depend on each other.
+**Backend boundary rule**: backends depend only on `core/aljabr-tensor` and `core/aljabr-error-code`. They must never depend on each other.
 
 ### `models/` — Model Family Definitions
 
-Pre-built model graph descriptors auto-discovered at build time. Each `alkhawarizm-model-<name>` provides `ModelFamilyDescriptor` + `ModelFamilyPlugin` registrations consumed by `alkhawarizm-spi-model`.
+Pre-built model graph descriptors auto-discovered at build time. Each `aljabr-model-<name>` provides `ModelFamilyDescriptor` + `ModelFamilyPlugin` registrations consumed by `aljabr-spi-model`.
 
 ---
 
 ## The SPI Elevation Plan
 
-Alkhawarizm currently hosts model-level contracts in `alkhawarizm-spi-model`. The next step is to **host all general inference/serving SPIs** here, so any engine (Aqli or otherwise) depends only on Alkhawarizm.
+Aljabr currently hosts model-level contracts in `aljabr-spi-model`. The next step is to **host all general inference/serving SPIs** here, so any engine (Aqli or otherwise) depends only on Aljabr.
 
-### Contracts to be elevated from Aqli → Alkhawarizm
+### Contracts to be elevated from Aqli → Aljabr
 
-| Contract | Current location | Target Alkhawarizm module |
+| Contract | Current location | Target Aljabr module |
 |---|---|---|
-| `InferenceRequest`, `InferenceResponse`, `StreamingResponse` | `aqli-spi-inference` | `alkhawarizm-spi-inference` (new) |
-| `InferenceEngine`, `InferencePipeline`, `InferencePhase` | `aqli-spi-inference` | `alkhawarizm-spi-inference` (new) |
-| `BatchScheduler`, `BatchConfig`, `BatchStrategy` | `aqli-spi-inference` | `alkhawarizm-spi-inference` (new) |
-| `EmbeddingRequest`, `EmbeddingResponse` | `aqli-spi-inference` | `alkhawarizm-spi-inference` (new) |
-| `ModelRunner` (interface) | `aqli-spi-runner` → `alkhawarizm-spi-model` | Already partially there |
-| `RunnerStats`, `RunnerCapabilities`, `RunnerConfiguration` | `aqli-spi-runner` | `alkhawarizm-spi-model` extension |
-| `AqliPlugin` → `AlkhawarizmPlugin` | `aqli-spi-plugin` | `alkhawarizm-spi-plugin` (new) |
-| `PluginHealth`, `PluginState`, `PluginRegistry` | `aqli-spi-plugin` | `alkhawarizm-spi-plugin` (new) |
-| `Tokenizer`, `TokenizerPool`, `PreTokenizer` SPI | `aqli-tokenizer-core/spi/` | `alkhawarizm-spi-tokenizer` (new) |
+| `InferenceRequest`, `InferenceResponse`, `StreamingResponse` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
+| `InferenceEngine`, `InferencePipeline`, `InferencePhase` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
+| `BatchScheduler`, `BatchConfig`, `BatchStrategy` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
+| `EmbeddingRequest`, `EmbeddingResponse` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
+| `ModelRunner` (interface) | `aqli-spi-runner` → `aljabr-spi-model` | Already partially there |
+| `RunnerStats`, `RunnerCapabilities`, `RunnerConfiguration` | `aqli-spi-runner` | `aljabr-spi-model` extension |
+| `AqliPlugin` → `AljabrPlugin` | `aqli-spi-plugin` | `aljabr-spi-plugin` (new) |
+| `PluginHealth`, `PluginState`, `PluginRegistry` | `aqli-spi-plugin` | `aljabr-spi-plugin` (new) |
+| `Tokenizer`, `TokenizerPool`, `PreTokenizer` SPI | `aqli-tokenizer-core/spi/` | `aljabr-spi-tokenizer` (new) |
 
 ### Target module layout after elevation
 
 ```
-alkhawarizm/
+aljabr/
   core/
-    alkhawarizm-tensor/        ← tensors (unchanged)
-    alkhawarizm-spi-model/     ← model configs, ModelRunner, multimodal (existing, extended)
-    alkhawarizm-spi-inference/ ← NEW: InferenceRequest/Response, Engine, Pipeline, Batch, Embedding
-    alkhawarizm-spi-plugin/    ← NEW: Plugin lifecycle SPI
-    alkhawarizm-spi-tokenizer/ ← NEW: Tokenizer contracts
-    alkhawarizm-error-code/    ← errors (unchanged)
+    aljabr-tensor/        ← tensors (unchanged)
+    aljabr-spi-model/     ← model configs, ModelRunner, multimodal (existing, extended)
+    aljabr-spi-inference/ ← NEW: InferenceRequest/Response, Engine, Pipeline, Batch, Embedding
+    aljabr-spi-plugin/    ← NEW: Plugin lifecycle SPI
+    aljabr-spi-tokenizer/ ← NEW: Tokenizer contracts
+    aljabr-error-code/    ← errors (unchanged)
     ...
   backend/                     ← unchanged
   models/                      ← unchanged
@@ -106,7 +106,7 @@ alkhawarizm/
 
 ### Core → Backend direction only
 ```
-core/alkhawarizm-tensor   ←── backend/cpu
+core/aljabr-tensor   ←── backend/cpu
                           ←── backend/cuda
                           ←── backend/metal
 ```
@@ -124,7 +124,7 @@ backend/cuda ✗→  backend/metal  (forbidden)
 ### Published coordinates
 All `core/` and `backend/` modules must declare:
 ```kotlin
-group = "tech.kayys.alkhawarizm"
+group = "tech.kayys.aljabr"
 version = "0.1.0-SNAPSHOT"
 ```
 
@@ -140,16 +140,16 @@ grep -rn 'project(":backend:' --include="*.kts" backend/
 # Expect: no output
 
 # 2. No core module declares a backend package
-grep -rn '^package tech\.kayys\.alkhawarizm\.backend' --include="*.java" core/
+grep -rn '^package tech\.kayys\.aljabr\.backend' --include="*.java" core/
 # Expect: no output
 
 # 3. No stale references to deleted modules
-grep -rn 'alkhawarizm-spi-provider\|alkhawarizm-model-runner\|"alkhawarizm-engine"' --include="*.kts" .
+grep -rn 'aljabr-spi-provider\|aljabr-model-runner\|"aljabr-engine"' --include="*.kts" .
 # Expect: no output
 
 # 4. SPI modules contain no concrete implementations
 grep -rn '^public class [A-Z].*implements\|^public class [A-Z].*extends' \
-  core/alkhawarizm-spi-*/src --include="*.java" | grep -v 'Abstract\|Exception\|Error'
+  core/aljabr-spi-*/src --include="*.java" | grep -v 'Abstract\|Exception\|Error'
 # Review any output: should only be abstract base classes or exceptions
 ```
 
@@ -159,11 +159,11 @@ grep -rn '^public class [A-Z].*implements\|^public class [A-Z].*extends' \
 
 | What you want to add | Where it goes |
 |---|---|
-| New tensor primitive or op | `core/alkhawarizm-tensor` |
-| New model config field | `core/alkhawarizm-spi-model` |
-| New inference contract (request/response shape) | `core/alkhawarizm-spi-inference` (new) |
-| New hardware compute backend | `backend/<vendor>/alkhawarizm-backend-<vendor>` |
-| New model format (e.g. GGML) | `core/alkhawarizm-<format>-api` (SPI) + `core/alkhawarizm-<format>-core` (impl) |
-| New model family (e.g. Falcon) | `models/alkhawarizm-model-falcon` |
-| New tokenizer SPI | `core/alkhawarizm-spi-tokenizer` (new) |
-| New tokenizer implementation | Lives in Aqli `runtime/` or a future `alkhawarizm-tokenizer-impls` module |
+| New tensor primitive or op | `core/aljabr-tensor` |
+| New model config field | `core/aljabr-spi-model` |
+| New inference contract (request/response shape) | `core/aljabr-spi-inference` (new) |
+| New hardware compute backend | `backend/<vendor>/aljabr-backend-<vendor>` |
+| New model format (e.g. GGML) | `core/aljabr-<format>-api` (SPI) + `core/aljabr-<format>-core` (impl) |
+| New model family (e.g. Falcon) | `models/aljabr-model-falcon` |
+| New tokenizer SPI | `core/aljabr-spi-tokenizer` (new) |
+| New tokenizer implementation | Lives in Aqli `runtime/` or a future `aljabr-tokenizer-impls` module |

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/kosmos2_5",
+  "name": "Kosmos-2.5 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Kosmos-2.5 document-grounding multimodal metadata and processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.kosmos25.Kosmos25ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-text-processor",
+    "families": ["kosmos2_5", "kosmos2.5", "kosmos-2.5", "kosmos_2_5"]
+  }
+}

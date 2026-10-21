@@ -1,0 +1,16 @@
+{
+  "id": "model-family/llama4",
+  "name": "Llama 4 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Llama 4 model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.llama4.Llama4ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["tiktoken", "vision-text-processor"],
+    "families": ["llama4"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/mbart",
+  "name": "mBART Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "mBART/mBART-50 encoder-decoder metadata with SentencePiece Unigram tokenizer profile",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.mbart.MBartModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["mbart", "mbart50"],
+    "tokenizerKind": "sentencepiece"
+  }
+}

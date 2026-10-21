@@ -1,0 +1,16 @@
+{
+  "id": "model-family/m2m100",
+  "name": "M2M100 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "M2M100 multilingual translation metadata and SentencePiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.m2m100.M2M100ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["m2m_100", "m2m100"],
+    "tokenizerKind": "sentencepiece"
+  }
+}

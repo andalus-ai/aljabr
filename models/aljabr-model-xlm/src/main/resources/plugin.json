@@ -1,0 +1,16 @@
+{
+  "id": "model-family/xlm",
+  "name": "XLM Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "XLM metadata with vocab/merges BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.xlm.XlmModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["xlm"],
+    "tokenizerKind": "hf-bpe"
+  }
+}

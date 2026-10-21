@@ -1,0 +1,16 @@
+{
+  "id": "model-family/phi4_multimodal",
+  "name": "Phi-4 Multimodal Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Phi-4 Multimodal model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.phi4multimodal.Phi4MultimodalModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "vision-text-processor", "audio-processor"],
+    "families": ["phi4_multimodal", "phi4_multimodal_vision", "phi4_multimodal_audio"]
+  }
+}

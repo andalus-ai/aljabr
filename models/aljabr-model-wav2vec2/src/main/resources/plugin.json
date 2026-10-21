@@ -1,0 +1,16 @@
+{
+  "id": "model-family/wav2vec2",
+  "name": "Wav2Vec2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Wav2Vec2/Wav2Vec2-Conformer audio encoder metadata and CTC tokenizer profile",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.wav2vec2.Wav2Vec2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "audio-processor",
+    "families": ["wav2vec2", "wav2vec2_conformer", "wav2vec2-conformer"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/gpt_oss",
+  "name": "GPT-OSS Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "GPT-OSS causal LM metadata and Hugging Face BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.gptoss.GptOssModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["gpt_oss", "gpt-oss"]
+  }
+}

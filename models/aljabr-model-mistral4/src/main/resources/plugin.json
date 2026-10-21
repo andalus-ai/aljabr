@@ -1,0 +1,16 @@
+{
+  "id": "model-family/mistral4",
+  "name": "Mistral 4 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Mistral 4 model-family metadata and Tekken tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.mistral4.Mistral4ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["tekken", "hf-bpe"],
+    "families": ["mistral4", "mistral_4", "mistral-4"]
+  }
+}

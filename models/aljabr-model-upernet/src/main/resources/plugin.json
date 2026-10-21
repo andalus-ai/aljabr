@@ -1,0 +1,16 @@
+{
+  "id": "model-family/upernet",
+  "name": "UPerNet Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "UPerNet semantic-segmentation metadata with image processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.upernet.UperNetModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["upernet"]
+  }
+}

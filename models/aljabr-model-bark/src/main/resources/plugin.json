@@ -1,0 +1,16 @@
+{
+  "id": "model-family/bark",
+  "name": "Bark Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Bark model-family metadata and processor-aware audio tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.bark.BarkModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "audio-processor",
+    "families": ["bark"]
+  }
+}

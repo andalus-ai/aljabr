@@ -1,0 +1,16 @@
+{
+  "id": "model-family/grounding_dino",
+  "name": "Grounding DINO Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Grounding DINO and MM Grounding DINO detection metadata with WordPiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.groundingdino.GroundingDinoModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "wordpiece",
+    "families": ["grounding_dino", "grounding-dino", "mm_grounding_dino", "mm-grounding-dino"]
+  }
+}

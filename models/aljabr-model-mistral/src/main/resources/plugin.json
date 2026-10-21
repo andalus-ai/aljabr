@@ -1,0 +1,18 @@
+{
+  "id": "model-family/mistral",
+  "name": "Mistral Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Base Mistral model-family adapters",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.MistralModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "core",
+    "families": [
+      "mistral"
+    ],
+    "tokenizerKind": "sentencepiece"
+  }
+}

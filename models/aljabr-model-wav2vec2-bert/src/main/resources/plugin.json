@@ -1,0 +1,16 @@
+{
+  "id": "model-family/wav2vec2_bert",
+  "name": "Wav2Vec2-BERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Wav2Vec2-BERT audio encoder metadata and processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.wav2vec2bert.Wav2Vec2BertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["wav2vec2_bert", "wav2vec2-bert"]
+  }
+}

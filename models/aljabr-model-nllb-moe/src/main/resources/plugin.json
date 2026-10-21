@@ -1,0 +1,16 @@
+{
+  "id": "model-family/nllb_moe",
+  "name": "NLLB-MoE Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "NLLB-MoE translation metadata with multilingual SentencePiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.nllbmoe.NllbMoeModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["nllb_moe", "nllb-moe"]
+  }
+}

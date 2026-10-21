@@ -2,75 +2,75 @@
 ================================================
 FILE: README.md
 ================================================
-# Al-Khawarizm (الخوارزمي)
+# Aljabr 
 
 ## "Modern AI Technology start from zero"
 
-**Al-Khawarizm** is the foundational tensor, compute, and modeling infrastructure for the Kayys AI ecosystem in Java. 
+**Aljabr** is the foundational tensor, compute, and modeling infrastructure for the Kayys AI ecosystem in Java. 
 
-If you are coming from the Python AI ecosystem, you can think of Al-Khawarizm as **the Java equivalent of PyTorch**, combined with the foundational model configuration aspects of **Hugging Face Transformers**.
+If you are coming from the Python AI ecosystem, you can think of Aljabr as **the Java equivalent of PyTorch**, combined with the foundational model configuration aspects of **Hugging Face Transformers**.
 
 It is strictly an infrastructure and primitive layer. It does not generate text, nor does it run training loops. Instead, it provides the highly optimized, hardware-accelerated building blocks that higher-level frameworks use to accomplish those tasks.
 
 ## 🎯 Ecosystem Positioning
 
-To understand Al-Khawarizm, it helps to see where it sits in the broader Kayys AI architecture:
+To understand Aljabr, it helps to see where it sits in the broader Kayys AI architecture:
 
 ```mermaid
 graph TD
     W[Andalus<br>Agentic AI Platform] --> G
     T[Tafkir<br>Training Framework] --> A
-    G[Alkhawarizm<br>Inference Engine & SDK] --> A
+    G[Aljabr<br>Inference Engine & SDK] --> A
     
-    subgraph Al-Khawarizm Foundation
-    A[Al-Khawarizm<br>Tensors, Math, Backends, Models]
+    subgraph Aljabr Foundation
+    A[Aljabr<br>Tensors, Math, Backends, Models]
     end
 ```
 
 ### The Separation of Concerns
-1. **Al-Khawarizm (Foundation)**: Knows how to multiply matrices, allocate memory on a GPU, parse SafeTensors, and define what a "Gemma" model looks like.
-2. **Tafkir (Training)**: Knows how to calculate loss, apply gradients, run optimizers, and execute training loops. Depends on Al-Khawarizm for math and autograd.
-3. **Alkhawarizm (Inference)**: Knows how to sample tokens, handle continuous batching, and route requests. Depends on Al-Khawarizm for fast forward passes and KV caching.
-4. **Andalus (Application)**: Knows how to orchestrate multi-agent reasoning and RAG workflows. Depends on Alkhawarizm for text generation.
+1. **Aljabr (Foundation)**: Knows how to multiply matrices, allocate memory on a GPU, parse SafeTensors, and define what a "Gemma" model looks like.
+2. **Tafkir (Training)**: Knows how to calculate loss, apply gradients, run optimizers, and execute training loops. Depends on Aljabr for math and autograd.
+3. **Aljabr (Inference)**: Knows how to sample tokens, handle continuous batching, and route requests. Depends on Aljabr for fast forward passes and KV caching.
+4. **Andalus (Application)**: Knows how to orchestrate multi-agent reasoning and RAG workflows. Depends on Aljabr for text generation.
 
-By isolating the heavy infrastructure into Al-Khawarizm, both Tafkir and Alkhawarizm can share the exact same hardware backends and memory models without dragging each other's specific dependencies around.
+By isolating the heavy infrastructure into Aljabr, both Tafkir and Aljabr can share the exact same hardware backends and memory models without dragging each other's specific dependencies around.
 
 ## 🏗️ Core Architecture & Modules
 
-Al-Khawarizm is designed with a strict modular structure to maintain a clear Separation of Concerns:
+Aljabr is designed with a strict modular structure to maintain a clear Separation of Concerns:
 
-* `core/`: The heart of Al-Khawarizm.
-  * `alkhawarizm-tensor`: N-dimensional arrays, precision types (FP32, FP16, BF16, INT8).
-  * `alkhawarizm-nn`: Neural network primitives and activation functions (GELU, SiLU).
+* `core/`: The heart of Aljabr.
+  * `aljabr-tensor`: N-dimensional arrays, precision types (FP32, FP16, BF16, INT8).
+  * `aljabr-nn`: Neural network primitives and activation functions (GELU, SiLU).
   * `autograd`: Automatic differentiation for training (`tafkir` uses this).
-  * `alkhawarizm-safetensor-*` / `alkhawarizm-gguf-*`: High-performance weight loaders.
-  * `alkhawarizm-spi-model`: The foundational contract defining `ModelConfig`, `ModelArchitecture`, and `ModelRuntimeTraits`.
+  * `aljabr-safetensor-*` / `aljabr-gguf-*`: High-performance weight loaders.
+  * `aljabr-spi-model`: The foundational contract defining `ModelConfig`, `ModelArchitecture`, and `ModelRuntimeTraits`.
 * `backend/`: Hardware-accelerated execution routes.
   * `cpu`, `metal` (Apple Silicon MPS), `cuda` (NVIDIA GPUs), `rocm` (AMD).
   * Each backend provides optimized kernels for the tensor operations defined in `core`.
-* `models/`: Implementations of the `alkhawarizm-spi-model` contract for hundreds of specific model architectures (Gemma, Llama, Qwen, BERT, etc.). These provide the topology but NOT the inference logic.
+* `models/`: Implementations of the `aljabr-spi-model` contract for hundreds of specific model architectures (Gemma, Llama, Qwen, BERT, etc.). These provide the topology but NOT the inference logic.
 
 ## 🧑‍💻 Developer Guidance
 
-When contributing to Al-Khawarizm or any downstream framework (`alkhawarizm` / `tafkir`), strictly adhere to the following principles:
+When contributing to Aljabr or any downstream framework (`aljabr` / `tafkir`), strictly adhere to the following principles:
 
 ### 1. Capabilities over Identities
 **Never** write code that checks the identity of a model (e.g., `if (modelType.equals("gemma3"))`). This breaks extensibility.
-Instead, check for operational capabilities (e.g., `if (traits.requiresTurnAwarePromptBos())`). If a new model needs a specific behavior, add a generic capability flag to `ModelRuntimeTraits` in `alkhawarizm-spi-model` and map the model to it.
+Instead, check for operational capabilities (e.g., `if (traits.requiresTurnAwarePromptBos())`). If a new model needs a specific behavior, add a generic capability flag to `ModelRuntimeTraits` in `aljabr-spi-model` and map the model to it.
 
 ### 2. Strict Separation of Concerns
-* **Al-Khawarizm** handles math, tensors, and static topology. It should never contain code related to continuous batching, sampling temperature, or KV cache orchestration.
-* **Alkhawarizm** handles the stateful, dynamic process of inference. It uses Al-Khawarizm's math and topology to execute the forward pass.
-* **Tafkir** handles the stateful process of training. It uses Al-Khawarizm's autograd and math to execute the backward pass.
+* **Aljabr** handles math, tensors, and static topology. It should never contain code related to continuous batching, sampling temperature, or KV cache orchestration.
+* **Aljabr** handles the stateful, dynamic process of inference. It uses Aljabr's math and topology to execute the forward pass.
+* **Tafkir** handles the stateful process of training. It uses Aljabr's autograd and math to execute the backward pass.
 
 ### 3. Adding New Models
 To add a new model family, you do not need to touch the inference or training engines. 
-Simply add a new module under `alkhawarizm/models/` that implements the `ModelArchitecture` SPI. Specify its precise structural traits (e.g., uses SwiGLU, has parallel attention) so that the engines know how to process it dynamically.
+Simply add a new module under `aljabr/models/` that implements the `ModelArchitecture` SPI. Specify its precise structural traits (e.g., uses SwiGLU, has parallel attention) so that the engines know how to process it dynamically.
 
 
 ## 📝 License
 
-Al-Khawarizm is licensed under the [MIT License](LICENSE.md).
+Aljabr is licensed under the [MIT License](LICENSE.md).
 
 
 
@@ -99,12 +99,12 @@ plugins {
     id("io.quarkus") version "3.32.2" apply false
 }
 
-extra["alkhawarizmVersion"] = "0.1.1"
+extra["aljabrVersion"] = "0.1.1"
 extra["quarkusVersion"] = "3.32.2"
 
 allprojects {
-    group = "tech.kayys.alkhawarizm"
-    version = rootProject.extra["alkhawarizmVersion"] as String
+    group = "tech.kayys.aljabr"
+    version = rootProject.extra["aljabrVersion"] as String
 
     repositories {
         google()
@@ -237,18 +237,18 @@ subprojects {
                     substitute(module(moduleNotation)).using(project(projectPath))
                 }
             }
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-spi-model", ":core:alkhawarizm-spi-model")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-tensor", ":core:alkhawarizm-tensor")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-error-code", ":core:alkhawarizm-error-code")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-tokenizer-core", ":core:alkhawarizm-tokenizer-core")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-safetensor-api", ":core:alkhawarizm-safetensor-api")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-safetensor-core", ":core:alkhawarizm-safetensor-core")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-safetensor-loader", ":core:alkhawarizm-safetensor-loader")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-safetensor-spi", ":core:alkhawarizm-safetensor-spi")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-nn", ":core:alkhawarizm-nn")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-3d", ":core:alkhawarizm-3d")
-            safeSubstitute("tech.kayys.alkhawarizm:alkhawarizm-core", ":core:alkhawarizm-core")
-            safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:alkhawarizm-tensor")
+            safeSubstitute("tech.kayys.aljabr:aljabr-spi-model", ":core:aljabr-spi-model")
+            safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:aljabr-tensor")
+            safeSubstitute("tech.kayys.aljabr:aljabr-error-code", ":core:aljabr-error-code")
+            safeSubstitute("tech.kayys.aljabr:aljabr-tokenizer-core", ":core:aljabr-tokenizer-core")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-api", ":core:aljabr-safetensor-api")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-core", ":core:aljabr-safetensor-core")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-loader", ":core:aljabr-safetensor-loader")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-spi", ":core:aljabr-safetensor-spi")
+            safeSubstitute("tech.kayys.aljabr:aljabr-nn", ":core:aljabr-nn")
+            safeSubstitute("tech.kayys.aljabr:aljabr-3d", ":core:aljabr-3d")
+            safeSubstitute("tech.kayys.aljabr:aljabr-core", ":core:aljabr-core")
+            safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:aljabr-tensor")
             substitute(module("tech.kayys.aljabr:tafkir-ml-core")).using(module("tech.kayys.tafkir:tafkir-ml-core:0.1.0-SNAPSHOT"))
         }
         resolutionStrategy.eachDependency {
@@ -350,7 +350,7 @@ subprojects {
                         val ghOwner = System.getenv("GITHUB_REPOSITORY_OWNER")
                             ?: System.getenv("GITHUB_ACTOR")
                             ?: "bhangun"
-                        "$ghOwner/alkhawarizm"
+                        "$ghOwner/aljabr"
                     }
                 val ghActor  = System.getenv("GITHUB_ACTOR")  ?: providers.gradleProperty("gpr.user").orNull
                 val ghToken  = System.getenv("GITHUB_TOKEN")  ?: providers.gradleProperty("gpr.key").orNull
@@ -370,7 +370,7 @@ subprojects {
                     from(components["java"])
                     pom {
                         name.set(project.name)
-                        description.set("Alkhawarizm ML Framework Module")
+                        description.set("Aljabr ML Framework Module")
                         url.set("https://github.com/andalus-platform/andalus-platform")
                         licenses {
                             license {
@@ -413,13 +413,13 @@ subprojects {
 ================================================
 FILE: gradle.properties
 ================================================
-# Alkhawarizm Engine Feature Flags
+# Aljabr Engine Feature Flags
 # Comma-separated list of backends to include: cpu, cuda, metal
-alkhawarizm.backend=cpu,metal
+aljabr.backend=cpu,metal
 # Strategy for backend selection: fallback, strict
-alkhawarizm.strategy=fallback
+aljabr.strategy=fallback
 # Enable training APIs (Autograd, ML, Train)
-alkhawarizm.training=false
+aljabr.training=false
 
 # Optimization Flags
 org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
@@ -815,15 +815,15 @@ SOFTWARE.
 FILE: Makefile.native
 ================================================
 # Native Library Installation Makefile
-# Helps copy native libraries to standard Alkhawarizm location (~/.alkhawarizm/libs/)
+# Helps copy native libraries to standard Aljabr location (~/.aljabr/libs/)
 
 .PHONY: help install-native-libs install-gguf-libs install-onnx-libs install-libtorch-libs install-litert-libs clean-native-libs
 
-ALKHAWARIZM_LIBS_DIR ?= $(HOME)/.alkhawarizm/libs
-LLAMA_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/llama
-ONNX_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/onnxruntime
-LIBTORCH_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/libtorch
-TFLITE_LIBS_DIR = $(ALKHAWARIZM_LIBS_DIR)/litert
+ALJABR_LIBS_DIR ?= $(HOME)/.aljabr/libs
+LLAMA_LIBS_DIR = $(ALJABR_LIBS_DIR)/llama
+ONNX_LIBS_DIR = $(ALJABR_LIBS_DIR)/onnxruntime
+LIBTORCH_LIBS_DIR = $(ALJABR_LIBS_DIR)/libtorch
+TFLITE_LIBS_DIR = $(ALJABR_LIBS_DIR)/litert
 
 # Detect OS
 UNAME_S := $(shell uname -s)
@@ -840,7 +840,7 @@ else
 endif
 
 help:
-	@echo "Alkhawarizm Native Library Installation"
+	@echo "Aljabr Native Library Installation"
 	@echo "==================================="
 	@echo ""
 	@echo "Usage:"
@@ -851,23 +851,23 @@ help:
 	@echo "  make install-litert-libs     - Install TensorFlow Lite libraries"
 	@echo "  make clean-native-libs       - Remove all installed libraries"
 	@echo ""
-	@echo "Standard location: $(ALKHAWARIZM_LIBS_DIR)"
+	@echo "Standard location: $(ALJABR_LIBS_DIR)"
 	@echo ""
 
 # Install all native libraries
 install-native-libs: install-gguf-libs install-onnx-libs install-libtorch-libs install-litert-libs
-	@echo "✓ All native libraries installed to $(ALKHAWARIZM_LIBS_DIR)"
+	@echo "✓ All native libraries installed to $(ALJABR_LIBS_DIR)"
 
 # Install GGUF / llama.cpp libraries
 install-gguf-libs:
 	@echo "Installing GGUF/llama.cpp libraries..."
 	@mkdir -p $(LLAMA_LIBS_DIR)
 	@# Try multiple source locations
-	@if [ -d "plugins/runner/gguf/alkhawarizm-ext-runner-gguf/src/main/resources/native-libs/cpu" ]; then \
-		cp plugins/runner/gguf/alkhawarizm-ext-runner-gguf/src/main/resources/native-libs/cpu/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "plugins/runner/gguf/aljabr-ext-runner-gguf/src/main/resources/native-libs/cpu" ]; then \
+		cp plugins/runner/gguf/aljabr-ext-runner-gguf/src/main/resources/native-libs/cpu/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
-	@if [ -d "extension/format/gguf/alkhawarizm-ext-runner-gguf/target/llama-cpp/lib" ]; then \
-		cp extension/format/gguf/alkhawarizm-ext-runner-gguf/target/llama-cpp/lib/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "extension/format/gguf/aljabr-ext-runner-gguf/target/llama-cpp/lib" ]; then \
+		cp extension/format/gguf/aljabr-ext-runner-gguf/target/llama-cpp/lib/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
 	@if [ -d "plugins/runner/gguf/source/llama-cpp/lib/cpu" ]; then \
 		cp plugins/runner/gguf/source/llama-cpp/lib/cpu/*$(LIB_EXT)* $(LLAMA_LIBS_DIR)/ 2>/dev/null || true; \
@@ -892,8 +892,8 @@ install-onnx-libs:
 	@echo "Installing ONNX Runtime libraries..."
 	@mkdir -p $(ONNX_LIBS_DIR)
 	@# Try multiple source locations
-	@if [ -d "plugins/runner/onnx/alkhawarizm-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib" ]; then \
-		cp plugins/runner/onnx/alkhawarizm-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib/*$(LIB_EXT)* $(ONNX_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "plugins/runner/onnx/aljabr-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib" ]; then \
+		cp plugins/runner/onnx/aljabr-runner-onnx/src/main/cpp/onnxruntime/build/onnxruntime-osx-arm64-1.19.2/lib/*$(LIB_EXT)* $(ONNX_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
 	@if [ -d "inference/format/onnx/onnxruntime/build/lib" ]; then \
 		cp inference/format/onnx/onnxruntime/build/lib/*$(LIB_EXT)* $(ONNX_LIBS_DIR)/ 2>/dev/null || true; \
@@ -935,8 +935,8 @@ install-litert-libs:
 	@echo "Installing TensorFlow Lite libraries..."
 	@mkdir -p $(TFLITE_LIBS_DIR)
 	@# Try multiple source locations
-	@if [ -d "plugins/runner/litert/alkhawarizm-runner-litert/src/main/resources/native-libs" ]; then \
-		cp plugins/runner/litert/alkhawarizm-runner-litert/src/main/resources/native-libs/*$(LIB_EXT)* $(TFLITE_LIBS_DIR)/ 2>/dev/null || true; \
+	@if [ -d "plugins/runner/litert/aljabr-runner-litert/src/main/resources/native-libs" ]; then \
+		cp plugins/runner/litert/aljabr-runner-litert/src/main/resources/native-libs/*$(LIB_EXT)* $(TFLITE_LIBS_DIR)/ 2>/dev/null || true; \
 	fi
 	@if [ -d "extension/runner/litert/build/lib" ]; then \
 		cp extension/runner/litert/build/lib/*$(LIB_EXT)* $(TFLITE_LIBS_DIR)/ 2>/dev/null || true; \
@@ -953,11 +953,11 @@ install-litert-libs:
 # Clean all installed libraries
 clean-native-libs:
 	@echo "Removing all installed native libraries..."
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/llama
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/onnxruntime
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/libtorch
-	@rm -rf $(ALKHAWARIZM_LIBS_DIR)/litert
-	@echo "✓ All native libraries removed from $(ALKHAWARIZM_LIBS_DIR)"
+	@rm -rf $(ALJABR_LIBS_DIR)/llama
+	@rm -rf $(ALJABR_LIBS_DIR)/onnxruntime
+	@rm -rf $(ALJABR_LIBS_DIR)/libtorch
+	@rm -rf $(ALJABR_LIBS_DIR)/litert
+	@echo "✓ All native libraries removed from $(ALJABR_LIBS_DIR)"
 
 # Verify installation
 verify-libs:
@@ -998,7 +998,7 @@ download-onnx:
 ================================================
 FILE: README_JAVADOC.md
 ================================================
-# Alkhawarizm Core Modules - JavaDoc & GitHub Publishing Update
+# Aljabr Core Modules - JavaDoc & GitHub Publishing Update
 
 ## ✅ Task Complete - All 445 Java Files Updated
 
@@ -1068,7 +1068,7 @@ FILE: README_JAVADOC.md
 ```kotlin
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/alkhawarizm")
+        url = uri("https://maven.pkg.github.com/aljabr")
         credentials {
             username = System.getenv("GITHUB_ACTOR")
             password = System.getenv("GITHUB_TOKEN")
@@ -1077,7 +1077,7 @@ repositories {
 }
 
 dependencies {
-    implementation("tech.kayys.alkhawarizm:alkhawarizm-error-code:0.1.0-SNAPSHOT")
+    implementation("tech.kayys.aljabr:aljabr-error-code:0.1.0-SNAPSHOT")
 }
 ```
 
@@ -1085,12 +1085,12 @@ dependencies {
 ```xml
 <repository>
     <id>github</id>
-    <url>https://maven.pkg.github.com/alkhawarizm</url>
+    <url>https://maven.pkg.github.com/aljabr</url>
 </repository>
 
 <dependency>
-    <groupId>tech.kayys.alkhawarizm</groupId>
-    <artifactId>alkhawarizm-error-code</artifactId>
+    <groupId>tech.kayys.aljabr</groupId>
+    <artifactId>aljabr-error-code</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
@@ -1103,23 +1103,23 @@ All 17 core modules now have comprehensive JavaDoc:
 
 | Module | Status | Purpose |
 |--------|--------|---------|
-| alkhawarizm-3d | ✅ | 3D graphics and mesh processing |
-| alkhawarizm-core | ✅ | Core framework |
-| alkhawarizm-error-code | ✅ | Error handling and codes |
-| alkhawarizm-gguf-bridge | ✅ | GGUF model bridging |
-| alkhawarizm-gguf-converter | ✅ | GGUF format conversion |
-| alkhawarizm-gguf-converter-java | ✅ | Java GGUF utilities |
-| alkhawarizm-gguf-core | ✅ | Core GGUF handling |
-| alkhawarizm-gguf-fast-bridge | ✅ | Fast GGUF bridging |
-| alkhawarizm-helixdb | ✅ | HelixDB integration |
-| alkhawarizm-nn | ✅ | Neural network components |
-| alkhawarizm-rocksdb | ✅ | RocksDB integration |
-| alkhawarizm-safetensor-api | ✅ | SafeTensor API |
-| alkhawarizm-safetensor-core | ✅ | SafeTensor core |
-| alkhawarizm-safetensor-loader | ✅ | SafeTensor loading |
-| alkhawarizm-safetensor-quantization | ✅ | SafeTensor quantization |
-| alkhawarizm-safetensor-spi | ✅ | SafeTensor SPI |
-| alkhawarizm-tensor | ✅ | Tensor operations |
+| aljabr-3d | ✅ | 3D graphics and mesh processing |
+| aljabr-core | ✅ | Core framework |
+| aljabr-error-code | ✅ | Error handling and codes |
+| aljabr-gguf-bridge | ✅ | GGUF model bridging |
+| aljabr-gguf-converter | ✅ | GGUF format conversion |
+| aljabr-gguf-converter-java | ✅ | Java GGUF utilities |
+| aljabr-gguf-core | ✅ | Core GGUF handling |
+| aljabr-gguf-fast-bridge | ✅ | Fast GGUF bridging |
+| aljabr-helixdb | ✅ | HelixDB integration |
+| aljabr-nn | ✅ | Neural network components |
+| aljabr-rocksdb | ✅ | RocksDB integration |
+| aljabr-safetensor-api | ✅ | SafeTensor API |
+| aljabr-safetensor-core | ✅ | SafeTensor core |
+| aljabr-safetensor-loader | ✅ | SafeTensor loading |
+| aljabr-safetensor-quantization | ✅ | SafeTensor quantization |
+| aljabr-safetensor-spi | ✅ | SafeTensor SPI |
+| aljabr-tensor | ✅ | Tensor operations |
 
 ---
 
@@ -1146,7 +1146,7 @@ Documentation Errors:            0
 - `GITHUB_TOKEN` - GitHub personal access token (auto-available in GitHub Actions)
 
 ### Registry Details
-- **Registry URL:** `https://maven.pkg.github.com/alkhawarizm`
+- **Registry URL:** `https://maven.pkg.github.com/aljabr`
 - **Artifacts Generated:**
   - Main JAR (compiled classes)
   - Sources JAR (source code)
@@ -1154,9 +1154,9 @@ Documentation Errors:            0
 
 ### POM Metadata
 - ✅ Project name (dynamic)
-- ✅ Description: "Alkhawarizm ML Framework Module"
+- ✅ Description: "Aljabr ML Framework Module"
 - ✅ License: Apache License 2.0
-- ✅ Repository: GitHub (alkhawarizm)
+- ✅ Repository: GitHub (aljabr)
 - ✅ Developers: Andalus Platform
 - ✅ SCM: Git connection details
 
@@ -1197,7 +1197,7 @@ tasks.withType<Javadoc> {
 ### Error Code Registry
 ```java
 /**
- * Central registry for all Alkhawarizm error codes.
+ * Central registry for all Aljabr error codes.
  *
  * <p>
  * Pattern: CATEGORY_NNN (example: MODEL_001)
@@ -1309,7 +1309,7 @@ For detailed information:
 ================================================
 FILE: settings.gradle.kts
 ================================================
-rootProject.name = "alkhawarizm-engine"
+rootProject.name = "aljabr-engine"
 
 fun includeOptionalProject(projectPath: String, vararg candidatePaths: String) {
     val projectDir = candidatePaths
@@ -1324,7 +1324,7 @@ fun includeOptionalProject(projectPath: String, vararg candidatePaths: String) {
 }
 
 
-includeOptionalProject("core:alkhawarizm-core", "core/alkhawarizm-core")
+includeOptionalProject("core:aljabr-core", "core/aljabr-core")
 
 // Autograd is training-only; exclude from foundational builds
 val skipAutograd = true
@@ -1332,36 +1332,36 @@ if (!skipAutograd) {
     include("core:autograd")
 }
 
-include("core:alkhawarizm-tensor")
-include("core:alkhawarizm-core")
-include("core:alkhawarizm-error-code")
-include("core:alkhawarizm-nn")
+include("core:aljabr-tensor")
+include("core:aljabr-core")
+include("core:aljabr-error-code")
+include("core:aljabr-nn")
 
-include("core:alkhawarizm-spi-model")
-include("core:alkhawarizm-3d")
+include("core:aljabr-spi-model")
+include("core:aljabr-3d")
 
-//include("backend:blackwell:alkhawarizm-kernel-blackwell")
+//include("backend:blackwell:aljabr-kernel-blackwell")
 
-include("backend:cpu:alkhawarizm-backend-cpu")
-include("backend:cuda:alkhawarizm-backend-cuda")
-include("backend:cuda:alkhawarizm-kernel-cuda")
-//include("backend:cuda:alkhawarizm-plugin-kernel-cuda")
-//include("backend:directml:alkhawarizm-plugin-kernel-directml")
+include("backend:cpu:aljabr-backend-cpu")
+include("backend:cuda:aljabr-backend-cuda")
+include("backend:cuda:aljabr-kernel-cuda")
+//include("backend:cuda:aljabr-plugin-kernel-cuda")
+//include("backend:directml:aljabr-plugin-kernel-directml")
 val skipHat = gradle.startParameter.projectProperties["skipHat"] == "true"
 if (!skipHat) {
-    include("backend:hat:alkhawarizm-backend-hat")
+    include("backend:hat:aljabr-backend-hat")
 }
-include("backend:metal:alkhawarizm-backend-metal")
-//include("backend:metal:alkhawarizm-mlx-binding")
+include("backend:metal:aljabr-backend-metal")
+//include("backend:metal:aljabr-mlx-binding")
 
-//include("backend:rocm:alkhawarizm-kernel-rocm")
-//include("backend:rocm:alkhawarizm-plugin-kernel-rocm")
+//include("backend:rocm:aljabr-kernel-rocm")
+//include("backend:rocm:aljabr-plugin-kernel-rocm")
 
 // Dynamically include model family projects under models/
 file("models")
     .listFiles { candidate ->
         candidate.isDirectory &&
-                candidate.name.startsWith("alkhawarizm-model-") &&
+                candidate.name.startsWith("aljabr-model-") &&
                 (candidate.resolve("build.gradle.kts").isFile || candidate.resolve("build.gradle").isFile)
     }
     ?.sortedBy { it.name }
@@ -1372,34 +1372,34 @@ file("models")
 
 
 
-// GGUF Suite: alkhawarizm-gguf-api, alkhawarizm-gguf-llamacpp, alkhawarizm-gguf-core, alkhawarizm-gguf-java
-include("core:alkhawarizm-gguf-api")
-include("core:alkhawarizm-gguf-llamacpp")
-include("core:alkhawarizm-gguf-core")
-include("core:alkhawarizm-gguf-java")
+// GGUF Suite: aljabr-gguf-api, aljabr-gguf-llamacpp, aljabr-gguf-core, aljabr-gguf-java
+include("core:aljabr-gguf-api")
+include("core:aljabr-gguf-llamacpp")
+include("core:aljabr-gguf-core")
+include("core:aljabr-gguf-java")
 
-include("core:alkhawarizm-rocksdb")
-include("core:alkhawarizm-helixdb")
+include("core:aljabr-rocksdb")
+include("core:aljabr-helixdb")
 
 // Modules requiring external SPI/runner dependencies:
-//include(":core:alkhawarizm-safetensor-api")
-//include(":core:alkhawarizm-safetensor-spi")
-//include(":core:alkhawarizm-safetensor-core")
-//include(":core:alkhawarizm-safetensor-loader")
-//include(":core:alkhawarizm-safetensor-quantization")
-//include(":core:alkhawarizm-gguf-bridge")
-//include(":core:alkhawarizm-gguf-fast-bridge")
-//include(":core:alkhawarizm-gguf-converter")
-//include(":core:alkhawarizm-gguf-converter-java")
+//include(":core:aljabr-safetensor-api")
+//include(":core:aljabr-safetensor-spi")
+//include(":core:aljabr-safetensor-core")
+//include(":core:aljabr-safetensor-loader")
+//include(":core:aljabr-safetensor-quantization")
+//include(":core:aljabr-gguf-bridge")
+//include(":core:aljabr-gguf-fast-bridge")
+//include(":core:aljabr-gguf-converter")
+//include(":core:aljabr-gguf-converter-java")
 
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/README.md
+FILE: backend/blackwell/aljabr-kernel-blackwell/README.md
 ================================================
-# Alkhawarizm Blackwell Kernel
+# Aljabr Blackwell Kernel
 
-NVIDIA Blackwell GPU acceleration kernel for Alkhawarizm inference engine.
+NVIDIA Blackwell GPU acceleration kernel for Aljabr inference engine.
 
 ## Features
 
@@ -1422,31 +1422,31 @@ NVIDIA Blackwell GPU acceleration kernel for Alkhawarizm inference engine.
 
 ```properties
 # Enable Blackwell runner
-alkhawarizm.runners.blackwell.enabled=true
+aljabr.runners.blackwell.enabled=true
 
 # Runner mode: auto|standard|offload|force|disabled
-alkhawarizm.runners.blackwell.mode=auto
+aljabr.runners.blackwell.mode=auto
 
 # CUDA library path
-alkhawarizm.runners.blackwell.library-path=/usr/local/cuda/lib64/libalkhawarizm_blackwell.so
+aljabr.runners.blackwell.library-path=/usr/local/cuda/lib64/libaljabr_blackwell.so
 
 # Device ID (0-based)
-alkhawarizm.runners.blackwell.device-id=0
+aljabr.runners.blackwell.device-id=0
 
 # Blackwell-specific optimizations (auto-enabled)
-alkhawarizm.runners.blackwell.use-fp4=true
-alkhawarizm.runners.blackwell.use-tmem=true
-alkhawarizm.runners.blackwell.tmem-size-mb=64
-alkhawarizm.runners.blackwell.async-copy=true
+aljabr.runners.blackwell.use-fp4=true
+aljabr.runners.blackwell.use-tmem=true
+aljabr.runners.blackwell.tmem-size-mb=64
+aljabr.runners.blackwell.async-copy=true
 
 # Model dimensions (override from manifest)
-alkhawarizm.runners.blackwell.num-layers=32
-alkhawarizm.runners.blackwell.num-heads=32
-alkhawarizm.runners.blackwell.num-heads-kv=8
-alkhawarizm.runners.blackwell.head-dim=128
-alkhawarizm.runners.blackwell.model-dim=4096
-alkhawarizm.runners.blackwell.ffn-dim=14336
-alkhawarizm.runners.blackwell.vocab-size=32000
+aljabr.runners.blackwell.num-layers=32
+aljabr.runners.blackwell.num-heads=32
+aljabr.runners.blackwell.num-heads-kv=8
+aljabr.runners.blackwell.head-dim=128
+aljabr.runners.blackwell.model-dim=4096
+aljabr.runners.blackwell.ffn-dim=14336
+aljabr.runners.blackwell.vocab-size=32000
 ```
 
 ## Building Blackwell Kernels
@@ -1463,7 +1463,7 @@ make -C src/main/cpp/blackwell CUDA_ARCH=sm_100
 make -C src/main/cpp/blackwell CUDA_ARCH=sm_100 USE_FP4=1
 
 # Output location
-target/native/linux-x86_64/libalkhawarizm_blackwell.so
+target/native/linux-x86_64/libaljabr_blackwell.so
 ```
 
 ## Testing
@@ -1526,7 +1526,7 @@ mvn test
 ┌─────────────────────────────────────────────────────────┐
 │              BlackwellBinding (FFM + TMEM)              │
 ├─────────────────────────────────────────────────────────┤
-│  libalkhawarizm_blackwell.so → CUDA 12.x+ → Blackwell GPU   │
+│  libaljabr_blackwell.so → CUDA 12.x+ → Blackwell GPU   │
 │  - TMEM allocator (64MB on-chip)                        │
 │  - FP4 tensor core support                              │
 │  - Stream wait/write for async execution                │
@@ -1572,8 +1572,8 @@ Blackwell introduces a 64MB on-chip tensor memory accumulator for FlashAttention
 ### Async Execution
 
 ```java
-import tech.kayys.alkhawarizm.blackwell.runner.BlackwellRunner;
-import tech.kayys.alkhawarizm.blackwell.optimization.BlackwellOptimizationManager;
+import tech.kayys.aljabr.blackwell.runner.BlackwellRunner;
+import tech.kayys.aljabr.blackwell.optimization.BlackwellOptimizationManager;
 
 // Create runner
 BlackwellRunner runner = new BlackwellRunner();
@@ -1608,7 +1608,7 @@ runner.streamWriteValue(semaphore, 2);
 The Blackwell kernel integrates with `BlackwellOptimizationManager` for maximum performance:
 
 ```java
-import tech.kayys.alkhawarizm.blackwell.optimization.BlackwellOptimizationManager;
+import tech.kayys.aljabr.blackwell.optimization.BlackwellOptimizationManager;
 
 // Create optimization manager
 BlackwellOptimizationManager optimization = 
@@ -1640,16 +1640,16 @@ For maximum FlashAttention-4 performance:
 
 ```properties
 # Enable TMEM (default: true)
-alkhawarizm.runners.blackwell.use-tmem=true
+aljabr.runners.blackwell.use-tmem=true
 
 # TMEM block size (default: 64MB)
-alkhawarizm.runners.blackwell.tmem-size-mb=64
+aljabr.runners.blackwell.tmem-size-mb=64
 
 # Async copy overlap (default: true)
-alkhawarizm.runners.blackwell.async-copy=true
+aljabr.runners.blackwell.async-copy=true
 
 # FP4 precision (default: true on B200)
-alkhawarizm.runners.blackwell.use-fp4=true
+aljabr.runners.blackwell.use-fp4=true
 ```
 
 **Expected speedup:** 2.5-3.5x over H100 depending on model size
@@ -1675,7 +1675,7 @@ export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
 nvidia-smi  # Must show B100/B200/GB200
 
 # Reduce TMEM size
-alkhawarizm.runners.blackwell.tmem-size-mb=32  # Instead of 64
+aljabr.runners.blackwell.tmem-size-mb=32  # Instead of 64
 ```
 
 ### "FP4 not supported"
@@ -1702,14 +1702,14 @@ Apache 2.0
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/build.gradle.kts
+FILE: backend/blackwell/aljabr-kernel-blackwell/build.gradle.kts
 ================================================
 plugins {
     `java-library`
     `maven-publish`
 }
 
-group = "tech.kayys.alkhawarizm"
+group = "tech.kayys.aljabr"
 version = "0.1.0-SNAPSHOT"
 
 java {
@@ -1724,10 +1724,10 @@ repositories {
 }
 
 dependencies {
-    //implementation(project(":spi:alkhawarizm-spi-provider"))
-    implementation(project(":core:alkhawarizm-model-runner"))
-   // implementation(group = "tech.kayys.alkhawarizm", name = "alkhawarizm-engine")
-   // implementation(project(":optimization:alkhawarizm-plugin-kv-cache"))
+    //implementation(project(":spi:aljabr-spi-provider"))
+    implementation(project(":core:aljabr-model-runner"))
+   // implementation(group = "tech.kayys.aljabr", name = "aljabr-engine")
+   // implementation(project(":optimization:aljabr-plugin-kv-cache"))
     implementation(group = "io.quarkus", name = "quarkus-arc")
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
     testImplementation(group = "org.assertj", name = "assertj-core")
@@ -1751,9 +1751,9 @@ tasks.withType<Test>().configureEach {
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/main/java/tech/kayys/alkhawarizm/blackwell/binding/BlackwellBinding.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/main/java/tech/kayys/aljabr/blackwell/binding/BlackwellBinding.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell.binding;
+package tech.kayys.aljabr.blackwell.binding;
 
 import org.jboss.logging.Logger;
 
@@ -1765,8 +1765,8 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * FFM-based binding to the Alkhawarizm Blackwell CUDA bridge
- * ({@code libalkhawarizm_blackwell.so}).
+ * FFM-based binding to the Aljabr Blackwell CUDA bridge
+ * ({@code libaljabr_blackwell.so}).
  *
  * <p>
  * Optimized for NVIDIA Blackwell architecture (B100, B200, GB200) with:
@@ -1789,7 +1789,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <pre>{@code
  * // At startup (e.g., BlackwellRunner.initialize()):
  * boolean loaded = BlackwellBinding.initialize(
- *         Path.of("/usr/local/cuda/lib64/libalkhawarizm_blackwell.so"));
+ *         Path.of("/usr/local/cuda/lib64/libaljabr_blackwell.so"));
  * BlackwellBinding binding = BlackwellBinding.getInstance();
  *
  * // Use:
@@ -1804,33 +1804,33 @@ public class BlackwellBinding {
 
     // ── Function names ────────────────────────────────────────────────────────
 
-    private static final String FN_INIT = "alkhawarizm_blackwell_init";
-    private static final String FN_FREE_MEM = "alkhawarizm_blackwell_free_memory";
-    private static final String FN_ALLOC = "alkhawarizm_blackwell_malloc";
-    private static final String FN_ALLOC_MANAGED = "alkhawarizm_blackwell_malloc_managed";
-    private static final String FN_ALLOC_TMEM = "alkhawarizm_blackwell_tmem_alloc";
-    private static final String FN_FREE = "alkhawarizm_blackwell_free";
-    private static final String FN_MEMCPY_H2D = "alkhawarizm_blackwell_memcpy_h2d";
-    private static final String FN_MEMCPY_D2H = "alkhawarizm_blackwell_memcpy_d2h";
-    private static final String FN_MEMCPY_ASYNC = "alkhawarizm_blackwell_memcpy_async";
-    private static final String FN_STREAM_CREATE = "alkhawarizm_blackwell_stream_create";
-    private static final String FN_STREAM_DESTROY = "alkhawarizm_blackwell_stream_destroy";
-    private static final String FN_STREAM_SYNCHRONIZE = "alkhawarizm_blackwell_stream_synchronize";
-    private static final String FN_STREAM_WAIT_VALUE = "alkhawarizm_blackwell_stream_wait_value";
-    private static final String FN_STREAM_WRITE_VALUE = "alkhawarizm_blackwell_stream_write_value";
-    private static final String FN_MATMUL = "alkhawarizm_blackwell_matmul";
-    private static final String FN_MATMUL_FP8 = "alkhawarizm_blackwell_matmul_fp8";
-    private static final String FN_MATMUL_FP4 = "alkhawarizm_blackwell_matmul_fp4";
-    private static final String FN_ATTENTION = "alkhawarizm_blackwell_attention";
-    private static final String FN_FLASH_ATTN_V3 = "alkhawarizm_blackwell_flash_attn_v3";
-    private static final String FN_FLASH_ATTN_V3_TMEM = "alkhawarizm_blackwell_flash_attn_v3_tmem";
-    private static final String FN_RMSNORM = "alkhawarizm_blackwell_rmsnorm";
-    private static final String FN_SILU_FFN = "alkhawarizm_blackwell_silu_ffn";
-    private static final String FN_DEVICE_COUNT = "alkhawarizm_blackwell_device_count";
-    private static final String FN_DEVICE_NAME = "alkhawarizm_blackwell_device_name";
-    private static final String FN_DEVICE_GET = "alkhawarizm_blackwell_device_get";
-    private static final String FN_COMPUTE_CAP = "alkhawarizm_blackwell_compute_capability";
-    private static final String FN_TMEM_SIZE = "alkhawarizm_blackwell_tmem_size";
+    private static final String FN_INIT = "aljabr_blackwell_init";
+    private static final String FN_FREE_MEM = "aljabr_blackwell_free_memory";
+    private static final String FN_ALLOC = "aljabr_blackwell_malloc";
+    private static final String FN_ALLOC_MANAGED = "aljabr_blackwell_malloc_managed";
+    private static final String FN_ALLOC_TMEM = "aljabr_blackwell_tmem_alloc";
+    private static final String FN_FREE = "aljabr_blackwell_free";
+    private static final String FN_MEMCPY_H2D = "aljabr_blackwell_memcpy_h2d";
+    private static final String FN_MEMCPY_D2H = "aljabr_blackwell_memcpy_d2h";
+    private static final String FN_MEMCPY_ASYNC = "aljabr_blackwell_memcpy_async";
+    private static final String FN_STREAM_CREATE = "aljabr_blackwell_stream_create";
+    private static final String FN_STREAM_DESTROY = "aljabr_blackwell_stream_destroy";
+    private static final String FN_STREAM_SYNCHRONIZE = "aljabr_blackwell_stream_synchronize";
+    private static final String FN_STREAM_WAIT_VALUE = "aljabr_blackwell_stream_wait_value";
+    private static final String FN_STREAM_WRITE_VALUE = "aljabr_blackwell_stream_write_value";
+    private static final String FN_MATMUL = "aljabr_blackwell_matmul";
+    private static final String FN_MATMUL_FP8 = "aljabr_blackwell_matmul_fp8";
+    private static final String FN_MATMUL_FP4 = "aljabr_blackwell_matmul_fp4";
+    private static final String FN_ATTENTION = "aljabr_blackwell_attention";
+    private static final String FN_FLASH_ATTN_V3 = "aljabr_blackwell_flash_attn_v3";
+    private static final String FN_FLASH_ATTN_V3_TMEM = "aljabr_blackwell_flash_attn_v3_tmem";
+    private static final String FN_RMSNORM = "aljabr_blackwell_rmsnorm";
+    private static final String FN_SILU_FFN = "aljabr_blackwell_silu_ffn";
+    private static final String FN_DEVICE_COUNT = "aljabr_blackwell_device_count";
+    private static final String FN_DEVICE_NAME = "aljabr_blackwell_device_name";
+    private static final String FN_DEVICE_GET = "aljabr_blackwell_device_get";
+    private static final String FN_COMPUTE_CAP = "aljabr_blackwell_compute_capability";
+    private static final String FN_TMEM_SIZE = "aljabr_blackwell_tmem_size";
 
     private final SymbolLookup lookup;
     private final Map<String, MethodHandle> handles = new ConcurrentHashMap<>();
@@ -2209,97 +2209,97 @@ public class BlackwellBinding {
     // ── FFM binding ───────────────────────────────────────────────────────────
 
     private void bindAll() {
-        // int alkhawarizm_blackwell_init(int deviceId)
+        // int aljabr_blackwell_init(int deviceId)
         bind(FN_INIT, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_device_count()
+        // int aljabr_blackwell_device_count()
         bind(FN_DEVICE_COUNT, FunctionDescriptor.of(ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_device_get(int deviceId)
+        // int aljabr_blackwell_device_get(int deviceId)
         bind(FN_DEVICE_GET, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_device_name(char* buf, int bufSz, int deviceId)
+        // int aljabr_blackwell_device_name(char* buf, int bufSz, int deviceId)
         bind(FN_DEVICE_NAME, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_compute_capability(int deviceId)
+        // int aljabr_blackwell_compute_capability(int deviceId)
         bind(FN_COMPUTE_CAP, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT));
 
-        // long alkhawarizm_blackwell_tmem_size(int deviceId)
+        // long aljabr_blackwell_tmem_size(int deviceId)
         bind(FN_TMEM_SIZE, FunctionDescriptor.of(ValueLayout.JAVA_LONG,
                 ValueLayout.JAVA_INT));
 
-        // long alkhawarizm_blackwell_free_memory()
+        // long aljabr_blackwell_free_memory()
         bind(FN_FREE_MEM, FunctionDescriptor.of(ValueLayout.JAVA_LONG));
 
-        // void* alkhawarizm_blackwell_malloc(size_t bytes, size_t align)
+        // void* aljabr_blackwell_malloc(size_t bytes, size_t align)
         bind(FN_ALLOC, FunctionDescriptor.of(ValueLayout.ADDRESS,
                 ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
 
-        // void* alkhawarizm_blackwell_malloc_managed(size_t bytes, int flags)
+        // void* aljabr_blackwell_malloc_managed(size_t bytes, int flags)
         bind(FN_ALLOC_MANAGED, FunctionDescriptor.of(ValueLayout.ADDRESS,
                 ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT));
 
-        // void* alkhawarizm_blackwell_tmem_alloc(size_t bytes)
+        // void* aljabr_blackwell_tmem_alloc(size_t bytes)
         bind(FN_ALLOC_TMEM, FunctionDescriptor.of(ValueLayout.ADDRESS,
                 ValueLayout.JAVA_LONG));
 
-        // void alkhawarizm_blackwell_free(void* ptr)
+        // void aljabr_blackwell_free(void* ptr)
         bind(FN_FREE, FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
-        // void alkhawarizm_blackwell_memcpy_h2d(void* dst, void* src, size_t bytes)
+        // void aljabr_blackwell_memcpy_h2d(void* dst, void* src, size_t bytes)
         bind(FN_MEMCPY_H2D, FunctionDescriptor.ofVoid(
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
 
-        // void alkhawarizm_blackwell_memcpy_d2h(void* dst, void* src, size_t bytes)
+        // void aljabr_blackwell_memcpy_d2h(void* dst, void* src, size_t bytes)
         bind(FN_MEMCPY_D2H, FunctionDescriptor.ofVoid(
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
 
-        // void alkhawarizm_blackwell_memcpy_async(void* dst, void* src, size_t bytes,
+        // void aljabr_blackwell_memcpy_async(void* dst, void* src, size_t bytes,
         // void* stream)
         bind(FN_MEMCPY_ASYNC, FunctionDescriptor.ofVoid(
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG, ValueLayout.ADDRESS));
 
-        // void* alkhawarizm_blackwell_stream_create()
+        // void* aljabr_blackwell_stream_create()
         bind(FN_STREAM_CREATE, FunctionDescriptor.of(ValueLayout.ADDRESS));
 
-        // void alkhawarizm_blackwell_stream_destroy(void* stream)
+        // void aljabr_blackwell_stream_destroy(void* stream)
         bind(FN_STREAM_DESTROY, FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
-        // void alkhawarizm_blackwell_stream_synchronize(void* stream)
+        // void aljabr_blackwell_stream_synchronize(void* stream)
         bind(FN_STREAM_SYNCHRONIZE, FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
 
-        // void alkhawarizm_blackwell_stream_wait_value(void* stream, void* addr, int
+        // void aljabr_blackwell_stream_wait_value(void* stream, void* addr, int
         // value)
         bind(FN_STREAM_WAIT_VALUE, FunctionDescriptor.ofVoid(
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
 
-        // void alkhawarizm_blackwell_stream_write_value(void* addr, int value)
+        // void aljabr_blackwell_stream_write_value(void* addr, int value)
         bind(FN_STREAM_WRITE_VALUE, FunctionDescriptor.ofVoid(
                 ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_matmul(C, A, B, M, K, N, alpha, beta)
+        // int aljabr_blackwell_matmul(C, A, B, M, K, N, alpha, beta)
         bind(FN_MATMUL, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT));
 
-        // int alkhawarizm_blackwell_matmul_fp8(C, A, B, M, K, N, alpha, beta)
+        // int aljabr_blackwell_matmul_fp8(C, A, B, M, K, N, alpha, beta)
         bind(FN_MATMUL_FP8, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT));
 
-        // int alkhawarizm_blackwell_matmul_fp4(C, A, B, M, K, N, alpha, beta)
+        // int aljabr_blackwell_matmul_fp4(C, A, B, M, K, N, alpha, beta)
         bind(FN_MATMUL_FP4, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT));
 
-        // int alkhawarizm_blackwell_attention(out, Q, K, V, bt, ctx, B, T, H, D, bs,
+        // int aljabr_blackwell_attention(out, Q, K, V, bt, ctx, B, T, H, D, bs,
         // mb, scale, causal)
         bind(FN_ATTENTION, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
@@ -2308,7 +2308,7 @@ public class BlackwellBinding {
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_flash_attn_v3(out, Q, K, V, B, T, S, H, D, scale,
+        // int aljabr_blackwell_flash_attn_v3(out, Q, K, V, B, T, S, H, D, scale,
         // causal, fp4)
         bind(FN_FLASH_ATTN_V3, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
@@ -2317,7 +2317,7 @@ public class BlackwellBinding {
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_flash_attn_v3_tmem(out, Q, K, V, tmem, B, T, S, H,
+        // int aljabr_blackwell_flash_attn_v3_tmem(out, Q, K, V, tmem, B, T, S, H,
         // D, scale, causal, fp4)
         bind(FN_FLASH_ATTN_V3_TMEM, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
@@ -2326,12 +2326,12 @@ public class BlackwellBinding {
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
 
-        // int alkhawarizm_blackwell_rmsnorm(out, x, weight, N, eps)
+        // int aljabr_blackwell_rmsnorm(out, x, weight, N, eps)
         bind(FN_RMSNORM, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT));
 
-        // int alkhawarizm_blackwell_silu_ffn(out, gate, up, N)
+        // int aljabr_blackwell_silu_ffn(out, gate, up, N)
         bind(FN_SILU_FFN, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT));
@@ -2366,9 +2366,9 @@ public class BlackwellBinding {
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/main/java/tech/kayys/alkhawarizm/blackwell/binding/BlackwellCpuFallback.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/main/java/tech/kayys/aljabr/blackwell/binding/BlackwellCpuFallback.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell.binding;
+package tech.kayys.aljabr.blackwell.binding;
 
 import org.jboss.logging.Logger;
 
@@ -2473,9 +2473,9 @@ public final class BlackwellCpuFallback {
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/main/java/tech/kayys/alkhawarizm/blackwell/config/BlackwellRunnerMode.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/main/java/tech/kayys/aljabr/blackwell/config/BlackwellRunnerMode.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell.config;
+package tech.kayys.aljabr.blackwell.config;
 
 /**
  * Blackwell runner selection mode.
@@ -2513,18 +2513,18 @@ public enum BlackwellRunnerMode {
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/main/java/tech/kayys/alkhawarizm/blackwell/detection/BlackwellCapabilities.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/main/java/tech/kayys/aljabr/blackwell/detection/BlackwellCapabilities.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell.detection;
+package tech.kayys.aljabr.blackwell.detection;
 
 /**
  * Immutable snapshot of NVIDIA Blackwell device capabilities.
  *
  * <p>
  * Produced by {@link BlackwellDetector#detect()} and consumed by
- * {@link tech.kayys.alkhawarizm.blackwell.runner.BlackwellRunner#initialize}
- * and Alkhawarizm's
- * {@link tech.kayys.alkhawarizm.engine.routing.policy.SelectionPolicy}
+ * {@link tech.kayys.aljabr.blackwell.runner.BlackwellRunner#initialize}
+ * and Aljabr's
+ * {@link tech.kayys.aljabr.engine.routing.policy.SelectionPolicy}
  * to decide whether to route requests to the Blackwell backend.
  *
  * <p>
@@ -2643,9 +2643,9 @@ public record BlackwellCapabilities(
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/main/java/tech/kayys/alkhawarizm/blackwell/detection/BlackwellDetector.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/main/java/tech/kayys/aljabr/blackwell/detection/BlackwellDetector.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell.detection;
+package tech.kayys.aljabr.blackwell.detection;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
@@ -2819,13 +2819,13 @@ public class BlackwellDetector {
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/main/java/tech/kayys/alkhawarizm/blackwell/optimization/BlackwellOptimizationManager.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/main/java/tech/kayys/aljabr/blackwell/optimization/BlackwellOptimizationManager.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell.optimization;
+package tech.kayys.aljabr.blackwell.optimization;
 
 import org.jboss.logging.Logger;
-import tech.kayys.alkhawarizm.blackwell.binding.BlackwellBinding;
-import tech.kayys.alkhawarizm.kvcache.PagedKVCacheManager;
+import tech.kayys.aljabr.blackwell.binding.BlackwellBinding;
+import tech.kayys.aljabr.kvcache.PagedKVCacheManager;
 
 import java.lang.foreign.MemorySegment;
 
@@ -3142,35 +3142,35 @@ public class BlackwellOptimizationManager {
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/main/java/tech/kayys/alkhawarizm/blackwell/runner/BlackwellRunner.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/main/java/tech/kayys/aljabr/blackwell/runner/BlackwellRunner.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell.runner;
+package tech.kayys.aljabr.blackwell.runner;
 
 import io.smallrye.mutiny.Multi;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import tech.kayys.alkhawarizm.spi.exception.InferenceException;
-import tech.kayys.alkhawarizm.runner.RunnerCapabilities;
-import tech.kayys.alkhawarizm.runner.RunnerConfiguration;
-import tech.kayys.alkhawarizm.extension.AbstractAlkhawarizmRunner;
-import tech.kayys.alkhawarizm.blackwell.binding.BlackwellBinding;
-import tech.kayys.alkhawarizm.blackwell.config.BlackwellRunnerMode;
-import tech.kayys.alkhawarizm.blackwell.detection.BlackwellDetector;
-import tech.kayys.alkhawarizm.blackwell.detection.BlackwellCapabilities;
-import tech.kayys.alkhawarizm.kvcache.PagedKVCacheManager;
-import tech.kayys.alkhawarizm.error.ErrorCode;
-import tech.kayys.alkhawarizm.exception.RunnerInitializationException;
-import tech.kayys.alkhawarizm.spi.exception.InferenceException;
-import tech.kayys.alkhawarizm.spi.inference.InferenceRequest;
-import tech.kayys.alkhawarizm.spi.inference.InferenceResponse;
-import tech.kayys.alkhawarizm.spi.inference.StreamingInferenceChunk;
-import tech.kayys.alkhawarizm.spi.inference.StreamingInferenceChunk;
-import tech.kayys.alkhawarizm.core.tensor.DeviceType;
-import tech.kayys.alkhawarizm.core.model.ModelFormat;
-import tech.kayys.alkhawarizm.spi.model.ModelManifest;
-import tech.kayys.alkhawarizm.spi.model.RunnerMetadata;
+import tech.kayys.aljabr.spi.exception.InferenceException;
+import tech.kayys.aljabr.runner.RunnerCapabilities;
+import tech.kayys.aljabr.runner.RunnerConfiguration;
+import tech.kayys.aljabr.extension.AbstractAljabrRunner;
+import tech.kayys.aljabr.blackwell.binding.BlackwellBinding;
+import tech.kayys.aljabr.blackwell.config.BlackwellRunnerMode;
+import tech.kayys.aljabr.blackwell.detection.BlackwellDetector;
+import tech.kayys.aljabr.blackwell.detection.BlackwellCapabilities;
+import tech.kayys.aljabr.kvcache.PagedKVCacheManager;
+import tech.kayys.aljabr.error.ErrorCode;
+import tech.kayys.aljabr.exception.RunnerInitializationException;
+import tech.kayys.aljabr.spi.exception.InferenceException;
+import tech.kayys.aljabr.spi.inference.InferenceRequest;
+import tech.kayys.aljabr.spi.inference.InferenceResponse;
+import tech.kayys.aljabr.spi.inference.StreamingInferenceChunk;
+import tech.kayys.aljabr.spi.inference.StreamingInferenceChunk;
+import tech.kayys.aljabr.core.tensor.DeviceType;
+import tech.kayys.aljabr.core.model.ModelFormat;
+import tech.kayys.aljabr.spi.model.ModelManifest;
+import tech.kayys.aljabr.spi.model.RunnerMetadata;
 
 import java.io.RandomAccessFile;
 import java.lang.foreign.Arena;
@@ -3182,7 +3182,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * NVIDIA Blackwell ModelRunner for Alkhawarizm.
+ * NVIDIA Blackwell ModelRunner for Aljabr.
  *
  * <p>
  * Runs {@link ModelFormat#GGUF} and {@link ModelFormat#SAFETENSORS} models
@@ -3252,70 +3252,70 @@ import java.util.Map;
  * <h3>Config</h3>
  * 
  * <pre>
- *   alkhawarizm.runners.blackwell.enabled=false
- *   alkhawarizm.runners.blackwell.mode=auto  # auto|standard|offload|force|disabled
- *   alkhawarizm.runners.blackwell.library-path=/usr/local/cuda/lib64/libalkhawarizm_blackwell.so
- *   alkhawarizm.runners.blackwell.device-id=0
- *   alkhawarizm.runners.blackwell.use-fp4=true
- *   alkhawarizm.runners.blackwell.use-tmem=true
- *   alkhawarizm.runners.blackwell.num-layers=32
- *   alkhawarizm.runners.blackwell.num-heads=32
- *   alkhawarizm.runners.blackwell.num-heads-kv=8
- *   alkhawarizm.runners.blackwell.head-dim=128
- *   alkhawarizm.runners.blackwell.model-dim=4096
- *   alkhawarizm.runners.blackwell.ffn-dim=14336
- *   alkhawarizm.runners.blackwell.vocab-size=32000
+ *   aljabr.runners.blackwell.enabled=false
+ *   aljabr.runners.blackwell.mode=auto  # auto|standard|offload|force|disabled
+ *   aljabr.runners.blackwell.library-path=/usr/local/cuda/lib64/libaljabr_blackwell.so
+ *   aljabr.runners.blackwell.device-id=0
+ *   aljabr.runners.blackwell.use-fp4=true
+ *   aljabr.runners.blackwell.use-tmem=true
+ *   aljabr.runners.blackwell.num-layers=32
+ *   aljabr.runners.blackwell.num-heads=32
+ *   aljabr.runners.blackwell.num-heads-kv=8
+ *   aljabr.runners.blackwell.head-dim=128
+ *   aljabr.runners.blackwell.model-dim=4096
+ *   aljabr.runners.blackwell.ffn-dim=14336
+ *   aljabr.runners.blackwell.vocab-size=32000
  * </pre>
  *
  * <h3>Build Blackwell kernels</h3>
  * 
  * <pre>
  *   make -C src/main/cpp/blackwell CUDA_ARCH=sm_100
- *   # Output: target/native/linux-x86_64/alkhawarizm_blackwell_sm100.cubin
+ *   # Output: target/native/linux-x86_64/aljabr_blackwell_sm100.cubin
  * </pre>
  */
 @ApplicationScoped
-public class BlackwellRunner extends AbstractAlkhawarizmRunner {
+public class BlackwellRunner extends AbstractAljabrRunner {
 
     public static final String RUNNER_NAME = "blackwell";
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.enabled", defaultValue = "false")
+    @ConfigProperty(name = "aljabr.runners.blackwell.enabled", defaultValue = "false")
     boolean enabled;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.mode", defaultValue = "auto")
+    @ConfigProperty(name = "aljabr.runners.blackwell.mode", defaultValue = "auto")
     String blackwellMode;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.library-path", defaultValue = "/usr/local/cuda/lib64/libalkhawarizm_blackwell.so")
+    @ConfigProperty(name = "aljabr.runners.blackwell.library-path", defaultValue = "/usr/local/cuda/lib64/libaljabr_blackwell.so")
     String libraryPath;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.device-id", defaultValue = "0")
+    @ConfigProperty(name = "aljabr.runners.blackwell.device-id", defaultValue = "0")
     int deviceId;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.use-fp4", defaultValue = "true")
+    @ConfigProperty(name = "aljabr.runners.blackwell.use-fp4", defaultValue = "true")
     boolean useFp4;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.use-tmem", defaultValue = "true")
+    @ConfigProperty(name = "aljabr.runners.blackwell.use-tmem", defaultValue = "true")
     boolean useTmem;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.num-layers", defaultValue = "32")
+    @ConfigProperty(name = "aljabr.runners.blackwell.num-layers", defaultValue = "32")
     int numLayers;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.num-heads", defaultValue = "32")
+    @ConfigProperty(name = "aljabr.runners.blackwell.num-heads", defaultValue = "32")
     int numHeads;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.num-heads-kv", defaultValue = "8")
+    @ConfigProperty(name = "aljabr.runners.blackwell.num-heads-kv", defaultValue = "8")
     int numHeadsKv;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.head-dim", defaultValue = "128")
+    @ConfigProperty(name = "aljabr.runners.blackwell.head-dim", defaultValue = "128")
     int headDim;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.model-dim", defaultValue = "4096")
+    @ConfigProperty(name = "aljabr.runners.blackwell.model-dim", defaultValue = "4096")
     int modelDim;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.ffn-dim", defaultValue = "14336")
+    @ConfigProperty(name = "aljabr.runners.blackwell.ffn-dim", defaultValue = "14336")
     int ffnDim;
 
-    @ConfigProperty(name = "alkhawarizm.runners.blackwell.vocab-size", defaultValue = "32000")
+    @ConfigProperty(name = "aljabr.runners.blackwell.vocab-size", defaultValue = "32000")
     int vocabSize;
 
     @Inject
@@ -3417,15 +3417,15 @@ public class BlackwellRunner extends AbstractAlkhawarizmRunner {
         if (!enabled)
             throw new RunnerInitializationException(
                     ErrorCode.INIT_NATIVE_LIBRARY_FAILED,
-                    "Blackwell runner disabled (alkhawarizm.runners.blackwell.enabled=false)");
+                    "Blackwell runner disabled (aljabr.runners.blackwell.enabled=false)");
         if (mode == BlackwellRunnerMode.DISABLED)
             throw new RunnerInitializationException(
                     ErrorCode.INIT_NATIVE_LIBRARY_FAILED,
-                    "Blackwell runner disabled (alkhawarizm.runners.blackwell.mode=disabled)");
+                    "Blackwell runner disabled (aljabr.runners.blackwell.mode=disabled)");
         if (mode == BlackwellRunnerMode.OFFLOAD)
             throw new RunnerInitializationException(
                     ErrorCode.INIT_NATIVE_LIBRARY_FAILED,
-                    "Blackwell runner disabled (alkhawarizm.runners.blackwell.mode=offload)");
+                    "Blackwell runner disabled (aljabr.runners.blackwell.mode=offload)");
 
         caps = detector.detect();
         if (!caps.available() && mode != BlackwellRunnerMode.FORCE) {
@@ -3829,9 +3829,9 @@ public class BlackwellRunner extends AbstractAlkhawarizmRunner {
 
 
 ================================================
-FILE: backend/blackwell/alkhawarizm-kernel-blackwell/src/test/java/tech/kayys/alkhawarizm/blackwell/BlackwellGpuSmokeTest.java
+FILE: backend/blackwell/aljabr-kernel-blackwell/src/test/java/tech/kayys/aljabr/blackwell/BlackwellGpuSmokeTest.java
 ================================================
-package tech.kayys.alkhawarizm.blackwell;
+package tech.kayys.aljabr.blackwell;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -3874,31 +3874,31 @@ FILE: backend/cpu/README.md
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/build.gradle.kts
+FILE: backend/cpu/aljabr-backend-cpu/build.gradle.kts
 ================================================
 plugins {
     java
 }
 
 dependencies {
-    implementation(project(":core:alkhawarizm-tensor"))
-    //implementation(project(":core:alkhawarizm-ir"))
-    //implementation(project(":runtime:alkhawarizm-runtime"))
+    implementation(project(":core:aljabr-tensor"))
+    //implementation(project(":core:aljabr-ir"))
+    //implementation(project(":runtime:aljabr-runtime"))
 }
 
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/CpuBackend.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/CpuBackend.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu;
+package tech.kayys.aljabr.backend.cpu;
 
-import tech.kayys.alkhawarizm.backend.cpu.ops.CpuOps;
-import tech.kayys.alkhawarizm.backend.cpu.ops.MatmulCpu;
-import tech.kayys.alkhawarizm.backend.cpu.ops.NormOps;
-import tech.kayys.alkhawarizm.core.backend.ComputeBackend;
-import tech.kayys.alkhawarizm.core.tensor.*;
-import tech.kayys.alkhawarizm.core.memory.*;
+import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
+import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
+import tech.kayys.aljabr.backend.cpu.ops.NormOps;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.tensor.*;
+import tech.kayys.aljabr.core.memory.*;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -3907,7 +3907,7 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Pure-Java CPU backend for the Alkhawarizm compute engine.
+ * Pure-Java CPU backend for the Aljabr compute engine.
  *
  * <p>
  * All pointwise operations delegate to {@link CpuOps} which uses the JDK
@@ -4625,13 +4625,13 @@ public final class CpuBackend implements ComputeBackend {
         CpuBuffer outBuf = allocate(dtype.memoryFootprintBytes(n));
 
         if (a.dtype() == DType.F32 && dtype == DType.Q8_0) {
-            tech.kayys.alkhawarizm.backend.cpu.ops.QuantizeOps.quantizeQ8_0(seg(a), outBuf.segment(), n);
+            tech.kayys.aljabr.backend.cpu.ops.QuantizeOps.quantizeQ8_0(seg(a), outBuf.segment(), n);
         } else if (a.dtype() == DType.F32 && dtype == DType.Q4_0) {
-            tech.kayys.alkhawarizm.backend.cpu.ops.QuantizeOps.quantizeQ4_0(seg(a), outBuf.segment(), n);
+            tech.kayys.aljabr.backend.cpu.ops.QuantizeOps.quantizeQ4_0(seg(a), outBuf.segment(), n);
         } else if (a.dtype() == DType.Q8_0 && dtype == DType.F32) {
-            tech.kayys.alkhawarizm.backend.cpu.ops.DequantizeOps.dequantizeQ8_0(seg(a), outBuf.segment(), n);
+            tech.kayys.aljabr.backend.cpu.ops.DequantizeOps.dequantizeQ8_0(seg(a), outBuf.segment(), n);
         } else if (a.dtype() == DType.Q4_0 && dtype == DType.F32) {
-            tech.kayys.alkhawarizm.backend.cpu.ops.DequantizeOps.dequantizeQ4_0(seg(a), outBuf.segment(), n);
+            tech.kayys.aljabr.backend.cpu.ops.DequantizeOps.dequantizeQ4_0(seg(a), outBuf.segment(), n);
         } else {
             throw new UnsupportedOperationException("cast from " + a.dtype() + " to " + dtype + " not supported yet");
         }
@@ -4895,12 +4895,12 @@ public final class CpuBackend implements ComputeBackend {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/FlashAttentionCpu.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/FlashAttentionCpu.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu;
+package tech.kayys.aljabr.backend.cpu;
 
-import tech.kayys.alkhawarizm.core.tensor.*;
-import tech.kayys.alkhawarizm.core.memory.*;
+import tech.kayys.aljabr.core.tensor.*;
+import tech.kayys.aljabr.core.memory.*;
 import java.lang.foreign.*;
 import java.nio.ByteOrder;
 import java.util.concurrent.*;
@@ -5080,9 +5080,9 @@ public final class FlashAttentionCpu {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/FlashAttentionKernel.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/FlashAttentionKernel.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu;
+package tech.kayys.aljabr.backend.cpu;
 
 import java.lang.foreign.*;
 import java.nio.ByteOrder;
@@ -5165,9 +5165,9 @@ public final class FlashAttentionKernel {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/FlashAttentionV2.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/FlashAttentionV2.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu;
+package tech.kayys.aljabr.backend.cpu;
 
 import java.lang.foreign.*;
 import java.nio.ByteOrder;
@@ -5313,12 +5313,12 @@ public final class FlashAttentionV2 {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/FusedTransformerLayer.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/FusedTransformerLayer.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu;
+package tech.kayys.aljabr.backend.cpu;
 
-import tech.kayys.alkhawarizm.core.tensor.*;
-import tech.kayys.alkhawarizm.core.memory.*;
+import tech.kayys.aljabr.core.tensor.*;
+import tech.kayys.aljabr.core.memory.*;
 import java.lang.foreign.*;
 import java.nio.ByteOrder;
 import jdk.incubator.vector.*;
@@ -5469,9 +5469,9 @@ public final class FusedTransformerLayer {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/ops/CpuOps.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/ops/CpuOps.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.ops;
+package tech.kayys.aljabr.backend.cpu.ops;
 
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
@@ -5741,9 +5741,9 @@ public final class CpuOps {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/ops/DequantizeOps.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/ops/DequantizeOps.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.ops;
+package tech.kayys.aljabr.backend.cpu.ops;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
@@ -5930,9 +5930,9 @@ public final class DequantizeOps {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/ops/MatmulCpu.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/ops/MatmulCpu.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.ops;
+package tech.kayys.aljabr.backend.cpu.ops;
 
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
@@ -6017,9 +6017,9 @@ public final class MatmulCpu {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/ops/NormOps.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/ops/NormOps.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.ops;
+package tech.kayys.aljabr.backend.cpu.ops;
 
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
@@ -6083,9 +6083,9 @@ public final class NormOps {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/ops/QuantizeOps.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/ops/QuantizeOps.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.ops;
+package tech.kayys.aljabr.backend.cpu.ops;
 
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
@@ -6247,9 +6247,9 @@ public final class QuantizeOps {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/quantize/DequantizeOps.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/quantize/DequantizeOps.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.quantize;
+package tech.kayys.aljabr.backend.cpu.quantize;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -6325,9 +6325,9 @@ public final class DequantizeOps {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/main/java/tech/kayys/alkhawarizm/backend/cpu/quantize/QuantizeOps.java
+FILE: backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/backend/cpu/quantize/QuantizeOps.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.quantize;
+package tech.kayys.aljabr.backend.cpu.quantize;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -6414,14 +6414,14 @@ public final class QuantizeOps {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/test/java/tech/kayys/alkhawarizm/backend/cpu/CpuPhase34Test.java
+FILE: backend/cpu/aljabr-backend-cpu/src/test/java/tech/kayys/aljabr/backend/cpu/CpuPhase34Test.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu;
+package tech.kayys.aljabr.backend.cpu;
 
 import org.junit.jupiter.api.Test;
-import tech.kayys.alkhawarizm.core.memory.OffHeapBufferPool;
-import tech.kayys.alkhawarizm.backend.cpu.quantize.QuantizeOps;
-import tech.kayys.alkhawarizm.backend.cpu.quantize.DequantizeOps;
+import tech.kayys.aljabr.core.memory.OffHeapBufferPool;
+import tech.kayys.aljabr.backend.cpu.quantize.QuantizeOps;
+import tech.kayys.aljabr.backend.cpu.quantize.DequantizeOps;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -6482,12 +6482,12 @@ class CpuPhase34Test {
 
 
 ================================================
-FILE: backend/cpu/alkhawarizm-backend-cpu/src/test/java/tech/kayys/alkhawarizm/backend/cpu/ops/DequantizeOpsTest.java
+FILE: backend/cpu/aljabr-backend-cpu/src/test/java/tech/kayys/aljabr/backend/cpu/ops/DequantizeOpsTest.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cpu.ops;
+package tech.kayys.aljabr.backend.cpu.ops;
 
 import org.junit.jupiter.api.Test;
-import tech.kayys.alkhawarizm.core.tensor.DType;
+import tech.kayys.aljabr.core.tensor.DType;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -6603,32 +6603,32 @@ class DequantizeOpsTest {
 
 
 ================================================
-FILE: backend/cuda/alkhawarizm-backend-cuda/build.gradle.kts
+FILE: backend/cuda/aljabr-backend-cuda/build.gradle.kts
 ================================================
 plugins {
     java
 }
 
 dependencies {
-    implementation(project(":core:alkhawarizm-tensor"))
-    implementation(project(":backend:cpu:alkhawarizm-backend-cpu"))
-    implementation(project(":backend:cuda:alkhawarizm-kernel-cuda"))
+    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":backend:cpu:aljabr-backend-cpu"))
+    implementation(project(":backend:cuda:aljabr-kernel-cuda"))
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")
 }
 
 
 
 ================================================
-FILE: backend/cuda/alkhawarizm-backend-cuda/src/main/java/tech/kayys/alkhawarizm/backend/cuda/CUDABackend.java
+FILE: backend/cuda/aljabr-backend-cuda/src/main/java/tech/kayys/aljabr/backend/cuda/CUDABackend.java
 ================================================
-package tech.kayys.alkhawarizm.backend.cuda;
+package tech.kayys.aljabr.backend.cuda;
 
 import org.jboss.logging.Logger;
-import tech.kayys.alkhawarizm.cuda.binding.CudaBinding;
-import tech.kayys.alkhawarizm.core.backend.ComputeBackend;
-import tech.kayys.alkhawarizm.core.tensor.*;
-import tech.kayys.alkhawarizm.core.memory.CpuBuffer;
-import tech.kayys.alkhawarizm.backend.cpu.CpuBackend;
+import tech.kayys.aljabr.cuda.binding.CudaBinding;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.tensor.*;
+import tech.kayys.aljabr.core.memory.CpuBuffer;
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 
 import java.lang.foreign.MemorySegment;
 import java.util.List;
@@ -6639,7 +6639,7 @@ import java.util.List;
 public class CUDABackend implements ComputeBackend {
 
     private static final Logger LOG = Logger.getLogger(CUDABackend.class);
-    private static final String FORCE_CPU_PROPERTY = "alkhawarizm.kernel.force.cpu";
+    private static final String FORCE_CPU_PROPERTY = "aljabr.kernel.force.cpu";
 
     private final CudaBinding cudaBinding;
     private final CpuBackend cpuFallback;
@@ -6865,12 +6865,12 @@ public class CUDABackend implements ComputeBackend {
     }
 
     @Override
-    public Tensor cast(Tensor a, tech.kayys.alkhawarizm.core.tensor.DType dtype) {
+    public Tensor cast(Tensor a, tech.kayys.aljabr.core.tensor.DType dtype) {
         return cpuFallback.cast(a, dtype);
     }
 
     @Override
-    public Tensor to(Tensor a, tech.kayys.alkhawarizm.core.tensor.DeviceType device) {
+    public Tensor to(Tensor a, tech.kayys.aljabr.core.tensor.DeviceType device) {
         if (device == DeviceType.CUDA || device == DeviceType.CPU) {
             return a;
         }
@@ -7133,11 +7133,11 @@ public class CUDABackend implements ComputeBackend {
 
 
 ================================================
-FILE: backend/cuda/alkhawarizm-kernel-cuda/README.md
+FILE: backend/cuda/aljabr-kernel-cuda/README.md
 ================================================
-# Alkhawarizm CUDA Kernel
+# Aljabr CUDA Kernel
 
-NVIDIA CUDA GPU acceleration kernel for Alkhawarizm inference engine.
+NVIDIA CUDA GPU acceleration kernel for Aljabr inference engine.
 
 ## Features
 
@@ -7145,7 +7145,7 @@ NVIDIA CUDA GPU acceleration kernel for Alkhawarizm inference engine.
 - **Unified Memory Support**: Zero-copy on A100/H100 with managed memory
 - **FP8/FP4 Acceleration**: Tensor core optimization on H100+ and Blackwell
 - **Paged KV Cache**: Efficient memory management for long contexts
-- **Multi-GPU Ready**: Device selection via `alkhawarizm.runners.cuda.device-id`
+- **Multi-GPU Ready**: Device selection via `aljabr.runners.cuda.device-id`
 - **Optimization Integration**: Automatic kernel selection via `CudaOptimizationManager`
 
 ## Supported GPUs
@@ -7164,29 +7164,29 @@ NVIDIA CUDA GPU acceleration kernel for Alkhawarizm inference engine.
 
 ```properties
 # Enable CUDA runner
-alkhawarizm.runners.cuda.enabled=true
+aljabr.runners.cuda.enabled=true
 
 # Runner mode: auto|standard|offload|force|disabled
-alkhawarizm.runners.cuda.mode=auto
+aljabr.runners.cuda.mode=auto
 
 # CUDA library path
-alkhawarizm.runners.cuda.library-path=/usr/local/cuda/lib64/libalkhawarizm_cuda.so
+aljabr.runners.cuda.library-path=/usr/local/cuda/lib64/libaljabr_cuda.so
 
 # Device ID (0-based)
-alkhawarizm.runners.cuda.device-id=0
+aljabr.runners.cuda.device-id=0
 
 # Model dimensions (override from manifest)
-alkhawarizm.runners.cuda.num-layers=32
-alkhawarizm.runners.cuda.num-heads=32
-alkhawarizm.runners.cuda.num-heads-kv=8
-alkhawarizm.runners.cuda.head-dim=128
-alkhawarizm.runners.cuda.model-dim=4096
-alkhawarizm.runners.cuda.ffn-dim=14336
-alkhawarizm.runners.cuda.vocab-size=32000
+aljabr.runners.cuda.num-layers=32
+aljabr.runners.cuda.num-heads=32
+aljabr.runners.cuda.num-heads-kv=8
+aljabr.runners.cuda.head-dim=128
+aljabr.runners.cuda.model-dim=4096
+aljabr.runners.cuda.ffn-dim=14336
+aljabr.runners.cuda.vocab-size=32000
 
 # Optimization settings (auto-detected)
-alkhawarizm.runners.cuda.use-fp8=true   # Auto-enabled on H100+
-alkhawarizm.runners.cuda.use-fp4=true   # Auto-enabled on B100/B200
+aljabr.runners.cuda.use-fp8=true   # Auto-enabled on H100+
+aljabr.runners.cuda.use-fp4=true   # Auto-enabled on B100/B200
 ```
 
 ## Building CUDA Kernels
@@ -7209,7 +7209,7 @@ make -C src/main/cpp/cuda CUDA_ARCH=sm_100 USE_FP4=1
 make -C src/main/cpp/cuda CUDA_ARCHS="sm_80 sm_90 sm_100"
 
 # Output location
-target/native/linux-x86_64/libalkhawarizm_cuda.so
+target/native/linux-x86_64/libaljabr_cuda.so
 ```
 
 ## Testing
@@ -7264,7 +7264,7 @@ mvn test
 ┌─────────────────────────────────────────────────────────┐
 │                   CudaBinding (FFM)                     │
 ├─────────────────────────────────────────────────────────┤
-│  libalkhawarizm_cuda.so → CUDA Driver API → GPU             │
+│  libaljabr_cuda.so → CUDA Driver API → GPU             │
 │  - cuInit, cuDeviceGet (device management)              │
 │  - cuMemAllocManaged (unified memory)                   │
 │  - cuBLAS/cuBLASLt (matrix multiplication)              │
@@ -7277,8 +7277,8 @@ mvn test
 The CUDA kernel integrates with `CudaOptimizationManager` for automatic kernel selection:
 
 ```java
-import tech.kayys.alkhawarizm.cuda.runner.CudaRunner;
-import tech.kayys.alkhawarizm.cuda.optimization.CudaOptimizationManager;
+import tech.kayys.aljabr.cuda.runner.CudaRunner;
+import tech.kayys.aljabr.cuda.optimization.CudaOptimizationManager;
 
 // Create runner
 CudaRunner runner = new CudaRunner();
@@ -7345,13 +7345,13 @@ echo $CUDA_VISIBLE_DEVICES  # Should show device IDs
 
 ```bash
 # Reduce batch size
-alkhawarizm.runners.cuda.max-batch-size=1
+aljabr.runners.cuda.max-batch-size=1
 
 # Enable unified memory (A100/H100 only)
-alkhawarizm.runners.cuda.use-unified-memory=true
+aljabr.runners.cuda.use-unified-memory=true
 
 # Use weight offloading
-alkhawarizm.runners.cuda.mode=offload
+aljabr.runners.cuda.mode=offload
 
 # Monitor GPU memory
 watch -n 1 nvidia-smi
@@ -7385,14 +7385,14 @@ Apache 2.0
 
 
 ================================================
-FILE: backend/cuda/alkhawarizm-kernel-cuda/build.gradle.kts
+FILE: backend/cuda/aljabr-kernel-cuda/build.gradle.kts
 ================================================
 plugins {
     `java-library`
     `maven-publish`
 }
 
-group = "tech.kayys.alkhawarizm"
+group = "tech.kayys.aljabr"
 version = "0.1.0-SNAPSHOT"
 
 java {
@@ -7410,27 +7410,27 @@ sourceSets {
     named("main") {
         java {
             setSrcDirs(listOf("src/main/java"))
-            include("tech/kayys/alkhawarizm/cuda/binding/CudaBinding.java")
-            include("tech/kayys/alkhawarizm/cuda/binding/CudaCpuFallback.java")
-            include("tech/kayys/alkhawarizm/cuda/detection/CudaDetector.java")
-            include("tech/kayys/alkhawarizm/cuda/detection/CudaCapabilities.java")
-            include("tech/kayys/alkhawarizm/cuda/gpu/GPUMemoryPool.java")
-            include("tech/kayys/alkhawarizm/cuda/gpu/GPUAccelerator.java")
-            include("tech/kayys/alkhawarizm/cuda/gpu/CUDAStreamManager.java")
-            include("tech/kayys/alkhawarizm/cuda/config/CudaRunnerMode.java")
+            include("tech/kayys/aljabr/cuda/binding/CudaBinding.java")
+            include("tech/kayys/aljabr/cuda/binding/CudaCpuFallback.java")
+            include("tech/kayys/aljabr/cuda/detection/CudaDetector.java")
+            include("tech/kayys/aljabr/cuda/detection/CudaCapabilities.java")
+            include("tech/kayys/aljabr/cuda/gpu/GPUMemoryPool.java")
+            include("tech/kayys/aljabr/cuda/gpu/GPUAccelerator.java")
+            include("tech/kayys/aljabr/cuda/gpu/CUDAStreamManager.java")
+            include("tech/kayys/aljabr/cuda/config/CudaRunnerMode.java")
         }
     }
 }
 
 dependencies {
-    //implementation(project(":spi:alkhawarizm-spi-provider"))
+    //implementation(project(":spi:aljabr-spi-provider"))
 
-    //implementation(project(":core:plugin:alkhawarizm-plugin-runner-core"))
-   // implementation(group = "tech.kayys.alkhawarizm", name = "alkhawarizm-engine")
-   // implementation(project(":optimization:alkhawarizm-plugin-kv-cache"))
-    implementation(project(":core:alkhawarizm-tensor"))
-   /*  implementation(project(":optimization:alkhawarizm-plugin-fa4"))
-    implementation(project(":optimization:alkhawarizm-plugin-fa3")) */
+    //implementation(project(":core:plugin:aljabr-plugin-runner-core"))
+   // implementation(group = "tech.kayys.aljabr", name = "aljabr-engine")
+   // implementation(project(":optimization:aljabr-plugin-kv-cache"))
+    implementation(project(":core:aljabr-tensor"))
+   /*  implementation(project(":optimization:aljabr-plugin-fa4"))
+    implementation(project(":optimization:aljabr-plugin-fa3")) */
     implementation(group = "io.quarkus", name = "quarkus-arc")
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
     testImplementation(group = "org.assertj", name = "assertj-core")
@@ -7454,9 +7454,9 @@ tasks.withType<Test>().configureEach {
 
 
 ================================================
-FILE: backend/cuda/alkhawarizm-kernel-cuda/src/main/java/tech/kayys/alkhawarizm/cuda/binding/CudaBinding.java
+FILE: backend/cuda/aljabr-kernel-cuda/src/main/java/tech/kayys/aljabr/cuda/binding/CudaBinding.java
 ================================================
-package tech.kayys.alkhawarizm.cuda.binding;
+package tech.kayys.aljabr.cuda.binding;
 
 import org.jboss.logging.Logger;
 
@@ -7490,11 +7490,11 @@ public class CudaBinding {
     private static final String FN_CUBLAS_SGEMM = "cublasSgemm_v2";
 
     // Custom Kernels
-    private static final String FN_SILU = "alkhawarizm_cuda_silu";
-    private static final String FN_GELU = "alkhawarizm_cuda_gelu";
-    private static final String FN_LAYERNORM = "alkhawarizm_cuda_layernorm";
-    private static final String FN_LAYERNORM_ROWS = "alkhawarizm_cuda_layernorm_rows";
-    private static final String FN_SOFTMAX = "alkhawarizm_cuda_softmax";
+    private static final String FN_SILU = "aljabr_cuda_silu";
+    private static final String FN_GELU = "aljabr_cuda_gelu";
+    private static final String FN_LAYERNORM = "aljabr_cuda_layernorm";
+    private static final String FN_LAYERNORM_ROWS = "aljabr_cuda_layernorm_rows";
+    private static final String FN_SOFTMAX = "aljabr_cuda_softmax";
 
     // cudaMemcpyKind
     public static final int cudaMemcpyHostToHost = 0;
@@ -7533,10 +7533,10 @@ public class CudaBinding {
 
             SymbolLookup custom = null;
             try {
-                System.loadLibrary("alkhawarizm_cuda");
+                System.loadLibrary("aljabr_cuda");
                 custom = SymbolLookup.loaderLookup();
             } catch (Throwable e) {
-                LOG.warn("CudaBinding: Custom libalkhawarizm_cuda.so not found, custom kernels disabled.");
+                LOG.warn("CudaBinding: Custom libaljabr_cuda.so not found, custom kernels disabled.");
             }
 
             SymbolLookup lk = SymbolLookup.loaderLookup();
@@ -7781,9 +7781,9 @@ public class CudaBinding {
 
 
 ================================================
-FILE: backend/cuda/alkhawarizm-kernel-cuda/src/main/java/tech/kayys/alkhawarizm/cuda/binding/CudaCpuFallback.java
+FILE: backend/cuda/aljabr-kernel-cuda/src/main/java/tech/kayys/aljabr/cuda/binding/CudaCpuFallback.java
 ================================================
-package tech.kayys.alkhawarizm.cuda.binding;
+package tech.kayys.aljabr.cuda.binding;
 
 import org.jboss.logging.Logger;
 

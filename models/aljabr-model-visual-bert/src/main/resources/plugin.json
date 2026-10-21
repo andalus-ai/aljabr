@@ -1,0 +1,16 @@
+{
+  "id": "model-family/visual_bert",
+  "name": "VisualBERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "VisualBERT metadata and WordPiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.visualbert.VisualBertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "wordpiece",
+    "families": ["visual_bert", "visual-bert"]
+  }
+}

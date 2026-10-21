@@ -1,0 +1,16 @@
+{
+  "id": "model-family/mixtral",
+  "name": "Mixtral Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Mixtral sparse-MoE model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.mixtral.MixtralModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["sentencepiece", "hf-bpe"],
+    "families": ["mixtral"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/clap",
+  "name": "CLAP Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "CLAP model-family metadata and audio-text processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.clap.ClapModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "audio-processor",
+    "families": ["clap", "clap_text_model", "clap_audio_model"]
+  }
+}

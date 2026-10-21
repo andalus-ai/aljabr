@@ -1,0 +1,16 @@
+{
+  "id": "model-family/video_llama_3",
+  "name": "Video-LLaMA 3 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Video-LLaMA 3 model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.videollama3.VideoLlama3ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "vision-text-processor"],
+    "families": ["video_llama_3"]
+  }
+}

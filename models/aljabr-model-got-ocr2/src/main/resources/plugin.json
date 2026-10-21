@@ -1,0 +1,16 @@
+{
+  "id": "model-family/got_ocr2",
+  "name": "GOT-OCR2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "GOT-OCR2 OCR VLM metadata with image processor and Qwen tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.gotocr2.GotOcr2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["got_ocr2", "got-ocr2"]
+  }
+}

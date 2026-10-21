@@ -1,0 +1,16 @@
+{
+  "id": "model-family/metaclip_2",
+  "name": "MetaCLIP 2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "MetaCLIP 2 vision-text metadata with CLIP tokenizer and image processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.metaclip2.MetaClip2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["metaclip_2", "metaclip_2_text_model", "metaclip_2_vision_model"]
+  }
+}

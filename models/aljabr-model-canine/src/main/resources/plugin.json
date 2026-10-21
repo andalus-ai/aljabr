@@ -1,0 +1,16 @@
+{
+  "id": "model-family/canine",
+  "name": "CANINE Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "CANINE character-level encoder metadata with Unicode codepoint tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.canine.CanineModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "char",
+    "families": ["canine"]
+  }
+}

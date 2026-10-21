@@ -1,0 +1,16 @@
+{
+  "id": "model-family/blip_2",
+  "name": "BLIP-2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "BLIP-2 multimodal metadata and processor-backed tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.blip2.Blip2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["wordpiece", "hf-bpe"],
+    "families": ["blip_2", "blip-2", "blip2"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/detr",
+  "name": "DETR Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "DETR-style object detection vision metadata",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.detr.DetrModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["detr", "conditional_detr", "deformable_detr", "rt_detr"]
+  }
+}

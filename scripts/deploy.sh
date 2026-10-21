@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Alkhawarizm Deployment Utility
+# Aljabr Deployment Utility
 # Facilitates multi-module project versioning, git tagging, and artifact deployment.
 
 set -e
@@ -66,7 +66,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
     echo -e "${BLUE}--------------------------------------------------${NC}"
-    echo -e "${GREEN} Alkhawarizm Deployment Utility ${NC}"
+    echo -e "${GREEN} Aljabr Deployment Utility ${NC}"
     echo -e "${BLUE}--------------------------------------------------${NC}"
     echo ""
     echo "Usage: $0 [options]"
@@ -128,11 +128,11 @@ REMOTE_ORIGIN_CANONICAL="$(canonicalize_github_remote "$(git config --get remote
 if [[ -n "$REMOTE_ORIGIN_CANONICAL" ]]; then
     GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-$(resolve_github_repository)}"
 fi
-GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-bhangun/alkhawarizm}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-bhangun/aljabr}"
 export GITHUB_REPOSITORY
 
 echo -e "${BLUE}--------------------------------------------------${NC}"
-echo -e "${GREEN} Alkhawarizm Deployment Utility ${NC}"
+echo -e "${GREEN} Aljabr Deployment Utility ${NC}"
 echo -e "${BLUE}--------------------------------------------------${NC}"
 echo ""
 
@@ -158,9 +158,9 @@ if [ -n "$NEW_VERSION" ]; then
     # Update version in build.gradle.kts
     echo -e "${BLUE}>>> Updating Gradle configurations...${NC}"
     if [ "$DRY_RUN" = true ]; then
-        echo -e "${YELLOW}[DRY-RUN]${NC} sed -i.bak -e \"s/extra\\[\\\"alkhawarizmVersion\\\"\\] = \\\".*\\\"/extra\\[\\\"alkhawarizmVersion\\\"\\] = \\\"$NEW_VERSION\\\"/\" build.gradle.kts"
+        echo -e "${YELLOW}[DRY-RUN]${NC} sed -i.bak -e \"s/extra\\[\\\"aljabrVersion\\\"\\] = \\\".*\\\"/extra\\[\\\"aljabrVersion\\\"\\] = \\\"$NEW_VERSION\\\"/\" build.gradle.kts"
     else
-        sed -i.bak -e "s/extra\[\"alkhawarizmVersion\"\] = \".*\"/extra\[\"alkhawarizmVersion\"\] = \"$NEW_VERSION\"/" build.gradle.kts
+        sed -i.bak -e "s/extra\[\"aljabrVersion\"\] = \".*\"/extra\[\"aljabrVersion\"\] = \"$NEW_VERSION\"/" build.gradle.kts
         rm -f build.gradle.kts.bak
     fi
     

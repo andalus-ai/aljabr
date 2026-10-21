@@ -1,0 +1,16 @@
+{
+  "id": "model-family/colmodernvbert",
+  "name": "ColModernVBert Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "ColModernVBert multimodal retrieval metadata with processor and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.colmodernvbert.ColModernVBertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["colmodernvbert"]
+  }
+}

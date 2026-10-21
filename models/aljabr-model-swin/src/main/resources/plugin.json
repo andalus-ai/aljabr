@@ -1,0 +1,16 @@
+{
+  "id": "model-family/swin",
+  "name": "Swin Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Swin/SwinV2 vision encoder metadata",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.swin.SwinModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["swin", "swinv2", "swin_v2"]
+  }
+}

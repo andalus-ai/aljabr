@@ -1,0 +1,16 @@
+{
+  "id": "model-family/exaone",
+  "name": "EXAONE Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "EXAONE and EXAONE MoE causal LM metadata and Hugging Face BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.exaone.ExaoneModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["exaone4", "exaone_moe", "exaone-moe"]
+  }
+}

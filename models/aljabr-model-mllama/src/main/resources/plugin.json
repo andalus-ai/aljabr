@@ -1,0 +1,16 @@
+{
+  "id": "model-family/mllama",
+  "name": "MLLama Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Meta MLLama vision-language metadata and processor-backed tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.mllama.MllamaModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "vision-text-processor"],
+    "families": ["mllama", "mllama_text_model", "mllama_vision_model"]
+  }
+}

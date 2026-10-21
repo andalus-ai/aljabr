@@ -29,18 +29,18 @@ quarkus-app/
 
 # Source modules whose names overlap with generated native runner artifacts
 # or broad local excludes.
-!/core/alkhawarizm-model-runner/
-!/core/alkhawarizm-model-runner/**
+!/core/aljabr-model-runner/
+!/core/aljabr-model-runner/**
 !/runtime/
-!/runtime/alkhawarizm-runtime/
-!/runtime/alkhawarizm-runtime/build.gradle.kts
-!/runtime/alkhawarizm-runtime-distributed/
-!/runtime/alkhawarizm-runtime-distributed/build.gradle.kts
-/core/alkhawarizm-model-runner/build/
-/runtime/alkhawarizm-runtime/build/
-/runtime/alkhawarizm-runtime-distributed/build/
-/runtime/alkhawarizm-runtime/src/
-/runtime/alkhawarizm-runtime-distributed/src/
+!/runtime/aljabr-runtime/
+!/runtime/aljabr-runtime/build.gradle.kts
+!/runtime/aljabr-runtime-distributed/
+!/runtime/aljabr-runtime-distributed/build.gradle.kts
+/core/aljabr-model-runner/build/
+/runtime/aljabr-runtime/build/
+/runtime/aljabr-runtime-distributed/build/
+/runtime/aljabr-runtime/src/
+/runtime/aljabr-runtime-distributed/src/
 
 # Native Image specific build files
 **/*.graal.log
@@ -130,9 +130,9 @@ out/
 **/libggml*.a
 
 # Standard native library location (user-specific, not tracked)
-~/.alkhawarizm/libs/
-.alkhawarizm/libs/
-**/.alkhawarizm/libs/
+~/.aljabr/libs/
+.aljabr/libs/
+**/.aljabr/libs/
 
 # CUDA / GPU libraries
 **/*.cu
@@ -154,7 +154,7 @@ out/
 **/cmake-build-*/
 **/CMakeCache.txt
 **/Makefile
-!backend/metal/alkhawarizm-backend-metal/src/main/cpp/metal/Makefile
+!backend/metal/aljabr-backend-metal/src/main/cpp/metal/Makefile
 
 # Build logs and configuration
 **/CMakeConfigureLog.yaml

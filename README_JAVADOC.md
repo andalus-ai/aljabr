@@ -1,4 +1,4 @@
-# Alkhawarizm Core Modules - JavaDoc & GitHub Publishing Update
+# Aljabr Core Modules - JavaDoc & GitHub Publishing Update
 
 ## ✅ Task Complete - All 445 Java Files Updated
 
@@ -68,7 +68,7 @@
 ```kotlin
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/alkhawarizm")
+        url = uri("https://maven.pkg.github.com/aljabr")
         credentials {
             username = System.getenv("GITHUB_ACTOR")
             password = System.getenv("GITHUB_TOKEN")
@@ -77,7 +77,7 @@ repositories {
 }
 
 dependencies {
-    implementation("tech.kayys.alkhawarizm:alkhawarizm-error-code:0.1.0-SNAPSHOT")
+    implementation("tech.kayys.aljabr:aljabr-error-code:0.1.0-SNAPSHOT")
 }
 ```
 
@@ -85,12 +85,12 @@ dependencies {
 ```xml
 <repository>
     <id>github</id>
-    <url>https://maven.pkg.github.com/alkhawarizm</url>
+    <url>https://maven.pkg.github.com/aljabr</url>
 </repository>
 
 <dependency>
-    <groupId>tech.kayys.alkhawarizm</groupId>
-    <artifactId>alkhawarizm-error-code</artifactId>
+    <groupId>tech.kayys.aljabr</groupId>
+    <artifactId>aljabr-error-code</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
@@ -103,23 +103,23 @@ All 17 core modules now have comprehensive JavaDoc:
 
 | Module | Status | Purpose |
 |--------|--------|---------|
-| alkhawarizm-3d | ✅ | 3D graphics and mesh processing |
-| alkhawarizm-core | ✅ | Core framework |
-| alkhawarizm-error-code | ✅ | Error handling and codes |
-| alkhawarizm-gguf-bridge | ✅ | GGUF model bridging |
-| alkhawarizm-gguf-converter | ✅ | GGUF format conversion |
-| alkhawarizm-gguf-converter-java | ✅ | Java GGUF utilities |
-| alkhawarizm-gguf-core | ✅ | Core GGUF handling |
-| alkhawarizm-gguf-fast-bridge | ✅ | Fast GGUF bridging |
-| alkhawarizm-helixdb | ✅ | HelixDB integration |
-| alkhawarizm-nn | ✅ | Neural network components |
-| alkhawarizm-rocksdb | ✅ | RocksDB integration |
-| alkhawarizm-safetensor-api | ✅ | SafeTensor API |
-| alkhawarizm-safetensor-core | ✅ | SafeTensor core |
-| alkhawarizm-safetensor-loader | ✅ | SafeTensor loading |
-| alkhawarizm-safetensor-quantization | ✅ | SafeTensor quantization |
-| alkhawarizm-safetensor-spi | ✅ | SafeTensor SPI |
-| alkhawarizm-tensor | ✅ | Tensor operations |
+| aljabr-3d | ✅ | 3D graphics and mesh processing |
+| aljabr-core | ✅ | Core framework |
+| aljabr-error-code | ✅ | Error handling and codes |
+| aljabr-gguf-bridge | ✅ | GGUF model bridging |
+| aljabr-gguf-converter | ✅ | GGUF format conversion |
+| aljabr-gguf-converter-java | ✅ | Java GGUF utilities |
+| aljabr-gguf-core | ✅ | Core GGUF handling |
+| aljabr-gguf-fast-bridge | ✅ | Fast GGUF bridging |
+| aljabr-helixdb | ✅ | HelixDB integration |
+| aljabr-nn | ✅ | Neural network components |
+| aljabr-rocksdb | ✅ | RocksDB integration |
+| aljabr-safetensor-api | ✅ | SafeTensor API |
+| aljabr-safetensor-core | ✅ | SafeTensor core |
+| aljabr-safetensor-loader | ✅ | SafeTensor loading |
+| aljabr-safetensor-quantization | ✅ | SafeTensor quantization |
+| aljabr-safetensor-spi | ✅ | SafeTensor SPI |
+| aljabr-tensor | ✅ | Tensor operations |
 
 ---
 
@@ -146,7 +146,7 @@ Documentation Errors:            0
 - `GITHUB_TOKEN` - GitHub personal access token (auto-available in GitHub Actions)
 
 ### Registry Details
-- **Registry URL:** `https://maven.pkg.github.com/alkhawarizm`
+- **Registry URL:** `https://maven.pkg.github.com/aljabr`
 - **Artifacts Generated:**
   - Main JAR (compiled classes)
   - Sources JAR (source code)
@@ -154,9 +154,9 @@ Documentation Errors:            0
 
 ### POM Metadata
 - ✅ Project name (dynamic)
-- ✅ Description: "Alkhawarizm ML Framework Module"
+- ✅ Description: "Aljabr ML Framework Module"
 - ✅ License: Apache License 2.0
-- ✅ Repository: GitHub (alkhawarizm)
+- ✅ Repository: GitHub (aljabr)
 - ✅ Developers: Wayang Platform
 - ✅ SCM: Git connection details
 
@@ -197,7 +197,7 @@ tasks.withType<Javadoc> {
 ### Error Code Registry
 ```java
 /**
- * Central registry for all Alkhawarizm error codes.
+ * Central registry for all Aljabr error codes.
  *
  * <p>
  * Pattern: CATEGORY_NNN (example: MODEL_001)

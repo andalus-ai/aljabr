@@ -1,0 +1,16 @@
+{
+  "id": "model-family/bartpho",
+  "name": "BARTpho Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "BARTpho Vietnamese BART-family tokenizer metadata and SentencePiece routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.bartpho.BartphoModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["bartpho"]
+  }
+}

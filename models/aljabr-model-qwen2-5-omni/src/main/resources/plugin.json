@@ -1,0 +1,16 @@
+{
+  "id": "model-family/qwen2_5_omni",
+  "name": "Qwen2.5-Omni Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Qwen2.5-Omni model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.qwen25omni.Qwen25OmniModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "vision-text-processor", "audio-processor"],
+    "families": ["qwen2_5_omni", "qwen2_5_omni_text", "qwen2_5_omni_thinker", "qwen2_5_omni_talker"]
+  }
+}

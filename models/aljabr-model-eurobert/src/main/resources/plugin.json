@@ -1,0 +1,16 @@
+{
+  "id": "model-family/eurobert",
+  "name": "EuroBERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "EuroBERT model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.eurobert.EuroBertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["tokenizer-json", "hf-bpe"],
+    "families": ["eurobert"]
+  }
+}

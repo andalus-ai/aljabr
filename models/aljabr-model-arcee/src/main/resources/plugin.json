@@ -1,0 +1,16 @@
+{
+  "id": "model-family/arcee",
+  "name": "Arcee Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Arcee model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.arcee.ArceeModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["sentencepiece", "hf-bpe"],
+    "families": ["arcee"]
+  }
+}

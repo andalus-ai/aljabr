@@ -1,0 +1,16 @@
+{
+  "id": "model-family/altclip",
+  "name": "AltCLIP Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "AltCLIP multimodal metadata with XLM-R style tokenizer and CLIP image processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.altclip.AltClipModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["altclip", "altclip_text_model", "altclip_vision_model"]
+  }
+}

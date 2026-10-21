@@ -1,0 +1,16 @@
+{
+  "id": "model-family/openai_gpt",
+  "name": "OpenAI GPT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Original OpenAI GPT decoder metadata and BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.openaigpt.OpenAIGPTModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["openai_gpt", "openai-gpt"]
+  }
+}

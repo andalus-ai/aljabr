@@ -1,0 +1,16 @@
+{
+  "id": "model-family/fsmt",
+  "name": "FSMT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "FairSeq machine translation metadata and Moses BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.fsmt.FsmtModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "moses-bpe",
+    "families": ["fsmt"]
+  }
+}

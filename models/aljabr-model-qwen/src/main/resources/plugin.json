@@ -1,0 +1,20 @@
+{
+  "id": "model-family/qwen",
+  "name": "Alibaba Qwen Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Qwen 2, Qwen 2.5 and dense Qwen 3 model-family adapters",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.QwenModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "core",
+    "families": [
+      "qwen2",
+      "qwen2.5",
+      "qwen3"
+    ],
+    "tokenizerKind": "hf-bpe"
+  }
+}

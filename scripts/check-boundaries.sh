@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# check-boundaries.sh — Alkhawarizm Architectural Boundary Enforcement
+# check-boundaries.sh — Aljabr Architectural Boundary Enforcement
 # =============================================================================
-# Runs four static-analysis checks against the Alkhawarizm source tree to
+# Runs four static-analysis checks against the Aljabr source tree to
 # enforce module-level architectural boundaries.  Each check emits ✅ / ❌.
 # All hard failures are collected; the script exits non-zero only at the very
 # end so every check is always reported.
@@ -17,11 +17,11 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Locate the Alkhawarizm root regardless of where the caller invoked the script
+# Locate the Aljabr root regardless of where the caller invoked the script
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ALKHAWARIZM_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${ALKHAWARIZM_ROOT}"
+ALJABR_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${ALJABR_ROOT}"
 
 # ---------------------------------------------------------------------------
 # Color helpers (tput when available, plain fallback)
@@ -97,8 +97,8 @@ run_warn_check() {
 # =============================================================================
 echo
 echo "${BOLD}=============================================================${RESET}"
-echo "${BOLD}  Alkhawarizm — Architectural Boundary Checks${RESET}"
-echo "${BOLD}  Root: ${ALKHAWARIZM_ROOT}${RESET}"
+echo "${BOLD}  Aljabr — Architectural Boundary Checks${RESET}"
+echo "${BOLD}  Root: ${ALJABR_ROOT}${RESET}"
 echo "${BOLD}=============================================================${RESET}"
 echo
 
@@ -124,7 +124,7 @@ run_check \
 header "Check 2: No core module declares a backend package"
 run_check \
   "Backend package leakage into core source" \
-  grep -rn '^package tech\.kayys\.alkhawarizm\.backend' --include='*.java' core/
+  grep -rn '^package tech\.kayys\.aljabr\.backend' --include='*.java' core/
 
 # =============================================================================
 # Check 3 — No stale / non-existent module references
@@ -133,8 +133,8 @@ run_check \
 # build scripts indicates unresolved copy-paste or incomplete migrations.
 header "Check 3: No stale non-existent module references"
 run_check \
-  "Stale module references (alkhawarizm-spi-provider / alkhawarizm-model-runner / alkhawarizm-engine dependency)" \
-  bash -c 'grep -rn "alkhawarizm-spi-provider\|alkhawarizm-model-runner\|name = \"alkhawarizm-engine\"" --include="*.kts" . | grep -v "rootProject.name" || true'
+  "Stale module references (aljabr-spi-provider / aljabr-model-runner / aljabr-engine dependency)" \
+  bash -c 'grep -rn "aljabr-spi-provider\|aljabr-model-runner\|name = \"aljabr-engine\"" --include="*.kts" . | grep -v "rootProject.name" || true'
 
 # =============================================================================
 # Check 4 (WARN ONLY) — All published modules have explicit group + version
@@ -144,8 +144,8 @@ run_check \
 # because it may legitimately apply to modules that inherit from a root script.
 header "Check 4 (warn only): All published modules declare explicit group + version"
 run_warn_check \
-  "Modules missing 'group = \"tech.kayys.alkhawarizm\"'" \
-  bash -c "grep -rL 'group = \"tech.kayys.alkhawarizm\"' \
+  "Modules missing 'group = \"tech.kayys.aljabr\"'" \
+  bash -c "grep -rL 'group = \"tech.kayys.aljabr\"' \
     core/*/build.gradle.kts backend/*/*/build.gradle.kts 2>/dev/null \
     | grep -v '.gradle-sandbox'"
 

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/fast_vlm",
+  "name": "FastVLM Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "FastVLM model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.fastvlm.FastVlmModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "vision-text-processor"],
+    "families": ["fast_vlm"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/bamba",
+  "name": "Bamba Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Bamba hybrid attention/Mamba model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.bamba.BambaModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["bamba"]
+  }
+}

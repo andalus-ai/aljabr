@@ -1,0 +1,16 @@
+{
+  "id": "model-family/pix2struct",
+  "name": "Pix2Struct Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Pix2Struct model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.pix2struct.Pix2StructModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-text-processor",
+    "families": ["pix2struct", "pix2struct_text_model", "pix2struct_vision_model"]
+  }
+}

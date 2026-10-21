@@ -1,0 +1,16 @@
+{
+  "id": "model-family/olmo_hybrid",
+  "name": "OLMo Hybrid Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "OLMo Hybrid causal LM metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.olmohybrid.OlmoHybridModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["olmo_hybrid", "olmo-hybrid"]
+  }
+}

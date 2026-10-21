@@ -1,0 +1,16 @@
+{
+  "id": "model-family/roc_bert",
+  "name": "RoCBERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "RoCBERT metadata and shape/pronunciation tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.rocbert.RoCBertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["roc_bert", "roc-bert"],
+    "tokenizerKind": "wordpiece"
+  }
+}

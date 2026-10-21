@@ -1,0 +1,19 @@
+{
+  "id": "model-family/llama",
+  "name": "Meta Llama Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Llama and Code Llama model-family adapters",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.llama.LlamaModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "core",
+    "families": [
+      "llama",
+      "llama3"
+    ],
+    "tokenizerKind": "sentencepiece"
+  }
+}

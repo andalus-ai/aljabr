@@ -1,0 +1,16 @@
+{
+  "id": "model-family/qwen2_5_vl",
+  "name": "Qwen2.5-VL Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Qwen2.5-VL model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.qwen25vl.Qwen25VlModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "vision-text-processor"],
+    "families": ["qwen2_5_vl"]
+  }
+}

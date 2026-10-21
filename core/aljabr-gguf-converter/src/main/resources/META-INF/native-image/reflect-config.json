@@ -1,0 +1,10 @@
+[
+    {
+        "name": "tech.kayys.aljabr.converter.GGUFNative",
+        "allDeclaredMethods": true
+    },
+    {
+        "name": "tech.kayys.aljabr.converter.GGUFConverter",
+        "allDeclaredMethods": true
+    }
+]

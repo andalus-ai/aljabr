@@ -1,0 +1,16 @@
+{
+  "id": "model-family/smollm3",
+  "name": "SmolLM3 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "SmolLM3 causal LM metadata and Hugging Face BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.smollm3.SmolLm3ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["smollm3", "smol_lm3", "smol-lm3"]
+  }
+}

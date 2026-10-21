@@ -1,0 +1,16 @@
+{
+  "id": "model-family/depth",
+  "name": "Depth Estimation Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "DPT, Depth Anything, DepthPro, and ZoeDepth metadata with image processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.depth.DepthModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["dpt", "depth_anything", "depth-anything", "depth_pro", "depth-pro", "zoedepth", "zoe_depth"]
+  }
+}

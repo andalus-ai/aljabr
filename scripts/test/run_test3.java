@@ -1,5 +1,5 @@
 import java.util.*;
-import tech.kayys.alkhawarizm.spi.model.*;
+import tech.kayys.aljabr.spi.model.*;
 
 public class run_test3 {
     public static void main(String[] args) {

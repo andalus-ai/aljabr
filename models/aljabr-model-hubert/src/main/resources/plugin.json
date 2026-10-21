@@ -1,0 +1,16 @@
+{
+  "id": "model-family/hubert",
+  "name": "HuBERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "HuBERT audio encoder metadata and CTC tokenizer profile",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.hubert.HubertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "audio-processor",
+    "families": ["hubert"]
+  }
+}

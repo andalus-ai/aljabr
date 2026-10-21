@@ -1,0 +1,16 @@
+{
+  "id": "model-family/layoutlm",
+  "name": "LayoutLM Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "LayoutLM, LayoutLMv2, and LayoutLMv3 model-family metadata and layout-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.layoutlm.LayoutLmModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["layoutlm", "layoutlmv2", "layoutlmv3"],
+    "tokenizerKind": "wordpiece"
+  }
+}

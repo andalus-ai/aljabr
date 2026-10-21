@@ -1,0 +1,16 @@
+{
+  "id": "model-family/modernbert_decoder",
+  "name": "ModernBERT Decoder Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "ModernBERT decoder causal LM metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.modernbertdecoder.ModernBertDecoderModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["modernbert_decoder", "modernbert-decoder", "modern_bert_decoder"]
+  }
+}

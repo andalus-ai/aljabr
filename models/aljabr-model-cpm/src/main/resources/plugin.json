@@ -1,0 +1,16 @@
+{
+  "id": "model-family/cpm",
+  "name": "CPM Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "CPM tokenizer metadata for Jieba and SentencePiece routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.cpm.CpmModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["sentencepiece", "jieba"],
+    "families": ["cpm"]
+  }
+}

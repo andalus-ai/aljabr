@@ -1,0 +1,16 @@
+{
+  "id": "model-family/clip",
+  "name": "CLIP Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "CLIP vision-text model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.clip.ClipModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["clip", "clip_text_model", "clip_vision_model"],
+    "tokenizerKind": "hf-bpe"
+  }
+}

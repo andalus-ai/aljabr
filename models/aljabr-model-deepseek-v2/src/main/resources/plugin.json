@@ -1,0 +1,16 @@
+{
+  "id": "model-family/deepseek_v2",
+  "name": "DeepSeek-V2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "DeepSeek-V2 model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.deepseekv2.DeepSeekV2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "experimental",
+    "tokenizerKind": "hf-bpe",
+    "families": ["deepseek_v2"]
+  }
+}

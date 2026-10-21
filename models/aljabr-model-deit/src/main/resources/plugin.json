@@ -1,0 +1,16 @@
+{
+  "id": "model-family/deit",
+  "name": "DeiT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "DeiT vision transformer metadata and image processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.deit.DeitModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["deit"]
+  }
+}

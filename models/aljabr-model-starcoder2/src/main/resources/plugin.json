@@ -1,0 +1,16 @@
+{
+  "id": "model-family/starcoder2",
+  "name": "StarCoder2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "StarCoder2 code-generation causal LM metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.starcoder2.Starcoder2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["starcoder2", "starcoder_2", "starcoder-2"]
+  }
+}

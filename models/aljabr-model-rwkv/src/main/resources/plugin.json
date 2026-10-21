@@ -1,0 +1,16 @@
+{
+  "id": "model-family/rwkv",
+  "name": "RWKV Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "RWKV recurrent language model metadata",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.rwkv.RwkvModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "processor",
+    "families": ["rwkv"]
+  }
+}

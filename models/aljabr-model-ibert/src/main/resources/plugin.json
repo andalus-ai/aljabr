@@ -1,0 +1,17 @@
+{
+  "id": "model-family/ibert",
+  "name": "I-BERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "I-BERT quantized encoder metadata with BPE or WordPiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.ibert.IBertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["ibert"],
+    "tokenizerKind": "hf-bpe",
+    "tokenizerKinds": ["hf-bpe", "wordpiece"]
+  }
+}

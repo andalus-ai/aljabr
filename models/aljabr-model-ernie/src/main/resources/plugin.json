@@ -1,0 +1,16 @@
+{
+  "id": "model-family/ernie",
+  "name": "ERNIE Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "ERNIE encoder metadata with WordPiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.ernie.ErnieModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "wordpiece",
+    "families": ["ernie"]
+  }
+}

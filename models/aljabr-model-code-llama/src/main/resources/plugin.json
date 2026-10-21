@@ -1,0 +1,16 @@
+{
+  "id": "model-family/code_llama",
+  "name": "Code Llama Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Code Llama model-family adapters and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.codellama.CodeLlamaModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "optional",
+    "families": ["code_llama"],
+    "tokenizerKind": "sentencepiece"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/yolos",
+  "name": "YOLOS Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "YOLOS object-detection metadata with image processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.yolos.YolosModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["yolos"]
+  }
+}

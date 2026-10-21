@@ -1,4 +1,4 @@
-import tech.kayys.alkhawarizm.gguf.loader.*;
+import tech.kayys.aljabr.gguf.loader.*;
 import java.lang.foreign.Arena;
 import java.nio.file.Path;
 

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/speecht5",
+  "name": "SpeechT5 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "SpeechT5 model-family metadata and speech processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.speecht5.SpeechT5ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "audio-processor",
+    "families": ["speecht5", "speecht5_hifigan"]
+  }
+}

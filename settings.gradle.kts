@@ -1,4 +1,4 @@
-rootProject.name = "alkhawarizm-engine"
+rootProject.name = "aljabr-engine"
 
 // ── Composite build: tafkir (quantizer modules) ──────────────────────────────
 // Include tafkir as a composite build when the directory is present locally or
@@ -25,7 +25,7 @@ fun includeOptionalProject(projectPath: String, vararg candidatePaths: String) {
     project(":$projectPath").projectDir = projectDir
 }
 
-includeOptionalProject("core:alkhawarizm-core", "core/alkhawarizm-core")
+includeOptionalProject("core:aljabr-core", "core/aljabr-core")
 
 // Autograd is training-only; exclude from foundational builds
 val skipAutograd = true
@@ -33,41 +33,41 @@ if (!skipAutograd) {
     include("core:autograd")
 }
 
-include("core:alkhawarizm-tensor")
-include("core:alkhawarizm-core")
-include("core:alkhawarizm-error-code")
-include("core:alkhawarizm-nn")
+include("core:aljabr-tensor")
+include("core:aljabr-core")
+include("core:aljabr-error-code")
+include("core:aljabr-nn")
 
-include("core:alkhawarizm-spi-model")
-// New SPI modules — formalises Alkhawarizm as the inference/serving framework layer
+include("core:aljabr-spi-model")
+// New SPI modules — formalises Aljabr as the inference/serving framework layer
 // These will host contracts elevated from Aqli (Phase 2 source migration)
-include("core:alkhawarizm-spi-inference")
-include("core:alkhawarizm-spi-plugin")
-include("core:alkhawarizm-spi-tokenizer")
-include("core:alkhawarizm-3d")
+include("core:aljabr-spi-inference")
+include("core:aljabr-spi-plugin")
+include("core:aljabr-spi-tokenizer")
+include("core:aljabr-3d")
 
-//include("backend:blackwell:alkhawarizm-kernel-blackwell")
+//include("backend:blackwell:aljabr-kernel-blackwell")
 
-include("backend:cpu:alkhawarizm-backend-cpu")
-include("backend:cuda:alkhawarizm-backend-cuda")
-include("backend:cuda:alkhawarizm-kernel-cuda")
-//include("backend:cuda:alkhawarizm-plugin-kernel-cuda")
-//include("backend:directml:alkhawarizm-plugin-kernel-directml")
+include("backend:cpu:aljabr-backend-cpu")
+include("backend:cuda:aljabr-backend-cuda")
+include("backend:cuda:aljabr-kernel-cuda")
+//include("backend:cuda:aljabr-plugin-kernel-cuda")
+//include("backend:directml:aljabr-plugin-kernel-directml")
 val skipHat = gradle.startParameter.projectProperties["skipHat"] == "true"
 if (!skipHat) {
-    include("backend:hat:alkhawarizm-backend-hat")
+    include("backend:hat:aljabr-backend-hat")
 }
-include("backend:metal:alkhawarizm-backend-metal")
-//include("backend:metal:alkhawarizm-mlx-binding")
+include("backend:metal:aljabr-backend-metal")
+//include("backend:metal:aljabr-mlx-binding")
 
-//include("backend:rocm:alkhawarizm-kernel-rocm")
-//include("backend:rocm:alkhawarizm-plugin-kernel-rocm")
+//include("backend:rocm:aljabr-kernel-rocm")
+//include("backend:rocm:aljabr-plugin-kernel-rocm")
 
 // Dynamically include model family projects under models/
 file("models")
     .listFiles { candidate ->
         candidate.isDirectory &&
-                candidate.name.startsWith("alkhawarizm-model-") &&
+                candidate.name.startsWith("aljabr-model-") &&
                 (candidate.resolve("build.gradle.kts").isFile || candidate.resolve("build.gradle").isFile)
     }
     ?.sortedBy { it.name }
@@ -76,26 +76,26 @@ file("models")
         project(":models:${modelProject.name}").projectDir = modelProject
     }
 
-// GGUF Suite: alkhawarizm-gguf-api, alkhawarizm-gguf-llamacpp, alkhawarizm-gguf-core, alkhawarizm-gguf-java
-include("core:alkhawarizm-gguf-api")
-include("core:alkhawarizm-gguf-llamacpp")
-include("core:alkhawarizm-gguf-core")
-include("core:alkhawarizm-gguf-java")
+// GGUF Suite: aljabr-gguf-api, aljabr-gguf-llamacpp, aljabr-gguf-core, aljabr-gguf-java
+include("core:aljabr-gguf-api")
+include("core:aljabr-gguf-llamacpp")
+include("core:aljabr-gguf-core")
+include("core:aljabr-gguf-java")
 
-include("core:alkhawarizm-rocksdb")
-include("core:alkhawarizm-helixdb")
+include("core:aljabr-rocksdb")
+include("core:aljabr-helixdb")
 
 // ── Modules with external dependencies (tafkir / SPI) ─────────────────────
 // These modules require tafkir quantizer artifacts (tech.kayys.tafkir:*) which
 // are resolved via composite build (../tafkir) when available, or from a local
 // Maven repository. Use includeOptionalProject so they are silently skipped on
 // checkouts where the module directories are absent.
-includeOptionalProject("core:alkhawarizm-safetensor-api",          "core/alkhawarizm-safetensor-api")
-includeOptionalProject("core:alkhawarizm-safetensor-spi",          "core/alkhawarizm-safetensor-spi")
-includeOptionalProject("core:alkhawarizm-safetensor-core",         "core/alkhawarizm-safetensor-core")
-includeOptionalProject("core:alkhawarizm-safetensor-loader",       "core/alkhawarizm-safetensor-loader")
-includeOptionalProject("core:alkhawarizm-safetensor-quantization", "core/alkhawarizm-safetensor-quantization")
-includeOptionalProject("core:alkhawarizm-gguf-bridge",             "core/alkhawarizm-gguf-bridge")
-includeOptionalProject("core:alkhawarizm-gguf-fast-bridge",        "core/alkhawarizm-gguf-fast-bridge")
-includeOptionalProject("core:alkhawarizm-gguf-converter",          "core/alkhawarizm-gguf-converter")
-includeOptionalProject("core:alkhawarizm-gguf-converter-java",     "core/alkhawarizm-gguf-converter-java")
+includeOptionalProject("core:aljabr-safetensor-api",          "core/aljabr-safetensor-api")
+includeOptionalProject("core:aljabr-safetensor-spi",          "core/aljabr-safetensor-spi")
+includeOptionalProject("core:aljabr-safetensor-core",         "core/aljabr-safetensor-core")
+includeOptionalProject("core:aljabr-safetensor-loader",       "core/aljabr-safetensor-loader")
+includeOptionalProject("core:aljabr-safetensor-quantization", "core/aljabr-safetensor-quantization")
+includeOptionalProject("core:aljabr-gguf-bridge",             "core/aljabr-gguf-bridge")
+includeOptionalProject("core:aljabr-gguf-fast-bridge",        "core/aljabr-gguf-fast-bridge")
+includeOptionalProject("core:aljabr-gguf-converter",          "core/aljabr-gguf-converter")
+includeOptionalProject("core:aljabr-gguf-converter-java",     "core/aljabr-gguf-converter-java")

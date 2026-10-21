@@ -1,0 +1,16 @@
+{
+  "id": "model-family/bloom",
+  "name": "BLOOM Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "BLOOM/BLOOMZ model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.bloom.BloomModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["bloom"],
+    "tokenizerKind": "hf-bpe"
+  }
+}

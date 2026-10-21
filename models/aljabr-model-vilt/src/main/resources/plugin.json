@@ -1,0 +1,16 @@
+{
+  "id": "model-family/vilt",
+  "name": "ViLT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "ViLT vision-language metadata with processor-backed WordPiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.vilt.ViltModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["wordpiece", "vision-text-processor"],
+    "families": ["vilt"]
+  }
+}

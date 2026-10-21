@@ -1,0 +1,16 @@
+{
+  "id": "model-family/t5",
+  "name": "T5 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "T5/FLAN-T5 encoder-decoder model-family metadata",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.t5.T5ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["t5"],
+    "tokenizerKind": "sentencepiece"
+  }
+}

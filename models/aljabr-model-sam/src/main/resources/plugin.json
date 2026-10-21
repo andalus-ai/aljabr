@@ -1,0 +1,16 @@
+{
+  "id": "model-family/sam",
+  "name": "Segment Anything Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "SAM/SAM-HQ/SAM2 segmentation metadata",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.sam.SamModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-processor",
+    "families": ["sam", "sam_hq", "sam2", "segment_anything"]
+  }
+}

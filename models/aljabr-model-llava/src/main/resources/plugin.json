@@ -1,0 +1,16 @@
+{
+  "id": "model-family/llava",
+  "name": "LLaVA Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "LLaVA multimodal metadata and delegated text tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.llava.LlavaModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "sentencepiece"],
+    "families": ["llava"]
+  }
+}

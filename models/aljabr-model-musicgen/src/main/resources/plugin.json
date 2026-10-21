@@ -1,0 +1,16 @@
+{
+  "id": "model-family/musicgen",
+  "name": "MusicGen Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "MusicGen model-family metadata and processor-aware audio tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.musicgen.MusicgenModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "audio-processor",
+    "families": ["musicgen", "musicgen_decoder"]
+  }
+}

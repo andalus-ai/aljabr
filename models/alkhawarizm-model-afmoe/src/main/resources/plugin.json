@@ -1,9 +1,0 @@
-{
-  "id": "alkhawarizm-model-afmoe",
-  "version": "0.1.0-SNAPSHOT",
-  "name": "AFMOE Model Family Plugin",
-  "description": "AFMOE model family descriptor for alkhawarizm runtime.",
-  "provider": "kayys.tech",
-  "mainClass": "tech.kayys.alkhawarizm.models.afmoe.AfmoeModelFamilyPlugin",
-  "dependencies": []
-}

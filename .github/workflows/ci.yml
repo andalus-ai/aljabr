@@ -1,4 +1,4 @@
-name: Alkhawarizm CI
+name: Aljabr CI
 
 on:
   pull_request:
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout alkhawarizm
+      - name: Checkout aljabr
         uses: actions/checkout@v4
 
       - name: Setup Java 25
@@ -49,7 +49,7 @@ jobs:
           cache: gradle
 
       # ── Tafkir composite build bootstrap ─────────────────────────────────
-      # alkhawarizm-safetensor-quantization depends on tech.kayys.tafkir:*
+      # aljabr-safetensor-quantization depends on tech.kayys.tafkir:*
       # SNAPSHOT artifacts. When tafkir is checked out as a sibling directory,
       # settings.gradle.kts includes it as a composite build and Gradle
       # substitutes the Maven coordinates with source-project dependencies —
@@ -67,9 +67,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: alkhawarizm-gradle-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'build.gradle.kts', 'settings.gradle.kts') }}
+          key: aljabr-gradle-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'build.gradle.kts', 'settings.gradle.kts') }}
           restore-keys: |
-            alkhawarizm-gradle-
+            aljabr-gradle-
       # ─────────────────────────────────────────────────────────────────────
 
       - name: Build and Test (CPU)
@@ -78,7 +78,7 @@ jobs:
           GRADLE_OPTS: -Xmx3G
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace test -x :backend:metal:alkhawarizm-backend-metal:test
+          ./gradlew --no-daemon --stacktrace test -x :backend:metal:aljabr-backend-metal:test
 
   publish-snapshot:
     name: Publish Snapshot to Maven Local
@@ -87,7 +87,7 @@ jobs:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
     steps:
-      - name: Checkout alkhawarizm
+      - name: Checkout aljabr
         uses: actions/checkout@v4
 
       - name: Setup Java 25

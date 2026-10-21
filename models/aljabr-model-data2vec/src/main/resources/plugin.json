@@ -1,0 +1,16 @@
+{
+  "id": "model-family/data2vec",
+  "name": "Data2Vec Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Data2Vec text, audio, and vision metadata with processor routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.data2vec.Data2VecModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["data2vec-text", "data2vec-audio", "data2vec-vision"]
+  }
+}

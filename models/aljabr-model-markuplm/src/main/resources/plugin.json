@@ -1,0 +1,16 @@
+{
+  "id": "model-family/markuplm",
+  "name": "MarkupLM Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "MarkupLM HTML/XPath metadata with byte-level BPE tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.markuplm.MarkupLmModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["markuplm"],
+    "tokenizerKind": "hf-bpe"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/mpt",
+  "name": "MPT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "MosaicML MPT model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.mpt.MptModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["mpt"]
+  }
+}

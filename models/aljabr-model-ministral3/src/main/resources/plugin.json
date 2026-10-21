@@ -1,0 +1,16 @@
+{
+  "id": "model-family/ministral3",
+  "name": "Ministral 3 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Ministral 3 model-family metadata and Tekken tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.ministral3.Ministral3ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["tekken", "hf-bpe"],
+    "families": ["ministral3", "ministral_3", "ministral-3"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/convbert",
+  "name": "ConvBERT Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "ConvBERT metadata with WordPiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.convbert.ConvBertModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "families": ["convbert"],
+    "tokenizerKind": "wordpiece"
+  }
+}

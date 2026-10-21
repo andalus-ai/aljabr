@@ -1,0 +1,16 @@
+{
+  "id": "model-family/olmo2",
+  "name": "OLMo 2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "OLMo 2 causal LM metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.olmo2.Olmo2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["olmo2"]
+  }
+}

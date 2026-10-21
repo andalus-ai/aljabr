@@ -1,0 +1,16 @@
+{
+  "id": "model-family/fnet",
+  "name": "FNet Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "FNet Fourier-mixing encoder metadata with SentencePiece tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.fnet.FNetModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "sentencepiece",
+    "families": ["fnet"]
+  }
+}

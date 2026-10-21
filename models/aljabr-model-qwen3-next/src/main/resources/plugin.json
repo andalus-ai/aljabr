@@ -1,0 +1,16 @@
+{
+  "id": "model-family/qwen3_next",
+  "name": "Qwen3-Next Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Qwen3-Next model-family metadata and tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.qwen3next.Qwen3NextModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "hf-bpe",
+    "families": ["qwen3_next"]
+  }
+}

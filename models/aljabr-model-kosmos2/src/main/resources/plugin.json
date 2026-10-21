@@ -1,0 +1,16 @@
+{
+  "id": "model-family/kosmos2",
+  "name": "Kosmos-2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Kosmos-2 grounded vision-language metadata and processor-backed tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.kosmos2.Kosmos2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "vision-text-processor",
+    "families": ["kosmos-2", "kosmos2", "kosmos_2_text_model", "kosmos_2_vision_model"]
+  }
+}

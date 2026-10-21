@@ -1,0 +1,16 @@
+{
+  "id": "model-family/qwen2_audio",
+  "name": "Qwen2-Audio Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Qwen2-Audio model-family metadata and processor-aware tokenizer routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.qwen2audio.Qwen2AudioModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKinds": ["hf-bpe", "audio-processor"],
+    "families": ["qwen2_audio", "qwen2_audio_encoder"]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "model-family/mgp_str",
+  "name": "MGP-STR Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "MGP-STR scene-text recognition metadata with character vocabulary routing",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.mgpstr.MgpStrModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "metadata_only",
+    "tokenizerKind": "char",
+    "families": ["mgp-str", "mgp_str"]
+  }
+}
