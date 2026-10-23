@@ -78,3 +78,84 @@ tasks.withType<Test>().configureEach {
 }
 
 
+
+
+// Recreate the jextract-generated header class that the checked-in struct
+// wrappers reference. This is intentionally opt-in: a normal Java build must
+// not silently download or build a native llama.cpp checkout.
+val jextractExecutable = providers.gradleProperty("jextractExecutable")
+    .orElse(providers.environmentVariable("JEXTRACT"))
+    .orElse("jextract")
+val llamaCppInclude = providers.gradleProperty("llamaCppInclude")
+    .orElse(providers.environmentVariable("LLAMA_CPP_INCLUDE"))
+val ggmlInclude = providers.gradleProperty("ggmlInclude")
+    .orElse(providers.environmentVariable("GGML_INCLUDE"))
+
+tasks.register<Exec>("generateLlamaFfmBindings") {
+    group = "code generation"
+    description = "Regenerate llama_h.java with jextract from a compatible llama.cpp header checkout."
+
+    val generatedRoot = layout.buildDirectory.dir("generated/llama-jextract").get().asFile
+    doFirst {
+        val includeDirValue = llamaCppInclude.orNull
+            ?: throw GradleException(
+                "Missing llama.cpp include directory. Set -PllamaCppInclude=/path/to/llama.cpp/include " +
+                    "or LLAMA_CPP_INCLUDE."
+            )
+        val includeDir = file(includeDirValue).absoluteFile.normalize()
+        val header = includeDir.resolve("llama.h")
+        if (!header.isFile) {
+            throw GradleException("Expected llama.h at $header")
+        }
+
+        generatedRoot.deleteRecursively()
+        generatedRoot.mkdirs()
+
+        val command = mutableListOf(
+            jextractExecutable.get(),
+            "--output", generatedRoot.absolutePath,
+            "--target-package", "tech.kayys.aljabr.llama",
+            "--header-class-name", "llama_h",
+            "-I", includeDir.absolutePath
+        )
+        val ggmlDir = ggmlInclude.orNull?.let { file(it).absoluteFile.normalize() }
+            ?: includeDir.resolve("../ggml/include").takeIf { it.isDirectory }
+        if (ggmlDir != null && ggmlDir.isDirectory) {
+            command.addAll(listOf("-I", ggmlDir.absolutePath))
+        }
+        command.add(header.absolutePath)
+        commandLine(command)
+    }
+
+    doLast {
+        val generatedPackage = generatedRoot.resolve("tech/kayys/aljabr/llama")
+        val generatedHeader = generatedPackage.resolve("llama_h.java")
+        if (!generatedHeader.isFile) {
+            throw GradleException(
+                "jextract completed but did not produce $generatedHeader. " +
+                    "Check the jextract version and its --output layout."
+            )
+        }
+
+        // jextract may emit shared helper classes alongside the header class.
+        // Copy the complete generated package, not just llama_h.java, or the
+        // regenerated entry point can reference a helper class that is absent
+        // from the checked-in source tree.
+        val destination = file("src/main/java/tech/kayys/aljabr/llama")
+        val generatedFiles = generatedPackage.walkTopDown()
+            .filter { it.isFile && it.extension == "java" }
+            .toList()
+        if (generatedFiles.isEmpty()) {
+            throw GradleException("No Java bindings were generated under $generatedPackage")
+        }
+        generatedFiles.forEach { source ->
+            val target = destination.resolve(source.relativeTo(generatedPackage).path)
+            target.parentFile.mkdirs()
+            source.copyTo(target, overwrite = true)
+        }
+        logger.lifecycle(
+            "Copied ${generatedFiles.size} generated Java binding files into " +
+                destination.relativeTo(projectDir)
+        )
+    }
+}
