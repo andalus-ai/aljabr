@@ -108,6 +108,7 @@ public final class OffHeapBufferPool implements AutoCloseable {
                     break;
                 if (head.compareAndSet(h, h.next)) {
                     hits.increment();
+                    bytesPooled.add(-h.seg.byteSize());
                     return h.seg;
                 }
             }
