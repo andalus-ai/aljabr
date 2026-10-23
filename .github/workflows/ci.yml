@@ -48,18 +48,8 @@ jobs:
           java-version: '25'
           cache: gradle
 
-      # ── Tafkir composite build bootstrap ─────────────────────────────────
-      # aljabr-safetensor-quantization depends on tech.kayys.tafkir:*
-      # SNAPSHOT artifacts. When tafkir is checked out as a sibling directory,
-      # settings.gradle.kts includes it as a composite build and Gradle
-      # substitutes the Maven coordinates with source-project dependencies —
-      # no binary SNAPSHOT resolution needed.
-      - name: Checkout tafkir (quantizer composite build)
-        uses: actions/checkout@v4
-        with:
-          repository: bhangun/tafkir
-          path: ../tafkir
-          ref: main
+      # The default CI validates Aljabr without the optional Tafkir integration.
+      # Cross-project quantizer integration is validated separately with -PwithTafkir=true.
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -96,13 +86,6 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: gradle
-
-      - name: Checkout tafkir (quantizer composite build)
-        uses: actions/checkout@v4
-        with:
-          repository: bhangun/tafkir
-          path: ../tafkir
-          ref: main
 
       - name: Publish to Maven Local
         shell: bash
