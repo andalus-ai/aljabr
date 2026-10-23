@@ -89,6 +89,12 @@ public class MetalBinding {
     private static final String FN_WO_FFN_FUSED = "aljabr_metal_wo_ffn_fused";
     private static final String FN_WO_FFN_NEXT_QKV_FUSED = "aljabr_metal_wo_ffn_next_qkv_fused";
     private static final String FN_WO_FFN_LOGITS_FUSED = "aljabr_metal_wo_ffn_logits_fused";
+    private static final String FN_INIT_KV_CACHE = "aljabr_metal_init_kv_cache";
+    private static final String FN_SYNC_KV_CACHE = "aljabr_metal_sync_kv_cache";
+    private static final String FN_REGISTER_NORM_BUFFER = "aljabr_metal_register_norm_buffer";
+    private static final String FN_REGISTER_DECODE_LAYER = "aljabr_metal_register_decode_layer";
+    private static final String FN_REGISTER_OUTPUT = "aljabr_metal_register_output";
+    private static final String FN_DECODE_STEP = "aljabr_metal_decode_step";
     private static final String FN_REGISTER_MODEL_BUFFER = "aljabr_metal_register_model_buffer";
     private static final String FN_MATVEC_T_HALF = "aljabr_metal_matvec_t_half";
     private static final String FN_MATVEC_TB_HALF_PAIR = "aljabr_metal_matvec_tb_half_pair";
@@ -988,6 +994,53 @@ public class MetalBinding {
         return (int) invoke(FN_REGISTER_MODEL_BUFFER, basePtr, totalBytes);
     }
 
+    public int initKVCache(int nLayers, int maxSeq, MemorySegment layerStrides) {
+        if (!handles.containsKey(FN_INIT_KV_CACHE)) return -2;
+        return (int) invoke(FN_INIT_KV_CACHE, nLayers, maxSeq, layerStrides);
+    }
+
+    public int syncKVCache(int layer, int seqLen, MemorySegment kData, MemorySegment vData) {
+        if (!handles.containsKey(FN_SYNC_KV_CACHE)) return -2;
+        return (int) invoke(FN_SYNC_KV_CACHE, layer, seqLen, kData, vData);
+    }
+
+    public int registerNormBuffer(int slot, MemorySegment ptr, long bytes) {
+        if (!handles.containsKey(FN_REGISTER_NORM_BUFFER)) return -2;
+        return (int) invoke(FN_REGISTER_NORM_BUFFER, slot, ptr, bytes);
+    }
+
+    public int registerDecodeLayer(
+            int layer,
+            MemorySegment wQ, MemorySegment wK, MemorySegment wV, MemorySegment wO,
+            MemorySegment gate, MemorySegment up, MemorySegment down,
+            int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
+            int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
+            int nH, int nKVH, int headDim, int stride,
+            float freqBase, int isSwa) {
+        if (!handles.containsKey(FN_REGISTER_DECODE_LAYER)) return -2;
+        return (int) invoke(FN_REGISTER_DECODE_LAYER,
+                layer,
+                wQ, wK, wV, wO,
+                gate, up, down,
+                typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,
+                n0, n1, n2, wO_K, wO_N, ffnDim,
+                nH, nKVH, headDim, stride,
+                freqBase, isSwa);
+    }
+
+    public int registerOutput(
+            MemorySegment outputNormW,
+            MemorySegment outputW, int typeOutputW, int outputK, int outputN,
+            float cap) {
+        if (!handles.containsKey(FN_REGISTER_OUTPUT)) return -2;
+        return (int) invoke(FN_REGISTER_OUTPUT, outputNormW, outputW, typeOutputW, outputK, outputN, cap);
+    }
+
+    public int decodeStep(int pos, int slidingWindow, float eps, MemorySegment xIn, MemorySegment logitsOut) {
+        if (!handles.containsKey(FN_DECODE_STEP)) return -2;
+        return (int) invoke(FN_DECODE_STEP, pos, slidingWindow, eps, xIn, logitsOut);
+    }
+
     public int matvecTransposedRightNf4(MemorySegment C,
             MemorySegment A,
             MemorySegment B_packed,
@@ -1711,6 +1764,33 @@ public class MetalBinding {
 
         bind(FN_REGISTER_MODEL_BUFFER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
+
+        bind(FN_INIT_KV_CACHE, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
+
+        bind(FN_SYNC_KV_CACHE, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+
+        bind(FN_REGISTER_NORM_BUFFER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
+
+        bind(FN_REGISTER_DECODE_LAYER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT));
+
+        bind(FN_REGISTER_OUTPUT, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_FLOAT));
+
+        bind(FN_DECODE_STEP, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS));
 
         bind(FN_MATVEC_TB_BF16, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,

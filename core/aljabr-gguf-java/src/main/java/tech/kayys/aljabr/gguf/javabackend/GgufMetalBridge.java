@@ -45,6 +45,14 @@ public final class GgufMetalBridge {
     /** FlashAttention-4 GPU SDPA: int fa4Attention(out, q, k, v, B, T, S, H, H_kv, D, scale, isCausal, useBf16) */
     private static final MethodHandle FA4_ATTENTION_MH;
 
+    // Full-GPU single command buffer decode step handles
+    private static final MethodHandle INIT_KV_CACHE_MH;
+    private static final MethodHandle SYNC_KV_CACHE_MH;
+    private static final MethodHandle REGISTER_NORM_BUFFER_MH;
+    private static final MethodHandle REGISTER_DECODE_LAYER_MH;
+    private static final MethodHandle REGISTER_OUTPUT_MH;
+    private static final MethodHandle DECODE_STEP_MH;
+
     // Thread-local or reusable buffers for inputs/outputs to prevent allocations in inner loop
     private static final ThreadLocal<MetalBufferCache> BUFFERS = ThreadLocal.withInitial(MetalBufferCache::new);
 
@@ -78,6 +86,12 @@ public final class GgufMetalBridge {
         MethodHandle registerModelBufferHandle = null;
         MethodHandle softcapHandle = null;
         MethodHandle fa4Handle = null;
+        MethodHandle initKvCacheHandle = null;
+        MethodHandle syncKvCacheHandle = null;
+        MethodHandle registerNormBufferHandle = null;
+        MethodHandle registerDecodeLayerHandle = null;
+        MethodHandle registerOutputHandle = null;
+        MethodHandle decodeStepHandle = null;
 
         boolean disableMetal = Boolean.getBoolean("aljabr.metal.disable") ||
                 "false".equalsIgnoreCase(System.getProperty("aljabr.metal.enabled"));
@@ -305,6 +319,61 @@ public final class GgufMetalBridge {
                                 LOG.fine("MetalFlashAttentionBinding lookup failed: " + t.getMessage());
                             }
 
+                            // Decode step bindings
+                            try {
+                                initKvCacheHandle = lookup.findVirtual(mbClass, "initKVCache",
+                                        MethodType.methodType(int.class, int.class, int.class, MemorySegment.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] initKVCache handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] initKVCache bind FAILED: " + t); }
+
+                            try {
+                                syncKvCacheHandle = lookup.findVirtual(mbClass, "syncKVCache",
+                                        MethodType.methodType(int.class, int.class, int.class, MemorySegment.class, MemorySegment.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] syncKVCache handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] syncKVCache bind FAILED: " + t); }
+
+                            try {
+                                registerNormBufferHandle = lookup.findVirtual(mbClass, "registerNormBuffer",
+                                        MethodType.methodType(int.class, int.class, MemorySegment.class, long.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] registerNormBuffer handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerNormBuffer bind FAILED: " + t); }
+
+                            try {
+                                registerDecodeLayerHandle = lookup.findVirtual(mbClass, "registerDecodeLayer",
+                                        MethodType.methodType(int.class,
+                                                int.class,
+                                                MemorySegment.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
+                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
+                                                int.class, int.class, int.class, int.class, int.class, int.class, int.class,
+                                                int.class, int.class, int.class, int.class, int.class, int.class,
+                                                int.class, int.class, int.class, int.class,
+                                                float.class, int.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] registerDecodeLayer handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerDecodeLayer bind FAILED: " + t); }
+
+                            try {
+                                registerOutputHandle = lookup.findVirtual(mbClass, "registerOutput",
+                                        MethodType.methodType(int.class,
+                                                MemorySegment.class,
+                                                MemorySegment.class, int.class, int.class, int.class,
+                                                float.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] registerOutput handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerOutput bind FAILED: " + t); }
+
+                            try {
+                                decodeStepHandle = lookup.findVirtual(mbClass, "decodeStep",
+                                        MethodType.methodType(int.class,
+                                                int.class, int.class, float.class,
+                                                MemorySegment.class, MemorySegment.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] decodeStep handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] decodeStep bind FAILED: " + t); }
+
                             enabled = true;
                             LOG.info("Aljabr Metal GPU acceleration enabled for Java GGUF backend.");
                         }
@@ -336,6 +405,12 @@ public final class GgufMetalBridge {
         REGISTER_MODEL_BUFFER_MH = registerModelBufferHandle;
         SOFTCAP_MH = softcapHandle;
         FA4_ATTENTION_MH = fa4Handle;
+        INIT_KV_CACHE_MH = initKvCacheHandle;
+        SYNC_KV_CACHE_MH = syncKvCacheHandle;
+        REGISTER_NORM_BUFFER_MH = registerNormBufferHandle;
+        REGISTER_DECODE_LAYER_MH = registerDecodeLayerHandle;
+        REGISTER_OUTPUT_MH = registerOutputHandle;
+        DECODE_STEP_MH = decodeStepHandle;
     }
 
     private static final class MetalBufferCache {
@@ -520,6 +595,20 @@ public final class GgufMetalBridge {
         g_normSegs = segs;
         g_normDim = dim;
         g_normLayers = layers;
+
+        if (REGISTER_NORM_BUFFER_MH != null) {
+            for (int slot = 0; slot < 4; slot++) {
+                try {
+                    int rc = (int) REGISTER_NORM_BUFFER_MH.invokeExact(slot, segs[slot], (long) layers * dim * Float.BYTES);
+                    if (rc != 0) {
+                        LOG.warning("[GgufMetalBridge] registerNormBuffer failed for slot " + slot + ", rc=" + rc);
+                    }
+                } catch (Throwable t) {
+                    LOG.log(Level.WARNING, "Failed to register norm buffer slot " + slot + ": " + t.getMessage(), t);
+                }
+            }
+        }
+
         LOG.info("[GgufMetalBridge] Pre-loaded norm buffers: " + layers + " layers × " + dim + " floats × 4 slots = "
                 + (layers * dim * 4 * Float.BYTES / 1024) + " KB");
     }
@@ -1578,6 +1667,133 @@ public final class GgufMetalBridge {
             return true;
         } catch (Throwable t) {
             LOG.log(Level.FINE, "Metal softcapLogits failed, falling back to CPU", t);
+            return false;
+        }
+    }
+
+    // ── Single Command Buffer Decode Step API ────────────────────────────────
+
+    public static boolean isDecodeStepAvailable() {
+        return METAL_ENABLED && DECODE_STEP_MH != null;
+    }
+
+    public static boolean initKVCache(int nLayers, int maxSeq, int[] layerStrides) {
+        if (!isDecodeStepAvailable() || INIT_KV_CACHE_MH == null) return false;
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment stridesSeg = arena.allocate((long) nLayers * Integer.BYTES);
+            MemorySegment.copy(layerStrides, 0, stridesSeg, ValueLayout.JAVA_INT, 0, nLayers);
+            int rc = (int) INIT_KV_CACHE_MH.invokeExact(nLayers, maxSeq, stridesSeg);
+            return rc == 0;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Failed to init Metal KV cache: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    public static boolean syncKVCache(int layer, int seqLen, float[] kData, float[] vData) {
+        if (!isDecodeStepAvailable() || SYNC_KV_CACHE_MH == null || kData == null || vData == null) return false;
+        try (Arena arena = Arena.ofConfined()) {
+            int len = kData.length;
+            MemorySegment kSeg = arena.allocate((long) len * Float.BYTES);
+            MemorySegment vSeg = arena.allocate((long) len * Float.BYTES);
+            MemorySegment.copy(kData, 0, kSeg, ValueLayout.JAVA_FLOAT, 0, len);
+            MemorySegment.copy(vData, 0, vSeg, ValueLayout.JAVA_FLOAT, 0, len);
+            int rc = (int) SYNC_KV_CACHE_MH.invokeExact(layer, seqLen, kSeg, vSeg);
+            return rc == 0;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Failed to sync Metal KV cache: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    public static boolean registerDecodeLayer(
+            int layer,
+            GGUFModel model,
+            GGUFTensorInfo wQ, GGUFTensorInfo wK, GGUFTensorInfo wV, GGUFTensorInfo wO,
+            GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
+            int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
+            int nH, int nKVH, int headDim, int stride,
+            float freqBase, int isSwa) {
+        if (!isDecodeStepAvailable() || REGISTER_DECODE_LAYER_MH == null) return false;
+        try {
+            MemorySegment segWQ = (wQ != null) ? GgufTensorOps.tensorData(model, wQ) : MemorySegment.NULL;
+            MemorySegment segWK = (wK != null) ? GgufTensorOps.tensorData(model, wK) : MemorySegment.NULL;
+            MemorySegment segWV = (wV != null) ? GgufTensorOps.tensorData(model, wV) : MemorySegment.NULL;
+            MemorySegment segWO = (wO != null) ? GgufTensorOps.tensorData(model, wO) : MemorySegment.NULL;
+            MemorySegment segGate = (gate != null) ? GgufTensorOps.tensorData(model, gate) : MemorySegment.NULL;
+            MemorySegment segUp = (up != null) ? GgufTensorOps.tensorData(model, up) : MemorySegment.NULL;
+            MemorySegment segDown = (down != null) ? GgufTensorOps.tensorData(model, down) : MemorySegment.NULL;
+
+            int typeQ = (wQ != null) ? (int) wQ.typeId() : 0;
+            int typeK = (wK != null) ? (int) wK.typeId() : 0;
+            int typeV = (wV != null) ? (int) wV.typeId() : 0;
+            int typeWO = (wO != null) ? (int) wO.typeId() : 0;
+            int typeGate = (gate != null) ? (int) gate.typeId() : 0;
+            int typeUp = (up != null) ? (int) up.typeId() : 0;
+            int typeDown = (down != null) ? (int) down.typeId() : 0;
+
+            int rc = (int) REGISTER_DECODE_LAYER_MH.invokeExact(
+                    layer,
+                    segWQ, segWK, segWV, segWO,
+                    segGate, segUp, segDown,
+                    typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,
+                    n0, n1, n2, wO_K, wO_N, ffnDim,
+                    nH, nKVH, headDim, stride,
+                    freqBase, isSwa);
+            return rc == 0;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Failed to register decode layer " + layer + ": " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    private static volatile MemorySegment g_outputNormSeg = null;
+
+    public static boolean registerOutput(
+            GGUFModel model,
+            float[] outputNormW,
+            GGUFTensorInfo outputW, int outputK, int outputN,
+            float cap) {
+        if (!isDecodeStepAvailable() || REGISTER_OUTPUT_MH == null) return false;
+        try {
+            MemorySegment segOutputNorm = MemorySegment.NULL;
+            if (outputNormW != null) {
+                if (g_outputNormSeg == null || g_outputNormSeg.byteSize() < (long) outputK * Float.BYTES) {
+                    Arena arena = Arena.ofAuto();
+                    g_outputNormSeg = arena.allocate((long) outputK * Float.BYTES);
+                }
+                MemorySegment.copy(outputNormW, 0, g_outputNormSeg, ValueLayout.JAVA_FLOAT, 0, outputK);
+                segOutputNorm = g_outputNormSeg;
+            }
+            MemorySegment segOutputW = (outputW != null) ? GgufTensorOps.tensorData(model, outputW) : MemorySegment.NULL;
+            int typeOutputW = (outputW != null) ? (int) outputW.typeId() : 0;
+
+            int rc = (int) REGISTER_OUTPUT_MH.invokeExact(segOutputNorm, segOutputW, typeOutputW, outputK, outputN, cap);
+            return rc == 0;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Failed to register output: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    public static boolean decodeStep(int pos, int slidingWindow, float eps, float[] x, float[] logits) {
+        if (!isDecodeStepAvailable() || DECODE_STEP_MH == null || x == null || logits == null) return false;
+        try {
+            MetalBufferCache cache = BUFFERS.get();
+            int dim = x.length;
+            int vocab = logits.length;
+            MemorySegment segX = cache.ensureX(dim);
+            MemorySegment segLogits = cache.ensureLogits(vocab);
+            MemorySegment.copy(x, 0, segX, ValueLayout.JAVA_FLOAT, 0, dim);
+
+            int rc = (int) DECODE_STEP_MH.invokeExact(pos, slidingWindow, eps, segX, segLogits);
+            if (rc == 0) {
+                MemorySegment.copy(segLogits, ValueLayout.JAVA_FLOAT, 0, logits, 0, vocab);
+                return true;
+            }
+            return false;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Failed in decodeStep: " + t.getMessage(), t);
             return false;
         }
     }

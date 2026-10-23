@@ -62,6 +62,9 @@ final class GgufDecodeStep {
     // Max KV heads across all layers (real max, not clamped to nH)
     private final int maxKVHeads;
 
+    // Full-GPU single command buffer decode step available
+    private final boolean canUseMetalDecodeStep;
+
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
         this.model = model;
         this.cfg = cfg;
@@ -195,6 +198,58 @@ final class GgufDecodeStep {
 
         if (GgufMetalBridge.isAvailable()) {
             GgufMetalBridge.ensureModelRegistered(model);
+        }
+
+        // Initialize full-GPU decode step pipeline if supported
+        boolean eligible = GgufMetalBridge.isDecodeStepAvailable() && (perLayerTokEmbd == null || nEmbdPerLayer <= 0);
+        for (int l = 0; l < layers && eligible; l++) {
+            if (outScale[l] != 1.0f || attnQNorm[l] != null || attnKNorm[l] != null || attnVNorm[l] != null
+                    || postAttnNorm[l] != null || postFfnNorm[l] != null) {
+                eligible = false;
+            }
+        }
+
+        boolean metalDecodeActive = false;
+        if (eligible) {
+            int[] strides = new int[layers];
+            for (int i = 0; i < layers; i++) {
+                int layerNKVH = cfg.nKVHeadsForLayer(i);
+                int hD = cfg.headDimForLayer(i);
+                strides[i] = layerNKVH * hD;
+            }
+            if (GgufMetalBridge.initKVCache(layers, cfg.contextLength(), strides)) {
+                boolean allLayersRegistered = true;
+                for (int l = 0; l < layers && allLayersRegistered; l++) {
+                    int layerNKVH = cfg.nKVHeadsForLayer(l);
+                    int layerHDim = cfg.headDimForLayer(l);
+                    float layerRopeFreq = cfg.ropeFreqBaseForLayer(l);
+                    boolean isSwa = cfg.isSwaLayer(l);
+                    int n0 = nH * layerHDim;
+                    int n1 = layerNKVH * layerHDim;
+                    int n2 = layerNKVH * layerHDim;
+                    int wO_K = n0;
+                    int wO_N = dim;
+                    int ffnIntermediate = ffnDim;
+                    int stride = strides[l];
+
+                    boolean reg = GgufMetalBridge.registerDecodeLayer(
+                            l, model,
+                            wQ[l], wK[l], wV[l], wO[l],
+                            ffnGate[l], ffnUp[l], ffnDown[l],
+                            n0, n1, n2, wO_K, wO_N, ffnIntermediate,
+                            nH, layerNKVH, layerHDim, stride,
+                            layerRopeFreq, isSwa ? 1 : 0);
+                    if (!reg) allLayersRegistered = false;
+                }
+                if (allLayersRegistered) {
+                    metalDecodeActive = GgufMetalBridge.registerOutput(
+                            model, outputNorm, outputWeight, dim, cfg.vocabSize(), cfg.finalLogitSoftcap());
+                }
+            }
+        }
+        this.canUseMetalDecodeStep = metalDecodeActive;
+        if (metalDecodeActive) {
+            System.out.println("[GgufDecodeStep] Full-GPU single command buffer decode step ENABLED (" + layers + " layers).");
         }
     }
 
@@ -517,6 +572,13 @@ final class GgufDecodeStep {
         // Advance KV cache past all prefill tokens
         for (int t = 0; t < T; t++) cache.advance();
 
+        // If Metal decode step is active, sync prompt KV cache to GPU
+        if (canUseMetalDecodeStep) {
+            for (int l = 0; l < layers; l++) {
+                GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
+            }
+        }
+
         // ── 4. Output: logits for last token ────────────────────────────────
         float[] xLast = X[T - 1];
         float[] xbFinal = new float[dim];
@@ -543,6 +605,23 @@ final class GgufDecodeStep {
         int layers = cfg.nLayers();
         int nEmbdPerLayer = cfg.nEmbdPerLayer();
         float eps = cfg.rmsNormEps();
+
+        if (canUseMetalDecodeStep && computeLogits) {
+            GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
+            if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
+                GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
+            }
+            long t0 = System.nanoTime();
+            boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
+            if (ok) {
+                cache.advance();
+                long tElapsed = System.nanoTime() - t0;
+                if (pos % 10 == 0 || pos < 5) {
+                    System.out.printf("[METAL DECODE %d] single cmd buffer step: %.2f ms%n", pos, tElapsed / 1e6);
+                }
+                return this.logits;
+            }
+        }
 
         GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
 

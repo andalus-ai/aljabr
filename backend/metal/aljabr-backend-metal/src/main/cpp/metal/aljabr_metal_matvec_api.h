@@ -5,6 +5,8 @@
 #ifndef ALJABR_METAL_MATVEC_API_H
 #define ALJABR_METAL_MATVEC_API_H
 
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -203,6 +205,52 @@ int aljabr_metal_wo_ffn_logits_fused(
 );
 
 void aljabr_metal_wo_ffn_reset_x(void);
+
+/**
+ * Initializes GPU-resident shared KV cache buffers for all layers.
+ */
+int aljabr_metal_init_kv_cache(int nLayers, int maxSeq, const int *layerStrides);
+
+/**
+ * Synchronizes prompt KV cache contents into GPU buffers (called once after prefill).
+ */
+int aljabr_metal_sync_kv_cache(int layer, int seqLen, const float *kData, const float *vData);
+
+/**
+ * Registers pre-loaded norm buffers (slot 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm).
+ */
+int aljabr_metal_register_norm_buffer(int slot, const void *ptr, size_t bytes);
+
+/**
+ * Registers static weights and metadata for one decoder layer.
+ */
+int aljabr_metal_register_decode_layer(
+    int layer,
+    const void *wQ, const void *wK, const void *wV, const void *wO,
+    const void *gate, const void *up, const void *down,
+    int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
+    int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
+    int nH, int nKVH, int headDim, int stride,
+    float freqBase, int isSwa
+);
+
+/**
+ * Registers output norm and projection weights for logit generation.
+ */
+int aljabr_metal_register_output(
+    const float *outputNormW,
+    const void *outputW, int typeOutputW, int outputK, int outputN,
+    float cap
+);
+
+/**
+ * Executes ALL 48 transformer layers and logits projection in a SINGLE Metal command buffer.
+ * Eliminates all CPU-GPU synchronization bubbles and inter-layer memcpy operations.
+ */
+int aljabr_metal_decode_step(
+    int pos, int slidingWindow, float eps,
+    const float *x_in, float *logits_out
+);
 
 #ifdef __cplusplus
 }

@@ -2585,3 +2585,403 @@ int aljabr_metal_wo_ffn_logits_fused(
   }
 }
 
+// ── Unified 48-Layer GPU Decode Pipeline ──────────────────────────────────
+#define MAX_DECODE_LAYERS 64
+
+static id<MTLBuffer> g_kv_k[MAX_DECODE_LAYERS];
+static id<MTLBuffer> g_kv_v[MAX_DECODE_LAYERS];
+static uint32_t g_kv_stride[MAX_DECODE_LAYERS];
+static int g_kv_layers = 0;
+static int g_kv_max_seq = 0;
+
+static id<MTLBuffer> g_norm_buffers[4]; // 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm
+static size_t g_norm_buffer_bytes[4];
+
+typedef struct {
+  const void *wQ;
+  const void *wK;
+  const void *wV;
+  const void *wO;
+  const void *gate;
+  const void *up;
+  const void *down;
+  int typeQ;
+  int typeK;
+  int typeV;
+  int typeWO;
+  int typeGate;
+  int typeUp;
+  int typeDown;
+  int n0, n1, n2, wO_K, wO_N, ffnDim;
+  int nH, nKVH, headDim, stride;
+  float freqBase;
+  int isSwa;
+  id<MTLBuffer> bufWQ; size_t offWQ;
+  id<MTLBuffer> bufWK; size_t offWK;
+  id<MTLBuffer> bufWV; size_t offWV;
+  id<MTLBuffer> bufWO; size_t offWO;
+  id<MTLBuffer> bufGate; size_t offGate;
+  id<MTLBuffer> bufUp; size_t offUp;
+  id<MTLBuffer> bufDown; size_t offDown;
+} DecodeLayerConfig;
+
+static DecodeLayerConfig g_decode_layers[MAX_DECODE_LAYERS];
+static int g_num_decode_layers = 0;
+
+static const float *g_output_norm_w = NULL;
+static const void *g_output_w = NULL;
+static int g_output_type_w = 0;
+static int g_output_K = 0;
+static int g_output_N = 0;
+static float g_output_logit_cap = 0.0f;
+static id<MTLBuffer> g_buf_output_norm = nil;
+static size_t g_off_output_norm = 0;
+static id<MTLBuffer> g_buf_output_w = nil;
+static size_t g_off_output_w = 0;
+static id<MTLBuffer> g_buf_output_logits = nil;
+static size_t g_cap_output_logits = 0;
+
+int aljabr_metal_init_kv_cache(int nLayers, int maxSeq, const int *layerStrides) {
+  if (!g_initialized) return -1;
+  if (g_device == nil || nLayers <= 0 || nLayers > MAX_DECODE_LAYERS || maxSeq <= 0 || layerStrides == NULL) return -1;
+  g_kv_layers = nLayers;
+  g_kv_max_seq = maxSeq;
+  for (int i = 0; i < nLayers; i++) {
+    uint32_t stride = (uint32_t)layerStrides[i];
+    g_kv_stride[i] = stride;
+    size_t bytes = (size_t)maxSeq * stride * sizeof(float);
+    size_t allocBytes = (bytes + 16383) & ~16383;
+    g_kv_k[i] = [g_device newBufferWithLength:allocBytes options:MTLResourceStorageModeShared];
+    g_kv_v[i] = [g_device newBufferWithLength:allocBytes options:MTLResourceStorageModeShared];
+    if (g_kv_k[i] == nil || g_kv_v[i] == nil) return -2;
+  }
+  return 0;
+}
+
+int aljabr_metal_sync_kv_cache(int layer, int seqLen, const float *kData, const float *vData) {
+  if (layer < 0 || layer >= g_kv_layers || seqLen <= 0 || seqLen > g_kv_max_seq) return -1;
+  size_t bytes = (size_t)seqLen * g_kv_stride[layer] * sizeof(float);
+  if (kData && g_kv_k[layer]) memcpy([g_kv_k[layer] contents], kData, bytes);
+  if (vData && g_kv_v[layer]) memcpy([g_kv_v[layer] contents], vData, bytes);
+  return 0;
+}
+
+int aljabr_metal_register_norm_buffer(int slot, const void *ptr, size_t bytes) {
+  if (slot < 0 || slot >= 4 || ptr == NULL || bytes == 0) return -1;
+  if (!g_initialized) return -1;
+  g_norm_buffers[slot] = wrap_ptr((void *)ptr, bytes);
+  g_norm_buffer_bytes[slot] = bytes;
+  return (g_norm_buffers[slot] != nil) ? 0 : -2;
+}
+
+static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
+  if (type == 12) return (size_t)N * K / 256 * 144; // Q4_K
+  if (type == 14) return (size_t)N * K / 256 * 210; // Q6_K
+  if (type == 8)  return (size_t)N * K / 32 * 34;   // Q8_0
+  if (type == 1 || type == 30 || type == 16) return (size_t)N * K * 2; // F16/BF16
+  return (size_t)N * K * sizeof(float);
+}
+
+int aljabr_metal_register_decode_layer(
+    int layer,
+    const void *wQ, const void *wK, const void *wV, const void *wO,
+    const void *gate, const void *up, const void *down,
+    int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
+    int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
+    int nH, int nKVH, int headDim, int stride,
+    float freqBase, int isSwa
+) {
+  if (layer < 0 || layer >= MAX_DECODE_LAYERS) return -1;
+  if (layer >= g_num_decode_layers) g_num_decode_layers = layer + 1;
+  DecodeLayerConfig *cfg = &g_decode_layers[layer];
+  cfg->wQ = wQ; cfg->wK = wK; cfg->wV = wV; cfg->wO = wO;
+  cfg->gate = gate; cfg->up = up; cfg->down = down;
+  cfg->typeQ = typeQ; cfg->typeK = typeK; cfg->typeV = typeV; cfg->typeWO = typeWO;
+  cfg->typeGate = typeGate; cfg->typeUp = typeUp; cfg->typeDown = typeDown;
+  cfg->n0 = n0; cfg->n1 = n1; cfg->n2 = n2;
+  cfg->wO_K = wO_K; cfg->wO_N = wO_N; cfg->ffnDim = ffnDim;
+  cfg->nH = nH; cfg->nKVH = nKVH; cfg->headDim = headDim; cfg->stride = stride;
+  cfg->freqBase = freqBase; cfg->isSwa = isSwa;
+
+  if (wQ) cfg->bufWQ = wrap_weight_ptr_offset(wQ, calc_matvec_weight_bytes(typeQ, n0, wO_N), &cfg->offWQ);
+  if (wK) cfg->bufWK = wrap_weight_ptr_offset(wK, calc_matvec_weight_bytes(typeK, n1, wO_N), &cfg->offWK);
+  if (wV) cfg->bufWV = wrap_weight_ptr_offset(wV, calc_matvec_weight_bytes(typeV, n2, wO_N), &cfg->offWV);
+  if (wO) cfg->bufWO = wrap_weight_ptr_offset(wO, calc_matvec_weight_bytes(typeWO, wO_N, wO_K), &cfg->offWO);
+  if (gate) cfg->bufGate = wrap_weight_ptr_offset(gate, calc_matvec_weight_bytes(typeGate, ffnDim, wO_N), &cfg->offGate);
+  if (up) cfg->bufUp = wrap_weight_ptr_offset(up, calc_matvec_weight_bytes(typeUp, ffnDim, wO_N), &cfg->offUp);
+  if (down) cfg->bufDown = wrap_weight_ptr_offset(down, calc_matvec_weight_bytes(typeDown, wO_N, ffnDim), &cfg->offDown);
+  return 0;
+}
+
+int aljabr_metal_register_output(
+    const float *outputNormW,
+    const void *outputW, int typeOutputW, int outputK, int outputN,
+    float cap
+) {
+  g_output_norm_w = outputNormW;
+  g_output_w = outputW;
+  g_output_type_w = typeOutputW;
+  g_output_K = outputK;
+  g_output_N = outputN;
+  g_output_logit_cap = cap;
+  if (outputNormW) {
+    g_buf_output_norm = wrap_ptr((void *)outputNormW, (size_t)outputK * sizeof(float));
+    g_off_output_norm = 0;
+  }
+  if (outputW) {
+    g_buf_output_w = wrap_weight_ptr_offset(outputW, calc_matvec_weight_bytes(typeOutputW, outputN, outputK), &g_off_output_w);
+  }
+  size_t logitsBytes = (size_t)outputN * sizeof(float);
+  if (logitsBytes > g_cap_output_logits || g_buf_output_logits == nil) {
+    size_t sz = (logitsBytes + 16383) & ~16383;
+    g_buf_output_logits = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_cap_output_logits = sz;
+  }
+  return 0;
+}
+
+static inline void encode_rope_single_token(
+    id<MTLComputeCommandEncoder> enc,
+    id<MTLBuffer> bufX,
+    uint32_t nHeads, uint32_t headDim, uint32_t pos, float freqBase,
+    AljabrMetalPipelines *pipelines) {
+  if (pipelines->rope_single_token == nil || bufX == nil) return;
+  uint32_t half_dim = headDim / 2;
+  uint32_t total = nHeads * half_dim;
+  [enc setComputePipelineState:pipelines->rope_single_token];
+  [enc setBuffer:bufX offset:0 atIndex:0];
+  [enc setBytes:&nHeads   length:sizeof(nHeads)   atIndex:1];
+  [enc setBytes:&headDim  length:sizeof(headDim)  atIndex:2];
+  [enc setBytes:&pos      length:sizeof(pos)      atIndex:3];
+  [enc setBytes:&freqBase length:sizeof(freqBase) atIndex:4];
+  NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)total);
+  NSUInteger groups = (total + threads - 1) / threads;
+  [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+      threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+}
+
+static inline void encode_kv_store_flat(
+    id<MTLComputeCommandEncoder> enc,
+    id<MTLBuffer> bufCache, id<MTLBuffer> bufVec,
+    uint32_t pos, uint32_t stride,
+    AljabrMetalPipelines *pipelines) {
+  if (pipelines->kv_store_flat == nil || bufCache == nil || bufVec == nil) return;
+  [enc setComputePipelineState:pipelines->kv_store_flat];
+  [enc setBuffer:bufCache offset:0 atIndex:0];
+  [enc setBuffer:bufVec   offset:0 atIndex:1];
+  [enc setBytes:&pos    length:sizeof(pos)    atIndex:2];
+  [enc setBytes:&stride length:sizeof(stride) atIndex:3];
+  NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)stride);
+  NSUInteger groups = (stride + threads - 1) / threads;
+  [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+      threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+}
+
+static inline void encode_sdpa_flat(
+    id<MTLComputeCommandEncoder> enc,
+    id<MTLBuffer> bufOut, id<MTLBuffer> bufQ, id<MTLBuffer> bufKCache, id<MTLBuffer> bufVCache,
+    uint32_t H, uint32_t H_kv, uint32_t D, uint32_t stride,
+    uint32_t pos, uint32_t start_pos, float scale, float soft_cap,
+    AljabrMetalPipelines *pipelines) {
+  if (pipelines->sdpa_flat == nil || bufOut == nil || bufQ == nil || bufKCache == nil || bufVCache == nil) return;
+  [enc setComputePipelineState:pipelines->sdpa_flat];
+  [enc setBuffer:bufOut    offset:0 atIndex:0];
+  [enc setBuffer:bufQ      offset:0 atIndex:1];
+  [enc setBuffer:bufKCache offset:0 atIndex:2];
+  [enc setBuffer:bufVCache offset:0 atIndex:3];
+  [enc setBytes:&H         length:sizeof(H)         atIndex:4];
+  [enc setBytes:&H_kv      length:sizeof(H_kv)      atIndex:5];
+  [enc setBytes:&D         length:sizeof(D)         atIndex:6];
+  [enc setBytes:&stride    length:sizeof(stride)    atIndex:7];
+  [enc setBytes:&pos       length:sizeof(pos)       atIndex:8];
+  [enc setBytes:&start_pos length:sizeof(start_pos) atIndex:9];
+  [enc setBytes:&scale     length:sizeof(scale)     atIndex:10];
+  [enc setBytes:&soft_cap  length:sizeof(soft_cap)  atIndex:11];
+  [enc dispatchThreadgroups:MTLSizeMake(H, 1, 1)
+      threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+}
+
+int aljabr_metal_decode_step(
+    int pos, int slidingWindow, float eps,
+    const float *x_in, float *logits_out
+) {
+  if (!g_initialized || g_device == nil || g_queue == nil || g_num_decode_layers == 0) return -1;
+  AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
+
+  DecodeLayerConfig *cfg0 = &g_decode_layers[0];
+  size_t dimBytes = (size_t)cfg0->wO_N * sizeof(float);
+  size_t maxAttnBytes = (size_t)cfg0->wO_K * sizeof(float);
+  size_t maxFfnBytes = (size_t)cfg0->ffnDim * sizeof(float);
+  for (int l = 1; l < g_num_decode_layers; l++) {
+    if ((size_t)g_decode_layers[l].wO_K * sizeof(float) > maxAttnBytes)
+      maxAttnBytes = (size_t)g_decode_layers[l].wO_K * sizeof(float);
+    if ((size_t)g_decode_layers[l].ffnDim * sizeof(float) > maxFfnBytes)
+      maxFfnBytes = (size_t)g_decode_layers[l].ffnDim * sizeof(float);
+  }
+  if (!ensure_woff_dim_bufs(maxAttnBytes, dimBytes)) return -2;
+  if (!ensure_woff_ffn_bufs(maxFfnBytes)) return -2;
+
+  size_t maxQ = (size_t)cfg0->n0 * sizeof(float);
+  size_t maxK = (size_t)cfg0->n1 * sizeof(float);
+  size_t maxV = (size_t)cfg0->n2 * sizeof(float);
+  for (int l = 1; l < g_num_decode_layers; l++) {
+    if ((size_t)g_decode_layers[l].n0 * sizeof(float) > maxQ) maxQ = (size_t)g_decode_layers[l].n0 * sizeof(float);
+    if ((size_t)g_decode_layers[l].n1 * sizeof(float) > maxK) maxK = (size_t)g_decode_layers[l].n1 * sizeof(float);
+    if ((size_t)g_decode_layers[l].n2 * sizeof(float) > maxV) maxV = (size_t)g_decode_layers[l].n2 * sizeof(float);
+  }
+  if (!ensure_woff_next_qkv(maxQ, maxK, maxV, dimBytes)) return -2;
+
+  @autoreleasepool {
+    memcpy([g_woff_x contents], x_in, dimBytes);
+
+    id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+
+    id<MTLBuffer> bufAttnNormAll = g_norm_buffers[3]; // slot 3 = attnNorm
+    id<MTLBuffer> bufFfnNormAll  = g_norm_buffers[1]; // slot 1 = ffnNorm
+    if (!bufAttnNormAll || !bufFfnNormAll) {
+      [enc endEncoding];
+      return -3;
+    }
+
+    for (int l = 0; l < g_num_decode_layers; l++) {
+      DecodeLayerConfig *cfg = &g_decode_layers[l];
+      uint32_t nDim = (uint32_t)cfg->wO_N;
+      uint32_t nFfn = (uint32_t)cfg->ffnDim;
+      uint32_t kDim = (uint32_t)cfg->wO_K;
+      size_t normOff = (size_t)l * dimBytes;
+
+      // 1. xb = attnNorm(x)
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufAttnNormAll, normOff, nDim, eps, 0, pipelines);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 2. Q, K, V matvecs from xb
+      encode_matvec_sub(enc, pipelines, g_woff_nextQ, g_woff_xb, cfg->wQ, nDim, (uint32_t)cfg->n0, cfg->typeQ, 1);
+      if (cfg->wK) {
+        encode_matvec_sub(enc, pipelines, g_woff_nextK, g_woff_xb, cfg->wK, nDim, (uint32_t)cfg->n1, cfg->typeK, 1);
+      }
+      if (cfg->wV) {
+        encode_matvec_sub(enc, pipelines, g_woff_nextV, g_woff_xb, cfg->wV, nDim, (uint32_t)cfg->n2, cfg->typeV, 1);
+      }
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 3. RoPE on Q and K
+      encode_rope_single_token(enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
+      if (cfg->wK) {
+        encode_rope_single_token(enc, g_woff_nextK, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
+      }
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 4. Store K and V to KV cache at position pos
+      if (g_kv_k[l] && g_kv_v[l]) {
+        encode_kv_store_flat(enc, g_kv_k[l], g_woff_nextK, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
+        encode_kv_store_flat(enc, g_kv_v[l], g_woff_nextV, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      }
+
+      // 5. SDPA attention -> g_woff_attnFull
+      uint32_t seqLen = (uint32_t)(pos + 1);
+      uint32_t startPos = 0;
+      if (cfg->isSwa && slidingWindow > 0 && seqLen > (uint32_t)slidingWindow) {
+        startPos = seqLen - (uint32_t)slidingWindow;
+      }
+      float scale = 1.0f / sqrtf((float)cfg->headDim);
+      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[l], g_kv_v[l],
+                       (uint32_t)cfg->nH, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)cfg->stride,
+                       (uint32_t)pos, startPos, scale, 0.0f, pipelines);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 6. xb = wO(attnFull)
+      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_attnFull, cfg->wO, kDim, nDim, cfg->typeWO, 1);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 7. Residual: x += xb
+      encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 8. xb = ffnNorm(x)
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNormAll, normOff, nDim, eps, 0, pipelines);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 9. Gate + Up + Act (GeGLU) -> g_woff_ffn_hb
+      BOOL can_fuse = (cfg->typeGate == 12 && cfg->typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr4 != nil);
+      BOOL gate_up_mr8 = (cfg->typeGate == 12 && cfg->typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
+      if (can_fuse) {
+        id<MTLComputePipelineState> fuseP = gate_up_mr8 ? pipelines->ffn_gate_up_act_q4_k_mr8 : pipelines->ffn_gate_up_act_q4_k_mr4;
+        uint32_t actK = 2; // GeGLU
+        [enc setComputePipelineState:fuseP];
+        [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
+        [enc setBuffer:g_woff_xb     offset:0 atIndex:1];
+        [enc setBuffer:cfg->bufGate  offset:cfg->offGate atIndex:2];
+        [enc setBuffer:cfg->bufUp    offset:cfg->offUp   atIndex:3];
+        [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
+        [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:5];
+        [enc setBytes:&actK length:sizeof(actK) atIndex:6];
+        if (gate_up_mr8) {
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 7) / 8, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+        } else {
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 3) / 4, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+        }
+      } else {
+        encode_matvec_sub(enc, pipelines, g_woff_ffn_gate, g_woff_xb, cfg->gate, nDim, nFfn, cfg->typeGate, 1);
+        encode_matvec_sub(enc, pipelines, g_woff_ffn_up, g_woff_xb, cfg->up, nDim, nFfn, cfg->typeUp, 1);
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        id<MTLComputePipelineState> actP = pipelines->gelu_ffn;
+        [enc setComputePipelineState:actP];
+        [enc setBuffer:g_woff_ffn_hb   offset:0 atIndex:0];
+        [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:1];
+        [enc setBuffer:g_woff_ffn_up   offset:0 atIndex:2];
+        [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
+        NSUInteger actTh = MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)nFfn, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(actTh, 1, 1)];
+      }
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 10. xb = down(hb)
+      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_ffn_hb, cfg->down, nFfn, nDim, cfg->typeDown, 1);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 11. Residual: x += xb
+      encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    }
+
+    // ── Final output logits projection ──────────────────────────────────────
+    if (g_output_w != NULL && g_buf_output_norm != nil && g_buf_output_w != nil && g_buf_output_logits != nil) {
+      uint32_t outK = (uint32_t)g_output_K;
+      uint32_t outN = (uint32_t)g_output_N;
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, g_buf_output_norm, g_off_output_norm, outK, eps, 0, pipelines);
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      encode_matvec_sub(enc, pipelines, g_buf_output_logits, g_woff_xb, g_output_w, outK, outN, g_output_type_w, 1);
+      if (g_output_logit_cap > 0.0f && pipelines->softcap != nil) {
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        float cap = g_output_logit_cap;
+        [enc setComputePipelineState:pipelines->softcap];
+        [enc setBuffer:g_buf_output_logits offset:0 atIndex:0];
+        [enc setBytes:&cap  length:sizeof(cap)  atIndex:1];
+        [enc setBytes:&outN length:sizeof(outN) atIndex:2];
+        NSUInteger th = MIN((NSUInteger)256, pipelines->softcap.maxTotalThreadsPerThreadgroup);
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)outN, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(th, 1, 1)];
+      }
+    }
+
+    [enc endEncoding];
+    [cmd commit];
+    [cmd waitUntilCompleted];
+
+    if ([cmd status] != MTLCommandBufferStatusCompleted) {
+      return -4;
+    }
+
+    if (logits_out != NULL && g_buf_output_logits != nil) {
+      memcpy(logits_out, [g_buf_output_logits contents], (size_t)g_output_N * sizeof(float));
+    }
+    return 0;
+  }
+}
+
+
