@@ -81,6 +81,9 @@ typedef struct {
   __strong id<MTLComputePipelineState> scale;   // Vector scalar scaling: x[i] *= scale
   __strong id<MTLComputePipelineState> decode_attention;
   __strong id<MTLComputePipelineState> flash_attention;
+  __strong id<MTLComputePipelineState> rope_single_token;
+  __strong id<MTLComputePipelineState> kv_store_flat;
+  __strong id<MTLComputePipelineState> sdpa_flat;
 } AljabrMetalPipelines;
 
 AljabrMetalPipelines *aljabr_metal_pipelines(void);
