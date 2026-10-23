@@ -128,16 +128,30 @@ tasks.register<Exec>("generateLlamaFfmBindings") {
     }
 
     doLast {
-        val generatedHeader = generatedRoot.resolve("tech/kayys/aljabr/llama/llama_h.java")
+        val generatedPackage = generatedRoot.resolve("tech/kayys/aljabr/llama")
+        val generatedHeader = generatedPackage.resolve("llama_h.java")
         if (!generatedHeader.isFile) {
             throw GradleException(
                 "jextract completed but did not produce $generatedHeader. " +
                     "Check the jextract version and its --output layout."
             )
         }
-        val destination = file("src/main/java/tech/kayys/aljabr/llama/llama_h.java")
-        destination.parentFile.mkdirs()
-        generatedHeader.copyTo(destination, overwrite = true)
-        logger.lifecycle("Updated ${destination.relativeTo(projectDir)}")
-    }
-}
+
+        // jextract may emit shared helper classes alongside the header class.
+        // Copy the complete generated package, not just llama_h.java, or the
+        // regenerated entry point can reference a helper class that is absent
+        // from the checked-in source tree.
+        val destination = file("src/main/java/tech/kayys/aljabr/llama")
+        val generatedFiles = generatedPackage.walkTopDown()
+            .filter { it.isFile && it.extension == "java" }
+            .toList()
+        if (generatedFiles.isEmpty()) {
+            throw GradleException("No Java bindings were generated under $generatedPackage")
+        }
+        generatedFiles.forEach { source ->
+            val target = destination.resolve(source.relativeTo(generatedPackage).path)
+            target.parentFile.mkdirs()
+            source.copyTo(target, overwrite = true)
+        }
+        logger.lifecycle("Copied ${generatedFiles.size} generated Java binding files into ${destination.relativeTo(projectDir)}")
+    }}
