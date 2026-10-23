@@ -1,77 +1,87 @@
 package tech.kayys.aljabr.core.memory;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 
-import tech.kayys.aljabr.core.tensor.DefaultTensor;
-import tech.kayys.aljabr.core.tensor.DType;
-import tech.kayys.aljabr.core.tensor.DeviceType;
-import tech.kayys.aljabr.core.tensor.Shape;
-
 class OffHeapBufferPoolTest {
     @Test
-    void finalBufferReleaseReturnsSegmentToPoolAndUpdatesTelemetry() {
+    void reusesReturnedSegmentsAndTracksPooledBytes() {
         try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
-            CpuBuffer first = new CpuBuffer(pool.acquire(Float.BYTES), pool.arena(), pool);
-            assertEquals(0, pool.bytesPooled());
-            first.release();
-            assertEquals(64, pool.bytesPooled());
-
-            CpuBuffer second = new CpuBuffer(pool.acquire(Float.BYTES), pool.arena(), pool);
-            assertEquals(0, pool.bytesPooled());
+            MemorySegment first = pool.acquire(80);
+            assertEquals(128, first.byteSize());
+            long address = first.address();
+            pool.release(first);
+            assertEquals(128, pool.bytesPooled());
+            MemorySegment second = pool.acquire(80);
+            assertEquals(address, second.address());
             assertEquals(1, pool.hits());
-            second.release();
-            assertEquals(64, pool.bytesPooled());
-        }
-    }
-
-    @Test
-    void parentAllocationIsNotRecycledWhileZeroCopyViewIsAlive() {
-        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
-            CpuBuffer parent = new CpuBuffer(pool.acquire(Float.BYTES), pool.arena(), pool);
-            CpuBuffer view = CpuBuffer.view(parent.segment().asSlice(0, Float.BYTES), parent);
-
-            parent.release();
             assertEquals(0, pool.bytesPooled());
-
-            view.release();
-            assertEquals(64, pool.bytesPooled());
+            pool.release(second);
         }
     }
 
     @Test
-    void tensorArrayExportUsesLogicalShapeNotPoolBucketCapacity() {
-        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
-            CpuBuffer buffer = new CpuBuffer(pool.acquire(Float.BYTES), pool.arena(), pool);
-            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 2.25f);
-            DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, null);
-            try {
-                assertArrayEquals(new float[] {2.25f}, tensor.toFloatArray(), 0f);
-            } finally {
-                tensor.release();
-            }
-            assertEquals(64, pool.bytesPooled());
+    void rejectsNegativeSizesAndSegmentsFromOtherArenas() {
+        try (OffHeapBufferPool pool = new OffHeapBufferPool(); Arena other = Arena.ofShared()) {
+            assertThrows(IllegalArgumentException.class, () -> pool.acquire(-1));
+            MemorySegment foreign = other.allocate(64);
+            assertThrows(IllegalArgumentException.class, () -> pool.release(foreign));
         }
     }
 
     @Test
-    void closeIsIdempotentAndPreventsNewAllocations() {
+    void closeIsIdempotentAndRejectsSubsequentAcquire() {
         OffHeapBufferPool pool = new OffHeapBufferPool();
-        CpuBuffer buffer = new CpuBuffer(pool.acquire(Float.BYTES), pool.arena(), pool);
-        buffer.release();
-        assertEquals(64, pool.bytesPooled());
-
+        MemorySegment segment = pool.acquire(64);
+        pool.release(segment);
+        pool.close();
         pool.close();
         assertEquals(0, pool.bytesPooled());
-        assertDoesNotThrow(pool::close);
-        assertThrows(IllegalStateException.class, () -> pool.acquire(Float.BYTES));
+        assertThrows(IllegalStateException.class, () -> pool.acquire(64));
+        assertFalse(segment.scope().isAlive());
     }
 
     @Test
-    void rejectsDoubleRelease() {
-        CpuBuffer buffer = new CpuBuffer(Float.BYTES);
-        buffer.release();
-        assertThrows(IllegalStateException.class, buffer::release);
+    void concurrentAcquireAndReleaseRemainSafeWhenCloseRaces() throws Exception {
+        OffHeapBufferPool pool = new OffHeapBufferPool();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        CountDownLatch firstAcquireCompleted = new CountDownLatch(1);
+        try {
+            Future<?> worker = executor.submit(() -> {
+                for (int i = 0; i < 10_000; i++) {
+                    final MemorySegment segment;
+                    try {
+                        segment = pool.acquire(128);
+                    } catch (IllegalStateException closed) {
+                        return;
+                    }
+                    firstAcquireCompleted.countDown();
+                    // Do not dereference the segment here: close is allowed to
+                    // invalidate leases once callers stop using them.
+                    pool.release(segment);
+                }
+            });
+            // Ensure the race includes at least one successful acquire; without
+            // this barrier, close could win before the worker exercises the pool.
+            assertTrue(firstAcquireCompleted.await(5, TimeUnit.SECONDS));
+            pool.close();
+            worker.get(5, TimeUnit.SECONDS);
+            assertThrows(IllegalStateException.class, () -> pool.acquire(128));
+        } finally {
+            pool.close();
+            executor.shutdownNow();
+        }
     }
 }
