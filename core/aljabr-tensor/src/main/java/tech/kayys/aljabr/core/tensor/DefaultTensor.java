@@ -304,12 +304,24 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public float[] toFloatArray() {
+        if (dtype != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "toFloatArray currently requires F32 tensors; actual dtype is " + dtype);
+        }
         return buffer.segment().toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
     }
 
     @Override
     public float item() {
-        return 0f;
+        if (numel() != 1) {
+            throw new IllegalStateException("item() requires exactly one element; tensor has " + numel());
+        }
+        return switch (dtype) {
+            case F32 -> buffer.segment().get(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0);
+            case I32 -> buffer.segment().get(java.lang.foreign.ValueLayout.JAVA_INT, 0);
+            case I8, INT8 -> buffer.segment().get(java.lang.foreign.ValueLayout.JAVA_BYTE, 0);
+            default -> throw new UnsupportedOperationException("item() is not supported for dtype " + dtype);
+        };
     }
 
     @Override
