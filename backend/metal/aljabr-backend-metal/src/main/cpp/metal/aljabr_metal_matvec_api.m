@@ -1427,10 +1427,11 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_mr4 != nil)) {
       // 1. Fused Gate + Up + Activation (GeGLU / SwiGLU) directly into g_scratch_hb
       id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-      BOOL use_b4 = (bSz > 1 && typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil);
+      BOOL use_b4 = (bSz > 1 && ((typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil)
+                                 || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
       id<MTLComputePipelineState> fuseP;
       if (use_b4) {
-        fuseP = pipelines->ffn_gate_up_act_q4_k_b4_mr4;
+        fuseP = (typeGate == 14) ? pipelines->ffn_gate_up_act_q6_k_b4_mr4 : pipelines->ffn_gate_up_act_q4_k_b4_mr4;
       } else if (typeGate == 14) {
         fuseP = pipelines->ffn_gate_up_act_q6_k_mr4;
       } else {
@@ -1478,7 +1479,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         uint32_t bSz32 = (uint32_t)bSz;
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 3) / 4, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc setComputePipelineState:pDown];
@@ -1567,7 +1568,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         uint32_t bSz32 = (uint32_t)bSz;
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 3) / 4, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc setComputePipelineState:pDown];
