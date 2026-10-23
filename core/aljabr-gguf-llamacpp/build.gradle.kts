@@ -153,5 +153,9 @@ tasks.register<Exec>("generateLlamaFfmBindings") {
             target.parentFile.mkdirs()
             source.copyTo(target, overwrite = true)
         }
-        logger.lifecycle("Copied ${generatedFiles.size} generated Java binding files into ${destination.relativeTo(projectDir)}")
-    }}
+        logger.lifecycle(
+            "Copied ${generatedFiles.size} generated Java binding files into " +
+                destination.relativeTo(projectDir)
+        )
+    }
+}
