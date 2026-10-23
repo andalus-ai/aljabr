@@ -90,11 +90,19 @@ public enum DType {
      *                                  blockSize
      */
     public long memoryFootprintBytes(long numElements) {
+        if (numElements < 0) {
+            throw new IllegalArgumentException("Tensor element count must be non-negative: " + numElements);
+        }
         if (numElements % blockSize != 0) {
             throw new IllegalArgumentException(
                     "Tensor size (" + numElements + ") is not a multiple of block size ("
                             + blockSize + ") for DType " + this);
         }
-        return (numElements / blockSize) * blockByteSize;
+        try {
+            return Math.multiplyExact(numElements / blockSize, (long) blockByteSize);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "Tensor storage size overflows long for " + numElements + " elements of " + this, e);
+        }
     }
 }
