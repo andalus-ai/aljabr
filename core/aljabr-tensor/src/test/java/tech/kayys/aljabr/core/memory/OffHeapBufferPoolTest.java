@@ -42,6 +42,14 @@ class OffHeapBufferPoolTest {
     }
 
     @Test
+    void closeIsIdempotentAndPreventsNewAllocations() {
+        OffHeapBufferPool pool = new OffHeapBufferPool();
+        pool.close();
+        assertDoesNotThrow(pool::close);
+        assertThrows(IllegalStateException.class, () -> pool.acquire(Float.BYTES));
+    }
+
+    @Test
     void rejectsDoubleRelease() {
         CpuBuffer buffer = new CpuBuffer(Float.BYTES);
         buffer.release();
