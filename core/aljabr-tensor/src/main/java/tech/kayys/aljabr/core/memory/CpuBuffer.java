@@ -52,7 +52,7 @@ public final class CpuBuffer implements Buffer {
         if (offsetBytes < 0 || lengthBytes < 0) {
             throw new IllegalArgumentException("View offset and length must be non-negative");
         }
-        long end;
+        final long end;
         try {
             end = Math.addExact(offsetBytes, lengthBytes);
         } catch (ArithmeticException e) {
@@ -61,7 +61,17 @@ public final class CpuBuffer implements Buffer {
         if (end > parent.sizeBytes()) {
             throw new IllegalArgumentException("View range exceeds parent buffer capacity");
         }
-        return new CpuBuffer(parent.segment().asSlice(offsetBytes, lengthBytes), parent, true);
+
+        // Hold the parent while deriving the slice so another thread cannot
+        // release its last reference between the bounds check and asSlice().
+        parent.retain();
+        try {
+            MemorySegment slice = parent.segment().asSlice(offsetBytes, lengthBytes);
+            return new CpuBuffer(slice, parent, true, true);
+        } catch (RuntimeException | Error e) {
+            parent.release();
+            throw e;
+        }
     }
 
     /**
@@ -72,21 +82,24 @@ public final class CpuBuffer implements Buffer {
      */
     @Deprecated
     public static CpuBuffer view(MemorySegment segment, Buffer parent) {
-        return new CpuBuffer(segment, parent, true);
+        return new CpuBuffer(segment, parent, false, false);
     }
 
-    private CpuBuffer(MemorySegment segment, Buffer parent, boolean view) {
+    private CpuBuffer(MemorySegment segment, Buffer parent, boolean trustedSlice, boolean parentAlreadyRetained) {
         this.segment = Objects.requireNonNull(segment, "segment must not be null");
         this.parent = Objects.requireNonNull(parent, "parent must not be null");
         this.arena = Objects.requireNonNull(parent.arena(), "parent arena must not be null");
         this.pool = null;
         this.owned = false;
 
-        // Retain first so the parent cannot be released while the range is checked.
-        parent.retain();
+        if (!parentAlreadyRetained) {
+            parent.retain();
+        }
         boolean valid = false;
         try {
-            validateContainedNativeRange(segment, parent.segment());
+            if (!trustedSlice) {
+                validateContainedNativeRange(segment, parent.segment());
+            }
             valid = true;
         } finally {
             if (!valid) {
