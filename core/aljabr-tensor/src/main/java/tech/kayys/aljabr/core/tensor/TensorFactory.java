@@ -13,7 +13,7 @@ public final class TensorFactory {
 
     public static Tensor randn(long... shape) {
         long n = numel(shape);
-        float[] data = new float[(int) n];
+        float[] data = new float[arrayLength(n)];
         for (int i = 0; i < n; i++)
             data[i] = (float) (RNG.nextGaussian());
         return of(data, shape);
@@ -42,6 +42,7 @@ public final class TensorFactory {
     }
 
     public static Tensor of(float[] data, long... shape) {
+        java.util.Objects.requireNonNull(data, "data must not be null");
         long n = numel(shape);
         if (data.length != n)
             throw new IllegalArgumentException("data length != shape numel");
@@ -60,8 +61,10 @@ public final class TensorFactory {
     }
 
     public static Tensor ofQuantized(java.lang.foreign.MemorySegment data, DType dtype, long... shape) {
+        java.util.Objects.requireNonNull(data, "data must not be null");
+        java.util.Objects.requireNonNull(dtype, "dtype must not be null");
         long n = numel(shape);
-        long bytes = (n / dtype.blockSize()) * dtype.blockByteSize();
+        long bytes = dtype.memoryFootprintBytes(n);
         if (data.byteSize() < bytes)
             throw new IllegalArgumentException("segment too small for quantized tensor");
 
@@ -71,10 +74,15 @@ public final class TensorFactory {
     }
 
     private static long numel(long... shape) {
-        long n = 1;
-        for (long s : shape)
-            n *= s;
-        return n;
+        return new Shape(shape).numel();
+    }
+
+    private static int arrayLength(long numel) {
+        if (numel > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "Tensor is too large for a Java float[]: " + numel + " elements");
+        }
+        return Math.toIntExact(numel);
     }
 
     private static volatile ComputeBackend defaultBackend;
