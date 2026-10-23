@@ -33,7 +33,7 @@ class OffHeapBufferPoolTest {
             buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 2.25f);
             DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, null);
             try {
-                assertArrayEquals(new float[] {2.25f}, tensor.toFloatArray());
+                assertArrayEquals(new float[] {2.25f}, tensor.toFloatArray(), 0f);
             } finally {
                 tensor.release();
             }
