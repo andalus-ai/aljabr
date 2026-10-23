@@ -275,7 +275,7 @@ public final class CpuBackend implements ComputeBackend {
             // Create zero-copy view into the existing segment
             MemorySegment viewSeg = src.asSlice(byteOffset, byteSize);
             Buffer parentBuffer = ((DefaultTensor) a).buffer();
-            CpuBuffer viewBuf = new CpuBuffer(viewSeg, parentBuffer);
+            CpuBuffer viewBuf = CpuBuffer.view(viewSeg, parentBuffer);
             return new DefaultTensor(outShape, a.dtype(), a.device(), viewBuf, this);
         }
 
