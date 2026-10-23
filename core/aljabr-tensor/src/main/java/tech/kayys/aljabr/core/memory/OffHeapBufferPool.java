@@ -201,6 +201,7 @@ public final class OffHeapBufferPool implements AutoCloseable {
             for (java.util.concurrent.atomic.AtomicReference<Node> head : heads) {
                 head.set(null);
             }
+            bytesPooled.add(-bytesPooled.sum());
             arena.close();
         }
     }
