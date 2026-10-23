@@ -54,6 +54,7 @@ public final class OffHeapBufferPool implements AutoCloseable {
     private final java.util.concurrent.atomic.AtomicReference<Node>[] heads = new java.util.concurrent.atomic.AtomicReference[NUM_BUCKETS];
 
     private final Arena arena;
+    private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 
     // Treiber node for lock-free stacks
     private static final class Node {
@@ -99,6 +100,9 @@ public final class OffHeapBufferPool implements AutoCloseable {
      *         {@code byteSize}
      */
     public MemorySegment acquire(long byteSize) {
+        if (closed.get()) {
+            throw new IllegalStateException("OffHeapBufferPool is closed");
+        }
         int bucketIdx = bucketFor(byteSize);
         if (bucketIdx >= 0) {
             java.util.concurrent.atomic.AtomicReference<Node> head = heads[bucketIdx];
@@ -108,6 +112,7 @@ public final class OffHeapBufferPool implements AutoCloseable {
                     break;
                 if (head.compareAndSet(h, h.next)) {
                     hits.increment();
+                    bytesPooled.add(-h.seg.byteSize());
                     return h.seg;
                 }
             }
@@ -129,6 +134,9 @@ public final class OffHeapBufferPool implements AutoCloseable {
      * @param seg the segment to recycle
      */
     public void release(MemorySegment seg) {
+        if (closed.get()) {
+            return;
+        }
         int bucketIdx = bucketFor(seg.byteSize());
         if (bucketIdx >= 0) {
             java.util.concurrent.atomic.AtomicReference<Node> head = heads[bucketIdx];
@@ -189,7 +197,13 @@ public final class OffHeapBufferPool implements AutoCloseable {
      */
     @Override
     public void close() {
-        arena.close();
+        if (closed.compareAndSet(false, true)) {
+            for (java.util.concurrent.atomic.AtomicReference<Node> head : heads) {
+                head.set(null);
+            }
+            bytesPooled.add(-bytesPooled.sum());
+            arena.close();
+        }
     }
 
     // ── Private helpers ────────────────────────────────────────────────────────

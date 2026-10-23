@@ -174,7 +174,7 @@ public interface Tensor {
     Tensor embedding(Tensor weight, long paddingIdx);
 
     default Tensor applyRoPE(int posOffset, float freqBase, boolean isNeox) {
-        return this;
+        throw new UnsupportedOperationException("RoPE is not supported by " + getClass().getSimpleName());
     }
 
     default Tensor updateKVCache(int layerIdx, String type) {
@@ -184,6 +184,6 @@ public interface Tensor {
     long numel();
 
     default float[] toFloatArray() {
-        return new float[0];
+        throw new UnsupportedOperationException("Float-array export is not supported by " + getClass().getSimpleName());
     }
 }

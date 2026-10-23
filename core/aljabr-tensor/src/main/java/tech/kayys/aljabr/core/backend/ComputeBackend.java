@@ -50,7 +50,7 @@ public interface ComputeBackend {
     Tensor embedding(Tensor weight, Tensor input, long paddingIdx);
 
     default Tensor applyRoPE(Tensor input, int posOffset, float freqBase, boolean isNeox) {
-        return input;
+        throw new UnsupportedOperationException("RoPE is not supported by backend " + getClass().getName());
     }
 
     // ── Shape manipulation ────────────────────────────────────────────

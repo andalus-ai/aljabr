@@ -42,7 +42,7 @@ public final class CpuBackend implements ComputeBackend {
 
     private CpuBuffer allocate(long byteSize) {
         if (pool != null) {
-            return new CpuBuffer(pool.acquire(byteSize), pool.arena());
+            return new CpuBuffer(pool.acquire(byteSize), pool.arena(), pool);
         }
         return new CpuBuffer(byteSize);
     }
@@ -227,9 +227,10 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor reshape(Tensor a, long... newShape) {
-        // Zero-copy: share the same buffer with a new shape view.
-        return new DefaultTensor(new Shape(newShape), a.dtype(), a.device(),
-                ((DefaultTensor) a).buffer(), this);
+        // Zero-copy: retain the shared buffer until every tensor view is released.
+        Buffer buffer = ((DefaultTensor) a).buffer();
+        buffer.retain();
+        return new DefaultTensor(new Shape(newShape), a.dtype(), a.device(), buffer, this);
     }
 
     @Override
@@ -273,8 +274,8 @@ public final class CpuBackend implements ComputeBackend {
         if (isContiguous) {
             // Create zero-copy view into the existing segment
             MemorySegment viewSeg = src.asSlice(byteOffset, byteSize);
-            java.lang.foreign.Arena viewArena = ((DefaultTensor) a).buffer().arena();
-            CpuBuffer viewBuf = new CpuBuffer(viewSeg, viewArena);
+            Buffer parentBuffer = ((DefaultTensor) a).buffer();
+            CpuBuffer viewBuf = new CpuBuffer(viewSeg, parentBuffer);
             return new DefaultTensor(outShape, a.dtype(), a.device(), viewBuf, this);
         }
 
