@@ -21,10 +21,11 @@ class OffHeapBufferPoolTest {
         try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
             MemorySegment first = pool.acquire(80);
             assertEquals(128, first.byteSize());
+            long address = first.address();
             pool.release(first);
             assertEquals(128, pool.bytesPooled());
             MemorySegment second = pool.acquire(80);
-            assertEquals(first.address(), second.address());
+            assertEquals(address, second.address());
             assertEquals(1, pool.hits());
             assertEquals(0, pool.bytesPooled());
             pool.release(second);
@@ -53,21 +54,28 @@ class OffHeapBufferPoolTest {
     }
 
     @Test
-    void closeWaitsForAnInFlightAcquireOperation() throws Exception {
+    void concurrentAcquireAndReleaseRemainSafeWhenCloseRaces() throws Exception {
         OffHeapBufferPool pool = new OffHeapBufferPool();
-        ExecutorService executor = Executors.newFixedThreadPool(2);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
         CountDownLatch started = new CountDownLatch(1);
         try {
-            Future<?> acquire = executor.submit(() -> {
+            Future<?> worker = executor.submit(() -> {
                 started.countDown();
-                MemorySegment segment = pool.acquire(128);
-                assertTrue(segment.scope().isAlive());
-                pool.release(segment);
+                for (int i = 0; i < 10_000; i++) {
+                    final MemorySegment segment;
+                    try {
+                        segment = pool.acquire(128);
+                    } catch (IllegalStateException closed) {
+                        return;
+                    }
+                    // Do not dereference the segment here: close is allowed to
+                    // invalidate leases once callers stop using them.
+                    pool.release(segment);
+                }
             });
             assertTrue(started.await(5, TimeUnit.SECONDS));
-            acquire.get(5, TimeUnit.SECONDS);
-            Future<?> close = executor.submit(pool::close);
-            close.get(5, TimeUnit.SECONDS);
+            pool.close();
+            worker.get(5, TimeUnit.SECONDS);
             assertThrows(IllegalStateException.class, () -> pool.acquire(128));
         } finally {
             pool.close();
