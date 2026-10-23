@@ -118,7 +118,7 @@ tasks.register<Exec>("generateLlamaFfmBindings") {
             "--header-class-name", "llama_h",
             "-I", includeDir.absolutePath
         )
-        val ggmlDir = ggmlInclude.orNull?.let(::file)?.absoluteFile?.normalize()
+        val ggmlDir = ggmlInclude.orNull?.let { file(it).absoluteFile.normalize() }
             ?: includeDir.resolve("../ggml/include").takeIf { it.isDirectory }
         if (ggmlDir != null && ggmlDir.isDirectory) {
             command.addAll(listOf("-I", ggmlDir.absolutePath))
