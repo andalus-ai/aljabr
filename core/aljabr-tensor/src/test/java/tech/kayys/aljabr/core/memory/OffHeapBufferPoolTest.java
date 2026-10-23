@@ -27,6 +27,20 @@ class OffHeapBufferPoolTest {
     }
 
     @Test
+    void parentAllocationIsNotRecycledWhileZeroCopyViewIsAlive() {
+        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
+            CpuBuffer parent = new CpuBuffer(pool.acquire(Float.BYTES), pool.arena(), pool);
+            CpuBuffer view = new CpuBuffer(parent.segment().asSlice(0, Float.BYTES), parent);
+
+            parent.release();
+            assertEquals(0, pool.bytesPooled());
+
+            view.release();
+            assertEquals(64, pool.bytesPooled());
+        }
+    }
+
+    @Test
     void tensorArrayExportUsesLogicalShapeNotPoolBucketCapacity() {
         try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
             CpuBuffer buffer = new CpuBuffer(pool.acquire(Float.BYTES), pool.arena(), pool);
