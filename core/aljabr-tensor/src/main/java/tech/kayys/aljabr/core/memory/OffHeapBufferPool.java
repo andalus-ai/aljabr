@@ -2,6 +2,8 @@ package tech.kayys.aljabr.core.memory;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
@@ -25,6 +27,9 @@ public final class OffHeapBufferPool implements AutoCloseable {
     private final Arena arena;
     private final AtomicBoolean closed = new AtomicBoolean();
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
+    // Identity semantics are required: a lease is the exact segment instance returned by acquire().
+    // Access is synchronized because multiple operations hold the lifecycle read lock concurrently.
+    private final Map<MemorySegment, Boolean> activeSegments = new IdentityHashMap<>();
     private final LongAdder hits = new LongAdder();
     private final LongAdder misses = new LongAdder();
     private final LongAdder bytesPooled = new LongAdder();
@@ -59,12 +64,15 @@ public final class OffHeapBufferPool implements AutoCloseable {
                     if (head.compareAndSet(current, current.next)) {
                         hits.increment();
                         bytesPooled.add(-current.segment.byteSize());
+                        markAcquired(current.segment);
                         return current.segment;
                     }
                 }
             }
             misses.increment();
-            return arena.allocate(idx >= 0 ? bucketSize(idx) : byteSize);
+            MemorySegment segment = arena.allocate(idx >= 0 ? bucketSize(idx) : byteSize);
+            markAcquired(segment);
+            return segment;
         } finally { lock.unlock(); }
     }
 
@@ -77,6 +85,12 @@ public final class OffHeapBufferPool implements AutoCloseable {
             if (closed.get()) return;
             if (segment.scope() != arena.scope()) {
                 throw new IllegalArgumentException("Segment must belong to this pool's arena");
+            }
+            synchronized (activeSegments) {
+                if (activeSegments.remove(segment) == null) {
+                    throw new IllegalArgumentException(
+                            "Segment was not acquired from this pool or has already been released");
+                }
             }
             int idx = bucketFor(segment.byteSize());
             if (idx >= 0) {
@@ -110,10 +124,21 @@ public final class OffHeapBufferPool implements AutoCloseable {
         try {
             if (closed.compareAndSet(false, true)) {
                 for (AtomicReference<Node> head : heads) head.set(null);
+                synchronized (activeSegments) {
+                    activeSegments.clear();
+                }
                 bytesPooled.reset();
                 arena.close();
             }
         } finally { lock.unlock(); }
+    }
+
+    private void markAcquired(MemorySegment segment) {
+        synchronized (activeSegments) {
+            if (activeSegments.put(segment, Boolean.TRUE) != null) {
+                throw new IllegalStateException("Segment is already checked out from this pool");
+            }
+        }
     }
 
     private void ensureOpen() {
