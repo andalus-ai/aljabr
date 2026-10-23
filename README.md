@@ -125,6 +125,21 @@ class node_autograd,node_rag,node_sd,node_whisper,node_engine toneIndigo
 ```
 
 
+## Build profiles
+
+Aljabr's foundational build is intentionally independent of Tafkir. A checkout of Tafkir
+must not be required just to compile or test Aljabr's core tensor, model SPI, and backend
+modules.
+
+- **Default / core build:** `./gradlew test`
+- **Tafkir source integration:** `./gradlew -PwithTafkir=true test`
+
+The `withTafkir` profile includes the sibling `../tafkir` composite build and enables
+the Aljabr SafeTensors quantization adapter that consumes Tafkir quantizer artifacts.
+Use it when validating the cross-project integration, not as a prerequisite for ordinary
+core development. The integration profile requires a sibling Tafkir checkout with Gradle
+settings; it does not guarantee that Tafkir itself is currently buildable.
+
 ### The Separation of Concerns
 1. **Aljabr (Foundation)**: Knows how to multiply matrices, allocate memory on a GPU, parse SafeTensors, and define what a "Gemma" model looks like.
 2. **Tafkir (Training)**: Knows how to calculate loss, apply gradients, run optimizers, and execute training loops. Depends on Aljabr for math and autograd.
