@@ -42,7 +42,7 @@ public final class CpuBackend implements ComputeBackend {
 
     private CpuBuffer allocate(long byteSize) {
         if (pool != null) {
-            return new CpuBuffer(pool.acquire(byteSize), pool.arena());
+            return new CpuBuffer(pool.acquire(byteSize), pool.arena(), pool);
         }
         return new CpuBuffer(byteSize);
     }
