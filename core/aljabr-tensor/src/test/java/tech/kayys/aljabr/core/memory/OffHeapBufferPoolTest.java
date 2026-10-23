@@ -42,6 +42,23 @@ class OffHeapBufferPoolTest {
     }
 
     @Test
+    void rejectsSegmentsNotCurrentlyLeasedAndDuplicateRelease() {
+        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
+            MemorySegment acquired = pool.acquire(64);
+            pool.release(acquired);
+            assertThrows(IllegalArgumentException.class, () -> pool.release(acquired));
+
+            // Matching arena scope alone is not proof that this pool issued a lease.
+            MemorySegment unleased = pool.arena().allocate(64);
+            assertThrows(IllegalArgumentException.class, () -> pool.release(unleased));
+
+            MemorySegment reused = pool.acquire(64);
+            assertEquals(acquired.address(), reused.address());
+            pool.release(reused);
+        }
+    }
+
+    @Test
     void closeIsIdempotentAndRejectsSubsequentAcquire() {
         OffHeapBufferPool pool = new OffHeapBufferPool();
         MemorySegment segment = pool.acquire(64);
