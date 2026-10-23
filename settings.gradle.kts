@@ -1,14 +1,20 @@
 rootProject.name = "aljabr-engine"
 
-// ── Composite build: tafkir (quantizer modules) ──────────────────────────────
-// Include tafkir as a composite build when the directory is present locally or
-// in CI. When tafkir is available as a composite build, Gradle substitutes the
-// tech.kayys.tafkir:* Maven coordinates with source-project dependencies, so
-// the SNAPSHOT JARs never need to be downloaded from a remote repository.
+// ── Optional composite build: Tafkir (training/quantizer integration) ─────────
+// Aljabr's foundational compute modules must remain buildable without Tafkir.
+// Opt in to source-level quantizer integration with -PwithTafkir=true. This keeps
+// an unrelated Tafkir configuration failure from breaking core Aljabr builds.
+val withTafkir = providers.gradleProperty("withTafkir")
+    .map { it.toBoolean() }
+    .getOrElse(false)
 val tafkirDir = file("../tafkir")
-if (tafkirDir.exists() &&
+val tafkirSettingsExists = tafkirDir.exists() &&
     (tafkirDir.resolve("settings.gradle.kts").isFile ||
-     tafkirDir.resolve("settings.gradle").isFile)) {
+     tafkirDir.resolve("settings.gradle").isFile)
+if (withTafkir && !tafkirSettingsExists) {
+    throw GradleException("withTafkir=true requires a sibling ../tafkir checkout with Gradle settings")
+}
+if (withTafkir) {
     includeBuild("../tafkir")
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,7 +100,11 @@ includeOptionalProject("core:aljabr-safetensor-api",          "core/aljabr-safet
 includeOptionalProject("core:aljabr-safetensor-spi",          "core/aljabr-safetensor-spi")
 includeOptionalProject("core:aljabr-safetensor-core",         "core/aljabr-safetensor-core")
 includeOptionalProject("core:aljabr-safetensor-loader",       "core/aljabr-safetensor-loader")
-includeOptionalProject("core:aljabr-safetensor-quantization", "core/aljabr-safetensor-quantization")
+// This adapter depends on Tafkir quantizer artifacts and is intentionally opt-in.
+// Core Aljabr builds do not need training/quantization modules.
+if (withTafkir) {
+    includeOptionalProject("core:aljabr-safetensor-quantization", "core/aljabr-safetensor-quantization")
+}
 includeOptionalProject("core:aljabr-gguf-bridge",             "core/aljabr-gguf-bridge")
 includeOptionalProject("core:aljabr-gguf-fast-bridge",        "core/aljabr-gguf-fast-bridge")
 includeOptionalProject("core:aljabr-gguf-converter",          "core/aljabr-gguf-converter")
