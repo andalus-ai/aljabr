@@ -47,8 +47,18 @@ public final class CpuBuffer implements Buffer {
     private CpuBuffer(MemorySegment segment, Buffer parent, boolean view) {
         this.segment = java.util.Objects.requireNonNull(segment, "segment must not be null");
         this.parent = java.util.Objects.requireNonNull(parent, "parent must not be null");
-        if (segment.byteSize() > parent.sizeBytes()) {
-            throw new IllegalArgumentException("View segment cannot exceed parent buffer capacity");
+        // Validate the actual segment range against the parent segment, not only
+        // its byte length. A same-sized segment from another allocation must not be
+        // accepted as a view whose lifetime is tied to this parent.
+        java.util.Objects.requireNonNull(parent.segment(), "parent segment must not be null");
+        if (!parent.segment().isAccessibleBy(Thread.currentThread())) {
+            throw new IllegalStateException("Parent buffer is not accessible by the current thread");
+        }
+        if (segment.byteSize() > parent.sizeBytes()
+                || !parent.segment().asSlice(0, parent.sizeBytes()).equals(segment)) {
+            // MemorySegment.equals compares segment identity and bounds, not arbitrary
+            // overlapping memory addresses; use address/range validation below instead.
+            throw new IllegalArgumentException("View segment must be contained within parent buffer");
         }
         this.arena = parent.arena();
         this.pool = null;
