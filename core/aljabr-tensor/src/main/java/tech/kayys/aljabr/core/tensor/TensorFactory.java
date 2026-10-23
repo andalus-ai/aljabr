@@ -27,7 +27,7 @@ public final class TensorFactory {
 
     public static Tensor ones(long... shape) {
         long n = numel(shape);
-        float[] data = new float[(int) n];
+        float[] data = new float[arrayLength(n)];
         for (int i = 0; i < n; i++)
             data[i] = 1f;
         return of(data, shape);
@@ -35,7 +35,7 @@ public final class TensorFactory {
 
     public static Tensor full(float value, long... shape) {
         long n = numel(shape);
-        float[] data = new float[(int) n];
+        float[] data = new float[arrayLength(n)];
         for (int i = 0; i < n; i++)
             data[i] = value;
         return of(data, shape);
