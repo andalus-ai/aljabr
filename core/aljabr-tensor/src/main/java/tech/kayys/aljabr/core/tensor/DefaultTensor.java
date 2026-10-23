@@ -20,11 +20,24 @@ public final class DefaultTensor implements Tensor {
     private boolean requiresGrad;
 
     public DefaultTensor(Shape shape, DType dtype, DeviceType device, Buffer buffer, ComputeBackend backend) {
-        this.shape = shape;
-        this.dtype = dtype;
-        this.device = device;
-        this.buffer = buffer;
-        this.backend = backend;
+        this.shape = java.util.Objects.requireNonNull(shape, "shape must not be null");
+        this.dtype = java.util.Objects.requireNonNull(dtype, "dtype must not be null");
+        this.device = java.util.Objects.requireNonNull(device, "device must not be null");
+        this.buffer = java.util.Objects.requireNonNull(buffer, "buffer must not be null");
+        this.backend = java.util.Objects.requireNonNull(backend, "backend must not be null");
+
+        // Validate storage at the boundary where logical tensor metadata and physical
+        // allocation meet. Larger buffers are allowed for pooled allocations and views,
+        // but a tensor must never expose less storage than its dtype/shape require.
+        final long requiredBytes = dtype.memoryFootprintBytes(shape.numel());
+        final long availableBytes = buffer.sizeBytes();
+        if (availableBytes < requiredBytes) {
+            throw new IllegalArgumentException(
+                    "Tensor buffer is too small: shape=" + shape
+                            + ", dtype=" + dtype
+                            + ", requires=" + requiredBytes + " bytes"
+                            + ", available=" + availableBytes + " bytes");
+        }
     }
 
     @Override
