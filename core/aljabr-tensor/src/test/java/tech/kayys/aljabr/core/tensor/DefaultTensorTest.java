@@ -13,7 +13,7 @@ class DefaultTensorTest {
         buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 3.5f);
         DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, null);
         try {
-            assertEquals(3.5f, tensor.item());
+            assertEquals(3.5f, tensor.item(), 0f);
         } finally {
             tensor.release();
         }
