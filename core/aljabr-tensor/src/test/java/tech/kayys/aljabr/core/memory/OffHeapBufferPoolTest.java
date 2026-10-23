@@ -57,10 +57,9 @@ class OffHeapBufferPoolTest {
     void concurrentAcquireAndReleaseRemainSafeWhenCloseRaces() throws Exception {
         OffHeapBufferPool pool = new OffHeapBufferPool();
         ExecutorService executor = Executors.newSingleThreadExecutor();
-        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch firstAcquireCompleted = new CountDownLatch(1);
         try {
             Future<?> worker = executor.submit(() -> {
-                started.countDown();
                 for (int i = 0; i < 10_000; i++) {
                     final MemorySegment segment;
                     try {
@@ -68,12 +67,15 @@ class OffHeapBufferPoolTest {
                     } catch (IllegalStateException closed) {
                         return;
                     }
+                    firstAcquireCompleted.countDown();
                     // Do not dereference the segment here: close is allowed to
                     // invalidate leases once callers stop using them.
                     pool.release(segment);
                 }
             });
-            assertTrue(started.await(5, TimeUnit.SECONDS));
+            // Ensure the race includes at least one successful acquire; without
+            // this barrier, close could win before the worker exercises the pool.
+            assertTrue(firstAcquireCompleted.await(5, TimeUnit.SECONDS));
             pool.close();
             worker.get(5, TimeUnit.SECONDS);
             assertThrows(IllegalStateException.class, () -> pool.acquire(128));
