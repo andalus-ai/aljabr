@@ -40,7 +40,11 @@ public final class CpuBuffer implements Buffer {
     }
 
     /** Wraps a zero-copy view whose lifetime is bounded by a parent buffer. */
-    public CpuBuffer(MemorySegment segment, Buffer parent) {
+    public static CpuBuffer view(MemorySegment segment, Buffer parent) {
+        return new CpuBuffer(segment, parent, true);
+    }
+
+    private CpuBuffer(MemorySegment segment, Buffer parent, boolean view) {
         this.segment = java.util.Objects.requireNonNull(segment, "segment must not be null");
         this.parent = java.util.Objects.requireNonNull(parent, "parent must not be null");
         if (segment.byteSize() > parent.sizeBytes()) {
