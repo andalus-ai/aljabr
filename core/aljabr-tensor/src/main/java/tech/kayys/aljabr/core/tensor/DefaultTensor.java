@@ -308,7 +308,8 @@ public final class DefaultTensor implements Tensor {
             throw new UnsupportedOperationException(
                     "toFloatArray currently requires F32 tensors; actual dtype is " + dtype);
         }
-        return buffer.segment().toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
+        return buffer.segment().asSlice(0, Math.multiplyExact(numel(), Float.BYTES))
+                .toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
     }
 
     @Override
