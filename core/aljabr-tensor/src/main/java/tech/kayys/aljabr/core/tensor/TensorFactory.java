@@ -21,7 +21,7 @@ public final class TensorFactory {
 
     public static Tensor zeros(long... shape) {
         long n = numel(shape);
-        float[] data = new float[(int) n]; // zero-initialized
+        float[] data = new float[arrayLength(n)]; // zero-initialized
         return of(data, shape);
     }
 
