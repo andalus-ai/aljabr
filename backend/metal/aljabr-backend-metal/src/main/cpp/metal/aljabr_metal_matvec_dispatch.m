@@ -227,6 +227,70 @@ int aljabr_metal_dispatch_matvec_tb_q4_k_mr4(
   }
 }
 
+int aljabr_metal_dispatch_matvec_tb_q4_k_mr8(
+    void *C, const void *A, const void *B, int K, int N,
+    id<MTLComputePipelineState> pipeline) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N <= 0)
+    return -2;
+  if (pipeline == nil)
+    return -3;
+
+  @autoreleasepool {
+    size_t cBytes = (size_t)N * sizeof(float);
+    size_t aBytes = (size_t)K * sizeof(float);
+    id<MTLBuffer> bufA = ensure_scratch_mr4(&g_scratch_mr4_A, &g_scratch_mr4_A_bytes, aBytes);
+    if (bufA == nil) return -4;
+    memcpy([bufA contents], A, aBytes);
+
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K / 256 * 144, &bOff);
+    if (bufB == nil) return -4;
+
+    size_t page_size = (size_t)getpagesize();
+    uintptr_t addr = (uintptr_t)C;
+    uintptr_t cOff = addr & (page_size - 1);
+    void *aligned_ptr = (void *)(addr - cOff);
+    size_t aligned_bytes = (cBytes + cOff + page_size - 1) & ~(page_size - 1);
+    id<MTLBuffer> bufC = [g_device newBufferWithBytesNoCopy:aligned_ptr
+                                                    length:aligned_bytes
+                                                   options:MTLResourceStorageModeShared
+                                               deallocator:nil];
+    BOOL direct_C = (bufC != nil);
+    if (!direct_C) {
+      bufC = ensure_scratch_mr4(&g_scratch_mr4_C, &g_scratch_mr4_C_bytes, cBytes);
+      if (bufC == nil) return -4;
+      cOff = 0;
+    }
+
+    uint32_t kk = (uint32_t)K;
+    uint32_t nn = (uint32_t)N;
+    id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:pipeline];
+    [enc setBuffer:bufC offset:cOff atIndex:0];
+    [enc setBuffer:bufA offset:0 atIndex:1];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
+    [enc setBytes:&kk length:sizeof(kk) atIndex:3];
+    [enc setBytes:&nn length:sizeof(nn) atIndex:4];
+
+    NSUInteger groups = ((NSUInteger)N + 7) / 8;
+    [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+        threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    [enc endEncoding];
+    [cmd commit];
+    [cmd waitUntilCompleted];
+    if ([cmd status] == MTLCommandBufferStatusCompleted) {
+      if (!direct_C) {
+        memcpy(C, [bufC contents], cBytes);
+      }
+      return 0;
+    }
+    return -1;
+  }
+}
+
 int aljabr_metal_dispatch_matvec_tb_q4_k_mr4_softcap(
     void *C, const void *A, const void *B, int K, int N, float cap,
     id<MTLComputePipelineState> pipeline) {
@@ -386,6 +450,70 @@ int aljabr_metal_dispatch_matvec_tb_q6_k_mr4(
     NSUInteger groups = ((NSUInteger)N + 3) / 4;
     [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    [enc endEncoding];
+    [cmd commit];
+    [cmd waitUntilCompleted];
+    if ([cmd status] == MTLCommandBufferStatusCompleted) {
+      if (!direct_C) {
+        memcpy(C, [bufC contents], cBytes);
+      }
+      return 0;
+    }
+    return -1;
+  }
+}
+
+int aljabr_metal_dispatch_matvec_tb_q6_k_mr8(
+    void *C, const void *A, const void *B, int K, int N,
+    id<MTLComputePipelineState> pipeline) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N <= 0)
+    return -2;
+  if (pipeline == nil)
+    return -3;
+
+  @autoreleasepool {
+    size_t cBytes = (size_t)N * sizeof(float);
+    size_t aBytes = (size_t)K * sizeof(float);
+    id<MTLBuffer> bufA = ensure_scratch_mr4(&g_scratch_mr4_A, &g_scratch_mr4_A_bytes, aBytes);
+    if (bufA == nil) return -4;
+    memcpy([bufA contents], A, aBytes);
+
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K / 256 * 210, &bOff);
+    if (bufB == nil) return -4;
+
+    size_t page_size = (size_t)getpagesize();
+    uintptr_t addr = (uintptr_t)C;
+    uintptr_t cOff = addr & (page_size - 1);
+    void *aligned_ptr = (void *)(addr - cOff);
+    size_t aligned_bytes = (cBytes + cOff + page_size - 1) & ~(page_size - 1);
+    id<MTLBuffer> bufC = [g_device newBufferWithBytesNoCopy:aligned_ptr
+                                                    length:aligned_bytes
+                                                   options:MTLResourceStorageModeShared
+                                               deallocator:nil];
+    BOOL direct_C = (bufC != nil);
+    if (!direct_C) {
+      bufC = ensure_scratch_mr4(&g_scratch_mr4_C, &g_scratch_mr4_C_bytes, cBytes);
+      if (bufC == nil) return -4;
+      cOff = 0;
+    }
+
+    uint32_t kk = (uint32_t)K;
+    uint32_t nn = (uint32_t)N;
+    id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    [enc setComputePipelineState:pipeline];
+    [enc setBuffer:bufC offset:cOff atIndex:0];
+    [enc setBuffer:bufA offset:0 atIndex:1];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
+    [enc setBytes:&kk length:sizeof(kk) atIndex:3];
+    [enc setBytes:&nn length:sizeof(nn) atIndex:4];
+
+    NSUInteger groups = ((NSUInteger)N + 7) / 8;
+    [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+        threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
     [enc endEncoding];
     [cmd commit];
     [cmd waitUntilCompleted];

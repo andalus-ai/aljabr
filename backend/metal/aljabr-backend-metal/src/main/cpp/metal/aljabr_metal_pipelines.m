@@ -100,6 +100,18 @@ static void warmup_pipelines(AljabrMetalPipelines *pipelines) {
           threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
     }
 
+    // Warmup matvec_tb_q4_k_mr8
+    if (pipelines->matvec_tb_q4_k_mr8 != nil) {
+      [enc setComputePipelineState:pipelines->matvec_tb_q4_k_mr8];
+      [enc setBuffer:dummy offset:0 atIndex:0];      // C
+      [enc setBuffer:dummy offset:4096 atIndex:1];   // A
+      [enc setBuffer:dummy offset:16384 atIndex:2];  // B
+      [enc setBytes:&K length:sizeof(K) atIndex:3];
+      [enc setBytes:&N length:sizeof(N) atIndex:4];
+      [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    }
+
     // Warmup matvec_tb_q4_k_mr4_softcap
     if (pipelines->matvec_tb_q4_k_mr4_softcap != nil) {
       [enc setComputePipelineState:pipelines->matvec_tb_q4_k_mr4_softcap];
@@ -129,9 +141,6 @@ static void warmup_pipelines(AljabrMetalPipelines *pipelines) {
     }
 
     // Warmup ffn_gate_up_act_q4_k_mr4
-    // Use realistic K/N so Metal fully compiles the GPU binary on startup.
-    // A tiny dummy workload can be elided by the driver, deferring JIT to first
-    // real prefill dispatch and causing a 50-80 ms spike at layer 0.
     if (pipelines->ffn_gate_up_act_q4_k_mr4 != nil) {
       uint32_t wK = 3840;  // actual embedding dim (Gemma 4 12B: K=3840)
       uint32_t wN = 8;     // 2 thread-groups of MR4 = 8 output rows
@@ -145,6 +154,22 @@ static void warmup_pipelines(AljabrMetalPipelines *pipelines) {
       [enc setBytes:&act length:sizeof(act) atIndex:6];
       [enc dispatchThreadgroups:MTLSizeMake(2, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    }
+
+    // Warmup ffn_gate_up_act_q4_k_mr8
+    if (pipelines->ffn_gate_up_act_q4_k_mr8 != nil) {
+      uint32_t wK = 3840;
+      uint32_t wN = 8;     // 1 thread-group of MR8 = 8 output rows
+      [enc setComputePipelineState:pipelines->ffn_gate_up_act_q4_k_mr8];
+      [enc setBuffer:dummy offset:0 atIndex:0];      // hb
+      [enc setBuffer:dummy offset:4096 atIndex:1];   // A
+      [enc setBuffer:dummy offset:16384 atIndex:2];  // B_gate
+      [enc setBuffer:dummy offset:32768 atIndex:3];  // B_up
+      [enc setBytes:&wK length:sizeof(wK) atIndex:4];
+      [enc setBytes:&wN length:sizeof(wN) atIndex:5];
+      [enc setBytes:&act length:sizeof(act) atIndex:6];
+      [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
     }
 
     // Warmup ffn_gate_up_act_q4_k_b4_mr4 (batched prefill variant)
@@ -172,8 +197,21 @@ static void warmup_pipelines(AljabrMetalPipelines *pipelines) {
       [enc setBuffer:dummy offset:4096 atIndex:1];   // A
       [enc setBuffer:dummy offset:49152 atIndex:2];  // B
       [enc setBytes:&K length:sizeof(K) atIndex:3];
+      [enc setBytes:&N length:sizeof(N) atIndex:4];
       [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    }
+
+    // Warmup matvec_tb_q6_k_mr8
+    if (pipelines->matvec_tb_q6_k_mr8 != nil) {
+      [enc setComputePipelineState:pipelines->matvec_tb_q6_k_mr8];
+      [enc setBuffer:dummy offset:0 atIndex:0];      // C
+      [enc setBuffer:dummy offset:4096 atIndex:1];   // A
+      [enc setBuffer:dummy offset:49152 atIndex:2];  // B
+      [enc setBytes:&K length:sizeof(K) atIndex:3];
+      [enc setBytes:&N length:sizeof(N) atIndex:4];
+      [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
     }
 
     // Warmup matvec_tb_q6_k_mr4_softcap
@@ -362,18 +400,24 @@ void aljabr_metal_compile_runtime_pipelines(
         matvec256Library, @"aljabr_matvec_tb_q4_k_kernel");
     pipelines->matvec_tb_q4_k_mr4 = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q4_k_mr4_kernel");
+    pipelines->matvec_tb_q4_k_mr8 = compile_pipeline(
+        matvec256Library, @"aljabr_matvec_tb_q4_k_mr8_kernel");
     pipelines->matvec_tb_q4_k_mr4_softcap = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q4_k_mr4_softcap_kernel");
     pipelines->matvec_tb_q4_k_b4_mr4 = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q4_k_b4_mr4_kernel");
     pipelines->ffn_gate_up_act_q4_k_mr4 = compile_pipeline(
         matvec256Library, @"aljabr_ffn_gate_up_act_q4_k_mr4_kernel");
+    pipelines->ffn_gate_up_act_q4_k_mr8 = compile_pipeline(
+        matvec256Library, @"aljabr_ffn_gate_up_act_q4_k_mr8_kernel");
     pipelines->ffn_gate_up_act_q4_k_b4_mr4 = compile_pipeline(
         matvec256Library, @"aljabr_ffn_gate_up_act_q4_k_b4_mr4_kernel");
     pipelines->matvec_tb_q6_k = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q6_k_kernel");
     pipelines->matvec_tb_q6_k_mr4 = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q6_k_mr4_kernel");
+    pipelines->matvec_tb_q6_k_mr8 = compile_pipeline(
+        matvec256Library, @"aljabr_matvec_tb_q6_k_mr8_kernel");
     pipelines->matvec_tb_q6_k_mr4_softcap = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q6_k_mr4_softcap_kernel");
     pipelines->matvec_tb_q6_k_b4_mr4 = compile_pipeline(

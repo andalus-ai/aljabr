@@ -407,12 +407,29 @@ int aljabr_metal_matvec_tb_int4(void *C, const void *A,
 #define g_matvec_tb_q6_k_pipeline g_pipelines.matvec_tb_q6_k
 #define g_matvec_tb_q8_0_pipeline g_pipelines.matvec_tb_q8_0
 
+static inline BOOL mr8_enabled(void) {
+  static int enabled = -1;
+  if (enabled == -1) {
+    const char *e = getenv("ALJABR_METAL_DISABLE_MR8");
+    if (e && (strcmp(e, "1") == 0 || strcmp(e, "true") == 0)) {
+      enabled = 0;
+    } else {
+      enabled = 1;
+    }
+  }
+  return enabled == 1;
+}
+
 int aljabr_metal_matvec_tb_q4_k(void *C, const void *A, const void *B,
                                      int K, int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
     return -2;
+  if (g_pipelines.matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+    return aljabr_metal_dispatch_matvec_tb_q4_k_mr8(
+        C, A, B, K, N, g_pipelines.matvec_tb_q4_k_mr8);
+  }
   if (g_pipelines.matvec_tb_q4_k_mr4 != nil) {
     return aljabr_metal_dispatch_matvec_tb_q4_k_mr4(
         C, A, B, K, N, g_pipelines.matvec_tb_q4_k_mr4);
@@ -447,6 +464,10 @@ int aljabr_metal_matvec_tb_q6_k(void *C, const void *A, const void *B,
     return -1;
   if (K <= 0 || N <= 0)
     return -2;
+  if (g_pipelines.matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+    return aljabr_metal_dispatch_matvec_tb_q6_k_mr8(
+        C, A, B, K, N, g_pipelines.matvec_tb_q6_k_mr8);
+  }
   if (g_pipelines.matvec_tb_q6_k_mr4 != nil) {
     return aljabr_metal_dispatch_matvec_tb_q6_k_mr4(
         C, A, B, K, N, g_pipelines.matvec_tb_q6_k_mr4);
@@ -1073,12 +1094,16 @@ static BOOL encode_matvec_sub(
     uint32_t kk, uint32_t nn, int type, uint32_t batchSize) {
   id<MTLComputePipelineState> p = nil;
   size_t bBytes = 0;
+  BOOL is_mr8 = NO;
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
     if (batchSize > 1 && pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      p = pipelines->matvec_tb_q4_k_mr8;
+      is_mr8 = YES;
     } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_mr4;
       is_mr4 = YES;
@@ -1090,6 +1115,9 @@ static BOOL encode_matvec_sub(
     if (batchSize > 1 && pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q6_k_b4_mr4;
       is_b4 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      p = pipelines->matvec_tb_q6_k_mr8;
+      is_mr8 = YES;
     } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
       p = pipelines->matvec_tb_q6_k_mr4;
       is_mr4 = YES;
@@ -1125,6 +1153,9 @@ static BOOL encode_matvec_sub(
     [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
     [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 3) / 4, (bSz + 1) / 2, 1)
         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+  } else if (is_mr8) {
+    [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 7) / 8, bSz, 1)
+        threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
   } else if (is_mr4) {
     [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 3) / 4, bSz, 1)
         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
@@ -1354,16 +1385,19 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     // Resolve weight buffers
     size_t gateBytes = 0, upBytes = 0, downBytes = 0;
     id<MTLComputePipelineState> pGate = nil, pUp = nil, pDown = nil;
+    BOOL gate_mr8 = NO, up_mr8 = NO, down_mr8 = NO;
     BOOL gate_mr4 = NO, up_mr4 = NO, down_mr4 = NO;
 
     // Gate
     if (typeGate == 12) {
-      if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
+      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q4_k_mr8; gate_mr8 = YES; }
+      else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
       else { pGate = pipelines->matvec_tb_q4_k; }
       gateBytes = (size_t)ffnDim * dim / 256 * 144;
     }
     else if (typeGate == 14) {
-      if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
+      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q6_k_mr8; gate_mr8 = YES; }
+      else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
       else { pGate = pipelines->matvec_tb_q6_k; }
       gateBytes = (size_t)ffnDim * dim / 256 * 210;
     }
@@ -1373,12 +1407,14 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
 
     // Up
     if (typeUp == 12) {
-      if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
+      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q4_k_mr8; up_mr8 = YES; }
+      else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
       else { pUp = pipelines->matvec_tb_q4_k; }
       upBytes = (size_t)ffnDim * dim / 256 * 144;
     }
     else if (typeUp == 14) {
-      if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
+      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q6_k_mr8; up_mr8 = YES; }
+      else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
       else { pUp = pipelines->matvec_tb_q6_k; }
       upBytes = (size_t)ffnDim * dim / 256 * 210;
     }
@@ -1388,12 +1424,14 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
 
     // Down: matrix is (dim rows) x (ffnDim cols)
     if (typeDown == 12) {
-      if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
+      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q4_k_mr8; down_mr8 = YES; }
+      else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
       else { pDown = pipelines->matvec_tb_q4_k; }
       downBytes = (size_t)dim * ffnDim / 256 * 144;
     }
     else if (typeDown == 14) {
-      if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
+      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q6_k_mr8; down_mr8 = YES; }
+      else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
       else { pDown = pipelines->matvec_tb_q6_k; }
       downBytes = (size_t)dim * ffnDim / 256 * 210;
     }
@@ -1401,7 +1439,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     else if (typeDown == 1)  { pDown = pipelines->matvec_half; downBytes = (size_t)dim * ffnDim * sizeof(uint16_t); }
     else if (typeDown == 30 || typeDown == 16) { pDown = pipelines->matvec_bf16; downBytes = (size_t)dim * ffnDim * sizeof(uint16_t); }
 
-    BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr4 != nil)
+    BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12 && ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) || pipelines->ffn_gate_up_act_q4_k_mr4 != nil))
                               || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
     if (!can_fuse_gate_up && actPipeline == nil) {
       fprintf(stderr, "[aljabr-metal] actPipeline is nil for activationKind=%d\n", activationKind);
@@ -1423,15 +1461,17 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
 
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
 
-    if ((typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr4 != nil)
-        || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_mr4 != nil)) {
+    if (can_fuse_gate_up) {
       // 1. Fused Gate + Up + Activation (GeGLU / SwiGLU) directly into g_scratch_hb
       id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
       BOOL use_b4 = (bSz > 1 && ((typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil)
                                  || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
+      BOOL use_mr8 = (!use_b4 && typeGate == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil);
       id<MTLComputePipelineState> fuseP;
       if (use_b4) {
         fuseP = (typeGate == 14) ? pipelines->ffn_gate_up_act_q6_k_b4_mr4 : pipelines->ffn_gate_up_act_q4_k_b4_mr4;
+      } else if (use_mr8) {
+        fuseP = pipelines->ffn_gate_up_act_q4_k_mr8;
       } else if (typeGate == 14) {
         fuseP = pipelines->ffn_gate_up_act_q6_k_mr4;
       } else {
@@ -1451,6 +1491,9 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:7];
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+      } else if (use_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else {
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
@@ -1488,7 +1531,10 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBuffer:bufDownW offset:downOff atIndex:2];
         [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
-        if (down_mr4) {
+        if (down_mr8) {
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 7) / 8, bSz, 1)
+              threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+        } else if (down_mr4) {
           [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, bSz, 1)
               threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
         } else {
@@ -1498,7 +1544,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       }
       [enc endEncoding];
     } else {
-      // High-occupancy 1-encoder FFN pipeline: Gate MR4 + Up MR4 + Act + Down MR4
+      // High-occupancy 1-encoder FFN pipeline: Gate + Up + Act + Down
       id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
       // 1. Gate
@@ -1508,7 +1554,10 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc setBuffer:bufGateW offset:gateOff atIndex:2];
       [enc setBytes:&kDim length:sizeof(kDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
-      if (gate_mr4) {
+      if (gate_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else if (gate_mr4) {
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
@@ -1523,7 +1572,10 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc setBuffer:bufUpW offset:upOff atIndex:2];
       [enc setBytes:&kDim length:sizeof(kDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
-      if (up_mr4) {
+      if (up_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else if (up_mr4) {
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
@@ -1577,7 +1629,10 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBuffer:bufDownW offset:downOff atIndex:2];
         [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
-        if (down_mr4) {
+        if (down_mr8) {
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 7) / 8, bSz, 1)
+              threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+        } else if (down_mr4) {
           [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, bSz, 1)
               threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
         } else {
@@ -1774,13 +1829,15 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
   // ── Resolve wO pipeline ────────────────────────────────────────────────────
   id<MTLComputePipelineState> pWO = nil;
   size_t wOBytes = 0;
-  BOOL wO_mr4 = NO;
+  BOOL wO_mr8 = NO, wO_mr4 = NO;
   if (typeWO == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pWO = pipelines->matvec_tb_q4_k_mr4; wO_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q4_k_mr8; wO_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pWO = pipelines->matvec_tb_q4_k_mr4; wO_mr4 = YES; }
     else pWO = pipelines->matvec_tb_q4_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 144;
   } else if (typeWO == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pWO = pipelines->matvec_tb_q6_k_mr4; wO_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q6_k_mr8; wO_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pWO = pipelines->matvec_tb_q6_k_mr4; wO_mr4 = YES; }
     else pWO = pipelines->matvec_tb_q6_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 210;
   } else if (typeWO == 8) {
@@ -1792,19 +1849,23 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
 
   // ── Resolve FFN pipelines ──────────────────────────────────────────────────
   BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12
-                            && pipelines->ffn_gate_up_act_q4_k_mr4 != nil)
+                            && ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) || pipelines->ffn_gate_up_act_q4_k_mr4 != nil))
                            || (typeGate == 14 && typeUp == 14
                             && pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
+  BOOL gate_up_mr8 = (typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
   id<MTLComputePipelineState> pGate = nil, pUp = nil, pDown = nil;
   size_t gateBytes = 0, upBytes = 0, downBytes = 0;
+  BOOL gate_mr8 = NO, up_mr8 = NO, down_mr8 = NO;
   BOOL gate_mr4 = NO, up_mr4 = NO, down_mr4 = NO;
 
   if (typeGate == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q4_k_mr8; gate_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
     else pGate = pipelines->matvec_tb_q4_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeGate == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q6_k_mr8; gate_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
     else pGate = pipelines->matvec_tb_q6_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 210;
   } else if (typeGate == 8) { pGate = pipelines->matvec_tb_q8_0; gateBytes = (size_t)ffnDim * wO_N / 32 * 34; }
@@ -1812,11 +1873,13 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
   else if (typeGate == 30 || typeGate == 16) { pGate = pipelines->matvec_bf16; gateBytes = (size_t)ffnDim * wO_N * 2; }
 
   if (typeUp == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q4_k_mr8; up_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
     else pUp = pipelines->matvec_tb_q4_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeUp == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q6_k_mr8; up_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
     else pUp = pipelines->matvec_tb_q6_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 210;
   } else if (typeUp == 8) { pUp = pipelines->matvec_tb_q8_0; upBytes = (size_t)ffnDim * wO_N / 32 * 34; }
@@ -1824,11 +1887,13 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
   else if (typeUp == 30 || typeUp == 16) { pUp = pipelines->matvec_bf16; upBytes = (size_t)ffnDim * wO_N * 2; }
 
   if (typeDown == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q6_k_mr8; down_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
     else pDown = pipelines->matvec_tb_q6_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 210;
   } else if (typeDown == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q4_k_mr8; down_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
     else pDown = pipelines->matvec_tb_q4_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 144;
   } else if (typeDown == 8) { pDown = pipelines->matvec_tb_q8_0; downBytes = (size_t)wO_N * ffnDim / 32 * 34; }
@@ -1912,7 +1977,10 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     [enc setBuffer:bufWO           offset:wOOff atIndex:2];
     [enc setBytes:&kDim  length:sizeof(kDim) atIndex:3];
     [enc setBytes:&nDim  length:sizeof(nDim) atIndex:4];
-    if (wO_mr4) {
+    if (wO_mr8) {
+      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 7) / 8, 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    } else if (wO_mr4) {
       [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 3) / 4, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
     } else {
@@ -1939,9 +2007,14 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
 
     // Step 5+6: FFN gate+up+act → hb
     if (can_fuse_gate_up) {
-      id<MTLComputePipelineState> fuseP = (typeGate == 14)
-          ? pipelines->ffn_gate_up_act_q6_k_mr4
-          : pipelines->ffn_gate_up_act_q4_k_mr4;
+      id<MTLComputePipelineState> fuseP;
+      if (gate_up_mr8) {
+        fuseP = pipelines->ffn_gate_up_act_q4_k_mr8;
+      } else if (typeGate == 14) {
+        fuseP = pipelines->ffn_gate_up_act_q6_k_mr4;
+      } else {
+        fuseP = pipelines->ffn_gate_up_act_q4_k_mr4;
+      }
       [enc setComputePipelineState:fuseP];
       [enc setBuffer:g_woff_ffn_hb  offset:0        atIndex:0];
       [enc setBuffer:g_woff_xb      offset:0        atIndex:1];
@@ -1950,8 +2023,13 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       [enc setBytes:&nDim  length:sizeof(nDim) atIndex:4];
       [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:5];
       [enc setBytes:&actK  length:sizeof(actK) atIndex:6];
-      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
-          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+      if (gate_up_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+      }
     } else {
       [enc setComputePipelineState:pGate];
       [enc setBuffer:g_woff_ffn_gate offset:0       atIndex:0];
@@ -1959,7 +2037,10 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       [enc setBuffer:bufGate         offset:gateOff atIndex:2];
       [enc setBytes:&nDim  length:sizeof(nDim) atIndex:3];
       [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:4];
-      if (gate_mr4) {
+      if (gate_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else if (gate_mr4) {
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
@@ -1973,7 +2054,10 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       [enc setBuffer:bufUp           offset:upOff  atIndex:2];
       [enc setBytes:&nDim  length:sizeof(nDim) atIndex:3];
       [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:4];
-      if (up_mr4) {
+      if (up_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else if (up_mr4) {
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
@@ -2004,7 +2088,10 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     [enc setBuffer:bufDown         offset:downOff  atIndex:2];
     [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:3];
     [enc setBytes:&nDim  length:sizeof(nDim) atIndex:4];
-    if (down_mr4) {
+    if (down_mr8) {
+      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 7) / 8, 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    } else if (down_mr4) {
       [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 3) / 4, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
     } else {
@@ -2159,51 +2246,62 @@ int aljabr_metal_wo_ffn_logits_fused(
   // Resolve wO pipeline
   id<MTLComputePipelineState> pWO = nil;
   size_t wOBytes = 0;
-  BOOL wO_mr4 = NO;
+  BOOL wO_mr8 = NO, wO_mr4 = NO;
   if (typeWO == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pWO = pipelines->matvec_tb_q4_k_mr4; wO_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q4_k_mr8; wO_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pWO = pipelines->matvec_tb_q4_k_mr4; wO_mr4 = YES; }
     else pWO = pipelines->matvec_tb_q4_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 144;
   } else if (typeWO == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pWO = pipelines->matvec_tb_q6_k_mr4; wO_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q6_k_mr8; wO_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pWO = pipelines->matvec_tb_q6_k_mr4; wO_mr4 = YES; }
     else pWO = pipelines->matvec_tb_q6_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 210;
   }
   if (pWO == nil) return -3;
 
   // Resolve FFN pipelines
-  BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr4 != nil)
+  BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12
+                            && ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) || pipelines->ffn_gate_up_act_q4_k_mr4 != nil))
                            || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
+  BOOL gate_up_mr8 = (typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
   id<MTLComputePipelineState> pGate = nil, pUp = nil, pDown = nil;
   size_t gateBytes = 0, upBytes = 0, downBytes = 0;
+  BOOL gate_mr8 = NO, up_mr8 = NO, down_mr8 = NO;
   BOOL gate_mr4 = NO, up_mr4 = NO, down_mr4 = NO;
 
   if (typeGate == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q4_k_mr8; gate_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
     else pGate = pipelines->matvec_tb_q4_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeGate == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q6_k_mr8; gate_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
     else pGate = pipelines->matvec_tb_q6_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 210;
   }
 
   if (typeUp == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q4_k_mr8; up_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
     else pUp = pipelines->matvec_tb_q4_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeUp == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q6_k_mr8; up_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
     else pUp = pipelines->matvec_tb_q6_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 210;
   }
 
   if (typeDown == 12) {
-    if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q4_k_mr8; down_mr8 = YES; }
+    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
     else pDown = pipelines->matvec_tb_q4_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 144;
   } else if (typeDown == 14) {
-    if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q6_k_mr8; down_mr8 = YES; }
+    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
     else pDown = pipelines->matvec_tb_q6_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 210;
   }
@@ -2301,7 +2399,10 @@ int aljabr_metal_wo_ffn_logits_fused(
     [enc setBuffer:bufWO offset:wOOff atIndex:2];
     [enc setBytes:&kDim length:sizeof(kDim) atIndex:3];
     [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
-    if (wO_mr4) {
+    if (wO_mr8) {
+      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 7) / 8, 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    } else if (wO_mr4) {
       [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 3) / 4, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
     } else {
@@ -2326,9 +2427,14 @@ int aljabr_metal_wo_ffn_logits_fused(
 
     // Step 5+6: gate+up+act
     if (can_fuse_gate_up) {
-      id<MTLComputePipelineState> fuseP = (typeGate == 14)
-          ? pipelines->ffn_gate_up_act_q6_k_mr4
-          : pipelines->ffn_gate_up_act_q4_k_mr4;
+      id<MTLComputePipelineState> fuseP;
+      if (gate_up_mr8) {
+        fuseP = pipelines->ffn_gate_up_act_q4_k_mr8;
+      } else if (typeGate == 14) {
+        fuseP = pipelines->ffn_gate_up_act_q6_k_mr4;
+      } else {
+        fuseP = pipelines->ffn_gate_up_act_q4_k_mr4;
+      }
       [enc setComputePipelineState:fuseP];
       [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
       [enc setBuffer:g_woff_xb offset:0 atIndex:1];
@@ -2337,8 +2443,13 @@ int aljabr_metal_wo_ffn_logits_fused(
       [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:5];
       [enc setBytes:&actK length:sizeof(actK) atIndex:6];
-      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
-          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+      if (gate_up_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+      }
     } else {
       [enc setComputePipelineState:pGate];
       [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:0];
@@ -2346,7 +2457,10 @@ int aljabr_metal_wo_ffn_logits_fused(
       [enc setBuffer:bufGate offset:gateOff atIndex:2];
       [enc setBytes:&nDim length:sizeof(nDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
-      if (gate_mr4) {
+      if (gate_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else if (gate_mr4) {
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
@@ -2360,7 +2474,10 @@ int aljabr_metal_wo_ffn_logits_fused(
       [enc setBuffer:bufUp offset:upOff atIndex:2];
       [enc setBytes:&nDim length:sizeof(nDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
-      if (up_mr4) {
+      if (up_mr8) {
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+      } else if (up_mr4) {
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
@@ -2390,7 +2507,10 @@ int aljabr_metal_wo_ffn_logits_fused(
     [enc setBuffer:bufDown offset:downOff atIndex:2];
     [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
     [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
-    if (down_mr4) {
+    if (down_mr8) {
+      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 7) / 8, 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    } else if (down_mr4) {
       [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 3) / 4, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
     } else {

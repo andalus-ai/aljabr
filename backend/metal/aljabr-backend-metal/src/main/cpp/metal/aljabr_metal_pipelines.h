@@ -19,14 +19,17 @@ typedef struct {
   // GGML block-quantized pipelines
   __strong id<MTLComputePipelineState> matvec_tb_q4_k;
   __strong id<MTLComputePipelineState> matvec_tb_q4_k_mr4; // 4-row multi-row: 4× A bandwidth reduction
+  __strong id<MTLComputePipelineState> matvec_tb_q4_k_mr8; // 8-row multi-row Q4_K (128 threads)
   __strong id<MTLComputePipelineState> matvec_tb_q4_k_mr4_softcap; // 4-row multi-row Q4_K with in-kernel softcap
   __strong id<MTLComputePipelineState> matvec_tb_q4_k_b4_mr4; // 4-token batched 4-row multi-row Q4_K for prefill
   __strong id<MTLComputePipelineState> ffn_gate_up_act_q4_k_mr4; // Fused Gate + Up + Act (GeGLU/SwiGLU) Q4_K
+  __strong id<MTLComputePipelineState> ffn_gate_up_act_q4_k_mr8; // 8-row Fused Gate + Up + Act Q4_K (128 threads)
   __strong id<MTLComputePipelineState> ffn_gate_up_act_q4_k_b4_mr4; // 4-token batched Fused Gate + Up + Act Q4_K
   __strong id<MTLComputePipelineState> ffn_gate_up_act_q6_k_mr4; // Fused Gate + Up + Act (GeGLU/SwiGLU) Q6_K
   __strong id<MTLComputePipelineState> ffn_gate_up_act_q6_k_b4_mr4; // 4-token batched Fused Gate + Up + Act Q6_K for prefill
   __strong id<MTLComputePipelineState> matvec_tb_q6_k;
   __strong id<MTLComputePipelineState> matvec_tb_q6_k_mr4; // 4-row multi-row Q6_K
+  __strong id<MTLComputePipelineState> matvec_tb_q6_k_mr8; // 8-row multi-row Q6_K (128 threads)
   __strong id<MTLComputePipelineState> matvec_tb_q6_k_mr4_softcap; // 4-row multi-row Q6_K with in-kernel softcap
   __strong id<MTLComputePipelineState> matvec_tb_q6_k_b4_mr4; // 4-token batched 4-row multi-row Q6_K for prefill
   __strong id<MTLComputePipelineState> matvec_tb_q8_0;

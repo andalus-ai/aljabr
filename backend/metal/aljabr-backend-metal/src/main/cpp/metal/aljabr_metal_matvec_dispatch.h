@@ -21,6 +21,9 @@ int aljabr_metal_dispatch_matvec_tb_q4_k(
 int aljabr_metal_dispatch_matvec_tb_q4_k_mr4(
     void *C, const void *A, const void *B, int K, int N,
     id<MTLComputePipelineState> pipeline);
+int aljabr_metal_dispatch_matvec_tb_q4_k_mr8(
+    void *C, const void *A, const void *B, int K, int N,
+    id<MTLComputePipelineState> pipeline);
 int aljabr_metal_dispatch_matvec_tb_q4_k_mr4_softcap(
     void *C, const void *A, const void *B, int K, int N, float cap,
     id<MTLComputePipelineState> pipeline);
@@ -28,6 +31,9 @@ int aljabr_metal_dispatch_matvec_tb_q6_k(
     void *C, const void *A, const void *B, int K, int N,
     id<MTLComputePipelineState> pipeline, NSUInteger threads);
 int aljabr_metal_dispatch_matvec_tb_q6_k_mr4(
+    void *C, const void *A, const void *B, int K, int N,
+    id<MTLComputePipelineState> pipeline);
+int aljabr_metal_dispatch_matvec_tb_q6_k_mr8(
     void *C, const void *A, const void *B, int K, int N,
     id<MTLComputePipelineState> pipeline);
 int aljabr_metal_dispatch_matvec_tb_q6_k_mr4_softcap(
