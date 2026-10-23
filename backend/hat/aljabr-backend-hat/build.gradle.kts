@@ -12,11 +12,14 @@ java {
     }
 }
 
-val babylonJdkPath = "/Users/bhangun/Workspace/workkayys/Products/Wayang/wayang-platform/3rdparty/babylon-hat-tensors-v2/build/macosx-aarch64-server-release/jdk"
+// This module is included only with -PwithHat=true and a validated Babylon JDK.
+val babylonJdkPath = providers.gradleProperty("babylonJdkPath")
+    .orElse(providers.environmentVariable("BABYLON_JDK_HOME"))
+    .get()
 
 tasks.withType<JavaCompile> {
     options.isFork = true
-    options.forkOptions.executable = "$babylonJdkPath/bin/javac"
+    options.forkOptions.executable = file("$babylonJdkPath/bin/javac").absolutePath
     options.compilerArgs.addAll(listOf("--enable-preview", "--add-modules=jdk.incubator.code", "--add-modules=jdk.incubator.vector", "-source", "26", "-target", "26"))
 }
 
@@ -45,7 +48,7 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
-    executable = "$babylonJdkPath/bin/java"
+    executable = file("$babylonJdkPath/bin/java").absolutePath
     jvmArgs("--enable-preview", "--add-modules=jdk.incubator.code", "--add-modules=jdk.incubator.vector")
 }
 

@@ -59,8 +59,25 @@ include("backend:cuda:aljabr-backend-cuda")
 include("backend:cuda:aljabr-kernel-cuda")
 //include("backend:cuda:aljabr-plugin-kernel-cuda")
 //include("backend:directml:aljabr-plugin-kernel-directml")
-val skipHat = gradle.startParameter.projectProperties["skipHat"] == "true"
-if (!skipHat) {
+// HAT requires a separate Babylon JDK 26 distribution with incubator APIs.
+// Keep this experimental backend out of default builds unless explicitly enabled.
+val withHat = providers.gradleProperty("withHat")
+    .map { it.toBoolean() }
+    .getOrElse(false)
+val babylonJdkHome = providers.gradleProperty("babylonJdkPath")
+    .orElse(providers.environmentVariable("BABYLON_JDK_HOME"))
+    .orNull
+if (withHat) {
+    if (babylonJdkHome.isNullOrBlank()) {
+        throw GradleException(
+            "withHat=true requires -PbabylonJdkPath=/path/to/babylon-jdk-26 " +
+                "or BABYLON_JDK_HOME pointing to a Babylon JDK 26 installation"
+        )
+    }
+    val babylonJdk = file(babylonJdkHome)
+    if (!babylonJdk.resolve("bin/javac").isFile || !babylonJdk.resolve("bin/java").isFile) {
+        throw GradleException("Babylon JDK is missing bin/javac or bin/java: $babylonJdk")
+    }
     include("backend:hat:aljabr-backend-hat")
 }
 include("backend:metal:aljabr-backend-metal")
