@@ -96,7 +96,20 @@ jobs:
           GRADLE_OPTS: -Xmx3G
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace -PwithLlamaFfmBindings=true test -x :backend:metal:aljabr-backend-metal:test
+          ./gradlew --no-daemon --stacktrace --info -PwithLlamaFfmBindings=true test -x :backend:metal:aljabr-backend-metal:test
+
+      # Preserve JUnit XML and HTML reports when a test worker crashes or cannot
+      # execute a test class; these are needed to diagnose failures beyond Gradle's summary.
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aljabr-test-diagnostics
+          if-no-files-found: warn
+          path: |
+            **/build/test-results/test/**
+            **/build/reports/tests/test/**
+            build/reports/problems/**
 
   publish-snapshot:
     name: Publish Snapshot to Maven Local
