@@ -91,7 +91,7 @@ val llamaCppInclude = providers.gradleProperty("llamaCppInclude")
 val ggmlInclude = providers.gradleProperty("ggmlInclude")
     .orElse(providers.environmentVariable("GGML_INCLUDE"))
 
-tasks.register<Exec>("generateLlamaFfmBindings") {
+val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") {
     group = "code generation"
     description = "Regenerate llama_h.java with jextract from a compatible llama.cpp header checkout."
 
@@ -157,5 +157,14 @@ tasks.register<Exec>("generateLlamaFfmBindings") {
             "Copied ${generatedFiles.size} generated Java binding files into " +
                 destination.relativeTo(projectDir)
         )
+    }
+}
+
+
+// Only CI/native-integration builds opt into regeneration. Default builds stay offline
+// and do not require a jextract installation or a llama.cpp checkout.
+if (providers.gradleProperty("withLlamaFfmBindings").orNull?.toBoolean() == true) {
+    tasks.named("compileJava") {
+        dependsOn(generateLlamaFfmBindings)
     }
 }
