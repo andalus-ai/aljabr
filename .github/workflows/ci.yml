@@ -48,6 +48,34 @@ jobs:
           java-version: '25'
           cache: gradle
 
+      # Generate the FFM header class referenced by the checked-in llama.cpp wrappers.
+      # Keep the tool and native headers in the runner temp directory; neither is committed.
+      - name: Install jextract and prepare llama.cpp headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/jextract.tar.gz"
+          install_dir="$RUNNER_TEMP/jextract"
+          mkdir -p "$install_dir"
+          curl --fail --location --retry 3 \\
+            "https://download.java.net/java/early_access/jextract/25/2/openjdk-25-jextract+2-4_linux-x64_bin.tar.gz" \\
+            --output "$archive"
+          tar -xzf "$archive" -C "$install_dir"
+          jextract_bin="$(find "$install_dir" -type f -path '*/bin/jextract' -print -quit)"
+          if [ -z "$jextract_bin" ]; then
+            echo "ERROR: jextract executable was not found in the downloaded archive"
+            find "$install_dir" -maxdepth 4 -type f | head -80
+            exit 1
+          fi
+          chmod +x "$jextract_bin"
+          echo "JEXTRACT=$jextract_bin" >> "$GITHUB_ENV"
+          llama_dir="$RUNNER_TEMP/llama.cpp"
+          git clone --depth 1 https://github.com/bhangun/llama.cpp.git "$llama_dir"
+          test -f "$llama_dir/include/llama.h"
+          echo "LLAMA_CPP_INCLUDE=$llama_dir/include" >> "$GITHUB_ENV"
+          echo "GGML_INCLUDE=$llama_dir/ggml/include" >> "$GITHUB_ENV"
+          "$jextract_bin" --version
+
       # The default CI validates Aljabr without the optional Tafkir integration.
       # Cross-project quantizer integration is validated separately with -PwithTafkir=true.
 
@@ -68,7 +96,7 @@ jobs:
           GRADLE_OPTS: -Xmx3G
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace test -x :backend:metal:aljabr-backend-metal:test
+          ./gradlew --no-daemon --stacktrace -PwithLlamaFfmBindings=true test -x :backend:metal:aljabr-backend-metal:test
 
   publish-snapshot:
     name: Publish Snapshot to Maven Local
