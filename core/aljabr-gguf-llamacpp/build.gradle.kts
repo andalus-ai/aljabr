@@ -116,6 +116,10 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
             "--output", generatedRoot.absolutePath,
             "--target-package", "tech.kayys.aljabr.llama",
             "--header-class-name", "llama_h",
+            // glibc exposes fopencookie through stdio.h, but jextract cannot
+            // model its internal _IO_cookie_io_functions_t on the CI toolchain.
+            // It is unrelated to llama.cpp and is not part of this module's API.
+            "--exclude-symbols", "^fopencookie$",
             "-I", includeDir.absolutePath
         )
         val ggmlDir = ggmlInclude.orNull?.let { file(it).absoluteFile.normalize() }
@@ -169,6 +173,35 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
         generatedHeaderFiles.forEach { generatedFile ->
             generatedFile.copyTo(destination.resolve(generatedFile.name), overwrite = true)
         }
+
+        // llama.h references the GGUF init-params struct, which is emitted as a
+        // separate jextract wrapper rather than part of the split header family.
+        // Keep the maintained wrapper when one exists; otherwise install the generated
+        // definition so the generated downcall descriptors can compile.
+        val generatedGgufInitParams = generatedPackage.resolve("gguf_init_params.java")
+        if (!generatedGgufInitParams.isFile) {
+            throw GradleException(
+                "jextract output is missing gguf_init_params.java under $generatedPackage"
+            )
+        }
+        val ggufInitParamsWrapper = destination.resolve("gguf_init_params.java")
+        if (!ggufInitParamsWrapper.exists()) {
+            generatedGgufInitParams.copyTo(ggufInitParamsWrapper)
+        }
+
+        // The generated header can contain nested opaque declarations with the same
+        // names as maintained top-level wrappers. Fully qualify the two concrete
+        // layouts needed by this header so Java does not resolve the opaque nested type.
+        val generatedHeaderText = generatedHeader.readText()
+            .replace(
+                "ggml_backend_graph_copy.layout()",
+                "tech.kayys.aljabr.llama.ggml_backend_graph_copy.layout()"
+            )
+            .replace(
+                "gguf_init_params.layout()",
+                "tech.kayys.aljabr.llama.gguf_init_params.layout()"
+            )
+        generatedHeader.writeText(generatedHeaderText)
 
         // Guard the exact source-level contract that failed in CI. This catches
         // accidental changes to the maintained wrapper before Gradle reaches javac.
