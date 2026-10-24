@@ -2,17 +2,28 @@ package tech.kayys.aljabr.integration.kv;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.DefaultTensor;
 import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.reflect.Proxy;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 public class KVCacheTensorIntegrationTest {
+
+    private static ComputeBackend unusedBackend() {
+        return (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    throw new UnsupportedOperationException("Backend operations are not used by this test");
+                });
+    }
 
     @Test
     public void tensorBackedByCacheAndUnpinsOnRelease() throws Exception {
@@ -27,13 +38,13 @@ public class KVCacheTensorIntegrationTest {
             data[i] = i + 1;
         cacheCls.getMethod("put", long.class, float[].class).invoke(cache, key, data);
 
-        // Use null backend — adapter only stores the backend reference and does not
-        // call it in this test
+        // Supply a backend that fails if invoked: this test exercises storage and
+        // cache lifetime only, not tensor computation.
         Shape shape = new Shape(new long[] { len });
 
         // create tensor from cache (adapter pins page and arranges unpin on
         // buffer.release())
-        Tensor t = KVCacheTensorAdapter.tensorFromCache(cache, key, shape, DType.F32, null);
+        Tensor t = KVCacheTensorAdapter.tensorFromCache(cache, key, shape, DType.F32, unusedBackend());
         Assertions.assertNotNull(t);
         Assertions.assertTrue(t instanceof DefaultTensor);
 
