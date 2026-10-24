@@ -57,8 +57,8 @@ jobs:
           archive="$RUNNER_TEMP/jextract.tar.gz"
           install_dir="$RUNNER_TEMP/jextract"
           mkdir -p "$install_dir"
-          curl --fail --location --retry 3 \\
-            "https://download.java.net/java/early_access/jextract/25/2/openjdk-25-jextract+2-4_linux-x64_bin.tar.gz" \\
+          curl --fail --location --retry 3 \
+            "https://download.java.net/java/early_access/jextract/25/2/openjdk-25-jextract+2-4_linux-x64_bin.tar.gz" \
             --output "$archive"
           tar -xzf "$archive" -C "$install_dir"
           jextract_bin="$(find "$install_dir" -type f -path '*/bin/jextract' -print -quit)"
@@ -115,7 +115,7 @@ jobs:
           java-version: '25'
           cache: gradle
 
-      - name: Publish to Maven Local
+      - name: Publish Snapshot to Maven Local
         shell: bash
         env:
           GRADLE_OPTS: -Xmx3G
