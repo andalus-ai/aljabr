@@ -28,13 +28,13 @@ If ggml headers are stored elsewhere, add
 `LLAMA_CPP_INCLUDE`, `GGML_INCLUDE`, and `JEXTRACT` environment variables.
 
 The task writes jextract output under the module's `build/` directory and
-refreshes `llama_h.java` in the checked-in source package. Newly emitted helper
-classes are copied only when no checked-in counterpart exists. Existing struct
-and callback wrappers are preserved because some opaque C declarations do not
-give jextract enough information to reproduce the explicit layouts used by
-Aljabr's wrappers. Review the full source diff before committing; this task does
-not remove stale generated classes, so obsolete wrappers must be reviewed
-explicitly. The task does not fetch llama.cpp, download native binaries, or run
+copies only `llama_h.java` into the checked-in source package. It deliberately
+does not copy generated helper, struct, or callback classes: Aljabr maintains
+explicit layouts for several types that jextract may treat as opaque, and
+replacing those wrappers can make the generated header class uncompilable.
+The task checks that the maintained `ggml_backend_graph_copy.java` still exposes
+`layout()` before compilation. Review the generated header diff before
+committing. The task does not fetch llama.cpp, download native binaries, or run
 native inference.
 
 ## Compatibility checks before committing

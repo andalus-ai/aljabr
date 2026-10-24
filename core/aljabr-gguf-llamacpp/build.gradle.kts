@@ -137,37 +137,32 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
             )
         }
 
-        // Always refresh the header class, but preserve existing checked-in
-        // struct/callback wrappers. Some C types are opaque to jextract in this
-        // invocation even though Aljabr's wrappers intentionally provide layouts
-        // for them; overwriting those wrappers breaks llama_h's layout calls.
-        // Copy newly emitted helper classes only when no checked-in counterpart
-        // exists, so generated output cannot silently replace the maintained API.
+        // Refresh only the generated header entry point. The checked-in package
+        // contains maintained struct/callback wrappers whose explicit layouts are
+        // required by llama_h but are not always emitted by jextract when C types
+        // are opaque. Do not copy any generated helper or struct files over them.
         val destination = file("src/main/java/tech/kayys/aljabr/llama")
-        val generatedFiles = generatedPackage.walkTopDown()
-            .filter { it.isFile && it.extension == "java" }
-            .toList()
-        if (generatedFiles.none { it.name == "llama_h.java" }) {
+        val generatedHeader = generatedPackage.resolve("llama_h.java")
+        if (!generatedHeader.isFile) {
             throw GradleException("No llama_h.java was generated under $generatedPackage")
         }
 
-        var copied = 0
-        var preserved = 0
-        generatedFiles.forEach { source ->
-            val target = destination.resolve(source.relativeTo(generatedPackage).path)
-            val isHeaderBinding = source.name == "llama_h.java"
-            if (isHeaderBinding || !target.exists()) {
-                target.parentFile.mkdirs()
-                source.copyTo(target, overwrite = isHeaderBinding)
-                copied++
-            } else {
-                preserved++
-                logger.info("Preserving checked-in FFM wrapper: ${target.relativeTo(projectDir)}")
-            }
+        val target = destination.resolve("llama_h.java")
+        target.parentFile.mkdirs()
+        generatedHeader.copyTo(target, overwrite = true)
+
+        // Guard the exact source-level contract that failed in CI. This catches
+        // accidental changes to the maintained wrapper before Gradle reaches javac.
+        val graphCopyWrapper = destination.resolve("ggml_backend_graph_copy.java")
+        if (!graphCopyWrapper.isFile ||
+            !graphCopyWrapper.readText().contains("layout()")) {
+            throw GradleException(
+                "Expected maintained ggml_backend_graph_copy.java with layout() at $graphCopyWrapper"
+            )
         }
         logger.lifecycle(
-            "Refreshed llama_h.java and copied $copied generated Java bindings; " +
-                "preserved $preserved existing wrappers in " + destination.relativeTo(projectDir)
+            "Refreshed llama_h.java; preserved checked-in FFM wrapper package at " +
+                destination.relativeTo(projectDir)
         )
     }
 }
