@@ -2594,8 +2594,8 @@ static uint32_t g_kv_stride[MAX_DECODE_LAYERS];
 static int g_kv_layers = 0;
 static int g_kv_max_seq = 0;
 
-static id<MTLBuffer> g_norm_buffers[4]; // 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm
-static size_t g_norm_buffer_bytes[4];
+static id<MTLBuffer> g_norm_buffers[6]; // 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm, 4=attnQNorm, 5=attnKNorm
+static size_t g_norm_buffer_bytes[6];
 
 typedef struct {
   const void *wQ;
@@ -2616,6 +2616,12 @@ typedef struct {
   int nH, nKVH, headDim, stride;
   float freqBase;
   int isSwa;
+  float outScale;
+  float attnScale;
+  int hasPostAttnNorm;
+  int hasPostFfnNorm;
+  int hasQNorm;
+  int hasKNorm;
   id<MTLBuffer> bufWQ; size_t offWQ;
   id<MTLBuffer> bufWK; size_t offWK;
   id<MTLBuffer> bufWV; size_t offWV;
@@ -2667,7 +2673,7 @@ int aljabr_metal_sync_kv_cache(int layer, int seqLen, const float *kData, const 
 }
 
 int aljabr_metal_register_norm_buffer(int slot, const void *ptr, size_t bytes) {
-  if (slot < 0 || slot >= 4 || ptr == NULL || bytes == 0) return -1;
+  if (slot < 0 || slot >= 6 || ptr == NULL || bytes == 0) return -1;
   if (!g_initialized) return -1;
   g_norm_buffers[slot] = wrap_ptr((void *)ptr, bytes);
   g_norm_buffer_bytes[slot] = bytes;
@@ -2689,7 +2695,10 @@ int aljabr_metal_register_decode_layer(
     int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
     int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
     int nH, int nKVH, int headDim, int stride,
-    float freqBase, int isSwa
+    float freqBase, int isSwa,
+    float outScale, float attnScale,
+    int hasPostAttnNorm, int hasPostFfnNorm,
+    int hasQNorm, int hasKNorm
 ) {
   if (layer < 0 || layer >= MAX_DECODE_LAYERS) return -1;
   if (layer >= g_num_decode_layers) g_num_decode_layers = layer + 1;
@@ -2702,6 +2711,9 @@ int aljabr_metal_register_decode_layer(
   cfg->wO_K = wO_K; cfg->wO_N = wO_N; cfg->ffnDim = ffnDim;
   cfg->nH = nH; cfg->nKVH = nKVH; cfg->headDim = headDim; cfg->stride = stride;
   cfg->freqBase = freqBase; cfg->isSwa = isSwa;
+  cfg->outScale = outScale; cfg->attnScale = attnScale;
+  cfg->hasPostAttnNorm = hasPostAttnNorm; cfg->hasPostFfnNorm = hasPostFfnNorm;
+  cfg->hasQNorm = hasQNorm; cfg->hasKNorm = hasKNorm;
 
   if (wQ) cfg->bufWQ = wrap_weight_ptr_offset(wQ, calc_matvec_weight_bytes(typeQ, n0, wO_N), &cfg->offWQ);
   if (wK) cfg->bufWK = wrap_weight_ptr_offset(wK, calc_matvec_weight_bytes(typeK, n1, wO_N), &cfg->offWK);
@@ -2837,8 +2849,12 @@ int aljabr_metal_decode_step(
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
-    id<MTLBuffer> bufAttnNormAll = g_norm_buffers[3]; // slot 3 = attnNorm
+    id<MTLBuffer> bufPostAttnAll = g_norm_buffers[0]; // slot 0 = postAttnNorm
     id<MTLBuffer> bufFfnNormAll  = g_norm_buffers[1]; // slot 1 = ffnNorm
+    id<MTLBuffer> bufPostFfnAll  = g_norm_buffers[2]; // slot 2 = postFfnNorm
+    id<MTLBuffer> bufAttnNormAll = g_norm_buffers[3]; // slot 3 = attnNorm
+    id<MTLBuffer> bufQNormAll    = g_norm_buffers[4]; // slot 4 = attnQNorm
+    id<MTLBuffer> bufKNormAll    = g_norm_buffers[5]; // slot 5 = attnKNorm
     if (!bufAttnNormAll || !bufFfnNormAll) {
       [enc endEncoding];
       return -3;
@@ -2865,6 +2881,41 @@ int aljabr_metal_decode_step(
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
+      // 2b. Q & K Head Norms (if present, e.g. Gemma 4)
+      if (cfg->hasQNorm && bufQNormAll && pipelines->rmsnorm_rows != nil) {
+        uint32_t headDim = (uint32_t)cfg->headDim;
+        uint32_t nH = (uint32_t)cfg->nH;
+        uint32_t addOne = 0;
+        size_t qNormOff = (size_t)l * (size_t)headDim * sizeof(float);
+        [enc setComputePipelineState:pipelines->rmsnorm_rows];
+        [enc setBuffer:g_woff_nextQ offset:0 atIndex:0];
+        [enc setBuffer:g_woff_nextQ offset:0 atIndex:1];
+        [enc setBuffer:bufQNormAll  offset:qNormOff atIndex:2];
+        [enc setBytes:&headDim length:sizeof(headDim) atIndex:3];
+        [enc setBytes:&eps     length:sizeof(eps)     atIndex:4];
+        [enc setBytes:&addOne  length:sizeof(addOne)  atIndex:5];
+        [enc dispatchThreadgroups:MTLSizeMake(nH, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+      }
+      if (cfg->hasKNorm && bufKNormAll && cfg->wK && pipelines->rmsnorm_rows != nil) {
+        uint32_t headDim = (uint32_t)cfg->headDim;
+        uint32_t nKVH = (uint32_t)cfg->nKVH;
+        uint32_t addOne = 0;
+        size_t kNormOff = (size_t)l * (size_t)headDim * sizeof(float);
+        [enc setComputePipelineState:pipelines->rmsnorm_rows];
+        [enc setBuffer:g_woff_nextK offset:0 atIndex:0];
+        [enc setBuffer:g_woff_nextK offset:0 atIndex:1];
+        [enc setBuffer:bufKNormAll  offset:kNormOff atIndex:2];
+        [enc setBytes:&headDim length:sizeof(headDim) atIndex:3];
+        [enc setBytes:&eps     length:sizeof(eps)     atIndex:4];
+        [enc setBytes:&addOne  length:sizeof(addOne)  atIndex:5];
+        [enc dispatchThreadgroups:MTLSizeMake(nKVH, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+      }
+      if (cfg->hasQNorm || cfg->hasKNorm) {
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      }
+
       // 3. RoPE on Q and K
       encode_rope_single_token(enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
       if (cfg->wK) {
@@ -2885,7 +2936,10 @@ int aljabr_metal_decode_step(
       if (cfg->isSwa && slidingWindow > 0 && seqLen > (uint32_t)slidingWindow) {
         startPos = seqLen - (uint32_t)slidingWindow;
       }
-      float scale = 1.0f / sqrtf((float)cfg->headDim);
+      float scale = cfg->attnScale;
+      if (scale <= 0.0f) {
+        scale = (cfg->hasQNorm || cfg->hasKNorm) ? 1.0f : (1.0f / sqrtf((float)cfg->headDim));
+      }
       encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[l], g_kv_v[l],
                        (uint32_t)cfg->nH, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)cfg->stride,
                        (uint32_t)pos, startPos, scale, 0.0f, pipelines);
@@ -2894,6 +2948,12 @@ int aljabr_metal_decode_step(
       // 6. xb = wO(attnFull)
       encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_attnFull, cfg->wO, kDim, nDim, cfg->typeWO, 1);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 6b. Post-attention norm (if present)
+      if (cfg->hasPostAttnNorm && bufPostAttnAll) {
+        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttnAll, normOff, nDim, eps, 0, pipelines);
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      }
 
       // 7. Residual: x += xb
       encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
@@ -2944,9 +3004,28 @@ int aljabr_metal_decode_step(
       encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_ffn_hb, cfg->down, nFfn, nDim, cfg->typeDown, 1);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
+      // 10b. Post-FFN norm (if present)
+      if (cfg->hasPostFfnNorm && bufPostFfnAll) {
+        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfnAll, normOff, nDim, eps, 0, pipelines);
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      }
+
       // 11. Residual: x += xb
       encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+      // 12. Optional layer output scale
+      if (cfg->outScale > 0.0f && cfg->outScale != 1.0f && pipelines->scale != nil) {
+        float os = cfg->outScale;
+        [enc setComputePipelineState:pipelines->scale];
+        [enc setBuffer:g_woff_x offset:0 atIndex:0];
+        [enc setBytes:&os length:sizeof(os) atIndex:1];
+        [enc setBytes:&nDim length:sizeof(nDim) atIndex:2];
+        NSUInteger th = MIN((NSUInteger)256, (NSUInteger)nDim);
+        [enc dispatchThreads:MTLSizeMake((NSUInteger)nDim, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(th, 1, 1)];
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      }
     }
 
     // ── Final output logits projection ──────────────────────────────────────

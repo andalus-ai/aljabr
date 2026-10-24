@@ -170,7 +170,7 @@ final class GgufDecodeStep {
 
         // Register static layer norms on GPU bridge once to enable zero-copy decode slices
         if (GgufMetalBridge.isAvailable()) {
-            GgufMetalBridge.registerLayerNorms(layers, dim, postAttnNorm, ffnNorm, postFfnNorm, attnNorm);
+            GgufMetalBridge.registerLayerNorms(layers, dim, hDim, postAttnNorm, ffnNorm, postFfnNorm, attnNorm, attnQNorm, attnKNorm);
         }
 
         this.x = new float[dim];
@@ -203,8 +203,7 @@ final class GgufDecodeStep {
         // Initialize full-GPU decode step pipeline if supported
         boolean eligible = GgufMetalBridge.isDecodeStepAvailable() && (perLayerTokEmbd == null || nEmbdPerLayer <= 0);
         for (int l = 0; l < layers && eligible; l++) {
-            if (outScale[l] != 1.0f || attnQNorm[l] != null || attnKNorm[l] != null || attnVNorm[l] != null
-                    || postAttnNorm[l] != null || postFfnNorm[l] != null) {
+            if (wQ[l] == null || wO[l] == null || ffnUp[l] == null || ffnDown[l] == null) {
                 eligible = false;
             }
         }
@@ -232,13 +231,23 @@ final class GgufDecodeStep {
                     int ffnIntermediate = ffnDim;
                     int stride = strides[l];
 
+                    float attnScale = cfg.attentionScale();
+                    if (attnScale <= 0f) {
+                        attnScale = (attnQNorm[l] != null || attnKNorm[l] != null) ? 1.0f : (1.0f / (float) Math.sqrt(layerHDim));
+                    }
+
                     boolean reg = GgufMetalBridge.registerDecodeLayer(
                             l, model,
                             wQ[l], wK[l], wV[l], wO[l],
                             ffnGate[l], ffnUp[l], ffnDown[l],
                             n0, n1, n2, wO_K, wO_N, ffnIntermediate,
                             nH, layerNKVH, layerHDim, stride,
-                            layerRopeFreq, isSwa ? 1 : 0);
+                            layerRopeFreq, isSwa ? 1 : 0,
+                            outScale[l], attnScale,
+                            postAttnNorm[l] != null ? 1 : 0,
+                            postFfnNorm[l] != null ? 1 : 0,
+                            attnQNorm[l] != null ? 1 : 0,
+                            attnKNorm[l] != null ? 1 : 0);
                     if (!reg) allLayersRegistered = false;
                 }
                 if (allLayersRegistered) {

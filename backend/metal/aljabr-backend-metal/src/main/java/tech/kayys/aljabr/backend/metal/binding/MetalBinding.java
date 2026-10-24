@@ -1016,7 +1016,10 @@ public class MetalBinding {
             int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
             int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
             int nH, int nKVH, int headDim, int stride,
-            float freqBase, int isSwa) {
+            float freqBase, int isSwa,
+            float outScale, float attnScale,
+            int hasPostAttnNorm, int hasPostFfnNorm,
+            int hasQNorm, int hasKNorm) {
         if (!handles.containsKey(FN_REGISTER_DECODE_LAYER)) return -2;
         return (int) invoke(FN_REGISTER_DECODE_LAYER,
                 layer,
@@ -1025,7 +1028,10 @@ public class MetalBinding {
                 typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,
                 n0, n1, n2, wO_K, wO_N, ffnDim,
                 nH, nKVH, headDim, stride,
-                freqBase, isSwa);
+                freqBase, isSwa,
+                outScale, attnScale,
+                hasPostAttnNorm, hasPostFfnNorm,
+                hasQNorm, hasKNorm);
     }
 
     public int registerOutput(
@@ -1781,7 +1787,10 @@ public class MetalBinding {
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
-                ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT));
+                ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
 
         bind(FN_REGISTER_OUTPUT, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS,

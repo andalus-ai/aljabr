@@ -1,9 +1,9 @@
 
-import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.io.TempDir;
-import jakarta.inject.Inject;
+
 import tech.kayys.aljabr.converter.GGUFConverter;
 import tech.kayys.aljabr.converter.GGUFException;
 import tech.kayys.aljabr.converter.model.ConversionProgress;
@@ -25,14 +25,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 
  * @author Bhangun
  */
-@QuarkusTest
 class GGUFConverterTest {
 
-    @Inject
     GGUFConverter converter;
 
     @TempDir
     Path tempDir;
+
+    @BeforeEach
+    void setUp() {
+        converter = new GGUFConverter();
+    }
 
     @Test
     @DisplayName("Should get converter version")
@@ -61,7 +64,7 @@ class GGUFConverterTest {
         // Create a mock PyTorch model directory
         Path modelDir = tempDir.resolve("test-model");
         Files.createDirectories(modelDir);
-        Files.createFile(modelDir.resolve("pylibtorch_model.bin"));
+        Files.createFile(modelDir.resolve("pytorch_model.bin"));
         Files.createFile(modelDir.resolve("config.json"));
 
         ModelFormat format = converter.detectFormat(modelDir);

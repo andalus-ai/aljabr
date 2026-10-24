@@ -350,7 +350,10 @@ public final class GgufMetalBridge {
                                                 int.class, int.class, int.class, int.class, int.class, int.class, int.class,
                                                 int.class, int.class, int.class, int.class, int.class, int.class,
                                                 int.class, int.class, int.class, int.class,
-                                                float.class, int.class))
+                                                float.class, int.class,
+                                                float.class, float.class,
+                                                int.class, int.class,
+                                                int.class, int.class))
                                         .bindTo(instance);
                                 LOG.info("[GgufMetalBridge] registerDecodeLayer handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerDecodeLayer bind FAILED: " + t); }
@@ -572,22 +575,37 @@ public final class GgufMetalBridge {
             int layers, int dim,
             float[][] postAttnN, float[][] ffnNormN,
             float[][] postFfnN, float[][] attnNormN) {
+        registerLayerNorms(layers, dim, 0, postAttnN, ffnNormN, postFfnN, attnNormN, null, null);
+    }
+
+    public static synchronized void registerLayerNorms(
+            int layers, int dim, int headDim,
+            float[][] postAttnN, float[][] ffnNormN,
+            float[][] postFfnN, float[][] attnNormN,
+            float[][] attnQNormN, float[][] attnKNormN) {
         if (!METAL_ENABLED) return;
-        // 4 slots: 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm
+        // 6 slots: 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm, 4=attnQNorm, 5=attnKNorm
         Arena arena = Arena.ofShared();
-        MemorySegment[] segs = new MemorySegment[4];
+        MemorySegment[] segs = new MemorySegment[6];
+        long[] slotBytes = new long[6];
         for (int slot = 0; slot < 4; slot++) {
-            segs[slot] = arena.allocate((long) layers * dim * Float.BYTES);
+            slotBytes[slot] = (long) layers * dim * Float.BYTES;
+            segs[slot] = arena.allocate(slotBytes[slot]);
         }
-        float[][][] sources = { postAttnN, ffnNormN, postFfnN, attnNormN };
-        for (int slot = 0; slot < 4; slot++) {
+        int hDim = headDim > 0 ? headDim : 256;
+        for (int slot = 4; slot < 6; slot++) {
+            slotBytes[slot] = (long) layers * hDim * Float.BYTES;
+            segs[slot] = arena.allocate(slotBytes[slot]);
+        }
+        float[][][] sources = { postAttnN, ffnNormN, postFfnN, attnNormN, attnQNormN, attnKNormN };
+        for (int slot = 0; slot < 6; slot++) {
             float[][] src = sources[slot];
+            int nFloats = slot < 4 ? dim : hDim;
             for (int layer = 0; layer < layers; layer++) {
                 float[] arr = (src != null && layer < src.length) ? src[layer] : null;
-                if (arr != null && arr.length >= dim) {
-                    MemorySegment.copy(arr, 0, segs[slot], ValueLayout.JAVA_FLOAT, (long) layer * dim * Float.BYTES, dim);
+                if (arr != null && arr.length >= nFloats) {
+                    MemorySegment.copy(arr, 0, segs[slot], ValueLayout.JAVA_FLOAT, (long) layer * nFloats * Float.BYTES, nFloats);
                 }
-                // null / missing → stays as zero-initialized memory (safe; native will skip if hasXxx=0)
             }
         }
         // Publish atomically (volatile write)
@@ -597,9 +615,9 @@ public final class GgufMetalBridge {
         g_normLayers = layers;
 
         if (REGISTER_NORM_BUFFER_MH != null) {
-            for (int slot = 0; slot < 4; slot++) {
+            for (int slot = 0; slot < 6; slot++) {
                 try {
-                    int rc = (int) REGISTER_NORM_BUFFER_MH.invokeExact(slot, segs[slot], (long) layers * dim * Float.BYTES);
+                    int rc = (int) REGISTER_NORM_BUFFER_MH.invokeExact(slot, segs[slot], slotBytes[slot]);
                     if (rc != 0) {
                         LOG.warning("[GgufMetalBridge] registerNormBuffer failed for slot " + slot + ", rc=" + rc);
                     }
@@ -609,8 +627,7 @@ public final class GgufMetalBridge {
             }
         }
 
-        LOG.info("[GgufMetalBridge] Pre-loaded norm buffers: " + layers + " layers × " + dim + " floats × 4 slots = "
-                + (layers * dim * 4 * Float.BYTES / 1024) + " KB");
+        LOG.info("[GgufMetalBridge] Pre-loaded norm buffers: " + layers + " layers × (4 slots × " + dim + " + 2 slots × " + hDim + ") floats");
     }
 
     /**
@@ -1713,7 +1730,10 @@ public final class GgufMetalBridge {
             GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
             int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
             int nH, int nKVH, int headDim, int stride,
-            float freqBase, int isSwa) {
+            float freqBase, int isSwa,
+            float outScale, float attnScale,
+            int hasPostAttnNorm, int hasPostFfnNorm,
+            int hasQNorm, int hasKNorm) {
         if (!isDecodeStepAvailable() || REGISTER_DECODE_LAYER_MH == null) return false;
         try {
             MemorySegment segWQ = (wQ != null) ? GgufTensorOps.tensorData(model, wQ) : MemorySegment.NULL;
@@ -1739,7 +1759,10 @@ public final class GgufMetalBridge {
                     typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,
                     n0, n1, n2, wO_K, wO_N, ffnDim,
                     nH, nKVH, headDim, stride,
-                    freqBase, isSwa);
+                    freqBase, isSwa,
+                    outScale, attnScale,
+                    hasPostAttnNorm, hasPostFfnNorm,
+                    hasQNorm, hasKNorm);
             return rc == 0;
         } catch (Throwable t) {
             LOG.log(Level.WARNING, "Failed to register decode layer " + layer + ": " + t.getMessage(), t);
