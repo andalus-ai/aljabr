@@ -138,11 +138,12 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
         }
 
         // jextract may split a large header binding across llama_h.java and
-        // llama_h_N.java support classes. Copy that generated class family together,
+        // numbered or shared helper classes (for example llama_h_1.java and
+        // llama_h$shared.java). Copy that generated class family together,
         // but never copy generated struct/callback wrappers over the maintained
         // wrappers in src/main/java (their explicit layouts are required by callers).
         val generatedHeaderFiles = generatedPackage.listFiles()
-            ?.filter { it.isFile && it.name.matches(Regex("llama_h(?:_\\d+)?\\.java")) }
+            ?.filter { it.isFile && it.name.matches(Regex("llama_h(?:[_$].*)?\\.java")) }
             .orEmpty()
         if (generatedHeaderFiles.none { it.name == "llama_h.java" }) {
             throw GradleException("jextract output is missing llama_h.java under $generatedPackage")
@@ -156,7 +157,7 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
         destination.listFiles()
             ?.filter {
                 it.isFile &&
-                    it.name.matches(Regex("llama_h(?:_\\d+)?\\.java")) &&
+                    it.name.matches(Regex("llama_h(?:[_$].*)?\\.java")) &&
                     it.name !in generatedNames
             }
             ?.forEach { stale ->
