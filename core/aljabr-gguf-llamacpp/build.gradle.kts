@@ -135,9 +135,9 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
         )
         includeDirs.forEach { discoveryCommand.addAll(listOf("-I", it)) }
         discoveryCommand.add(header.absolutePath)
-        project.exec {
+        providers.exec {
             commandLine(discoveryCommand)
-        }
+        }.result.get().assertNormalExitValue()
 
         if (!symbolsFile.isFile) {
             throw GradleException("jextract did not produce symbol manifest $symbolsFile")
