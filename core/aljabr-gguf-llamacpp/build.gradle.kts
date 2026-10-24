@@ -137,25 +137,37 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
             )
         }
 
-        // jextract may emit shared helper classes alongside the header class.
-        // Copy the complete generated package, not just llama_h.java, or the
-        // regenerated entry point can reference a helper class that is absent
-        // from the checked-in source tree.
+        // Always refresh the header class, but preserve existing checked-in
+        // struct/callback wrappers. Some C types are opaque to jextract in this
+        // invocation even though Aljabr's wrappers intentionally provide layouts
+        // for them; overwriting those wrappers breaks llama_h's layout calls.
+        // Copy newly emitted helper classes only when no checked-in counterpart
+        // exists, so generated output cannot silently replace the maintained API.
         val destination = file("src/main/java/tech/kayys/aljabr/llama")
         val generatedFiles = generatedPackage.walkTopDown()
             .filter { it.isFile && it.extension == "java" }
             .toList()
-        if (generatedFiles.isEmpty()) {
-            throw GradleException("No Java bindings were generated under $generatedPackage")
+        if (generatedFiles.none { it.name == "llama_h.java" }) {
+            throw GradleException("No llama_h.java was generated under $generatedPackage")
         }
+
+        var copied = 0
+        var preserved = 0
         generatedFiles.forEach { source ->
             val target = destination.resolve(source.relativeTo(generatedPackage).path)
-            target.parentFile.mkdirs()
-            source.copyTo(target, overwrite = true)
+            val isHeaderBinding = source.name == "llama_h.java"
+            if (isHeaderBinding || !target.exists()) {
+                target.parentFile.mkdirs()
+                source.copyTo(target, overwrite = isHeaderBinding)
+                copied++
+            } else {
+                preserved++
+                logger.info("Preserving checked-in FFM wrapper: ${target.relativeTo(projectDir)}")
+            }
         }
         logger.lifecycle(
-            "Copied ${generatedFiles.size} generated Java binding files into " +
-                destination.relativeTo(projectDir)
+            "Refreshed llama_h.java and copied $copied generated Java bindings; " +
+                "preserved $preserved existing wrappers in " + destination.relativeTo(projectDir)
         )
     }
 }
