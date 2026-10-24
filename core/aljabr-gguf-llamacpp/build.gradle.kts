@@ -137,15 +137,37 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
             )
         }
 
-        // Refresh only the generated header entry point. The checked-in package
-        // contains maintained struct/callback wrappers whose explicit layouts are
-        // required by llama_h but are not always emitted by jextract when C types
-        // are opaque. Do not copy any generated helper or struct files over them.
-        val destination = file("src/main/java/tech/kayys/aljabr/llama")
+        // jextract may split a large header binding across llama_h.java and
+        // llama_h_N.java support classes. Copy that generated class family together,
+        // but never copy generated struct/callback wrappers over the maintained
+        // wrappers in src/main/java (their explicit layouts are required by callers).
+        val generatedHeaderFiles = generatedPackage.listFiles()
+            ?.filter { it.isFile && it.name.matches(Regex("llama_h(?:_\\d+)?\\.java")) }
+            .orEmpty()
+        if (generatedHeaderFiles.none { it.name == "llama_h.java" }) {
+            throw GradleException("jextract output is missing llama_h.java under $generatedPackage")
+        }
 
-        val target = destination.resolve("llama_h.java")
-        target.parentFile.mkdirs()
-        generatedHeader.copyTo(target, overwrite = true)
+        val destination = file("src/main/java/tech/kayys/aljabr/llama")
+        destination.mkdirs()
+        val generatedNames = generatedHeaderFiles.map { it.name }.toSet()
+
+        // Remove only stale split-header helpers from earlier generations.
+        destination.listFiles()
+            ?.filter {
+                it.isFile &&
+                    it.name.matches(Regex("llama_h(?:_\\d+)?\\.java")) &&
+                    it.name !in generatedNames
+            }
+            ?.forEach { stale ->
+                if (!stale.delete()) {
+                    throw GradleException("Could not remove stale generated binding $stale")
+                }
+            }
+
+        generatedHeaderFiles.forEach { generatedFile ->
+            generatedFile.copyTo(destination.resolve(generatedFile.name), overwrite = true)
+        }
 
         // Guard the exact source-level contract that failed in CI. This catches
         // accidental changes to the maintained wrapper before Gradle reaches javac.
