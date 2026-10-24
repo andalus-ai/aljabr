@@ -350,6 +350,8 @@ void aljabr_metal_compile_runtime_pipelines(
       compile_pipeline(library, @"aljabr_rmsnorm_float4_kernel");
   pipelines->rmsnorm_rows =
       compile_pipeline(library, @"aljabr_rmsnorm_rows_kernel");
+  pipelines->rmsnorm_unit_rows =
+      compile_pipeline(library, @"aljabr_rmsnorm_unit_rows_kernel");
   pipelines->layernorm =
       compile_pipeline(library, @"aljabr_layernorm_kernel");
   pipelines->layernorm_float4 =

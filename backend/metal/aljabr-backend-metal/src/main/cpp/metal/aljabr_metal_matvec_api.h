@@ -234,7 +234,7 @@ int aljabr_metal_register_decode_layer(
     float freqBase, int isSwa,
     float outScale, float attnScale,
     int hasPostAttnNorm, int hasPostFfnNorm,
-    int hasQNorm, int hasKNorm
+    int hasQNorm, int hasKNorm, int hasUnitVNorm
 );
 
 /**

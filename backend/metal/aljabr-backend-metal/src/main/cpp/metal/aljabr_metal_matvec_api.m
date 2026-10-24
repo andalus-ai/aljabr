@@ -2622,6 +2622,7 @@ typedef struct {
   int hasPostFfnNorm;
   int hasQNorm;
   int hasKNorm;
+  int hasUnitVNorm;
   id<MTLBuffer> bufWQ; size_t offWQ;
   id<MTLBuffer> bufWK; size_t offWK;
   id<MTLBuffer> bufWV; size_t offWV;
@@ -2698,7 +2699,7 @@ int aljabr_metal_register_decode_layer(
     float freqBase, int isSwa,
     float outScale, float attnScale,
     int hasPostAttnNorm, int hasPostFfnNorm,
-    int hasQNorm, int hasKNorm
+    int hasQNorm, int hasKNorm, int hasUnitVNorm
 ) {
   if (layer < 0 || layer >= MAX_DECODE_LAYERS) return -1;
   if (layer >= g_num_decode_layers) g_num_decode_layers = layer + 1;
@@ -2714,6 +2715,7 @@ int aljabr_metal_register_decode_layer(
   cfg->outScale = outScale; cfg->attnScale = attnScale;
   cfg->hasPostAttnNorm = hasPostAttnNorm; cfg->hasPostFfnNorm = hasPostFfnNorm;
   cfg->hasQNorm = hasQNorm; cfg->hasKNorm = hasKNorm;
+  cfg->hasUnitVNorm = hasUnitVNorm;
 
   if (wQ) cfg->bufWQ = wrap_weight_ptr_offset(wQ, calc_matvec_weight_bytes(typeQ, n0, wO_N), &cfg->offWQ);
   if (wK) cfg->bufWK = wrap_weight_ptr_offset(wK, calc_matvec_weight_bytes(typeK, n1, wO_N), &cfg->offWK);
@@ -2836,7 +2838,9 @@ int aljabr_metal_decode_step(
   size_t maxQ = (size_t)cfg0->n0 * sizeof(float);
   size_t maxK = (size_t)cfg0->n1 * sizeof(float);
   size_t maxV = (size_t)cfg0->n2 * sizeof(float);
+  uint32_t maxHeadDim = (uint32_t)cfg0->headDim;
   for (int l = 1; l < g_num_decode_layers; l++) {
+    if ((uint32_t)g_decode_layers[l].headDim > maxHeadDim) maxHeadDim = (uint32_t)g_decode_layers[l].headDim;
     if ((size_t)g_decode_layers[l].n0 * sizeof(float) > maxQ) maxQ = (size_t)g_decode_layers[l].n0 * sizeof(float);
     if ((size_t)g_decode_layers[l].n1 * sizeof(float) > maxK) maxK = (size_t)g_decode_layers[l].n1 * sizeof(float);
     if ((size_t)g_decode_layers[l].n2 * sizeof(float) > maxV) maxV = (size_t)g_decode_layers[l].n2 * sizeof(float);
@@ -2886,7 +2890,7 @@ int aljabr_metal_decode_step(
         uint32_t headDim = (uint32_t)cfg->headDim;
         uint32_t nH = (uint32_t)cfg->nH;
         uint32_t addOne = 0;
-        size_t qNormOff = (size_t)l * (size_t)headDim * sizeof(float);
+        size_t qNormOff = (size_t)l * (size_t)maxHeadDim * sizeof(float);
         [enc setComputePipelineState:pipelines->rmsnorm_rows];
         [enc setBuffer:g_woff_nextQ offset:0 atIndex:0];
         [enc setBuffer:g_woff_nextQ offset:0 atIndex:1];
@@ -2901,7 +2905,7 @@ int aljabr_metal_decode_step(
         uint32_t headDim = (uint32_t)cfg->headDim;
         uint32_t nKVH = (uint32_t)cfg->nKVH;
         uint32_t addOne = 0;
-        size_t kNormOff = (size_t)l * (size_t)headDim * sizeof(float);
+        size_t kNormOff = (size_t)l * (size_t)maxHeadDim * sizeof(float);
         [enc setComputePipelineState:pipelines->rmsnorm_rows];
         [enc setBuffer:g_woff_nextK offset:0 atIndex:0];
         [enc setBuffer:g_woff_nextK offset:0 atIndex:1];
@@ -2912,7 +2916,19 @@ int aljabr_metal_decode_step(
         [enc dispatchThreadgroups:MTLSizeMake(nKVH, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
       }
-      if (cfg->hasQNorm || cfg->hasKNorm) {
+      // 2c. Unit V Norm (if present, e.g. Gemma 4)
+      if (cfg->hasUnitVNorm && cfg->wV && pipelines->rmsnorm_unit_rows != nil) {
+        uint32_t headDim = (uint32_t)cfg->headDim;
+        uint32_t nKVH = (uint32_t)cfg->nKVH;
+        [enc setComputePipelineState:pipelines->rmsnorm_unit_rows];
+        [enc setBuffer:g_woff_nextV offset:0 atIndex:0];
+        [enc setBuffer:g_woff_nextV offset:0 atIndex:1];
+        [enc setBytes:&headDim length:sizeof(headDim) atIndex:2];
+        [enc setBytes:&eps     length:sizeof(eps)     atIndex:3];
+        [enc dispatchThreadgroups:MTLSizeMake(nKVH, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+      }
+      if (cfg->hasQNorm || cfg->hasKNorm || cfg->hasUnitVNorm) {
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 

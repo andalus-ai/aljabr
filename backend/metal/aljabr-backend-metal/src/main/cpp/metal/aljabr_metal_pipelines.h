@@ -70,6 +70,7 @@ typedef struct {
   __strong id<MTLComputePipelineState> rmsnorm;
   __strong id<MTLComputePipelineState> rmsnorm_float4;
   __strong id<MTLComputePipelineState> rmsnorm_rows;
+  __strong id<MTLComputePipelineState> rmsnorm_unit_rows;
   __strong id<MTLComputePipelineState> layernorm;
   __strong id<MTLComputePipelineState> layernorm_float4;
   __strong id<MTLComputePipelineState> layernorm_rows;
