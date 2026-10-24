@@ -142,10 +142,6 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
         // required by llama_h but are not always emitted by jextract when C types
         // are opaque. Do not copy any generated helper or struct files over them.
         val destination = file("src/main/java/tech/kayys/aljabr/llama")
-        val generatedHeader = generatedPackage.resolve("llama_h.java")
-        if (!generatedHeader.isFile) {
-            throw GradleException("No llama_h.java was generated under $generatedPackage")
-        }
 
         val target = destination.resolve("llama_h.java")
         target.parentFile.mkdirs()
