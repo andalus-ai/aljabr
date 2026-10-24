@@ -36,6 +36,10 @@ final class LlamaHandles {
     final MethodHandle freeModel;
     final MethodHandle freeContext;
 
+    // ── Session persistence ───────────────────────────────────────────────────
+    final MethodHandle stateSaveFile;
+    final MethodHandle stateLoadFile;
+
     // ── KV cache ─────────────────────────────────────────────────────────────
     final MethodHandle getMemory;
     final MethodHandle memoryClear;
@@ -118,6 +122,14 @@ final class LlamaHandles {
                 FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS, LlamaStructLayouts.CONTEXT_PARAMS));
         freeModel   = link(linker, lookup, "llama_free_model",   FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
         freeContext = link(linker, lookup, "llama_free",         FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+
+        stateSaveFile = linkOpt(linker, lookup, "llama_state_save_file",
+                FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS,
+                        ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
+        stateLoadFile = linkOpt(linker, lookup, "llama_state_load_file",
+                FunctionDescriptor.of(ValueLayout.JAVA_BOOLEAN, ValueLayout.ADDRESS,
+                        ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG,
+                        ValueLayout.ADDRESS));
 
         getMemory    = link(linker, lookup, "llama_get_memory",
                 FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
