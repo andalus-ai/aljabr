@@ -111,22 +111,55 @@ val generateLlamaFfmBindings = tasks.register<Exec>("generateLlamaFfmBindings") 
         generatedRoot.deleteRecursively()
         generatedRoot.mkdirs()
 
+        val ggmlDir = ggmlInclude.orNull?.let { file(it).absoluteFile.normalize() }
+            ?: includeDir.resolve("../ggml/include").takeIf { it.isDirectory }
+        val includeDirs = mutableListOf(includeDir.absolutePath)
+        if (ggmlDir != null && ggmlDir.isDirectory) {
+            includeDirs.add(ggmlDir.absolutePath)
+        }
+
+        // jextract 25 does not support --exclude-symbols. Ask it for the symbol
+        // include manifest, then remove the single unrelated glibc function that
+        // references the unsupported _IO_cookie_io_functions_t system type.
+        val discoveryRoot = generatedRoot.resolveSibling("llama-jextract-discovery")
+        val symbolsFile = generatedRoot.resolveSibling("llama-jextract-symbols.txt")
+        val filteredSymbolsFile = generatedRoot.resolveSibling("llama-jextract-symbols-filtered.txt")
+        discoveryRoot.deleteRecursively()
+        discoveryRoot.mkdirs()
+        val discoveryCommand = mutableListOf(
+            jextractExecutable.get(),
+            "--output", discoveryRoot.absolutePath,
+            "--target-package", "tech.kayys.aljabr.llama",
+            "--header-class-name", "llama_h",
+            "--dump-includes", symbolsFile.absolutePath
+        )
+        includeDirs.forEach { discoveryCommand.addAll(listOf("-I", it)) }
+        discoveryCommand.add(header.absolutePath)
+        project.exec {
+            commandLine(discoveryCommand)
+        }
+
+        if (!symbolsFile.isFile) {
+            throw GradleException("jextract did not produce symbol manifest $symbolsFile")
+        }
+        val filteredSymbols = symbolsFile.readLines().filterNot {
+            it.trim().matches(Regex("--include-function\\s+fopencookie(?:\\s.*)?"))
+        }
+        if (filteredSymbols.size == symbolsFile.readLines().size) {
+            logger.warn("jextract symbol manifest did not contain fopencookie; no symbols were filtered")
+        }
+        filteredSymbolsFile.writeText(filteredSymbols.joinToString(System.lineSeparator(), postfix = System.lineSeparator()))
+
+        generatedRoot.deleteRecursively()
+        generatedRoot.mkdirs()
         val command = mutableListOf(
             jextractExecutable.get(),
             "--output", generatedRoot.absolutePath,
             "--target-package", "tech.kayys.aljabr.llama",
-            "--header-class-name", "llama_h",
-            // glibc exposes fopencookie through stdio.h, but jextract cannot
-            // model its internal _IO_cookie_io_functions_t on the CI toolchain.
-            // It is unrelated to llama.cpp and is not part of this module's API.
-            "--exclude-symbols", "^fopencookie$",
-            "-I", includeDir.absolutePath
+            "--header-class-name", "llama_h"
         )
-        val ggmlDir = ggmlInclude.orNull?.let { file(it).absoluteFile.normalize() }
-            ?: includeDir.resolve("../ggml/include").takeIf { it.isDirectory }
-        if (ggmlDir != null && ggmlDir.isDirectory) {
-            command.addAll(listOf("-I", ggmlDir.absolutePath))
-        }
+        includeDirs.forEach { command.addAll(listOf("-I", it)) }
+        command.add("@${filteredSymbolsFile.absolutePath}")
         command.add(header.absolutePath)
         commandLine(command)
     }
