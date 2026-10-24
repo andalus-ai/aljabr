@@ -165,12 +165,15 @@ out/
 # Generated Code (Large Files)
 # --------------------
 
-# Auto-generated Java header bindings
-**/llama_h.java
-**/llama_h_1.java
-**/llama_h_2.java
+# Auto-generated Java header bindings (committed to repo)
+# **/llama_h.java
+# **/llama_h_1.java
+# **/llama_h_2.java
 **/onnxruntime_c_api.java
 **/*_h.java
+!**/llama_h.java
+!**/llama_h_1.java
+!**/llama_h_2.java
 
 
 
