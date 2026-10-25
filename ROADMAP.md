@@ -57,7 +57,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 ### Work
 
 - Complete review and validation of PR #33's Q4_K/Q4_K/Q6_K triple-matvec parity coverage, including batch sizes 4, 8, 15, and 27 where supported.
-- **Current blocker:** Apple Silicon CI failed `MetalTripleBatchCorrectnessTest` in the output-parity assertion. Treat Phase 1 as incomplete until the test's full assertion message identifies the failing output/batch row and the underlying kernel mismatch is fixed. The Metal workflow must retain test reports for this investigation.
+- **Current blocker:** Apple Silicon CI now exposes the mismatch precisely: Q4_K output 0 at batch 27, row 15 returned `-0.0625` instead of `0.0078125` (tolerance `2e-3`). A conservative dispatch guard caps the specialized B4 Q4_K/Q6_K kernels at batch 15 and routes larger batches through the existing MR8/MR4 path. This is a correctness mitigation, not proof that the B4 large-batch kernel is fixed; retain that follow-up as open work.
 - Complete review and validation of PR #34's opt-in CSV benchmark output.
 - Keep single-row native operations as the reference when testing batched implementations.
 - Exercise finite-output checks, relative-error limits, edge dimensions, alignment/stride assumptions, and quantization-block boundaries.
@@ -67,7 +67,8 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 ### Acceptance criteria
 
 - Batched outputs match repeated single-row outputs within the agreed numerical tolerance (currently the PR #33 proposal uses relative error **2e-3**); explain and approve any change to that tolerance.
-- Batch 27 is actually executed on supported Apple Silicon hardware, not merely compiled.
+- Batch 27 is actually executed on supported Apple Silicon hardware, not merely compiled; until the B4 mismatch is fixed, the public dispatch must select the conservative MR8/MR4 route for batches above 15.
+- The specialized B4 path is not considered validated above batch 15 until a regression test exercises that path and demonstrates parity.
 - Repeated benchmark runs produce machine-readable results containing batch size, mean/median/p90 latency, per-item latency, and throughput.
 - Correctness tests remain independent from performance thresholds so noisy hardware does not make CI flaky.
 - The regular test suite remains safe on hosts without an active Metal device.
