@@ -85,7 +85,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
   - Never remove the guard solely to force the optimized path to activate.
 - Validate model-layer indexing, shared-KV owner mapping, RoPE/position handling, attention masks, cache positions, output projection, logits, and token selection against the existing correct path.
 - Keep diagnostic reasons specific enough to distinguish unsupported model features from missing weights, native-library unavailability, registration failure, or cache initialization failure.
-- If a token must use Java per-op decode after native decode was initialized (for example, logits were not requested or a native step fails), latch the full-GPU path off for that decoder instance unless both caches are explicitly resynchronized. Never re-enter with a potentially stale device KV cache.
+- Keep the native KV cache authoritative while full-GPU decode is active, including when the caller ignores logits. If a native step fails before any generated token was committed, latch the path off and use the still-coherent host cache; if it fails after successful native tokens, abort with an explicit restart-required error because the host KV cache is incomplete. Never silently switch to per-op decode against stale history.
 
 ### Acceptance criteria
 
@@ -95,7 +95,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 - On unsupported models, fallback is explicit and output remains correct.
 - For a fixed prompt and deterministic configuration, compare logits or token outputs with the established reference path. Document any expected numeric differences and tolerance.
 - Test at least one model with shared-KV layers and one model exercising the relevant embedding behavior before broadening eligibility.
-- After a native decode failure or a token that bypasses the native path, subsequent tokens stay on per-op decode; the failure is reported once and the native cache is not reused.
+- A native failure before the first successful native token safely falls back; a failure after native-generated tokens aborts instead of returning potentially corrupted output. A caller that ignores logits still advances the GPU KV cache via the native step.
 
 ### Exit gate
 
