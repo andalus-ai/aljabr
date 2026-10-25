@@ -1022,7 +1022,7 @@ public class MetalBinding {
     }
 
     public int registerDecodeLayer(
-            int layer,
+            int layer, int kvLayerIndex,
             MemorySegment wQ, MemorySegment wK, MemorySegment wV, MemorySegment wO,
             MemorySegment gate, MemorySegment up, MemorySegment down,
             int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
@@ -1035,7 +1035,7 @@ public class MetalBinding {
         if (!handles.containsKey(FN_REGISTER_DECODE_LAYER))
             return -2;
         return (int) invoke(FN_REGISTER_DECODE_LAYER,
-                layer,
+                layer, kvLayerIndex,
                 wQ, wK, wV, wO,
                 gate, up, down,
                 typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,
@@ -1803,7 +1803,7 @@ public class MetalBinding {
                 ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
 
         bind(FN_REGISTER_DECODE_LAYER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
-                ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,

@@ -230,7 +230,7 @@ int aljabr_metal_register_rope_freqs(int layer, const float *freqData, int freqL
  * Registers static weights and metadata for one decoder layer.
  */
 int aljabr_metal_register_decode_layer(
-    int layer,
+    int layer, int kvLayerIndex,
     const void *wQ, const void *wK, const void *wV, const void *wO,
     const void *gate, const void *up, const void *down,
     int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,

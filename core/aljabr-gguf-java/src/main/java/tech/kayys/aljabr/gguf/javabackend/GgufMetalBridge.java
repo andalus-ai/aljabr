@@ -353,7 +353,7 @@ public final class GgufMetalBridge {
                             try {
                                 registerDecodeLayerHandle = lookup.findVirtual(mbClass, "registerDecodeLayer",
                                         MethodType.methodType(int.class,
-                                                int.class,
+                                                int.class, int.class,
                                                 MemorySegment.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
                                                 MemorySegment.class, MemorySegment.class, MemorySegment.class,
                                                 int.class, int.class, int.class, int.class, int.class, int.class, int.class,
@@ -1750,7 +1750,7 @@ public final class GgufMetalBridge {
     }
 
     public static boolean registerDecodeLayer(
-            int layer,
+            int layer, int kvLayerIndex,
             GGUFModel model,
             GGUFTensorInfo wQ, GGUFTensorInfo wK, GGUFTensorInfo wV, GGUFTensorInfo wO,
             GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
@@ -1779,7 +1779,7 @@ public final class GgufMetalBridge {
             int typeDown = (down != null) ? (int) down.typeId() : 0;
 
             int rc = (int) REGISTER_DECODE_LAYER_MH.invokeExact(
-                    layer,
+                    layer, kvLayerIndex,
                     segWQ, segWK, segWV, segWO,
                     segGate, segUp, segDown,
                     typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,

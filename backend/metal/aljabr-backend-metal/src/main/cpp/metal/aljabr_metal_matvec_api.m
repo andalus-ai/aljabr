@@ -70,17 +70,21 @@
   g_pipelines.matvec_half_gated_pair_128
 #define g_matvec_bf16_gated_pair_128_pipeline                                  \
   g_pipelines.matvec_bf16_gated_pair_128
-// ── aljabr_metal_softcap ──────────────────────────────────────────────────────
-// GPU logit soft-capping: x[i] = cap * tanh(x[i] / cap)  (in-place)
-// Uses aljabr_softcap_kernel with precise::tanh for correctness.
-// On Gemma-4 12B, vocab=262144; 256 threads → 1024 threadgroups.
+// ── aljabr_metal_softcap
+// ────────────────────────────────────────────────────── GPU logit
+// soft-capping: x[i] = cap * tanh(x[i] / cap)  (in-place) Uses
+// aljabr_softcap_kernel with precise::tanh for correctness. On Gemma-4 12B,
+// vocab=262144; 256 threads → 1024 threadgroups.
 // ─────────────────────────────────────────────────────────────────────────────
 
 int aljabr_metal_softcap(void *logits, int N, float cap) {
-  if (!g_initialized) return -1;
-  if (N <= 0 || cap <= 0.0f) return -2;
+  if (!g_initialized)
+    return -1;
+  if (N <= 0 || cap <= 0.0f)
+    return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
-  if (pipelines->softcap == nil) return -3;
+  if (pipelines->softcap == nil)
+    return -3;
 
   size_t bytes = (size_t)N * sizeof(float);
   size_t page_size = (size_t)getpagesize();
@@ -89,12 +93,14 @@ int aljabr_metal_softcap(void *logits, int N, float cap) {
   void *aligned_ptr = (void *)(addr - offset);
   size_t aligned_bytes = (bytes + offset + page_size - 1) & ~(page_size - 1);
 
-  id<MTLBuffer> bufLogits = [g_device newBufferWithBytesNoCopy:aligned_ptr
-                                                         length:aligned_bytes
-                                                        options:MTLResourceStorageModeShared
-                                                    deallocator:nil];
+  id<MTLBuffer> bufLogits =
+      [g_device newBufferWithBytesNoCopy:aligned_ptr
+                                  length:aligned_bytes
+                                 options:MTLResourceStorageModeShared
+                             deallocator:nil];
   if (bufLogits == nil) {
-    fprintf(stderr, "[aljabr-metal] softcap failed to wrap ptr %p (len=%zu)\n", logits, bytes);
+    fprintf(stderr, "[aljabr-metal] softcap failed to wrap ptr %p (len=%zu)\n",
+            logits, bytes);
     return -4;
   }
 
@@ -103,26 +109,27 @@ int aljabr_metal_softcap(void *logits, int N, float cap) {
   id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
   id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
   [enc setComputePipelineState:pipelines->softcap];
-  [enc setBuffer:bufLogits   offset:offset atIndex:0];
-  [enc setBytes:&cap   length:sizeof(cap) atIndex:1];
-  [enc setBytes:&uN    length:sizeof(uN)  atIndex:2];
+  [enc setBuffer:bufLogits offset:offset atIndex:0];
+  [enc setBytes:&cap length:sizeof(cap) atIndex:1];
+  [enc setBytes:&uN length:sizeof(uN) atIndex:2];
   // Dispatch with 256 threads per threadgroup → ceil(N/256) groups
-  NSUInteger threads = MIN((NSUInteger)256, pipelines->softcap.maxTotalThreadsPerThreadgroup);
+  NSUInteger threads =
+      MIN((NSUInteger)256, pipelines->softcap.maxTotalThreadsPerThreadgroup);
   [enc dispatchThreads:MTLSizeMake((NSUInteger)N, 1, 1)
       threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
   [enc endEncoding];
   [cmd commit];
   [cmd waitUntilCompleted];
 
-  if ([cmd status] != MTLCommandBufferStatusCompleted) return -5;
+  if ([cmd status] != MTLCommandBufferStatusCompleted)
+    return -5;
   return 0;
 }
 
 // ── Matvec C API ─────────────────────────────────────────────────────────────
 
 static int aljabr_metal_matvec_tb_half_custom(void *C, const void *A,
-                                                   const void *B, int K,
-                                                   int N) {
+                                              const void *B, int K, int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -132,14 +139,14 @@ static int aljabr_metal_matvec_tb_half_custom(void *C, const void *A,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_half_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128 ? g_matvec_half_128_pipeline
-                                                : g_matvec_half_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_half_128_pipeline
+                                             : g_matvec_half_pipeline;
   return dispatch_matvec_tb_half(C, A, B, K, N, pipeline, threads);
 }
 
-int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B,
-                                     int K, int N) {
+int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B, int K,
+                                int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -148,19 +155,15 @@ int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B,
   if (aljabr_metal_mps_matvec_should_try(K, N)) {
     @autoreleasepool {
       NSString *shapeKey = mps_matvec_shape_key(K, N);
-      BOOL validateEveryCall =
-          aljabr_metal_mps_matvec_validate_every_call();
-      BOOL autotune =
-          aljabr_metal_mps_matvec_autotune_enabled_for_output(N);
+      BOOL validateEveryCall = aljabr_metal_mps_matvec_validate_every_call();
+      BOOL autotune = aljabr_metal_mps_matvec_autotune_enabled_for_output(N);
       AljabrMetalMpsMatvecShapeState shapeState =
           aljabr_metal_mps_matvec_shape_state(shapeKey, validateEveryCall,
-                                                   autotune);
+                                              autotune);
       if (!shapeState.failed && !shapeState.custom_preferred) {
         uint64_t mpsStart = autotune ? monotonic_nanos() : 0;
-        uint16_t *halfA =
-            aljabr_metal_ensure_half_input_scratch((size_t)K);
-        uint16_t *halfC =
-            aljabr_metal_ensure_half_output_scratch((size_t)N);
+        uint16_t *halfA = aljabr_metal_ensure_half_input_scratch((size_t)K);
+        uint16_t *halfC = aljabr_metal_ensure_half_output_scratch((size_t)N);
         if (halfA != NULL && halfC != NULL) {
           const float *input = (const float *)A;
           for (int i = 0; i < K; i++) {
@@ -232,13 +235,12 @@ int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B,
                     aljabr_metal_mps_matvec_record_autotune_preference(
                         shapeKey, preferMps);
                     if (env_truthy("ALJABR_METAL_MPS_MATVEC_DEBUG")) {
-                      fprintf(
-                          stderr,
-                          "[aljabr-metal] MPS matvec autotune shape K=%d "
-                          "N=%d mps=%.3fms custom=%.3fms selected=%s\n",
-                          K, N, (double)mpsNanos / 1000000.0,
-                          (double)customNanos / 1000000.0,
-                          preferMps ? "mps" : "custom");
+                      fprintf(stderr,
+                              "[aljabr-metal] MPS matvec autotune shape K=%d "
+                              "N=%d mps=%.3fms custom=%.3fms selected=%s\n",
+                              K, N, (double)mpsNanos / 1000000.0,
+                              (double)customNanos / 1000000.0,
+                              preferMps ? "mps" : "custom");
                     }
                     return 0;
                   }
@@ -288,9 +290,8 @@ int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B,
   if (threads == 0 && matvec_autotune_enabled(K, N, can128) &&
       g_matvec_half_pipeline != nil) {
     uint64_t start128 = monotonic_nanos();
-    int rc128 =
-        dispatch_matvec_tb_half(C, A, B, K, N, g_matvec_half_128_pipeline,
-                                ALJABR_MATVEC_THREADS_128);
+    int rc128 = dispatch_matvec_tb_half(
+        C, A, B, K, N, g_matvec_half_128_pipeline, ALJABR_MATVEC_THREADS_128);
     uint64_t nanos128 = monotonic_nanos() - start128;
     uint64_t start256 = monotonic_nanos();
     int rc256 = dispatch_matvec_tb_half(C, A, B, K, N, g_matvec_half_pipeline,
@@ -318,14 +319,14 @@ int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_half_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128 ? g_matvec_half_128_pipeline
-                                                : g_matvec_half_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_half_128_pipeline
+                                             : g_matvec_half_pipeline;
   return dispatch_matvec_tb_half(C, A, B, K, N, pipeline, threads);
 }
 
 int aljabr_metal_matvec_tb_half_mps(void *C, const void *A, const void *B,
-                                         int K, int N) {
+                                    int K, int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -348,9 +349,9 @@ int aljabr_metal_matvec_tb_half_mps(void *C, const void *A, const void *B,
 #define g_matvec_tb_int4_pipeline g_pipelines.matvec_tb_int4
 #define g_matvec_tb_int4_128_pipeline g_pipelines.matvec_tb_int4_128
 
-int aljabr_metal_matvec_tb_int4(void *C, const void *A,
-                                     const void *B_packed, const void *scales,
-                                     int K, int N, int blockSize) {
+int aljabr_metal_matvec_tb_int4(void *C, const void *A, const void *B_packed,
+                                const void *scales, int K, int N,
+                                int blockSize) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -394,10 +395,9 @@ int aljabr_metal_matvec_tb_int4(void *C, const void *A,
     if (threads == 0) {
       threads = default_matvec_threads(g_matvec_tb_int4_128_pipeline, K, N);
     }
-    id<MTLComputePipelineState> pipeline =
-        threads == ALJABR_MATVEC_THREADS_128
-            ? g_matvec_tb_int4_128_pipeline
-            : g_matvec_tb_int4_pipeline;
+    id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                               ? g_matvec_tb_int4_128_pipeline
+                                               : g_matvec_tb_int4_pipeline;
     return dispatch_matvec_tb_int4(C, A, B_packed, scales, K, N, blockSize,
                                    pipeline, threads);
   }
@@ -420,8 +420,8 @@ static inline BOOL mr8_enabled(void) {
   return enabled == 1;
 }
 
-int aljabr_metal_matvec_tb_q4_k(void *C, const void *A, const void *B,
-                                     int K, int N) {
+int aljabr_metal_matvec_tb_q4_k(void *C, const void *A, const void *B, int K,
+                                int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -441,7 +441,7 @@ int aljabr_metal_matvec_tb_q4_k(void *C, const void *A, const void *B,
 }
 
 int aljabr_metal_matvec_tb_q4_k_softcap(void *C, const void *A, const void *B,
-                                             int K, int N, float cap) {
+                                        int K, int N, float cap) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -451,15 +451,16 @@ int aljabr_metal_matvec_tb_q4_k_softcap(void *C, const void *A, const void *B,
         C, A, B, K, N, cap, g_pipelines.matvec_tb_q4_k_mr4_softcap);
   }
   int rc = aljabr_metal_matvec_tb_q4_k(C, A, B, K, N);
-  if (rc != 0) return rc;
+  if (rc != 0)
+    return rc;
   if (cap > 0.0f) {
     return aljabr_metal_softcap(C, N, cap);
   }
   return 0;
 }
 
-int aljabr_metal_matvec_tb_q6_k(void *C, const void *A, const void *B,
-                                     int K, int N) {
+int aljabr_metal_matvec_tb_q6_k(void *C, const void *A, const void *B, int K,
+                                int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -479,7 +480,7 @@ int aljabr_metal_matvec_tb_q6_k(void *C, const void *A, const void *B,
 }
 
 int aljabr_metal_matvec_tb_q6_k_softcap(void *C, const void *A, const void *B,
-                                             int K, int N, float cap) {
+                                        int K, int N, float cap) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -489,15 +490,16 @@ int aljabr_metal_matvec_tb_q6_k_softcap(void *C, const void *A, const void *B,
         C, A, B, K, N, cap, g_pipelines.matvec_tb_q6_k_mr4_softcap);
   }
   int rc = aljabr_metal_matvec_tb_q6_k(C, A, B, K, N);
-  if (rc != 0) return rc;
+  if (rc != 0)
+    return rc;
   if (cap > 0.0f) {
     return aljabr_metal_softcap(C, N, cap);
   }
   return 0;
 }
 
-int aljabr_metal_matvec_tb_q8_0(void *C, const void *A, const void *B,
-                                     int K, int N) {
+int aljabr_metal_matvec_tb_q8_0(void *C, const void *A, const void *B, int K,
+                                int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -508,9 +510,9 @@ int aljabr_metal_matvec_tb_q8_0(void *C, const void *A, const void *B,
                                  ALJABR_MATVEC_THREADS_32);
 }
 
-int aljabr_metal_matvec_tb_nf4(void *C, const void *A,
-                                    const void *B_packed, const void *absmax,
-                                    int K, int N, int blockSize) {
+int aljabr_metal_matvec_tb_nf4(void *C, const void *A, const void *B_packed,
+                               const void *absmax, int K, int N,
+                               int blockSize) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -553,15 +555,15 @@ int aljabr_metal_matvec_tb_nf4(void *C, const void *A,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_tb_nf4_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128 ? g_matvec_tb_nf4_128_pipeline
-                                                : g_matvec_tb_nf4_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_tb_nf4_128_pipeline
+                                             : g_matvec_tb_nf4_pipeline;
   return dispatch_matvec_tb_nf4(C, A, B_packed, absmax, K, N, blockSize,
                                 pipeline, threads);
 }
 
-int aljabr_metal_matvec_t_half(void *C, const void *A, const void *B,
-                                    int K, int N) {
+int aljabr_metal_matvec_t_half(void *C, const void *A, const void *B, int K,
+                               int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -572,9 +574,8 @@ int aljabr_metal_matvec_t_half(void *C, const void *A, const void *B,
   if (threads == 0 && matvec_autotune_enabled(K, N, can128) &&
       g_matvec_t_half_pipeline != nil) {
     uint64_t start128 = monotonic_nanos();
-    int rc128 =
-        dispatch_matvec_t_half(C, A, B, K, N, g_matvec_t_half_128_pipeline,
-                               ALJABR_MATVEC_THREADS_128);
+    int rc128 = dispatch_matvec_t_half(
+        C, A, B, K, N, g_matvec_t_half_128_pipeline, ALJABR_MATVEC_THREADS_128);
     uint64_t nanos128 = monotonic_nanos() - start128;
     uint64_t start256 = monotonic_nanos();
     int rc256 = dispatch_matvec_t_half(C, A, B, K, N, g_matvec_t_half_pipeline,
@@ -602,15 +603,14 @@ int aljabr_metal_matvec_t_half(void *C, const void *A, const void *B,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_t_half_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128 ? g_matvec_t_half_128_pipeline
-                                                : g_matvec_t_half_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_t_half_128_pipeline
+                                             : g_matvec_t_half_pipeline;
   return dispatch_matvec_t_half(C, A, B, K, N, pipeline, threads);
 }
 
 static int aljabr_metal_matvec_tb_bf16_custom(void *C, const void *A,
-                                                   const void *B, int K,
-                                                   int N) {
+                                              const void *B, int K, int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -620,14 +620,14 @@ static int aljabr_metal_matvec_tb_bf16_custom(void *C, const void *A,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_bf16_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128 ? g_matvec_bf16_128_pipeline
-                                                : g_matvec_bf16_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_bf16_128_pipeline
+                                             : g_matvec_bf16_pipeline;
   return dispatch_matvec_tb_half(C, A, B, K, N, pipeline, threads);
 }
 
-int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
-                                     int K, int N) {
+int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B, int K,
+                                int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -651,13 +651,11 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
   if (aljabr_metal_mps_bf16_matvec_should_try(K, N)) {
     @autoreleasepool {
       NSString *shapeKey = [NSString stringWithFormat:@"bf16:%d:%d", K, N];
-      BOOL validateEveryCall =
-          aljabr_metal_mps_matvec_validate_every_call();
-      BOOL autotune =
-          aljabr_metal_mps_matvec_autotune_enabled_for_output(N);
+      BOOL validateEveryCall = aljabr_metal_mps_matvec_validate_every_call();
+      BOOL autotune = aljabr_metal_mps_matvec_autotune_enabled_for_output(N);
       AljabrMetalMpsMatvecShapeState shapeState =
           aljabr_metal_mps_matvec_shape_state(shapeKey, validateEveryCall,
-                                                   autotune);
+                                              autotune);
       if (!shapeState.failed && !shapeState.custom_preferred) {
         MPSDataType bf16Type = MPSDataTypeFloat16;
         BOOL bf16MpsAvailable = NO;
@@ -669,10 +667,8 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
 #endif
         if (bf16MpsAvailable) {
           uint64_t mpsStart = autotune ? monotonic_nanos() : 0;
-          uint16_t *bf16A =
-              aljabr_metal_ensure_half_input_scratch((size_t)K);
-          uint16_t *bf16C =
-              aljabr_metal_ensure_half_output_scratch((size_t)N);
+          uint16_t *bf16A = aljabr_metal_ensure_half_input_scratch((size_t)K);
+          uint16_t *bf16C = aljabr_metal_ensure_half_output_scratch((size_t)N);
           if (bf16A != NULL && bf16C != NULL) {
             const float *input = (const float *)A;
             for (int i = 0; i < K; i++) {
@@ -722,8 +718,7 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
                         (const float *)C, (const float *)A, (const uint16_t *)B,
                         K, N)) {
                   if (!shapeState.validated && !validateEveryCall &&
-                      !env_truthy(
-                          "ALJABR_METAL_MPS_MATVEC_SKIP_VALIDATE")) {
+                      !env_truthy("ALJABR_METAL_MPS_MATVEC_SKIP_VALIDATE")) {
                     aljabr_metal_mps_matvec_mark_validated(shapeKey);
                     if (env_truthy("ALJABR_METAL_MPS_MATVEC_DEBUG")) {
                       fprintf(stderr,
@@ -739,8 +734,7 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
                     uint64_t customNanos = monotonic_nanos() - customStart;
                     if (customRc == 0) {
                       float margin = env_float_or_default(
-                          "ALJABR_METAL_MPS_MATVEC_AUTOTUNE_MARGIN",
-                          0.05f);
+                          "ALJABR_METAL_MPS_MATVEC_AUTOTUNE_MARGIN", 0.05f);
                       if (margin < 0.0f)
                         margin = 0.0f;
                       BOOL preferMps =
@@ -765,11 +759,10 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
                 }
                 aljabr_metal_mps_matvec_mark_failed(shapeKey);
                 if (env_truthy("ALJABR_METAL_MPS_MATVEC_DEBUG")) {
-                  fprintf(
-                      stderr,
-                      "[aljabr-metal] disabling MPS BF16 matvec for shape "
-                      "K=%d N=%d; falling back to custom Metal reduction\n",
-                      K, N);
+                  fprintf(stderr,
+                          "[aljabr-metal] disabling MPS BF16 matvec for shape "
+                          "K=%d N=%d; falling back to custom Metal reduction\n",
+                          K, N);
                 }
               } else {
                 aljabr_metal_mps_matvec_mark_disable_after_failure();
@@ -805,9 +798,8 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
   if (threads == 0 && matvec_autotune_enabled(K, N, can128) &&
       g_matvec_bf16_pipeline != nil) {
     uint64_t start128 = monotonic_nanos();
-    int rc128 =
-        dispatch_matvec_tb_half(C, A, B, K, N, g_matvec_bf16_128_pipeline,
-                                ALJABR_MATVEC_THREADS_128);
+    int rc128 = dispatch_matvec_tb_half(
+        C, A, B, K, N, g_matvec_bf16_128_pipeline, ALJABR_MATVEC_THREADS_128);
     uint64_t nanos128 = monotonic_nanos() - start128;
     uint64_t start256 = monotonic_nanos();
     int rc256 = dispatch_matvec_tb_half(C, A, B, K, N, g_matvec_bf16_pipeline,
@@ -835,15 +827,15 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_bf16_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128 ? g_matvec_bf16_128_pipeline
-                                                : g_matvec_bf16_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_bf16_128_pipeline
+                                             : g_matvec_bf16_pipeline;
   return dispatch_matvec_tb_half(C, A, B, K, N, pipeline, threads);
 }
 
 int aljabr_metal_matvec_tb_half_pair(void *C0, void *C1, const void *A,
-                                          const void *B0, const void *B1, int K,
-                                          int N) {
+                                     const void *B0, const void *B1, int K,
+                                     int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -885,17 +877,16 @@ int aljabr_metal_matvec_tb_half_pair(void *C0, void *C1, const void *A,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_half_pair_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128
-          ? g_matvec_half_pair_128_pipeline
-          : g_matvec_half_pair_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_half_pair_128_pipeline
+                                             : g_matvec_half_pair_pipeline;
   return dispatch_matvec_tb_half_pair(C0, C1, A, B0, B1, K, N, pipeline,
                                       threads);
 }
 
 int aljabr_metal_matvec_tb_bf16_pair(void *C0, void *C1, const void *A,
-                                          const void *B0, const void *B1, int K,
-                                          int N) {
+                                     const void *B0, const void *B1, int K,
+                                     int N) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N <= 0)
@@ -956,19 +947,17 @@ int aljabr_metal_matvec_tb_bf16_pair(void *C0, void *C1, const void *A,
   if (threads == 0) {
     threads = default_matvec_threads(g_matvec_bf16_pair_128_pipeline, K, N);
   }
-  id<MTLComputePipelineState> pipeline =
-      threads == ALJABR_MATVEC_THREADS_128
-          ? g_matvec_bf16_pair_128_pipeline
-          : g_matvec_bf16_pair_pipeline;
+  id<MTLComputePipelineState> pipeline = threads == ALJABR_MATVEC_THREADS_128
+                                             ? g_matvec_bf16_pair_128_pipeline
+                                             : g_matvec_bf16_pair_pipeline;
   return dispatch_matvec_tb_half_pair(C0, C1, A, B0, B1, K, N, pipeline,
                                       threads);
 }
 
 int aljabr_metal_matvec_tb_half_triple_mixed(void *C0, void *C1, void *C2,
-                                                  const void *A, const void *B0,
-                                                  const void *B1,
-                                                  const void *B2, int K, int N0,
-                                                  int N1, int N2) {
+                                             const void *A, const void *B0,
+                                             const void *B1, const void *B2,
+                                             int K, int N0, int N1, int N2) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N0 <= 0 || N1 <= 0 || N2 <= 0)
@@ -982,8 +971,7 @@ int aljabr_metal_matvec_tb_half_triple_mixed(void *C0, void *C1, void *C2,
     uint64_t start128 = monotonic_nanos();
     int rc128 = dispatch_matvec_tb_half_triple_mixed(
         C0, C1, C2, A, B0, B1, B2, K, N0, N1, N2,
-        g_matvec_half_triple_mixed_128_pipeline,
-        ALJABR_MATVEC_THREADS_128);
+        g_matvec_half_triple_mixed_128_pipeline, ALJABR_MATVEC_THREADS_128);
     uint64_t nanos128 = monotonic_nanos() - start128;
     uint64_t start256 = monotonic_nanos();
     int rc256 = dispatch_matvec_tb_half_triple_mixed(
@@ -999,8 +987,7 @@ int aljabr_metal_matvec_tb_half_triple_mixed(void *C0, void *C1, void *C2,
       if (threads == ALJABR_MATVEC_THREADS_128) {
         return dispatch_matvec_tb_half_triple_mixed(
             C0, C1, C2, A, B0, B1, B2, K, N0, N1, N2,
-            g_matvec_half_triple_mixed_128_pipeline,
-            ALJABR_MATVEC_THREADS_128);
+            g_matvec_half_triple_mixed_128_pipeline, ALJABR_MATVEC_THREADS_128);
       }
       return 0;
     }
@@ -1023,10 +1010,9 @@ int aljabr_metal_matvec_tb_half_triple_mixed(void *C0, void *C1, void *C2,
 }
 
 int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
-                                                  const void *A, const void *B0,
-                                                  const void *B1,
-                                                  const void *B2, int K, int N0,
-                                                  int N1, int N2) {
+                                             const void *A, const void *B0,
+                                             const void *B1, const void *B2,
+                                             int K, int N0, int N1, int N2) {
   if (!g_initialized)
     return -1;
   if (K <= 0 || N0 <= 0 || N1 <= 0 || N2 <= 0)
@@ -1046,8 +1032,7 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
     uint64_t start128 = monotonic_nanos();
     int rc128 = dispatch_matvec_tb_half_triple_mixed(
         C0, C1, C2, A, B0, B1, B2, K, N0, N1, N2,
-        g_matvec_bf16_triple_mixed_128_pipeline,
-        ALJABR_MATVEC_THREADS_128);
+        g_matvec_bf16_triple_mixed_128_pipeline, ALJABR_MATVEC_THREADS_128);
     uint64_t nanos128 = monotonic_nanos() - start128;
     uint64_t start256 = monotonic_nanos();
     int rc256 = dispatch_matvec_tb_half_triple_mixed(
@@ -1064,8 +1049,7 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
       if (threads == ALJABR_MATVEC_THREADS_128) {
         return dispatch_matvec_tb_half_triple_mixed(
             C0, C1, C2, A, B0, B1, B2, K, N0, N1, N2,
-            g_matvec_bf16_triple_mixed_128_pipeline,
-            ALJABR_MATVEC_THREADS_128);
+            g_matvec_bf16_triple_mixed_128_pipeline, ALJABR_MATVEC_THREADS_128);
       }
       return 0;
     }
@@ -1087,11 +1071,11 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
                                               N1, N2, pipeline, threads);
 }
 
-static BOOL encode_matvec_sub(
-    id<MTLComputeCommandEncoder> enc,
-    AljabrMetalPipelines *pipelines,
-    id<MTLBuffer> bufC, id<MTLBuffer> bufA, const void *B,
-    uint32_t kk, uint32_t nn, int type, uint32_t batchSize) {
+static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
+                              AljabrMetalPipelines *pipelines,
+                              id<MTLBuffer> bufC, id<MTLBuffer> bufA,
+                              const void *B, uint32_t kk, uint32_t nn, int type,
+                              uint32_t batchSize) {
   id<MTLComputePipelineState> p = nil;
   size_t bBytes = 0;
   BOOL is_mr8 = NO;
@@ -1135,11 +1119,13 @@ static BOOL encode_matvec_sub(
     p = pipelines->matvec_bf16;
     bBytes = (size_t)nn * kk * sizeof(uint16_t);
   }
-  if (p == nil || bBytes == 0) return NO;
+  if (p == nil || bBytes == 0)
+    return NO;
 
   size_t bOff = 0;
   id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, bBytes, &bOff);
-  if (bufC == nil || bufB == nil) return NO;
+  if (bufC == nil || bufB == nil)
+    return NO;
 
   [enc setComputePipelineState:p];
   [enc setBuffer:bufC offset:0 atIndex:0];
@@ -1151,7 +1137,8 @@ static BOOL encode_matvec_sub(
   if (is_b4) {
     uint32_t bSz32 = (uint32_t)bSz;
     [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
-    [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 3) / 4, (bSz + 1) / 2, 1)
+    [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 3) / 4,
+                                          (bSz + 1) / 2, 1)
         threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
   } else if (is_mr8) {
     [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 7) / 8, bSz, 1)
@@ -1180,28 +1167,35 @@ static size_t g_scratch_triple_C0_bytes = 0;
 static size_t g_scratch_triple_C1_bytes = 0;
 static size_t g_scratch_triple_C2_bytes = 0;
 
-static inline id<MTLBuffer> ensure_shared_buf(id<MTLBuffer> __strong *slot, size_t *cap, size_t needed) {
+static inline id<MTLBuffer> ensure_shared_buf(id<MTLBuffer> __strong *slot,
+                                              size_t *cap, size_t needed) {
   if (*slot == nil || *cap < needed) {
     size_t sz = (needed + 16383) & ~16383;
-    *slot = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    *slot = [g_device newBufferWithLength:sz
+                                  options:MTLResourceStorageModeShared];
     *cap = sz;
   }
   return *slot;
 }
 
-int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B,
-                                 int K, int N, int type, int batchSize) {
-  if (!g_initialized) return -1;
-  if (K <= 0 || N <= 0 || batchSize <= 0) return -2;
+int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B, int K,
+                                 int N, int type, int batchSize) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N <= 0 || batchSize <= 0)
+    return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
     size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
     size_t cBytes = (size_t)batchSize * (size_t)N * sizeof(float);
 
-    id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_single_A, &g_scratch_single_A_bytes, aBytes);
-    id<MTLBuffer> bufC = ensure_shared_buf(&g_scratch_single_C, &g_scratch_single_C_bytes, cBytes);
-    if (bufA == nil || bufC == nil) return -4;
+    id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_single_A,
+                                           &g_scratch_single_A_bytes, aBytes);
+    id<MTLBuffer> bufC = ensure_shared_buf(&g_scratch_single_C,
+                                           &g_scratch_single_C_bytes, cBytes);
+    if (bufA == nil || bufC == nil)
+      return -4;
 
     memcpy([bufA contents], A, aBytes);
 
@@ -1210,7 +1204,8 @@ int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B,
     uint32_t kk = (uint32_t)K;
     uint32_t bSz = (uint32_t)batchSize;
 
-    if (!encode_matvec_sub(enc, pipelines, bufC, bufA, B, kk, (uint32_t)N, type, bSz)) {
+    if (!encode_matvec_sub(enc, pipelines, bufC, bufA, B, kk, (uint32_t)N, type,
+                           bSz)) {
       [enc endEncoding];
       return -3;
     }
@@ -1227,10 +1222,12 @@ int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B,
 }
 
 int aljabr_metal_matvec_tb_pair(void *C0, void *C1, const void *A,
-                                const void *B0, const void *B1, int K,
-                                int N0, int N1, int type0, int type1) {
-  if (!g_initialized) return -1;
-  if (K <= 0 || N0 <= 0 || N1 <= 0) return -2;
+                                const void *B0, const void *B1, int K, int N0,
+                                int N1, int type0, int type1) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N0 <= 0 || N1 <= 0)
+    return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
@@ -1238,10 +1235,14 @@ int aljabr_metal_matvec_tb_pair(void *C0, void *C1, const void *A,
     size_t c0Bytes = (size_t)N0 * sizeof(float);
     size_t c1Bytes = (size_t)N1 * sizeof(float);
 
-    id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_triple_A, &g_scratch_triple_A_bytes, aBytes);
-    id<MTLBuffer> bufC0 = ensure_shared_buf(&g_scratch_triple_C0, &g_scratch_triple_C0_bytes, c0Bytes);
-    id<MTLBuffer> bufC1 = ensure_shared_buf(&g_scratch_triple_C1, &g_scratch_triple_C1_bytes, c1Bytes);
-    if (bufA == nil || bufC0 == nil || bufC1 == nil) return -4;
+    id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_triple_A,
+                                           &g_scratch_triple_A_bytes, aBytes);
+    id<MTLBuffer> bufC0 = ensure_shared_buf(
+        &g_scratch_triple_C0, &g_scratch_triple_C0_bytes, c0Bytes);
+    id<MTLBuffer> bufC1 = ensure_shared_buf(
+        &g_scratch_triple_C1, &g_scratch_triple_C1_bytes, c1Bytes);
+    if (bufA == nil || bufC0 == nil || bufC1 == nil)
+      return -4;
 
     memcpy([bufA contents], A, aBytes);
 
@@ -1249,8 +1250,10 @@ int aljabr_metal_matvec_tb_pair(void *C0, void *C1, const void *A,
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
     uint32_t kk = (uint32_t)K;
 
-    if (!encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk, (uint32_t)N0, type0, 1) ||
-        !encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk, (uint32_t)N1, type1, 1)) {
+    if (!encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk, (uint32_t)N0,
+                           type0, 1) ||
+        !encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk, (uint32_t)N1,
+                           type1, 1)) {
       [enc endEncoding];
       return -3;
     }
@@ -1269,12 +1272,13 @@ int aljabr_metal_matvec_tb_pair(void *C0, void *C1, const void *A,
 
 int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
                                         const void *A, const void *B0,
-                                        const void *B1, const void *B2,
-                                        int K, int N0, int N1, int N2,
-                                        int type0, int type1, int type2,
-                                        int batchSize) {
-  if (!g_initialized) return -1;
-  if (K <= 0 || N0 <= 0 || N1 <= 0 || N2 <= 0 || batchSize <= 0) return -2;
+                                        const void *B1, const void *B2, int K,
+                                        int N0, int N1, int N2, int type0,
+                                        int type1, int type2, int batchSize) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N0 <= 0 || N1 <= 0 || N2 <= 0 || batchSize <= 0)
+    return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
@@ -1284,11 +1288,16 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
     size_t c1Bytes = bSz * (size_t)N1 * sizeof(float);
     size_t c2Bytes = bSz * (size_t)N2 * sizeof(float);
 
-    id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_triple_A, &g_scratch_triple_A_bytes, aBytes);
-    id<MTLBuffer> bufC0 = ensure_shared_buf(&g_scratch_triple_C0, &g_scratch_triple_C0_bytes, c0Bytes);
-    id<MTLBuffer> bufC1 = ensure_shared_buf(&g_scratch_triple_C1, &g_scratch_triple_C1_bytes, c1Bytes);
-    id<MTLBuffer> bufC2 = ensure_shared_buf(&g_scratch_triple_C2, &g_scratch_triple_C2_bytes, c2Bytes);
-    if (bufA == nil || bufC0 == nil || bufC1 == nil || bufC2 == nil) return -4;
+    id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_triple_A,
+                                           &g_scratch_triple_A_bytes, aBytes);
+    id<MTLBuffer> bufC0 = ensure_shared_buf(
+        &g_scratch_triple_C0, &g_scratch_triple_C0_bytes, c0Bytes);
+    id<MTLBuffer> bufC1 = ensure_shared_buf(
+        &g_scratch_triple_C1, &g_scratch_triple_C1_bytes, c1Bytes);
+    id<MTLBuffer> bufC2 = ensure_shared_buf(
+        &g_scratch_triple_C2, &g_scratch_triple_C2_bytes, c2Bytes);
+    if (bufA == nil || bufC0 == nil || bufC1 == nil || bufC2 == nil)
+      return -4;
 
     uint64_t t_start = monotonic_nanos();
     memcpy([bufA contents], A, aBytes);
@@ -1298,9 +1307,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
     uint32_t kk = (uint32_t)K;
     uint32_t batch32 = (uint32_t)batchSize;
 
-    if (!encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk, (uint32_t)N0, type0, batch32) ||
-        !encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk, (uint32_t)N1, type1, batch32) ||
-        !encode_matvec_sub(enc, pipelines, bufC2, bufA, B2, kk, (uint32_t)N2, type2, batch32)) {
+    if (!encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk, (uint32_t)N0,
+                           type0, batch32) ||
+        !encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk, (uint32_t)N1,
+                           type1, batch32) ||
+        !encode_matvec_sub(enc, pipelines, bufC2, bufA, B2, kk, (uint32_t)N2,
+                           type2, batch32)) {
       [enc endEncoding];
       return -3;
     }
@@ -1318,9 +1330,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
       static int triple_batch_call_count = 0;
       triple_batch_call_count++;
       if (triple_batch_call_count <= 2) {
-        printf("[NATIVE TRIPLE BATCH #%d] K=%d N0=%d N1=%d N2=%d bSz=%d types=(%d,%d,%d) prep: %.2f ms, gpu: %.2f ms, copy_out: %.2f ms, total: %.2f ms\n",
-               triple_batch_call_count, K, N0, N1, N2, batchSize, type0, type1, type2,
-               (t_commit - t_start) / 1e6, (t_done - t_commit) / 1e6, (t_end - t_done) / 1e6, (t_end - t_start) / 1e6);
+        printf("[NATIVE TRIPLE BATCH #%d] K=%d N0=%d N1=%d N2=%d bSz=%d "
+               "types=(%d,%d,%d) prep: %.2f ms, gpu: %.2f ms, copy_out: %.2f "
+               "ms, total: %.2f ms\n",
+               triple_batch_call_count, K, N0, N1, N2, batchSize, type0, type1,
+               type2, (t_commit - t_start) / 1e6, (t_done - t_commit) / 1e6,
+               (t_end - t_done) / 1e6, (t_end - t_start) / 1e6);
       }
       return 0;
     }
@@ -1328,12 +1343,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
   }
 }
 
-int aljabr_metal_matvec_tb_triple(void *C0, void *C1, void *C2,
-                                  const void *A, const void *B0,
-                                  const void *B1, const void *B2,
-                                  int K, int N0, int N1, int N2,
+int aljabr_metal_matvec_tb_triple(void *C0, void *C1, void *C2, const void *A,
+                                  const void *B0, const void *B1,
+                                  const void *B2, int K, int N0, int N1, int N2,
                                   int type0, int type1, int type2) {
-  return aljabr_metal_matvec_tb_triple_batch(C0, C1, C2, A, B0, B1, B2, K, N0, N1, N2, type0, type1, type2, 1);
+  return aljabr_metal_matvec_tb_triple_batch(C0, C1, C2, A, B0, B1, B2, K, N0,
+                                             N1, N2, type0, type1, type2, 1);
 }
 
 static id<MTLBuffer> g_scratch_gate = nil;
@@ -1345,13 +1360,14 @@ static size_t g_scratch_ffn_bytes = 0;
 static size_t g_scratch_dim_bytes = 0;
 
 int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
-                                      const void *gateW, const void *upW, const void *downW,
-                                      int dim, int ffnDim,
-                                      int typeGate, int typeUp, int typeDown,
-                                      int activationKind,
-                                      int batchSize) {
-  if (!g_initialized) return -1;
-  if (dim <= 0 || ffnDim <= 0 || batchSize <= 0) return -2;
+                                       const void *gateW, const void *upW,
+                                       const void *downW, int dim, int ffnDim,
+                                       int typeGate, int typeUp, int typeDown,
+                                       int activationKind, int batchSize) {
+  if (!g_initialized)
+    return -1;
+  if (dim <= 0 || ffnDim <= 0 || batchSize <= 0)
+    return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
@@ -1360,27 +1376,38 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     size_t dimBytes = bSz * (size_t)dim * sizeof(float);
     if (g_scratch_inA == nil || g_scratch_dim_bytes < dimBytes) {
       size_t sz = (dimBytes + 16383) & ~16383;
-      g_scratch_inA = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-      g_scratch_outDown = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+      g_scratch_inA =
+          [g_device newBufferWithLength:sz
+                                options:MTLResourceStorageModeShared];
+      g_scratch_outDown =
+          [g_device newBufferWithLength:sz
+                                options:MTLResourceStorageModeShared];
       g_scratch_dim_bytes = sz;
     }
-    if (g_scratch_inA == nil || g_scratch_outDown == nil) return -4;
+    if (g_scratch_inA == nil || g_scratch_outDown == nil)
+      return -4;
 
     memcpy([g_scratch_inA contents], inA, dimBytes);
 
     size_t needed = bSz * (size_t)ffnDim * sizeof(float);
     if (g_scratch_gate == nil || g_scratch_ffn_bytes < needed) {
       size_t sz = (needed + 16383) & ~16383;
-      g_scratch_gate = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-      g_scratch_up = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-      g_scratch_hb = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+      g_scratch_gate =
+          [g_device newBufferWithLength:sz
+                                options:MTLResourceStorageModePrivate];
+      g_scratch_up =
+          [g_device newBufferWithLength:sz
+                                options:MTLResourceStorageModePrivate];
+      g_scratch_hb =
+          [g_device newBufferWithLength:sz
+                                options:MTLResourceStorageModePrivate];
       g_scratch_ffn_bytes = sz;
     }
-    if (g_scratch_gate == nil || g_scratch_up == nil || g_scratch_hb == nil) return -4;
+    if (g_scratch_gate == nil || g_scratch_up == nil || g_scratch_hb == nil)
+      return -4;
 
-    id<MTLComputePipelineState> actPipeline = (activationKind == 2)
-        ? pipelines->gelu_ffn
-        : pipelines->silu_ffn;
+    id<MTLComputePipelineState> actPipeline =
+        (activationKind == 2) ? pipelines->gelu_ffn : pipelines->silu_ffn;
 
     // Resolve weight buffers
     size_t gateBytes = 0, upBytes = 0, downBytes = 0;
@@ -1390,63 +1417,122 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
 
     // Gate
     if (typeGate == 12) {
-      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q4_k_mr8; gate_mr8 = YES; }
-      else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
-      else { pGate = pipelines->matvec_tb_q4_k; }
+      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+        pGate = pipelines->matvec_tb_q4_k_mr8;
+        gate_mr8 = YES;
+      } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+        pGate = pipelines->matvec_tb_q4_k_mr4;
+        gate_mr4 = YES;
+      } else {
+        pGate = pipelines->matvec_tb_q4_k;
+      }
       gateBytes = (size_t)ffnDim * dim / 256 * 144;
-    }
-    else if (typeGate == 14) {
-      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q6_k_mr8; gate_mr8 = YES; }
-      else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
-      else { pGate = pipelines->matvec_tb_q6_k; }
+    } else if (typeGate == 14) {
+      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+        pGate = pipelines->matvec_tb_q6_k_mr8;
+        gate_mr8 = YES;
+      } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+        pGate = pipelines->matvec_tb_q6_k_mr4;
+        gate_mr4 = YES;
+      } else {
+        pGate = pipelines->matvec_tb_q6_k;
+      }
       gateBytes = (size_t)ffnDim * dim / 256 * 210;
+    } else if (typeGate == 8) {
+      pGate = pipelines->matvec_tb_q8_0;
+      gateBytes = (size_t)ffnDim * dim / 32 * 34;
+    } else if (typeGate == 1) {
+      pGate = pipelines->matvec_half;
+      gateBytes = (size_t)ffnDim * dim * sizeof(uint16_t);
+    } else if (typeGate == 30 || typeGate == 16) {
+      pGate = pipelines->matvec_bf16;
+      gateBytes = (size_t)ffnDim * dim * sizeof(uint16_t);
     }
-    else if (typeGate == 8)  { pGate = pipelines->matvec_tb_q8_0; gateBytes = (size_t)ffnDim * dim / 32 * 34; }
-    else if (typeGate == 1)  { pGate = pipelines->matvec_half; gateBytes = (size_t)ffnDim * dim * sizeof(uint16_t); }
-    else if (typeGate == 30 || typeGate == 16) { pGate = pipelines->matvec_bf16; gateBytes = (size_t)ffnDim * dim * sizeof(uint16_t); }
 
     // Up
     if (typeUp == 12) {
-      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q4_k_mr8; up_mr8 = YES; }
-      else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
-      else { pUp = pipelines->matvec_tb_q4_k; }
+      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+        pUp = pipelines->matvec_tb_q4_k_mr8;
+        up_mr8 = YES;
+      } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+        pUp = pipelines->matvec_tb_q4_k_mr4;
+        up_mr4 = YES;
+      } else {
+        pUp = pipelines->matvec_tb_q4_k;
+      }
       upBytes = (size_t)ffnDim * dim / 256 * 144;
-    }
-    else if (typeUp == 14) {
-      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q6_k_mr8; up_mr8 = YES; }
-      else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
-      else { pUp = pipelines->matvec_tb_q6_k; }
+    } else if (typeUp == 14) {
+      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+        pUp = pipelines->matvec_tb_q6_k_mr8;
+        up_mr8 = YES;
+      } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+        pUp = pipelines->matvec_tb_q6_k_mr4;
+        up_mr4 = YES;
+      } else {
+        pUp = pipelines->matvec_tb_q6_k;
+      }
       upBytes = (size_t)ffnDim * dim / 256 * 210;
+    } else if (typeUp == 8) {
+      pUp = pipelines->matvec_tb_q8_0;
+      upBytes = (size_t)ffnDim * dim / 32 * 34;
+    } else if (typeUp == 1) {
+      pUp = pipelines->matvec_half;
+      upBytes = (size_t)ffnDim * dim * sizeof(uint16_t);
+    } else if (typeUp == 30 || typeUp == 16) {
+      pUp = pipelines->matvec_bf16;
+      upBytes = (size_t)ffnDim * dim * sizeof(uint16_t);
     }
-    else if (typeUp == 8)  { pUp = pipelines->matvec_tb_q8_0; upBytes = (size_t)ffnDim * dim / 32 * 34; }
-    else if (typeUp == 1)  { pUp = pipelines->matvec_half; upBytes = (size_t)ffnDim * dim * sizeof(uint16_t); }
-    else if (typeUp == 30 || typeUp == 16) { pUp = pipelines->matvec_bf16; upBytes = (size_t)ffnDim * dim * sizeof(uint16_t); }
 
     // Down: matrix is (dim rows) x (ffnDim cols)
     if (typeDown == 12) {
-      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q4_k_mr8; down_mr8 = YES; }
-      else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
-      else { pDown = pipelines->matvec_tb_q4_k; }
+      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+        pDown = pipelines->matvec_tb_q4_k_mr8;
+        down_mr8 = YES;
+      } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+        pDown = pipelines->matvec_tb_q4_k_mr4;
+        down_mr4 = YES;
+      } else {
+        pDown = pipelines->matvec_tb_q4_k;
+      }
       downBytes = (size_t)dim * ffnDim / 256 * 144;
-    }
-    else if (typeDown == 14) {
-      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q6_k_mr8; down_mr8 = YES; }
-      else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
-      else { pDown = pipelines->matvec_tb_q6_k; }
+    } else if (typeDown == 14) {
+      if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+        pDown = pipelines->matvec_tb_q6_k_mr8;
+        down_mr8 = YES;
+      } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+        pDown = pipelines->matvec_tb_q6_k_mr4;
+        down_mr4 = YES;
+      } else {
+        pDown = pipelines->matvec_tb_q6_k;
+      }
       downBytes = (size_t)dim * ffnDim / 256 * 210;
+    } else if (typeDown == 8) {
+      pDown = pipelines->matvec_tb_q8_0;
+      downBytes = (size_t)dim * ffnDim / 32 * 34;
+    } else if (typeDown == 1) {
+      pDown = pipelines->matvec_half;
+      downBytes = (size_t)dim * ffnDim * sizeof(uint16_t);
+    } else if (typeDown == 30 || typeDown == 16) {
+      pDown = pipelines->matvec_bf16;
+      downBytes = (size_t)dim * ffnDim * sizeof(uint16_t);
     }
-    else if (typeDown == 8)  { pDown = pipelines->matvec_tb_q8_0; downBytes = (size_t)dim * ffnDim / 32 * 34; }
-    else if (typeDown == 1)  { pDown = pipelines->matvec_half; downBytes = (size_t)dim * ffnDim * sizeof(uint16_t); }
-    else if (typeDown == 30 || typeDown == 16) { pDown = pipelines->matvec_bf16; downBytes = (size_t)dim * ffnDim * sizeof(uint16_t); }
 
-    BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12 && ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) || pipelines->ffn_gate_up_act_q4_k_mr4 != nil))
-                              || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
+    BOOL can_fuse_gate_up =
+        ((typeGate == 12 && typeUp == 12 &&
+          ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) ||
+           pipelines->ffn_gate_up_act_q4_k_mr4 != nil)) ||
+         (typeGate == 14 && typeUp == 14 &&
+          pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
     if (!can_fuse_gate_up && actPipeline == nil) {
-      fprintf(stderr, "[aljabr-metal] actPipeline is nil for activationKind=%d\n", activationKind);
+      fprintf(stderr,
+              "[aljabr-metal] actPipeline is nil for activationKind=%d\n",
+              activationKind);
       return -3;
     }
     if (pGate == nil || pUp == nil || pDown == nil) {
-      fprintf(stderr, "[aljabr-metal] pipeline nil: pGate=%p pUp=%p pDown=%p (types: %d, %d, %d)\n",
+      fprintf(stderr,
+              "[aljabr-metal] pipeline nil: pGate=%p pUp=%p pDown=%p (types: "
+              "%d, %d, %d)\n",
               pGate, pUp, pDown, typeGate, typeUp, typeDown);
       return -3;
     }
@@ -1454,7 +1540,8 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     id<MTLBuffer> bufGateW = wrap_weight_ptr_offset(gateW, gateBytes, &gateOff);
     id<MTLBuffer> bufUpW = wrap_weight_ptr_offset(upW, upBytes, &upOff);
     id<MTLBuffer> bufDownW = wrap_weight_ptr_offset(downW, downBytes, &downOff);
-    if (bufGateW == nil || bufUpW == nil || bufDownW == nil) return -4;
+    if (bufGateW == nil || bufUpW == nil || bufDownW == nil)
+      return -4;
 
     uint32_t kDim = (uint32_t)dim;
     uint32_t nFfn = (uint32_t)ffnDim;
@@ -1462,14 +1549,20 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
 
     if (can_fuse_gate_up) {
-      // 1. Fused Gate + Up + Activation (GeGLU / SwiGLU) directly into g_scratch_hb
+      // 1. Fused Gate + Up + Activation (GeGLU / SwiGLU) directly into
+      // g_scratch_hb
       id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-      BOOL use_b4 = (bSz > 1 && ((typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil)
-                                 || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
-      BOOL use_mr8 = (!use_b4 && typeGate == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil);
+      BOOL use_b4 =
+          (bSz > 1 && ((typeGate == 12 && typeUp == 12 &&
+                        pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
+                       (typeGate == 14 && typeUp == 14 &&
+                        pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
+      BOOL use_mr8 = (!use_b4 && typeGate == 12 &&
+                      pipelines->ffn_gate_up_act_q4_k_mr8 != nil);
       id<MTLComputePipelineState> fuseP;
       if (use_b4) {
-        fuseP = (typeGate == 14) ? pipelines->ffn_gate_up_act_q6_k_b4_mr4 : pipelines->ffn_gate_up_act_q4_k_b4_mr4;
+        fuseP = (typeGate == 14) ? pipelines->ffn_gate_up_act_q6_k_b4_mr4
+                                 : pipelines->ffn_gate_up_act_q4_k_b4_mr4;
       } else if (use_mr8) {
         fuseP = pipelines->ffn_gate_up_act_q4_k_mr8;
       } else if (typeGate == 14) {
@@ -1489,20 +1582,24 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       if (use_b4) {
         uint32_t bSz32 = (uint32_t)bSz;
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:7];
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, (bSz + 1) / 2, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4,
+                                              (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else if (use_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       }
 
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 2. MatVec Down directly from g_scratch_hb to g_scratch_outDown
-      if (bSz > 1 && typeDown == 12 && pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
+      if (bSz > 1 && typeDown == 12 &&
+          pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q4_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
         [enc setBuffer:g_scratch_hb offset:0 atIndex:1];
@@ -1511,9 +1608,11 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         uint32_t bSz32 = (uint32_t)bSz;
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 1) / 2, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
+                                              (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-      } else if (bSz > 1 && typeDown == 14 && pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
+      } else if (bSz > 1 && typeDown == 14 &&
+                 pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q6_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
         [enc setBuffer:g_scratch_hb offset:0 atIndex:1];
@@ -1522,7 +1621,8 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         uint32_t bSz32 = (uint32_t)bSz;
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 1) / 2, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
+                                              (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc setComputePipelineState:pDown];
@@ -1532,10 +1632,12 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         if (down_mr8) {
-          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 7) / 8, bSz, 1)
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 7) / 8, bSz,
+                                                1)
               threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         } else if (down_mr4) {
-          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, bSz, 1)
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, bSz,
+                                                1)
               threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
         } else {
           [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)dim, bSz, 1)
@@ -1555,10 +1657,12 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc setBytes:&kDim length:sizeof(kDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
       if (gate_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else if (gate_mr4) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ffnDim, bSz, 1)
@@ -1573,10 +1677,12 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc setBytes:&kDim length:sizeof(kDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
       if (up_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, bSz,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else if (up_mr4) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, bSz,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ffnDim, bSz, 1)
@@ -1591,7 +1697,8 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc setBuffer:g_scratch_gate offset:0 atIndex:1];
       [enc setBuffer:g_scratch_up offset:0 atIndex:2];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
-      NSUInteger threads = MIN((NSUInteger)256, actPipeline.maxTotalThreadsPerThreadgroup);
+      NSUInteger threads =
+          MIN((NSUInteger)256, actPipeline.maxTotalThreadsPerThreadgroup);
       NSUInteger totalElem = bSz * (NSUInteger)ffnDim;
       NSUInteger groups = (totalElem + threads - 1) / threads;
       [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
@@ -1600,7 +1707,8 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 4. MatVec Down: (dim rows) x (ffnDim cols)
-      if (bSz > 1 && typeDown == 12 && pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
+      if (bSz > 1 && typeDown == 12 &&
+          pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q4_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
         [enc setBuffer:g_scratch_hb offset:0 atIndex:1];
@@ -1609,9 +1717,11 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         uint32_t bSz32 = (uint32_t)bSz;
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 1) / 2, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
+                                              (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-      } else if (bSz > 1 && typeDown == 14 && pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
+      } else if (bSz > 1 && typeDown == 14 &&
+                 pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q6_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
         [enc setBuffer:g_scratch_hb offset:0 atIndex:1];
@@ -1620,7 +1730,8 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         uint32_t bSz32 = (uint32_t)bSz;
         [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, (bSz + 1) / 2, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
+                                              (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc setComputePipelineState:pDown];
@@ -1630,10 +1741,12 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
         [enc setBytes:&kDim length:sizeof(kDim) atIndex:4];
         if (down_mr8) {
-          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 7) / 8, bSz, 1)
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 7) / 8, bSz,
+                                                1)
               threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         } else if (down_mr4) {
-          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, bSz, 1)
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4, bSz,
+                                                1)
               threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
         } else {
           [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)dim, bSz, 1)
@@ -1648,13 +1761,13 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     [cmd commit];
     [cmd waitUntilCompleted];
     uint64_t t_done = monotonic_nanos();
-    if (getenv("ALJABR_METAL_DEBUG_FFN") != NULL && (ffn_call_count < 10 || (ffn_call_count % 48 == 0))) {
-      printf("[NATIVE FFN %d] bSz=%d, wrap+encode: %.2f ms, gpu_wait: %.2f ms, total: %.2f ms (mr4: gate=%d up=%d down=%d)\n",
-             ffn_call_count, (int)bSz,
-             (t_encoded - t0) / 1e6,
-             (t_done - t_encoded) / 1e6,
-             (t_done - t0) / 1e6,
-             (int)gate_mr4, (int)up_mr4, (int)down_mr4);
+    if (getenv("ALJABR_METAL_DEBUG_FFN") != NULL &&
+        (ffn_call_count < 10 || (ffn_call_count % 48 == 0))) {
+      printf("[NATIVE FFN %d] bSz=%d, wrap+encode: %.2f ms, gpu_wait: %.2f ms, "
+             "total: %.2f ms (mr4: gate=%d up=%d down=%d)\n",
+             ffn_call_count, (int)bSz, (t_encoded - t0) / 1e6,
+             (t_done - t_encoded) / 1e6, (t_done - t0) / 1e6, (int)gate_mr4,
+             (int)up_mr4, (int)down_mr4);
     }
     ffn_call_count++;
 
@@ -1667,12 +1780,13 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
 }
 
 int aljabr_metal_ffn_gated_fused(void *outDown, const void *inA,
-                                const void *gateW, const void *upW, const void *downW,
-                                int dim, int ffnDim,
-                                int typeGate, int typeUp, int typeDown,
-                                int activationKind) {
-  return aljabr_metal_ffn_gated_fused_batch(outDown, inA, gateW, upW, downW, dim, ffnDim,
-                                           typeGate, typeUp, typeDown, activationKind, 1);
+                                 const void *gateW, const void *upW,
+                                 const void *downW, int dim, int ffnDim,
+                                 int typeGate, int typeUp, int typeDown,
+                                 int activationKind) {
+  return aljabr_metal_ffn_gated_fused_batch(outDown, inA, gateW, upW, downW,
+                                            dim, ffnDim, typeGate, typeUp,
+                                            typeDown, activationKind, 1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1681,18 +1795,18 @@ int aljabr_metal_ffn_gated_fused(void *outDown, const void *inA,
 // ─────────────────────────────────────────────────────────────────────────────
 
 static id<MTLBuffer> g_woff_attnFull = nil;
-static id<MTLBuffer> g_woff_xb       = nil;
-static id<MTLBuffer> g_woff_x        = nil;
-static id<MTLBuffer> g_woff_normW1   = nil;
-static id<MTLBuffer> g_woff_normW2   = nil;
-static id<MTLBuffer> g_woff_normW3   = nil;
+static id<MTLBuffer> g_woff_xb = nil;
+static id<MTLBuffer> g_woff_x = nil;
+static id<MTLBuffer> g_woff_normW1 = nil;
+static id<MTLBuffer> g_woff_normW2 = nil;
+static id<MTLBuffer> g_woff_normW3 = nil;
 static id<MTLBuffer> g_woff_ffn_gate = nil;
-static id<MTLBuffer> g_woff_ffn_up   = nil;
-static id<MTLBuffer> g_woff_ffn_hb   = nil;
+static id<MTLBuffer> g_woff_ffn_up = nil;
+static id<MTLBuffer> g_woff_ffn_hb = nil;
 static size_t g_woff_attnFull_cap = 0;
-static size_t g_woff_dim_cap      = 0;
-static size_t g_woff_ffn_cap      = 0;
-static BOOL g_woff_x_valid        = NO;
+static size_t g_woff_dim_cap = 0;
+static size_t g_woff_ffn_cap = 0;
+static BOOL g_woff_x_valid = NO;
 
 static id<MTLBuffer> g_woff_nextQ = nil;
 static id<MTLBuffer> g_woff_nextK = nil;
@@ -1703,30 +1817,39 @@ static size_t g_woff_nextK_cap = 0;
 static size_t g_woff_nextV_cap = 0;
 static size_t g_woff_nextAttnNormW_cap = 0;
 
-static BOOL ensure_woff_next_qkv(size_t qBytes, size_t kBytes, size_t vBytes, size_t normBytes) {
+static BOOL ensure_woff_next_qkv(size_t qBytes, size_t kBytes, size_t vBytes,
+                                 size_t normBytes) {
   if (qBytes > g_woff_nextQ_cap) {
     size_t sz = (qBytes + 16383) & ~16383;
-    g_woff_nextQ = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_nextQ = [g_device newBufferWithLength:sz
+                                         options:MTLResourceStorageModeShared];
     g_woff_nextQ_cap = sz;
-    if (!g_woff_nextQ) return NO;
+    if (!g_woff_nextQ)
+      return NO;
   }
   if (kBytes > g_woff_nextK_cap) {
     size_t sz = (kBytes + 16383) & ~16383;
-    g_woff_nextK = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_nextK = [g_device newBufferWithLength:sz
+                                         options:MTLResourceStorageModeShared];
     g_woff_nextK_cap = sz;
-    if (!g_woff_nextK) return NO;
+    if (!g_woff_nextK)
+      return NO;
   }
   if (vBytes > g_woff_nextV_cap) {
     size_t sz = (vBytes + 16383) & ~16383;
-    g_woff_nextV = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_nextV = [g_device newBufferWithLength:sz
+                                         options:MTLResourceStorageModeShared];
     g_woff_nextV_cap = sz;
-    if (!g_woff_nextV) return NO;
+    if (!g_woff_nextV)
+      return NO;
   }
   if (normBytes > g_woff_nextAttnNormW_cap) {
     size_t sz = (normBytes + 16383) & ~16383;
-    g_woff_nextAttnNormW = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_nextAttnNormW =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
     g_woff_nextAttnNormW_cap = sz;
-    if (!g_woff_nextAttnNormW) return NO;
+    if (!g_woff_nextAttnNormW)
+      return NO;
   }
   return YES;
 }
@@ -1734,19 +1857,28 @@ static BOOL ensure_woff_next_qkv(size_t qBytes, size_t kBytes, size_t vBytes, si
 static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
   if (attnKBytes > g_woff_attnFull_cap) {
     size_t sz = (attnKBytes + 16383) & ~16383;
-    g_woff_attnFull = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_attnFull =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
     g_woff_attnFull_cap = sz;
-    if (!g_woff_attnFull) return NO;
+    if (!g_woff_attnFull)
+      return NO;
   }
   if (dimBytes > g_woff_dim_cap) {
     size_t sz = (dimBytes + 16383) & ~16383;
-    g_woff_xb     = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_x      = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_normW1 = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_normW2 = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_normW3 = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_xb = [g_device newBufferWithLength:sz
+                                      options:MTLResourceStorageModeShared];
+    g_woff_x = [g_device newBufferWithLength:sz
+                                     options:MTLResourceStorageModeShared];
+    g_woff_normW1 = [g_device newBufferWithLength:sz
+                                          options:MTLResourceStorageModeShared];
+    g_woff_normW2 = [g_device newBufferWithLength:sz
+                                          options:MTLResourceStorageModeShared];
+    g_woff_normW3 = [g_device newBufferWithLength:sz
+                                          options:MTLResourceStorageModeShared];
     g_woff_dim_cap = sz;
-    if (!g_woff_xb || !g_woff_x || !g_woff_normW1 || !g_woff_normW2 || !g_woff_normW3) return NO;
+    if (!g_woff_xb || !g_woff_x || !g_woff_normW1 || !g_woff_normW2 ||
+        !g_woff_normW3)
+      return NO;
   }
   return YES;
 }
@@ -1754,42 +1886,48 @@ static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
 static BOOL ensure_woff_ffn_bufs(size_t ffnBytes) {
   if (ffnBytes > g_woff_ffn_cap) {
     size_t sz = (ffnBytes + 16383) & ~16383;
-    g_woff_ffn_gate = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_up   = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_hb   = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+    g_woff_ffn_gate =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+    g_woff_ffn_up =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+    g_woff_ffn_hb =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
     g_woff_ffn_cap = sz;
-    if (!g_woff_ffn_gate || !g_woff_ffn_up || !g_woff_ffn_hb) return NO;
+    if (!g_woff_ffn_gate || !g_woff_ffn_up || !g_woff_ffn_hb)
+      return NO;
   }
   return YES;
 }
 
-static void encode_woff_rmsnorm(
-    id<MTLComputeCommandEncoder> enc,
-    id<MTLBuffer> bufOut, id<MTLBuffer> bufIn, id<MTLBuffer> bufW, size_t wOffset,
-    uint32_t N, float eps, uint32_t addOne,
-    AljabrMetalPipelines *pipelines) {
+static void encode_woff_rmsnorm(id<MTLComputeCommandEncoder> enc,
+                                id<MTLBuffer> bufOut, id<MTLBuffer> bufIn,
+                                id<MTLBuffer> bufW, size_t wOffset, uint32_t N,
+                                float eps, uint32_t addOne,
+                                AljabrMetalPipelines *pipelines) {
   id<MTLComputePipelineState> p =
       (N % 4 == 0 && pipelines->rmsnorm_float4 != nil)
           ? pipelines->rmsnorm_float4
           : pipelines->rmsnorm;
-  if (p == nil) return;
+  if (p == nil)
+    return;
   [enc setComputePipelineState:p];
-  [enc setBuffer:bufOut  offset:0 atIndex:0];
-  [enc setBuffer:bufIn   offset:0 atIndex:1];
-  [enc setBuffer:bufW    offset:wOffset atIndex:2];
-  [enc setBytes:&N       length:sizeof(N)      atIndex:3];
-  [enc setBytes:&eps     length:sizeof(eps)    atIndex:4];
-  [enc setBytes:&addOne  length:sizeof(addOne) atIndex:5];
+  [enc setBuffer:bufOut offset:0 atIndex:0];
+  [enc setBuffer:bufIn offset:0 atIndex:1];
+  [enc setBuffer:bufW offset:wOffset atIndex:2];
+  [enc setBytes:&N length:sizeof(N) atIndex:3];
+  [enc setBytes:&eps length:sizeof(eps) atIndex:4];
+  [enc setBytes:&addOne length:sizeof(addOne) atIndex:5];
   [enc dispatchThreadgroups:MTLSizeMake(1, 1, 1)
       threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
 }
 
-static void encode_woff_add(
-    id<MTLComputeCommandEncoder> enc,
-    id<MTLBuffer> bufC, id<MTLBuffer> bufA, id<MTLBuffer> bufB,
-    uint32_t N, AljabrMetalPipelines *pipelines) {
+static void encode_woff_add(id<MTLComputeCommandEncoder> enc,
+                            id<MTLBuffer> bufC, id<MTLBuffer> bufA,
+                            id<MTLBuffer> bufB, uint32_t N,
+                            AljabrMetalPipelines *pipelines) {
   id<MTLComputePipelineState> p = pipelines->add;
-  if (p == nil) return;
+  if (p == nil)
+    return;
   [enc setComputePipelineState:p];
   [enc setBuffer:bufC offset:0 atIndex:0];
   [enc setBuffer:bufA offset:0 atIndex:1];
@@ -1801,120 +1939,191 @@ static void encode_woff_add(
 }
 
 int aljabr_metal_wo_ffn_next_qkv_fused(
-    float *x,
-    const float *attn_full,
-    const void *wO, int typeWO, int wO_K, int wO_N,
-    const float *postAttnW, int hasPostAttnNorm,
-    const float *ffnNormW,
-    const float *postFfnW, int hasPostFfnNorm,
-    float eps,
-    float outScale,
-    const void *gateW, const void *upW, const void *downW,
-    int typeGate, int typeUp, int typeDown,
-    int ffnDim, int activationKind,
-    int hasNext,
-    const float *nextAttnNormW,
-    float *nextQ, float *nextK, float *nextV,
-    const void *nextWQ, const void *nextWK, const void *nextWV,
-    int nextTypeQ, int nextTypeK, int nextTypeV,
-    int nextN0, int nextN1, int nextN2
-) {
-  if (!g_initialized) return -1;
-  if (wO_K <= 0 || wO_N <= 0 || ffnDim <= 0) return -2;
+    float *x, const float *attn_full, const void *wO, int typeWO, int wO_K,
+    int wO_N, const float *postAttnW, int hasPostAttnNorm,
+    const float *ffnNormW, const float *postFfnW, int hasPostFfnNorm, float eps,
+    float outScale, const void *gateW, const void *upW, const void *downW,
+    int typeGate, int typeUp, int typeDown, int ffnDim, int activationKind,
+    int hasNext, const float *nextAttnNormW, float *nextQ, float *nextK,
+    float *nextV, const void *nextWQ, const void *nextWK, const void *nextWV,
+    int nextTypeQ, int nextTypeK, int nextTypeV, int nextN0, int nextN1,
+    int nextN2) {
+  if (!g_initialized)
+    return -1;
+  if (wO_K <= 0 || wO_N <= 0 || ffnDim <= 0)
+    return -2;
 
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
-  if (pipelines->rmsnorm == nil && pipelines->rmsnorm_float4 == nil) return -3;
-  if (pipelines->add == nil) return -3;
+  if (pipelines->rmsnorm == nil && pipelines->rmsnorm_float4 == nil)
+    return -3;
+  if (pipelines->add == nil)
+    return -3;
 
   // ── Resolve wO pipeline ────────────────────────────────────────────────────
   id<MTLComputePipelineState> pWO = nil;
   size_t wOBytes = 0;
   BOOL wO_mr8 = NO, wO_mr4 = NO;
   if (typeWO == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q4_k_mr8; wO_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pWO = pipelines->matvec_tb_q4_k_mr4; wO_mr4 = YES; }
-    else pWO = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pWO = pipelines->matvec_tb_q4_k_mr8;
+      wO_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pWO = pipelines->matvec_tb_q4_k_mr4;
+      wO_mr4 = YES;
+    } else
+      pWO = pipelines->matvec_tb_q4_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 144;
   } else if (typeWO == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q6_k_mr8; wO_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pWO = pipelines->matvec_tb_q6_k_mr4; wO_mr4 = YES; }
-    else pWO = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pWO = pipelines->matvec_tb_q6_k_mr8;
+      wO_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pWO = pipelines->matvec_tb_q6_k_mr4;
+      wO_mr4 = YES;
+    } else
+      pWO = pipelines->matvec_tb_q6_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 210;
   } else if (typeWO == 8) {
     pWO = pipelines->matvec_tb_q8_0;
     wOBytes = (size_t)wO_N * wO_K / 32 * 34;
-  } else if (typeWO == 1) { pWO = pipelines->matvec_half;  wOBytes = (size_t)wO_N * wO_K * 2; }
-  else if (typeWO == 30 || typeWO == 16) { pWO = pipelines->matvec_bf16; wOBytes = (size_t)wO_N * wO_K * 2; }
-  if (pWO == nil) return -3;
+  } else if (typeWO == 1) {
+    pWO = pipelines->matvec_half;
+    wOBytes = (size_t)wO_N * wO_K * 2;
+  } else if (typeWO == 30 || typeWO == 16) {
+    pWO = pipelines->matvec_bf16;
+    wOBytes = (size_t)wO_N * wO_K * 2;
+  }
+  if (pWO == nil)
+    return -3;
 
   // ── Resolve FFN pipelines ──────────────────────────────────────────────────
-  BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12
-                            && ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) || pipelines->ffn_gate_up_act_q4_k_mr4 != nil))
-                           || (typeGate == 14 && typeUp == 14
-                            && pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
-  BOOL gate_up_mr8 = (typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
+  BOOL can_fuse_gate_up =
+      ((typeGate == 12 && typeUp == 12 &&
+        ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) ||
+         pipelines->ffn_gate_up_act_q4_k_mr4 != nil)) ||
+       (typeGate == 14 && typeUp == 14 &&
+        pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
+  BOOL gate_up_mr8 =
+      (typeGate == 12 && typeUp == 12 &&
+       pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
   id<MTLComputePipelineState> pGate = nil, pUp = nil, pDown = nil;
   size_t gateBytes = 0, upBytes = 0, downBytes = 0;
   BOOL gate_mr8 = NO, up_mr8 = NO, down_mr8 = NO;
   BOOL gate_mr4 = NO, up_mr4 = NO, down_mr4 = NO;
 
   if (typeGate == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q4_k_mr8; gate_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
-    else pGate = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pGate = pipelines->matvec_tb_q4_k_mr8;
+      gate_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pGate = pipelines->matvec_tb_q4_k_mr4;
+      gate_mr4 = YES;
+    } else
+      pGate = pipelines->matvec_tb_q4_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeGate == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q6_k_mr8; gate_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
-    else pGate = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pGate = pipelines->matvec_tb_q6_k_mr8;
+      gate_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pGate = pipelines->matvec_tb_q6_k_mr4;
+      gate_mr4 = YES;
+    } else
+      pGate = pipelines->matvec_tb_q6_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 210;
-  } else if (typeGate == 8) { pGate = pipelines->matvec_tb_q8_0; gateBytes = (size_t)ffnDim * wO_N / 32 * 34; }
-  else if (typeGate == 1) { pGate = pipelines->matvec_half; gateBytes = (size_t)ffnDim * wO_N * 2; }
-  else if (typeGate == 30 || typeGate == 16) { pGate = pipelines->matvec_bf16; gateBytes = (size_t)ffnDim * wO_N * 2; }
+  } else if (typeGate == 8) {
+    pGate = pipelines->matvec_tb_q8_0;
+    gateBytes = (size_t)ffnDim * wO_N / 32 * 34;
+  } else if (typeGate == 1) {
+    pGate = pipelines->matvec_half;
+    gateBytes = (size_t)ffnDim * wO_N * 2;
+  } else if (typeGate == 30 || typeGate == 16) {
+    pGate = pipelines->matvec_bf16;
+    gateBytes = (size_t)ffnDim * wO_N * 2;
+  }
 
   if (typeUp == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q4_k_mr8; up_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
-    else pUp = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pUp = pipelines->matvec_tb_q4_k_mr8;
+      up_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pUp = pipelines->matvec_tb_q4_k_mr4;
+      up_mr4 = YES;
+    } else
+      pUp = pipelines->matvec_tb_q4_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeUp == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q6_k_mr8; up_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
-    else pUp = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pUp = pipelines->matvec_tb_q6_k_mr8;
+      up_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pUp = pipelines->matvec_tb_q6_k_mr4;
+      up_mr4 = YES;
+    } else
+      pUp = pipelines->matvec_tb_q6_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 210;
-  } else if (typeUp == 8) { pUp = pipelines->matvec_tb_q8_0; upBytes = (size_t)ffnDim * wO_N / 32 * 34; }
-  else if (typeUp == 1) { pUp = pipelines->matvec_half; upBytes = (size_t)ffnDim * wO_N * 2; }
-  else if (typeUp == 30 || typeUp == 16) { pUp = pipelines->matvec_bf16; upBytes = (size_t)ffnDim * wO_N * 2; }
+  } else if (typeUp == 8) {
+    pUp = pipelines->matvec_tb_q8_0;
+    upBytes = (size_t)ffnDim * wO_N / 32 * 34;
+  } else if (typeUp == 1) {
+    pUp = pipelines->matvec_half;
+    upBytes = (size_t)ffnDim * wO_N * 2;
+  } else if (typeUp == 30 || typeUp == 16) {
+    pUp = pipelines->matvec_bf16;
+    upBytes = (size_t)ffnDim * wO_N * 2;
+  }
 
   if (typeDown == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q6_k_mr8; down_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
-    else pDown = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pDown = pipelines->matvec_tb_q6_k_mr8;
+      down_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pDown = pipelines->matvec_tb_q6_k_mr4;
+      down_mr4 = YES;
+    } else
+      pDown = pipelines->matvec_tb_q6_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 210;
   } else if (typeDown == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q4_k_mr8; down_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
-    else pDown = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pDown = pipelines->matvec_tb_q4_k_mr8;
+      down_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pDown = pipelines->matvec_tb_q4_k_mr4;
+      down_mr4 = YES;
+    } else
+      pDown = pipelines->matvec_tb_q4_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 144;
-  } else if (typeDown == 8) { pDown = pipelines->matvec_tb_q8_0; downBytes = (size_t)wO_N * ffnDim / 32 * 34; }
-  else if (typeDown == 1) { pDown = pipelines->matvec_half; downBytes = (size_t)wO_N * ffnDim * 2; }
-  else if (typeDown == 30 || typeDown == 16) { pDown = pipelines->matvec_bf16; downBytes = (size_t)wO_N * ffnDim * 2; }
+  } else if (typeDown == 8) {
+    pDown = pipelines->matvec_tb_q8_0;
+    downBytes = (size_t)wO_N * ffnDim / 32 * 34;
+  } else if (typeDown == 1) {
+    pDown = pipelines->matvec_half;
+    downBytes = (size_t)wO_N * ffnDim * 2;
+  } else if (typeDown == 30 || typeDown == 16) {
+    pDown = pipelines->matvec_bf16;
+    downBytes = (size_t)wO_N * ffnDim * 2;
+  }
 
-  if (!can_fuse_gate_up && (pGate == nil || pUp == nil)) return -3;
-  if (pDown == nil) return -3;
+  if (!can_fuse_gate_up && (pGate == nil || pUp == nil))
+    return -3;
+  if (pDown == nil)
+    return -3;
 
   // ── Ensure scratch buffers ─────────────────────────────────────────────────
   size_t attnKBytes = (size_t)wO_K * sizeof(float);
-  size_t dimBytes   = (size_t)wO_N * sizeof(float);
-  size_t ffnBytes   = (size_t)ffnDim * sizeof(float);
-  if (!ensure_woff_dim_bufs(attnKBytes, dimBytes)) return -4;
-  if (!ensure_woff_ffn_bufs(ffnBytes)) return -4;
+  size_t dimBytes = (size_t)wO_N * sizeof(float);
+  size_t ffnBytes = (size_t)ffnDim * sizeof(float);
+  if (!ensure_woff_dim_bufs(attnKBytes, dimBytes))
+    return -4;
+  if (!ensure_woff_ffn_bufs(ffnBytes))
+    return -4;
 
   if (hasNext && nextWQ != NULL) {
     size_t qBytes = (size_t)nextN0 * sizeof(float);
     size_t kBytes = (size_t)nextN1 * sizeof(float);
     size_t vBytes = (size_t)nextN2 * sizeof(float);
-    if (!ensure_woff_next_qkv(qBytes, kBytes, vBytes, dimBytes)) return -4;
+    if (!ensure_woff_next_qkv(qBytes, kBytes, vBytes, dimBytes))
+      return -4;
   }
 
   @autoreleasepool {
@@ -1925,9 +2134,11 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       g_woff_x_valid = YES;
     }
     // Copy norm weight data into pre-allocated shared scratch buffers.
-    // (Norms are dequantized Java-heap float[] arrays — not in the master Metal model
-    //  buffer — so zero-copy wrapping is not possible. Direct memcpy into the small
-    //  pre-allocated g_woff_normW* buffers is cheaper than MTLBuffer allocation.)
+    // (Norms are dequantized Java-heap float[] arrays — not in the master Metal
+    // model
+    //  buffer — so zero-copy wrapping is not possible. Direct memcpy into the
+    //  small pre-allocated g_woff_normW* buffers is cheaper than MTLBuffer
+    //  allocation.)
     memcpy([g_woff_normW2 contents], ffnNormW, dimBytes);
     id<MTLBuffer> bufFfnNorm = g_woff_normW2;
     const size_t ffnNormOff = 0;
@@ -1955,11 +2166,12 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
 
     // Wrap weight buffers (zero-copy via registered master model buffer)
     size_t wOOff = 0, gateOff = 0, upOff = 0, downOff = 0;
-    id<MTLBuffer> bufWO   = wrap_weight_ptr_offset(wO,    wOBytes,   &wOOff);
+    id<MTLBuffer> bufWO = wrap_weight_ptr_offset(wO, wOBytes, &wOOff);
     id<MTLBuffer> bufGate = wrap_weight_ptr_offset(gateW, gateBytes, &gateOff);
-    id<MTLBuffer> bufUp   = wrap_weight_ptr_offset(upW,   upBytes,   &upOff);
+    id<MTLBuffer> bufUp = wrap_weight_ptr_offset(upW, upBytes, &upOff);
     id<MTLBuffer> bufDown = wrap_weight_ptr_offset(downW, downBytes, &downOff);
-    if (!bufWO || !bufGate || !bufUp || !bufDown) return -4;
+    if (!bufWO || !bufGate || !bufUp || !bufDown)
+      return -4;
 
     uint32_t kDim = (uint32_t)wO_K;
     uint32_t nDim = (uint32_t)wO_N;
@@ -1972,11 +2184,11 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
 
     // Step 1: xb = wO(attnFull)
     [enc setComputePipelineState:pWO];
-    [enc setBuffer:g_woff_xb       offset:0     atIndex:0];
-    [enc setBuffer:g_woff_attnFull offset:0    atIndex:1];
-    [enc setBuffer:bufWO           offset:wOOff atIndex:2];
-    [enc setBytes:&kDim  length:sizeof(kDim) atIndex:3];
-    [enc setBytes:&nDim  length:sizeof(nDim) atIndex:4];
+    [enc setBuffer:g_woff_xb offset:0 atIndex:0];
+    [enc setBuffer:g_woff_attnFull offset:0 atIndex:1];
+    [enc setBuffer:bufWO offset:wOOff atIndex:2];
+    [enc setBytes:&kDim length:sizeof(kDim) atIndex:3];
+    [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
     if (wO_mr8) {
       [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 7) / 8, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
@@ -1991,7 +2203,8 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
 
     // Step 2 (optional): xb = postAttnNorm(xb)
     if (hasPostAttnNorm && bufPostAttn) {
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttn, postAttnOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttn, postAttnOff,
+                          nDim, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     }
 
@@ -2001,7 +2214,8 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
 
     // Step 4: xb = ffnNorm(x)
     {
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNorm, ffnNormOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNorm, ffnNormOff,
+                          nDim, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     }
 
@@ -2016,32 +2230,36 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
         fuseP = pipelines->ffn_gate_up_act_q4_k_mr4;
       }
       [enc setComputePipelineState:fuseP];
-      [enc setBuffer:g_woff_ffn_hb  offset:0        atIndex:0];
-      [enc setBuffer:g_woff_xb      offset:0        atIndex:1];
-      [enc setBuffer:bufGate        offset:gateOff   atIndex:2];
-      [enc setBuffer:bufUp          offset:upOff     atIndex:3];
-      [enc setBytes:&nDim  length:sizeof(nDim) atIndex:4];
-      [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:5];
-      [enc setBytes:&actK  length:sizeof(actK) atIndex:6];
+      [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
+      [enc setBuffer:g_woff_xb offset:0 atIndex:1];
+      [enc setBuffer:bufGate offset:gateOff atIndex:2];
+      [enc setBuffer:bufUp offset:upOff atIndex:3];
+      [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
+      [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:5];
+      [enc setBytes:&actK length:sizeof(actK) atIndex:6];
       if (gate_up_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       }
     } else {
       [enc setComputePipelineState:pGate];
-      [enc setBuffer:g_woff_ffn_gate offset:0       atIndex:0];
-      [enc setBuffer:g_woff_xb       offset:0       atIndex:1];
-      [enc setBuffer:bufGate         offset:gateOff atIndex:2];
-      [enc setBytes:&nDim  length:sizeof(nDim) atIndex:3];
-      [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:4];
+      [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:0];
+      [enc setBuffer:g_woff_xb offset:0 atIndex:1];
+      [enc setBuffer:bufGate offset:gateOff atIndex:2];
+      [enc setBytes:&nDim length:sizeof(nDim) atIndex:3];
+      [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
       if (gate_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else if (gate_mr4) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ffnDim, 1, 1)
@@ -2049,16 +2267,18 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       }
 
       [enc setComputePipelineState:pUp];
-      [enc setBuffer:g_woff_ffn_up   offset:0      atIndex:0];
-      [enc setBuffer:g_woff_xb       offset:0      atIndex:1];
-      [enc setBuffer:bufUp           offset:upOff  atIndex:2];
-      [enc setBytes:&nDim  length:sizeof(nDim) atIndex:3];
-      [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:4];
+      [enc setBuffer:g_woff_ffn_up offset:0 atIndex:0];
+      [enc setBuffer:g_woff_xb offset:0 atIndex:1];
+      [enc setBuffer:bufUp offset:upOff atIndex:2];
+      [enc setBytes:&nDim length:sizeof(nDim) atIndex:3];
+      [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
       if (up_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else if (up_mr4) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ffnDim, 1, 1)
@@ -2068,13 +2288,17 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       id<MTLComputePipelineState> actP =
           (activationKind == 2) ? pipelines->gelu_ffn : pipelines->silu_ffn;
-      if (actP == nil) { [enc endEncoding]; return -3; }
+      if (actP == nil) {
+        [enc endEncoding];
+        return -3;
+      }
       [enc setComputePipelineState:actP];
-      [enc setBuffer:g_woff_ffn_hb   offset:0      atIndex:0];
-      [enc setBuffer:g_woff_ffn_gate offset:0      atIndex:1];
-      [enc setBuffer:g_woff_ffn_up   offset:0      atIndex:2];
-      [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:3];
-      NSUInteger actTh = MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
+      [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
+      [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:1];
+      [enc setBuffer:g_woff_ffn_up offset:0 atIndex:2];
+      [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
+      NSUInteger actTh =
+          MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
       [enc dispatchThreads:MTLSizeMake((NSUInteger)ffnDim, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(actTh, 1, 1)];
     }
@@ -2083,11 +2307,11 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
 
     // Step 7: xb = down(hb)   [FFN down projection]
     [enc setComputePipelineState:pDown];
-    [enc setBuffer:g_woff_xb       offset:0        atIndex:0];
-    [enc setBuffer:g_woff_ffn_hb   offset:0        atIndex:1];
-    [enc setBuffer:bufDown         offset:downOff  atIndex:2];
-    [enc setBytes:&nFfn  length:sizeof(nFfn) atIndex:3];
-    [enc setBytes:&nDim  length:sizeof(nDim) atIndex:4];
+    [enc setBuffer:g_woff_xb offset:0 atIndex:0];
+    [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:1];
+    [enc setBuffer:bufDown offset:downOff atIndex:2];
+    [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
+    [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
     if (down_mr8) {
       [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)wO_N + 7) / 8, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
@@ -2102,7 +2326,8 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     // Step 8 (optional): xb = postFfnNorm(xb)
     if (hasPostFfnNorm && bufPostFfn) {
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfn, postFfnOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfn, postFfnOff,
+                          nDim, eps, 0, pipelines);
     }
 
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
@@ -2116,29 +2341,35 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       [enc setComputePipelineState:pipelines->scale];
       [enc setBuffer:g_woff_x offset:0 atIndex:0];
       [enc setBytes:&outScale length:sizeof(outScale) atIndex:1];
-      [enc setBytes:&nDim     length:sizeof(nDim)     atIndex:2];
-      NSUInteger threads = MIN((NSUInteger)256, pipelines->scale.maxTotalThreadsPerThreadgroup);
+      [enc setBytes:&nDim length:sizeof(nDim) atIndex:2];
+      NSUInteger threads =
+          MIN((NSUInteger)256, pipelines->scale.maxTotalThreadsPerThreadgroup);
       [enc dispatchThreads:MTLSizeMake((NSUInteger)nDim, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     }
 
-    // ── Step 10+: Chain Next Layer QKV directly into the same command buffer ──
+    // ── Step 10+: Chain Next Layer QKV directly into the same command buffer
+    // ──
     if (hasNext && nextWQ != NULL && bufNextAttn) {
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // Step 10: xb = rmsNorm(x, nextAttnNormW)
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufNextAttn, nextAttnOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufNextAttn, nextAttnOff,
+                          nDim, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // Step 11, 12, 13: next Q, K, V matvecs
       uint32_t nextKK = nDim;
-      encode_matvec_sub(enc, pipelines, g_woff_nextQ, g_woff_xb, nextWQ, nextKK, (uint32_t)nextN0, nextTypeQ, 1);
+      encode_matvec_sub(enc, pipelines, g_woff_nextQ, g_woff_xb, nextWQ, nextKK,
+                        (uint32_t)nextN0, nextTypeQ, 1);
       if (nextWK != NULL) {
-        encode_matvec_sub(enc, pipelines, g_woff_nextK, g_woff_xb, nextWK, nextKK, (uint32_t)nextN1, nextTypeK, 1);
+        encode_matvec_sub(enc, pipelines, g_woff_nextK, g_woff_xb, nextWK,
+                          nextKK, (uint32_t)nextN1, nextTypeK, 1);
       }
       if (nextWV != NULL) {
-        encode_matvec_sub(enc, pipelines, g_woff_nextV, g_woff_xb, nextWV, nextKK, (uint32_t)nextN2, nextTypeV, 1);
+        encode_matvec_sub(enc, pipelines, g_woff_nextV, g_woff_xb, nextWV,
+                          nextKK, (uint32_t)nextN2, nextTypeV, 1);
       }
     }
 
@@ -2151,7 +2382,8 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
       return -1;
     }
 
-    // Return fully-updated residual x to caller only when finishing the layer chain
+    // Return fully-updated residual x to caller only when finishing the layer
+    // chain
     if (!hasNext) {
       memcpy(x, [g_woff_x contents], dimBytes);
       g_woff_x_valid = NO;
@@ -2170,34 +2402,23 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
   }
 }
 
-int aljabr_metal_wo_ffn_fused(
-    float *x,
-    const float *attn_full,
-    const void *wO, int typeWO, int wO_K, int wO_N,
-    const float *postAttnW, int hasPostAttnNorm, int addOnePostAttn,
-    const float *ffnNormW, int addOneFfnNorm,
-    const float *postFfnW, int hasPostFfnNorm, int addOnePostFfn,
-    float eps,
-    const void *gateW, const void *upW, const void *downW,
-    int typeGate, int typeUp, int typeDown,
-    int ffnDim, int activationKind
-) {
+int aljabr_metal_wo_ffn_fused(float *x, const float *attn_full, const void *wO,
+                              int typeWO, int wO_K, int wO_N,
+                              const float *postAttnW, int hasPostAttnNorm,
+                              int addOnePostAttn, const float *ffnNormW,
+                              int addOneFfnNorm, const float *postFfnW,
+                              int hasPostFfnNorm, int addOnePostFfn, float eps,
+                              const void *gateW, const void *upW,
+                              const void *downW, int typeGate, int typeUp,
+                              int typeDown, int ffnDim, int activationKind) {
   return aljabr_metal_wo_ffn_next_qkv_fused(
-      x, attn_full, wO, typeWO, wO_K, wO_N,
-      postAttnW, hasPostAttnNorm,
-      ffnNormW,
-      postFfnW, hasPostFfnNorm,
-      eps,
-      1.0f,
-      gateW, upW, downW,
-      typeGate, typeUp, typeDown,
-      ffnDim, activationKind,
-      0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, 0, 0, 0);
+      x, attn_full, wO, typeWO, wO_K, wO_N, postAttnW, hasPostAttnNorm,
+      ffnNormW, postFfnW, hasPostFfnNorm, eps, 1.0f, gateW, upW, downW,
+      typeGate, typeUp, typeDown, ffnDim, activationKind, 0, NULL, NULL, NULL,
+      NULL, NULL, NULL, NULL, 0, 0, 0, 0, 0, 0);
 }
 
-void aljabr_metal_wo_ffn_reset_x(void) {
-  g_woff_x_valid = NO;
-}
+void aljabr_metal_wo_ffn_reset_x(void) { g_woff_x_valid = NO; }
 
 static id<MTLBuffer> g_woff_logits = nil;
 static size_t g_woff_logits_cap = 0;
@@ -2207,107 +2428,155 @@ static size_t g_woff_outputNormW_cap = 0;
 static BOOL ensure_woff_logits(size_t logitsBytes, size_t normBytes) {
   if (logitsBytes > g_woff_logits_cap) {
     size_t sz = (logitsBytes + 16383) & ~16383;
-    g_woff_logits = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_logits = [g_device newBufferWithLength:sz
+                                          options:MTLResourceStorageModeShared];
     g_woff_logits_cap = sz;
-    if (!g_woff_logits) return NO;
+    if (!g_woff_logits)
+      return NO;
   }
   if (normBytes > g_woff_outputNormW_cap) {
     size_t sz = (normBytes + 16383) & ~16383;
-    g_woff_outputNormW = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_woff_outputNormW =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
     g_woff_outputNormW_cap = sz;
-    if (!g_woff_outputNormW) return NO;
+    if (!g_woff_outputNormW)
+      return NO;
   }
   return YES;
 }
 
 int aljabr_metal_wo_ffn_logits_fused(
-    float *x,
-    const float *attn_full,
-    const void *wO, int typeWO, int wO_K, int wO_N,
-    const float *postAttnW, int hasPostAttnNorm,
-    const float *ffnNormW,
-    const float *postFfnW, int hasPostFfnNorm,
-    float eps,
-    float outScale,
-    const void *gateW, const void *upW, const void *downW,
-    int typeGate, int typeUp, int typeDown,
-    int ffnDim, int activationKind,
-    const float *outputNormW,
-    const void *outputW, int typeOutputW, int outputK, int outputN,
-    float *logits, float cap
-) {
-  if (!g_initialized) return -1;
-  if (wO_K <= 0 || wO_N <= 0 || ffnDim <= 0 || outputK <= 0 || outputN <= 0) return -2;
+    float *x, const float *attn_full, const void *wO, int typeWO, int wO_K,
+    int wO_N, const float *postAttnW, int hasPostAttnNorm,
+    const float *ffnNormW, const float *postFfnW, int hasPostFfnNorm, float eps,
+    float outScale, const void *gateW, const void *upW, const void *downW,
+    int typeGate, int typeUp, int typeDown, int ffnDim, int activationKind,
+    const float *outputNormW, const void *outputW, int typeOutputW, int outputK,
+    int outputN, float *logits, float cap) {
+  if (!g_initialized)
+    return -1;
+  if (wO_K <= 0 || wO_N <= 0 || ffnDim <= 0 || outputK <= 0 || outputN <= 0)
+    return -2;
 
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
-  if (pipelines->rmsnorm == nil && pipelines->rmsnorm_float4 == nil) return -3;
-  if (pipelines->add == nil) return -3;
+  if (pipelines->rmsnorm == nil && pipelines->rmsnorm_float4 == nil)
+    return -3;
+  if (pipelines->add == nil)
+    return -3;
 
   // Resolve wO pipeline
   id<MTLComputePipelineState> pWO = nil;
   size_t wOBytes = 0;
   BOOL wO_mr8 = NO, wO_mr4 = NO;
   if (typeWO == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q4_k_mr8; wO_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pWO = pipelines->matvec_tb_q4_k_mr4; wO_mr4 = YES; }
-    else pWO = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pWO = pipelines->matvec_tb_q4_k_mr8;
+      wO_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pWO = pipelines->matvec_tb_q4_k_mr4;
+      wO_mr4 = YES;
+    } else
+      pWO = pipelines->matvec_tb_q4_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 144;
   } else if (typeWO == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pWO = pipelines->matvec_tb_q6_k_mr8; wO_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pWO = pipelines->matvec_tb_q6_k_mr4; wO_mr4 = YES; }
-    else pWO = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pWO = pipelines->matvec_tb_q6_k_mr8;
+      wO_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pWO = pipelines->matvec_tb_q6_k_mr4;
+      wO_mr4 = YES;
+    } else
+      pWO = pipelines->matvec_tb_q6_k;
     wOBytes = (size_t)wO_N * wO_K / 256 * 210;
   }
-  if (pWO == nil) return -3;
+  if (pWO == nil)
+    return -3;
 
   // Resolve FFN pipelines
-  BOOL can_fuse_gate_up = ((typeGate == 12 && typeUp == 12
-                            && ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) || pipelines->ffn_gate_up_act_q4_k_mr4 != nil))
-                           || (typeGate == 14 && typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
-  BOOL gate_up_mr8 = (typeGate == 12 && typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
+  BOOL can_fuse_gate_up =
+      ((typeGate == 12 && typeUp == 12 &&
+        ((pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) ||
+         pipelines->ffn_gate_up_act_q4_k_mr4 != nil)) ||
+       (typeGate == 14 && typeUp == 14 &&
+        pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
+  BOOL gate_up_mr8 =
+      (typeGate == 12 && typeUp == 12 &&
+       pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
   id<MTLComputePipelineState> pGate = nil, pUp = nil, pDown = nil;
   size_t gateBytes = 0, upBytes = 0, downBytes = 0;
   BOOL gate_mr8 = NO, up_mr8 = NO, down_mr8 = NO;
   BOOL gate_mr4 = NO, up_mr4 = NO, down_mr4 = NO;
 
   if (typeGate == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q4_k_mr8; gate_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pGate = pipelines->matvec_tb_q4_k_mr4; gate_mr4 = YES; }
-    else pGate = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pGate = pipelines->matvec_tb_q4_k_mr8;
+      gate_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pGate = pipelines->matvec_tb_q4_k_mr4;
+      gate_mr4 = YES;
+    } else
+      pGate = pipelines->matvec_tb_q4_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeGate == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pGate = pipelines->matvec_tb_q6_k_mr8; gate_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pGate = pipelines->matvec_tb_q6_k_mr4; gate_mr4 = YES; }
-    else pGate = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pGate = pipelines->matvec_tb_q6_k_mr8;
+      gate_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pGate = pipelines->matvec_tb_q6_k_mr4;
+      gate_mr4 = YES;
+    } else
+      pGate = pipelines->matvec_tb_q6_k;
     gateBytes = (size_t)ffnDim * wO_N / 256 * 210;
   }
 
   if (typeUp == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q4_k_mr8; up_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pUp = pipelines->matvec_tb_q4_k_mr4; up_mr4 = YES; }
-    else pUp = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pUp = pipelines->matvec_tb_q4_k_mr8;
+      up_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pUp = pipelines->matvec_tb_q4_k_mr4;
+      up_mr4 = YES;
+    } else
+      pUp = pipelines->matvec_tb_q4_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 144;
   } else if (typeUp == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pUp = pipelines->matvec_tb_q6_k_mr8; up_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pUp = pipelines->matvec_tb_q6_k_mr4; up_mr4 = YES; }
-    else pUp = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pUp = pipelines->matvec_tb_q6_k_mr8;
+      up_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pUp = pipelines->matvec_tb_q6_k_mr4;
+      up_mr4 = YES;
+    } else
+      pUp = pipelines->matvec_tb_q6_k;
     upBytes = (size_t)ffnDim * wO_N / 256 * 210;
   }
 
   if (typeDown == 12) {
-    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q4_k_mr8; down_mr8 = YES; }
-    else if (pipelines->matvec_tb_q4_k_mr4 != nil) { pDown = pipelines->matvec_tb_q4_k_mr4; down_mr4 = YES; }
-    else pDown = pipelines->matvec_tb_q4_k;
+    if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+      pDown = pipelines->matvec_tb_q4_k_mr8;
+      down_mr8 = YES;
+    } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+      pDown = pipelines->matvec_tb_q4_k_mr4;
+      down_mr4 = YES;
+    } else
+      pDown = pipelines->matvec_tb_q4_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 144;
   } else if (typeDown == 14) {
-    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) { pDown = pipelines->matvec_tb_q6_k_mr8; down_mr8 = YES; }
-    else if (pipelines->matvec_tb_q6_k_mr4 != nil) { pDown = pipelines->matvec_tb_q6_k_mr4; down_mr4 = YES; }
-    else pDown = pipelines->matvec_tb_q6_k;
+    if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
+      pDown = pipelines->matvec_tb_q6_k_mr8;
+      down_mr8 = YES;
+    } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
+      pDown = pipelines->matvec_tb_q6_k_mr4;
+      down_mr4 = YES;
+    } else
+      pDown = pipelines->matvec_tb_q6_k;
     downBytes = (size_t)wO_N * ffnDim / 256 * 210;
   }
 
-  if (!can_fuse_gate_up && (pGate == nil || pUp == nil)) return -3;
-  if (pDown == nil) return -3;
+  if (!can_fuse_gate_up && (pGate == nil || pUp == nil))
+    return -3;
+  if (pDown == nil)
+    return -3;
 
   // Resolve Logits pipeline
   id<MTLComputePipelineState> pLogits = nil;
@@ -2336,16 +2605,20 @@ int aljabr_metal_wo_ffn_logits_fused(
     }
     outWBytes = (size_t)outputN * outputK / 256 * 210;
   }
-  if (pLogits == nil || outWBytes == 0) return -3;
+  if (pLogits == nil || outWBytes == 0)
+    return -3;
 
   size_t attnKBytes = (size_t)wO_K * sizeof(float);
-  size_t dimBytes   = (size_t)wO_N * sizeof(float);
-  size_t ffnBytes   = (size_t)ffnDim * sizeof(float);
+  size_t dimBytes = (size_t)wO_N * sizeof(float);
+  size_t ffnBytes = (size_t)ffnDim * sizeof(float);
   size_t logitsBytes = (size_t)outputN * sizeof(float);
 
-  if (!ensure_woff_dim_bufs(attnKBytes, dimBytes)) return -4;
-  if (!ensure_woff_ffn_bufs(ffnBytes)) return -4;
-  if (!ensure_woff_logits(logitsBytes, dimBytes)) return -4;
+  if (!ensure_woff_dim_bufs(attnKBytes, dimBytes))
+    return -4;
+  if (!ensure_woff_ffn_bufs(ffnBytes))
+    return -4;
+  if (!ensure_woff_logits(logitsBytes, dimBytes))
+    return -4;
 
   @autoreleasepool {
     memcpy([g_woff_attnFull contents], attn_full, attnKBytes);
@@ -2375,14 +2648,15 @@ int aljabr_metal_wo_ffn_logits_fused(
     id<MTLBuffer> bufOutNorm = g_woff_outputNormW;
     const size_t outNormOff = 0;
 
-
     size_t wOOff = 0, gateOff = 0, upOff = 0, downOff = 0, outWOff = 0;
-    id<MTLBuffer> bufWO   = wrap_weight_ptr_offset(wO, wOBytes, &wOOff);
+    id<MTLBuffer> bufWO = wrap_weight_ptr_offset(wO, wOBytes, &wOOff);
     id<MTLBuffer> bufGate = wrap_weight_ptr_offset(gateW, gateBytes, &gateOff);
-    id<MTLBuffer> bufUp   = wrap_weight_ptr_offset(upW, upBytes, &upOff);
+    id<MTLBuffer> bufUp = wrap_weight_ptr_offset(upW, upBytes, &upOff);
     id<MTLBuffer> bufDown = wrap_weight_ptr_offset(downW, downBytes, &downOff);
-    id<MTLBuffer> bufOutW = wrap_weight_ptr_offset(outputW, outWBytes, &outWOff);
-    if (!bufWO || !bufGate || !bufUp || !bufDown || !bufOutW) return -4;
+    id<MTLBuffer> bufOutW =
+        wrap_weight_ptr_offset(outputW, outWBytes, &outWOff);
+    if (!bufWO || !bufGate || !bufUp || !bufDown || !bufOutW)
+      return -4;
 
     uint32_t kDim = (uint32_t)wO_K;
     uint32_t nDim = (uint32_t)wO_N;
@@ -2413,7 +2687,8 @@ int aljabr_metal_wo_ffn_logits_fused(
 
     // Step 2: xb = postAttnNorm(xb)
     if (hasPostAttnNorm && bufPostAttn) {
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttn, postAttnOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttn, postAttnOff,
+                          nDim, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     }
 
@@ -2422,7 +2697,8 @@ int aljabr_metal_wo_ffn_logits_fused(
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
     // Step 4: xb = ffnNorm(x)
-    encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNorm, ffnNormOff, nDim, eps, 0, pipelines);
+    encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNorm, ffnNormOff, nDim,
+                        eps, 0, pipelines);
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
     // Step 5+6: gate+up+act
@@ -2444,10 +2720,12 @@ int aljabr_metal_wo_ffn_logits_fused(
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:5];
       [enc setBytes:&actK length:sizeof(actK) atIndex:6];
       if (gate_up_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       }
     } else {
@@ -2458,10 +2736,12 @@ int aljabr_metal_wo_ffn_logits_fused(
       [enc setBytes:&nDim length:sizeof(nDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
       if (gate_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else if (gate_mr4) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ffnDim, 1, 1)
@@ -2475,10 +2755,12 @@ int aljabr_metal_wo_ffn_logits_fused(
       [enc setBytes:&nDim length:sizeof(nDim) atIndex:3];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:4];
       if (up_mr8) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 7) / 8, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
       } else if (up_mr4) {
-        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1, 1)
+        [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)ffnDim + 3) / 4, 1,
+                                              1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
       } else {
         [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)ffnDim, 1, 1)
@@ -2486,14 +2768,19 @@ int aljabr_metal_wo_ffn_logits_fused(
       }
 
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-      id<MTLComputePipelineState> actP = (activationKind == 2) ? pipelines->gelu_ffn : pipelines->silu_ffn;
-      if (actP == nil) { [enc endEncoding]; return -3; }
+      id<MTLComputePipelineState> actP =
+          (activationKind == 2) ? pipelines->gelu_ffn : pipelines->silu_ffn;
+      if (actP == nil) {
+        [enc endEncoding];
+        return -3;
+      }
       [enc setComputePipelineState:actP];
       [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
       [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:1];
       [enc setBuffer:g_woff_ffn_up offset:0 atIndex:2];
       [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
-      NSUInteger actTh = MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
+      NSUInteger actTh =
+          MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
       [enc dispatchThreads:MTLSizeMake((NSUInteger)ffnDim, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(actTh, 1, 1)];
     }
@@ -2521,7 +2808,8 @@ int aljabr_metal_wo_ffn_logits_fused(
     // Step 8: postFfnNorm
     if (hasPostFfnNorm && bufPostFfn) {
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfn, postFfnOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfn, postFfnOff,
+                          nDim, eps, 0, pipelines);
     }
 
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
@@ -2536,7 +2824,8 @@ int aljabr_metal_wo_ffn_logits_fused(
       [enc setBuffer:g_woff_x offset:0 atIndex:0];
       [enc setBytes:&outScale length:sizeof(outScale) atIndex:1];
       [enc setBytes:&nDim length:sizeof(nDim) atIndex:2];
-      NSUInteger threads = MIN((NSUInteger)256, pipelines->scale.maxTotalThreadsPerThreadgroup);
+      NSUInteger threads =
+          MIN((NSUInteger)256, pipelines->scale.maxTotalThreadsPerThreadgroup);
       [enc dispatchThreads:MTLSizeMake((NSUInteger)nDim, 1, 1)
           threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
@@ -2544,7 +2833,8 @@ int aljabr_metal_wo_ffn_logits_fused(
 
     // ── Step 10: Output RMSNorm directly into g_woff_xb ──
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-    encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufOutNorm, outNormOff, nDim, eps, 0, pipelines);
+    encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufOutNorm, outNormOff, nDim,
+                        eps, 0, pipelines);
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
     // ── Step 11: Output Logits Matvec + Softcap ──
@@ -2594,7 +2884,8 @@ static uint32_t g_kv_stride[MAX_DECODE_LAYERS];
 static int g_kv_layers = 0;
 static int g_kv_max_seq = 0;
 
-static id<MTLBuffer> g_norm_buffers[6]; // 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm, 4=attnQNorm, 5=attnKNorm
+static id<MTLBuffer> g_norm_buffers[6]; // 0=postAttn, 1=ffnNorm, 2=postFfn,
+                                        // 3=attnNorm, 4=attnQNorm, 5=attnKNorm
 static size_t g_norm_buffer_bytes[6];
 
 typedef struct {
@@ -2623,18 +2914,28 @@ typedef struct {
   int hasQNorm;
   int hasKNorm;
   int hasUnitVNorm;
-  id<MTLBuffer> bufWQ; size_t offWQ;
-  id<MTLBuffer> bufWK; size_t offWK;
-  id<MTLBuffer> bufWV; size_t offWV;
-  id<MTLBuffer> bufWO; size_t offWO;
-  id<MTLBuffer> bufGate; size_t offGate;
-  id<MTLBuffer> bufUp; size_t offUp;
-  id<MTLBuffer> bufDown; size_t offDown;
-  // Optional rope_freqs.weight divisors (non-null only for layers that use proportional RoPE)
+  int kvLayerIndex;
+  id<MTLBuffer> bufWQ;
+  size_t offWQ;
+  id<MTLBuffer> bufWK;
+  size_t offWK;
+  id<MTLBuffer> bufWV;
+  size_t offWV;
+  id<MTLBuffer> bufWO;
+  size_t offWO;
+  id<MTLBuffer> bufGate;
+  size_t offGate;
+  id<MTLBuffer> bufUp;
+  size_t offUp;
+  id<MTLBuffer> bufDown;
+  size_t offDown;
+  // Optional rope_freqs.weight divisors (non-null only for layers that use
+  // proportional RoPE)
   id<MTLBuffer> bufRopeFreqs;
   uint32_t ropeFreqsLen;
-  // Index of the KV cache layer to attend to. Equals 'layer' when this layer has its own
-  // wK/wV weights; equals a previous layer index when wK==NULL (Gemma 4 KV-sharing).
+  // Index of the KV cache layer to attend to. Equals 'layer' when this layer
+  // has its own wK/wV weights; equals a previous layer index when wK==NULL
+  // (Gemma 4 KV-sharing).
   int kvLayerIndex;
 } DecodeLayerConfig;
 
@@ -2654,9 +2955,13 @@ static size_t g_off_output_w = 0;
 static id<MTLBuffer> g_buf_output_logits = nil;
 static size_t g_cap_output_logits = 0;
 
-int aljabr_metal_init_kv_cache(int nLayers, int maxSeq, const int *layerStrides) {
-  if (!g_initialized) return -1;
-  if (g_device == nil || nLayers <= 0 || nLayers > MAX_DECODE_LAYERS || maxSeq <= 0 || layerStrides == NULL) return -1;
+int aljabr_metal_init_kv_cache(int nLayers, int maxSeq,
+                               const int *layerStrides) {
+  if (!g_initialized)
+    return -1;
+  if (g_device == nil || nLayers <= 0 || nLayers > MAX_DECODE_LAYERS ||
+      maxSeq <= 0 || layerStrides == NULL)
+    return -1;
   g_kv_layers = nLayers;
   g_kv_max_seq = maxSeq;
   for (int i = 0; i < nLayers; i++) {
@@ -2664,92 +2969,150 @@ int aljabr_metal_init_kv_cache(int nLayers, int maxSeq, const int *layerStrides)
     g_kv_stride[i] = stride;
     size_t bytes = (size_t)maxSeq * stride * sizeof(float);
     size_t allocBytes = (bytes + 16383) & ~16383;
-    g_kv_k[i] = [g_device newBufferWithLength:allocBytes options:MTLResourceStorageModeShared];
-    g_kv_v[i] = [g_device newBufferWithLength:allocBytes options:MTLResourceStorageModeShared];
-    if (g_kv_k[i] == nil || g_kv_v[i] == nil) return -2;
+    g_kv_k[i] = [g_device newBufferWithLength:allocBytes
+                                      options:MTLResourceStorageModeShared];
+    g_kv_v[i] = [g_device newBufferWithLength:allocBytes
+                                      options:MTLResourceStorageModeShared];
+    if (g_kv_k[i] == nil || g_kv_v[i] == nil)
+      return -2;
   }
   return 0;
 }
 
-int aljabr_metal_sync_kv_cache(int layer, int seqLen, const float *kData, const float *vData) {
-  if (layer < 0 || layer >= g_kv_layers || seqLen <= 0 || seqLen > g_kv_max_seq) return -1;
+int aljabr_metal_sync_kv_cache(int layer, int seqLen, const float *kData,
+                               const float *vData) {
+  if (layer < 0 || layer >= g_kv_layers || seqLen <= 0 || seqLen > g_kv_max_seq)
+    return -1;
   size_t bytes = (size_t)seqLen * g_kv_stride[layer] * sizeof(float);
-  if (kData && g_kv_k[layer]) memcpy([g_kv_k[layer] contents], kData, bytes);
-  if (vData && g_kv_v[layer]) memcpy([g_kv_v[layer] contents], vData, bytes);
+  if (kData && g_kv_k[layer])
+    memcpy([g_kv_k[layer] contents], kData, bytes);
+  if (vData && g_kv_v[layer])
+    memcpy([g_kv_v[layer] contents], vData, bytes);
   return 0;
 }
 
 int aljabr_metal_register_norm_buffer(int slot, const void *ptr, size_t bytes) {
-  if (slot < 0 || slot >= 6 || ptr == NULL || bytes == 0) return -1;
-  if (!g_initialized) return -1;
+  if (slot < 0 || slot >= 6 || ptr == NULL || bytes == 0)
+    return -1;
+  if (!g_initialized)
+    return -1;
   g_norm_buffers[slot] = wrap_ptr((void *)ptr, bytes);
   g_norm_buffer_bytes[slot] = bytes;
   return (g_norm_buffers[slot] != nil) ? 0 : -2;
 }
 
-int aljabr_metal_register_rope_freqs(int layer, const float *freqData, int freqLen) {
-  if (layer < 0 || layer >= MAX_DECODE_LAYERS || freqData == NULL || freqLen <= 0) return -1;
-  if (!g_initialized) return -1;
+int aljabr_metal_register_rope_freqs(int layer, const float *freqData,
+                                     int freqLen) {
+  if (layer < 0 || layer >= MAX_DECODE_LAYERS || freqData == NULL ||
+      freqLen <= 0)
+    return -1;
+  if (!g_initialized)
+    return -1;
   size_t bytes = (size_t)freqLen * sizeof(float);
-  id<MTLBuffer> buf = [g_device newBufferWithBytes:freqData length:bytes options:MTLResourceStorageModeShared];
-  if (buf == nil) return -2;
+  id<MTLBuffer> buf =
+      [g_device newBufferWithBytes:freqData
+                            length:bytes
+                           options:MTLResourceStorageModeShared];
+  if (buf == nil)
+    return -2;
   g_decode_layers[layer].bufRopeFreqs = buf;
   g_decode_layers[layer].ropeFreqsLen = (uint32_t)freqLen;
   return 0;
 }
 
 static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
-  if (type == 12) return (size_t)N * K / 256 * 144; // Q4_K
-  if (type == 14) return (size_t)N * K / 256 * 210; // Q6_K
-  if (type == 8)  return (size_t)N * K / 32 * 34;   // Q8_0
-  if (type == 1 || type == 30 || type == 16) return (size_t)N * K * 2; // F16/BF16
+  if (type == 12)
+    return (size_t)N * K / 256 * 144; // Q4_K
+  if (type == 14)
+    return (size_t)N * K / 256 * 210; // Q6_K
+  if (type == 8)
+    return (size_t)N * K / 32 * 34; // Q8_0
+  if (type == 1 || type == 30 || type == 16)
+    return (size_t)N * K * 2; // F16/BF16
   return (size_t)N * K * sizeof(float);
 }
 
 int aljabr_metal_register_decode_layer(
-    int layer,
-    const void *wQ, const void *wK, const void *wV, const void *wO,
-    const void *gate, const void *up, const void *down,
-    int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
-    int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
-    int nH, int nKVH, int headDim, int stride,
-    float freqBase, int isSwa, int kvLayerIndex,
-    float outScale, float attnScale,
-    int hasPostAttnNorm, int hasPostFfnNorm,
-    int hasQNorm, int hasKNorm, int hasUnitVNorm
-) {
-  if (layer < 0 || layer >= MAX_DECODE_LAYERS) return -1;
-  if (layer >= g_num_decode_layers) g_num_decode_layers = layer + 1;
+    int layer, int kvLayerIndex, const void *wQ, const void *wK, const void *wV,
+    const void *wO, const void *gate, const void *up, const void *down,
+    int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp,
+    int typeDown, int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
+    int nH, int nKVH, int headDim, int stride, float freqBase, int isSwa,
+    int kvLayerIndex, float outScale, float attnScale, int hasPostAttnNorm,
+    int hasPostFfnNorm, int hasQNorm, int hasKNorm, int hasUnitVNorm) {
+  if (layer < 0 || layer >= MAX_DECODE_LAYERS)
+    return -1;
+  if (kvLayerIndex < 0 || kvLayerIndex >= MAX_DECODE_LAYERS ||
+      kvLayerIndex > layer)
+    return -1;
+  if (layer >= g_num_decode_layers)
+    g_num_decode_layers = layer + 1;
   DecodeLayerConfig *cfg = &g_decode_layers[layer];
-  cfg->wQ = wQ; cfg->wK = wK; cfg->wV = wV; cfg->wO = wO;
-  cfg->gate = gate; cfg->up = up; cfg->down = down;
-  cfg->typeQ = typeQ; cfg->typeK = typeK; cfg->typeV = typeV; cfg->typeWO = typeWO;
-  cfg->typeGate = typeGate; cfg->typeUp = typeUp; cfg->typeDown = typeDown;
-  cfg->n0 = n0; cfg->n1 = n1; cfg->n2 = n2;
-  cfg->wO_K = wO_K; cfg->wO_N = wO_N; cfg->ffnDim = ffnDim;
-  cfg->nH = nH; cfg->nKVH = nKVH; cfg->headDim = headDim; cfg->stride = stride;
-  cfg->freqBase = freqBase; cfg->isSwa = isSwa;
-  cfg->kvLayerIndex = (kvLayerIndex >= 0 && kvLayerIndex < MAX_DECODE_LAYERS) ? kvLayerIndex : layer;
-  cfg->outScale = outScale; cfg->attnScale = attnScale;
-  cfg->hasPostAttnNorm = hasPostAttnNorm; cfg->hasPostFfnNorm = hasPostFfnNorm;
-  cfg->hasQNorm = hasQNorm; cfg->hasKNorm = hasKNorm;
+  cfg->kvLayerIndex = kvLayerIndex;
+  cfg->wQ = wQ;
+  cfg->wK = wK;
+  cfg->wV = wV;
+  cfg->wO = wO;
+  cfg->gate = gate;
+  cfg->up = up;
+  cfg->down = down;
+  cfg->typeQ = typeQ;
+  cfg->typeK = typeK;
+  cfg->typeV = typeV;
+  cfg->typeWO = typeWO;
+  cfg->typeGate = typeGate;
+  cfg->typeUp = typeUp;
+  cfg->typeDown = typeDown;
+  cfg->n0 = n0;
+  cfg->n1 = n1;
+  cfg->n2 = n2;
+  cfg->wO_K = wO_K;
+  cfg->wO_N = wO_N;
+  cfg->ffnDim = ffnDim;
+  cfg->nH = nH;
+  cfg->nKVH = nKVH;
+  cfg->headDim = headDim;
+  cfg->stride = stride;
+  cfg->freqBase = freqBase;
+  cfg->isSwa = isSwa;
+  cfg->kvLayerIndex = (kvLayerIndex >= 0 && kvLayerIndex < MAX_DECODE_LAYERS)
+                          ? kvLayerIndex
+                          : layer;
+  cfg->outScale = outScale;
+  cfg->attnScale = attnScale;
+  cfg->hasPostAttnNorm = hasPostAttnNorm;
+  cfg->hasPostFfnNorm = hasPostFfnNorm;
+  cfg->hasQNorm = hasQNorm;
+  cfg->hasKNorm = hasKNorm;
   cfg->hasUnitVNorm = hasUnitVNorm;
 
-  if (wQ) cfg->bufWQ = wrap_weight_ptr_offset(wQ, calc_matvec_weight_bytes(typeQ, n0, wO_N), &cfg->offWQ);
-  if (wK) cfg->bufWK = wrap_weight_ptr_offset(wK, calc_matvec_weight_bytes(typeK, n1, wO_N), &cfg->offWK);
-  if (wV) cfg->bufWV = wrap_weight_ptr_offset(wV, calc_matvec_weight_bytes(typeV, n2, wO_N), &cfg->offWV);
-  if (wO) cfg->bufWO = wrap_weight_ptr_offset(wO, calc_matvec_weight_bytes(typeWO, wO_N, wO_K), &cfg->offWO);
-  if (gate) cfg->bufGate = wrap_weight_ptr_offset(gate, calc_matvec_weight_bytes(typeGate, ffnDim, wO_N), &cfg->offGate);
-  if (up) cfg->bufUp = wrap_weight_ptr_offset(up, calc_matvec_weight_bytes(typeUp, ffnDim, wO_N), &cfg->offUp);
-  if (down) cfg->bufDown = wrap_weight_ptr_offset(down, calc_matvec_weight_bytes(typeDown, wO_N, ffnDim), &cfg->offDown);
+  if (wQ)
+    cfg->bufWQ = wrap_weight_ptr_offset(
+        wQ, calc_matvec_weight_bytes(typeQ, n0, wO_N), &cfg->offWQ);
+  if (wK)
+    cfg->bufWK = wrap_weight_ptr_offset(
+        wK, calc_matvec_weight_bytes(typeK, n1, wO_N), &cfg->offWK);
+  if (wV)
+    cfg->bufWV = wrap_weight_ptr_offset(
+        wV, calc_matvec_weight_bytes(typeV, n2, wO_N), &cfg->offWV);
+  if (wO)
+    cfg->bufWO = wrap_weight_ptr_offset(
+        wO, calc_matvec_weight_bytes(typeWO, wO_N, wO_K), &cfg->offWO);
+  if (gate)
+    cfg->bufGate = wrap_weight_ptr_offset(
+        gate, calc_matvec_weight_bytes(typeGate, ffnDim, wO_N), &cfg->offGate);
+  if (up)
+    cfg->bufUp = wrap_weight_ptr_offset(
+        up, calc_matvec_weight_bytes(typeUp, ffnDim, wO_N), &cfg->offUp);
+  if (down)
+    cfg->bufDown = wrap_weight_ptr_offset(
+        down, calc_matvec_weight_bytes(typeDown, wO_N, ffnDim), &cfg->offDown);
   return 0;
 }
 
-int aljabr_metal_register_output(
-    const float *outputNormW,
-    const void *outputW, int typeOutputW, int outputK, int outputN,
-    float cap
-) {
+int aljabr_metal_register_output(const float *outputNormW, const void *outputW,
+                                 int typeOutputW, int outputK, int outputN,
+                                 float cap) {
   g_output_norm_w = outputNormW;
   g_output_w = outputW;
   g_output_type_w = typeOutputW;
@@ -2757,34 +3120,39 @@ int aljabr_metal_register_output(
   g_output_N = outputN;
   g_output_logit_cap = cap;
   if (outputNormW) {
-    g_buf_output_norm = wrap_ptr((void *)outputNormW, (size_t)outputK * sizeof(float));
+    g_buf_output_norm =
+        wrap_ptr((void *)outputNormW, (size_t)outputK * sizeof(float));
     g_off_output_norm = 0;
   }
   if (outputW) {
-    g_buf_output_w = wrap_weight_ptr_offset(outputW, calc_matvec_weight_bytes(typeOutputW, outputN, outputK), &g_off_output_w);
+    g_buf_output_w = wrap_weight_ptr_offset(
+        outputW, calc_matvec_weight_bytes(typeOutputW, outputN, outputK),
+        &g_off_output_w);
   }
   size_t logitsBytes = (size_t)outputN * sizeof(float);
   if (logitsBytes > g_cap_output_logits || g_buf_output_logits == nil) {
     size_t sz = (logitsBytes + 16383) & ~16383;
-    g_buf_output_logits = [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    g_buf_output_logits =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
     g_cap_output_logits = sz;
   }
   return 0;
 }
 
-static inline void encode_rope_single_token(
-    id<MTLComputeCommandEncoder> enc,
-    id<MTLBuffer> bufX,
-    uint32_t nHeads, uint32_t headDim, uint32_t pos, float freqBase,
-    AljabrMetalPipelines *pipelines) {
-  if (pipelines->rope_single_token == nil || bufX == nil) return;
+static inline void encode_rope_single_token(id<MTLComputeCommandEncoder> enc,
+                                            id<MTLBuffer> bufX, uint32_t nHeads,
+                                            uint32_t headDim, uint32_t pos,
+                                            float freqBase,
+                                            AljabrMetalPipelines *pipelines) {
+  if (pipelines->rope_single_token == nil || bufX == nil)
+    return;
   uint32_t half_dim = headDim / 2;
   uint32_t total = nHeads * half_dim;
   [enc setComputePipelineState:pipelines->rope_single_token];
   [enc setBuffer:bufX offset:0 atIndex:0];
-  [enc setBytes:&nHeads   length:sizeof(nHeads)   atIndex:1];
-  [enc setBytes:&headDim  length:sizeof(headDim)  atIndex:2];
-  [enc setBytes:&pos      length:sizeof(pos)      atIndex:3];
+  [enc setBytes:&nHeads length:sizeof(nHeads) atIndex:1];
+  [enc setBytes:&headDim length:sizeof(headDim) atIndex:2];
+  [enc setBytes:&pos length:sizeof(pos) atIndex:3];
   [enc setBytes:&freqBase length:sizeof(freqBase) atIndex:4];
   NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)total);
   NSUInteger groups = (total + threads - 1) / threads;
@@ -2793,23 +3161,23 @@ static inline void encode_rope_single_token(
 }
 
 static inline void encode_rope_single_token_freqfact(
-    id<MTLComputeCommandEncoder> enc,
-    id<MTLBuffer> bufX,
-    uint32_t nHeads, uint32_t headDim, uint32_t pos, float freqBase,
-    id<MTLBuffer> bufFreqFactors,
-    AljabrMetalPipelines *pipelines) {
+    id<MTLComputeCommandEncoder> enc, id<MTLBuffer> bufX, uint32_t nHeads,
+    uint32_t headDim, uint32_t pos, float freqBase,
+    id<MTLBuffer> bufFreqFactors, AljabrMetalPipelines *pipelines) {
   if (bufFreqFactors == nil || pipelines->rope_single_token_freqfact == nil) {
-    encode_rope_single_token(enc, bufX, nHeads, headDim, pos, freqBase, pipelines);
+    encode_rope_single_token(enc, bufX, nHeads, headDim, pos, freqBase,
+                             pipelines);
     return;
   }
-  if (bufX == nil) return;
+  if (bufX == nil)
+    return;
   uint32_t half_dim = headDim / 2;
   uint32_t total = nHeads * half_dim;
   [enc setComputePipelineState:pipelines->rope_single_token_freqfact];
   [enc setBuffer:bufX offset:0 atIndex:0];
-  [enc setBytes:&nHeads   length:sizeof(nHeads)   atIndex:1];
-  [enc setBytes:&headDim  length:sizeof(headDim)  atIndex:2];
-  [enc setBytes:&pos      length:sizeof(pos)      atIndex:3];
+  [enc setBytes:&nHeads length:sizeof(nHeads) atIndex:1];
+  [enc setBytes:&headDim length:sizeof(headDim) atIndex:2];
+  [enc setBytes:&pos length:sizeof(pos) atIndex:3];
   [enc setBytes:&freqBase length:sizeof(freqBase) atIndex:4];
   [enc setBuffer:bufFreqFactors offset:0 atIndex:5];
   NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)total);
@@ -2818,16 +3186,17 @@ static inline void encode_rope_single_token_freqfact(
       threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
 }
 
-static inline void encode_kv_store_flat(
-    id<MTLComputeCommandEncoder> enc,
-    id<MTLBuffer> bufCache, id<MTLBuffer> bufVec,
-    uint32_t pos, uint32_t stride,
-    AljabrMetalPipelines *pipelines) {
-  if (pipelines->kv_store_flat == nil || bufCache == nil || bufVec == nil) return;
+static inline void encode_kv_store_flat(id<MTLComputeCommandEncoder> enc,
+                                        id<MTLBuffer> bufCache,
+                                        id<MTLBuffer> bufVec, uint32_t pos,
+                                        uint32_t stride,
+                                        AljabrMetalPipelines *pipelines) {
+  if (pipelines->kv_store_flat == nil || bufCache == nil || bufVec == nil)
+    return;
   [enc setComputePipelineState:pipelines->kv_store_flat];
   [enc setBuffer:bufCache offset:0 atIndex:0];
-  [enc setBuffer:bufVec   offset:0 atIndex:1];
-  [enc setBytes:&pos    length:sizeof(pos)    atIndex:2];
+  [enc setBuffer:bufVec offset:0 atIndex:1];
+  [enc setBytes:&pos length:sizeof(pos) atIndex:2];
   [enc setBytes:&stride length:sizeof(stride) atIndex:3];
   NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)stride);
   NSUInteger groups = (stride + threads - 1) / threads;
@@ -2835,35 +3204,37 @@ static inline void encode_kv_store_flat(
       threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
 }
 
-static inline void encode_sdpa_flat(
-    id<MTLComputeCommandEncoder> enc,
-    id<MTLBuffer> bufOut, id<MTLBuffer> bufQ, id<MTLBuffer> bufKCache, id<MTLBuffer> bufVCache,
-    uint32_t H, uint32_t H_kv, uint32_t D, uint32_t stride,
-    uint32_t pos, uint32_t start_pos, float scale, float soft_cap,
-    AljabrMetalPipelines *pipelines) {
-  if (pipelines->sdpa_flat == nil || bufOut == nil || bufQ == nil || bufKCache == nil || bufVCache == nil) return;
+static inline void
+encode_sdpa_flat(id<MTLComputeCommandEncoder> enc, id<MTLBuffer> bufOut,
+                 id<MTLBuffer> bufQ, id<MTLBuffer> bufKCache,
+                 id<MTLBuffer> bufVCache, uint32_t H, uint32_t H_kv, uint32_t D,
+                 uint32_t stride, uint32_t pos, uint32_t start_pos, float scale,
+                 float soft_cap, AljabrMetalPipelines *pipelines) {
+  if (pipelines->sdpa_flat == nil || bufOut == nil || bufQ == nil ||
+      bufKCache == nil || bufVCache == nil)
+    return;
   [enc setComputePipelineState:pipelines->sdpa_flat];
-  [enc setBuffer:bufOut    offset:0 atIndex:0];
-  [enc setBuffer:bufQ      offset:0 atIndex:1];
+  [enc setBuffer:bufOut offset:0 atIndex:0];
+  [enc setBuffer:bufQ offset:0 atIndex:1];
   [enc setBuffer:bufKCache offset:0 atIndex:2];
   [enc setBuffer:bufVCache offset:0 atIndex:3];
-  [enc setBytes:&H         length:sizeof(H)         atIndex:4];
-  [enc setBytes:&H_kv      length:sizeof(H_kv)      atIndex:5];
-  [enc setBytes:&D         length:sizeof(D)         atIndex:6];
-  [enc setBytes:&stride    length:sizeof(stride)    atIndex:7];
-  [enc setBytes:&pos       length:sizeof(pos)       atIndex:8];
+  [enc setBytes:&H length:sizeof(H) atIndex:4];
+  [enc setBytes:&H_kv length:sizeof(H_kv) atIndex:5];
+  [enc setBytes:&D length:sizeof(D) atIndex:6];
+  [enc setBytes:&stride length:sizeof(stride) atIndex:7];
+  [enc setBytes:&pos length:sizeof(pos) atIndex:8];
   [enc setBytes:&start_pos length:sizeof(start_pos) atIndex:9];
-  [enc setBytes:&scale     length:sizeof(scale)     atIndex:10];
-  [enc setBytes:&soft_cap  length:sizeof(soft_cap)  atIndex:11];
+  [enc setBytes:&scale length:sizeof(scale) atIndex:10];
+  [enc setBytes:&soft_cap length:sizeof(soft_cap) atIndex:11];
   [enc dispatchThreadgroups:MTLSizeMake(H, 1, 1)
       threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
 }
 
-int aljabr_metal_decode_step(
-    int pos, int slidingWindow, float eps,
-    const float *x_in, float *logits_out
-) {
-  if (!g_initialized || g_device == nil || g_queue == nil || g_num_decode_layers == 0) return -1;
+int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
+                             const float *x_in, float *logits_out) {
+  if (!g_initialized || g_device == nil || g_queue == nil ||
+      g_num_decode_layers == 0)
+    return -1;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   DecodeLayerConfig *cfg0 = &g_decode_layers[0];
@@ -2876,20 +3247,27 @@ int aljabr_metal_decode_step(
     if ((size_t)g_decode_layers[l].ffnDim * sizeof(float) > maxFfnBytes)
       maxFfnBytes = (size_t)g_decode_layers[l].ffnDim * sizeof(float);
   }
-  if (!ensure_woff_dim_bufs(maxAttnBytes, dimBytes)) return -2;
-  if (!ensure_woff_ffn_bufs(maxFfnBytes)) return -2;
+  if (!ensure_woff_dim_bufs(maxAttnBytes, dimBytes))
+    return -2;
+  if (!ensure_woff_ffn_bufs(maxFfnBytes))
+    return -2;
 
   size_t maxQ = (size_t)cfg0->n0 * sizeof(float);
   size_t maxK = (size_t)cfg0->n1 * sizeof(float);
   size_t maxV = (size_t)cfg0->n2 * sizeof(float);
   uint32_t maxHeadDim = (uint32_t)cfg0->headDim;
   for (int l = 1; l < g_num_decode_layers; l++) {
-    if ((uint32_t)g_decode_layers[l].headDim > maxHeadDim) maxHeadDim = (uint32_t)g_decode_layers[l].headDim;
-    if ((size_t)g_decode_layers[l].n0 * sizeof(float) > maxQ) maxQ = (size_t)g_decode_layers[l].n0 * sizeof(float);
-    if ((size_t)g_decode_layers[l].n1 * sizeof(float) > maxK) maxK = (size_t)g_decode_layers[l].n1 * sizeof(float);
-    if ((size_t)g_decode_layers[l].n2 * sizeof(float) > maxV) maxV = (size_t)g_decode_layers[l].n2 * sizeof(float);
+    if ((uint32_t)g_decode_layers[l].headDim > maxHeadDim)
+      maxHeadDim = (uint32_t)g_decode_layers[l].headDim;
+    if ((size_t)g_decode_layers[l].n0 * sizeof(float) > maxQ)
+      maxQ = (size_t)g_decode_layers[l].n0 * sizeof(float);
+    if ((size_t)g_decode_layers[l].n1 * sizeof(float) > maxK)
+      maxK = (size_t)g_decode_layers[l].n1 * sizeof(float);
+    if ((size_t)g_decode_layers[l].n2 * sizeof(float) > maxV)
+      maxV = (size_t)g_decode_layers[l].n2 * sizeof(float);
   }
-  if (!ensure_woff_next_qkv(maxQ, maxK, maxV, dimBytes)) return -2;
+  if (!ensure_woff_next_qkv(maxQ, maxK, maxV, dimBytes))
+    return -2;
 
   @autoreleasepool {
     memcpy([g_woff_x contents], x_in, dimBytes);
@@ -2898,11 +3276,11 @@ int aljabr_metal_decode_step(
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
     id<MTLBuffer> bufPostAttnAll = g_norm_buffers[0]; // slot 0 = postAttnNorm
-    id<MTLBuffer> bufFfnNormAll  = g_norm_buffers[1]; // slot 1 = ffnNorm
-    id<MTLBuffer> bufPostFfnAll  = g_norm_buffers[2]; // slot 2 = postFfnNorm
+    id<MTLBuffer> bufFfnNormAll = g_norm_buffers[1];  // slot 1 = ffnNorm
+    id<MTLBuffer> bufPostFfnAll = g_norm_buffers[2];  // slot 2 = postFfnNorm
     id<MTLBuffer> bufAttnNormAll = g_norm_buffers[3]; // slot 3 = attnNorm
-    id<MTLBuffer> bufQNormAll    = g_norm_buffers[4]; // slot 4 = attnQNorm
-    id<MTLBuffer> bufKNormAll    = g_norm_buffers[5]; // slot 5 = attnKNorm
+    id<MTLBuffer> bufQNormAll = g_norm_buffers[4];    // slot 4 = attnQNorm
+    id<MTLBuffer> bufKNormAll = g_norm_buffers[5];    // slot 5 = attnKNorm
     if (!bufAttnNormAll || !bufFfnNormAll) {
       [enc endEncoding];
       return -3;
@@ -2916,8 +3294,10 @@ int aljabr_metal_decode_step(
         [cmd waitUntilCompleted];
         float *x_ptr = (float *)[g_woff_x contents];
         float sumSq = 0.0f;
-        for (int k = 0; k < (int)(dimBytes / sizeof(float)); k++) sumSq += x_ptr[k] * x_ptr[k];
-        printf("[METAL L%02d] x[0]=%+.4f, norm=%.4f\n", l - 1, x_ptr[0], sqrtf(sumSq));
+        for (int k = 0; k < (int)(dimBytes / sizeof(float)); k++)
+          sumSq += x_ptr[k] * x_ptr[k];
+        printf("[METAL L%02d] x[0]=%+.4f, norm=%.4f\n", l - 1, x_ptr[0],
+               sqrtf(sumSq));
         cmd = [g_queue commandBuffer];
         enc = [cmd computeCommandEncoder];
       }
@@ -2928,16 +3308,20 @@ int aljabr_metal_decode_step(
       size_t normOff = (size_t)l * dimBytes;
 
       // 1. xb = attnNorm(x)
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufAttnNormAll, normOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufAttnNormAll, normOff,
+                          nDim, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 2. Q, K, V matvecs from xb
-      encode_matvec_sub(enc, pipelines, g_woff_nextQ, g_woff_xb, cfg->wQ, nDim, (uint32_t)cfg->n0, cfg->typeQ, 1);
+      encode_matvec_sub(enc, pipelines, g_woff_nextQ, g_woff_xb, cfg->wQ, nDim,
+                        (uint32_t)cfg->n0, cfg->typeQ, 1);
       if (cfg->wK) {
-        encode_matvec_sub(enc, pipelines, g_woff_nextK, g_woff_xb, cfg->wK, nDim, (uint32_t)cfg->n1, cfg->typeK, 1);
+        encode_matvec_sub(enc, pipelines, g_woff_nextK, g_woff_xb, cfg->wK,
+                          nDim, (uint32_t)cfg->n1, cfg->typeK, 1);
       }
       if (cfg->wV) {
-        encode_matvec_sub(enc, pipelines, g_woff_nextV, g_woff_xb, cfg->wV, nDim, (uint32_t)cfg->n2, cfg->typeV, 1);
+        encode_matvec_sub(enc, pipelines, g_woff_nextV, g_woff_xb, cfg->wV,
+                          nDim, (uint32_t)cfg->n2, cfg->typeV, 1);
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
@@ -2950,14 +3334,15 @@ int aljabr_metal_decode_step(
         [enc setComputePipelineState:pipelines->rmsnorm_rows];
         [enc setBuffer:g_woff_nextQ offset:0 atIndex:0];
         [enc setBuffer:g_woff_nextQ offset:0 atIndex:1];
-        [enc setBuffer:bufQNormAll  offset:qNormOff atIndex:2];
+        [enc setBuffer:bufQNormAll offset:qNormOff atIndex:2];
         [enc setBytes:&headDim length:sizeof(headDim) atIndex:3];
-        [enc setBytes:&eps     length:sizeof(eps)     atIndex:4];
-        [enc setBytes:&addOne  length:sizeof(addOne)  atIndex:5];
+        [enc setBytes:&eps length:sizeof(eps) atIndex:4];
+        [enc setBytes:&addOne length:sizeof(addOne) atIndex:5];
         [enc dispatchThreadgroups:MTLSizeMake(nH, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
       }
-      if (cfg->hasKNorm && bufKNormAll && cfg->wK && pipelines->rmsnorm_rows != nil) {
+      if (cfg->hasKNorm && bufKNormAll && cfg->wK &&
+          pipelines->rmsnorm_rows != nil) {
         uint32_t headDim = (uint32_t)cfg->headDim;
         uint32_t nKVH = (uint32_t)cfg->nKVH;
         uint32_t addOne = 0;
@@ -2965,10 +3350,10 @@ int aljabr_metal_decode_step(
         [enc setComputePipelineState:pipelines->rmsnorm_rows];
         [enc setBuffer:g_woff_nextK offset:0 atIndex:0];
         [enc setBuffer:g_woff_nextK offset:0 atIndex:1];
-        [enc setBuffer:bufKNormAll  offset:kNormOff atIndex:2];
+        [enc setBuffer:bufKNormAll offset:kNormOff atIndex:2];
         [enc setBytes:&headDim length:sizeof(headDim) atIndex:3];
-        [enc setBytes:&eps     length:sizeof(eps)     atIndex:4];
-        [enc setBytes:&addOne  length:sizeof(addOne)  atIndex:5];
+        [enc setBytes:&eps length:sizeof(eps) atIndex:4];
+        [enc setBytes:&addOne length:sizeof(addOne) atIndex:5];
         [enc dispatchThreadgroups:MTLSizeMake(nKVH, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
       }
@@ -2980,7 +3365,7 @@ int aljabr_metal_decode_step(
         [enc setBuffer:g_woff_nextV offset:0 atIndex:0];
         [enc setBuffer:g_woff_nextV offset:0 atIndex:1];
         [enc setBytes:&headDim length:sizeof(headDim) atIndex:2];
-        [enc setBytes:&eps     length:sizeof(eps)     atIndex:3];
+        [enc setBytes:&eps length:sizeof(eps) atIndex:3];
         [enc dispatchThreadgroups:MTLSizeMake(nKVH, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
       }
@@ -2990,46 +3375,72 @@ int aljabr_metal_decode_step(
 
       // 3. RoPE on Q and K
       if (cfg->bufRopeFreqs != nil) {
-        encode_rope_single_token_freqfact(enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, cfg->bufRopeFreqs, pipelines);
+        encode_rope_single_token_freqfact(
+            enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim,
+            (uint32_t)pos, cfg->freqBase, cfg->bufRopeFreqs, pipelines);
         if (cfg->wK) {
-          encode_rope_single_token_freqfact(enc, g_woff_nextK, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, cfg->bufRopeFreqs, pipelines);
+          encode_rope_single_token_freqfact(
+              enc, g_woff_nextK, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim,
+              (uint32_t)pos, cfg->freqBase, cfg->bufRopeFreqs, pipelines);
         }
       } else {
-        encode_rope_single_token(enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
+        encode_rope_single_token(enc, g_woff_nextQ, (uint32_t)cfg->nH,
+                                 (uint32_t)cfg->headDim, (uint32_t)pos,
+                                 cfg->freqBase, pipelines);
         if (cfg->wK) {
-          encode_rope_single_token(enc, g_woff_nextK, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
+          encode_rope_single_token(enc, g_woff_nextK, (uint32_t)cfg->nKVH,
+                                   (uint32_t)cfg->headDim, (uint32_t)pos,
+                                   cfg->freqBase, pipelines);
         }
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      if (pos == 27 && l == 0) {
-        [enc endEncoding];
-        [cmd commit];
-        [cmd waitUntilCompleted];
-        float *q_ptr = (float *)[g_woff_nextQ contents];
-        float *k_ptr = (float *)[g_woff_nextK contents];
-        float *v_ptr = (float *)[g_woff_nextV contents];
-        float qNorm = 0, kNorm = 0, vNorm = 0;
-        for (int i = 0; i < (int)cfg->n0; i++) qNorm += q_ptr[i] * q_ptr[i];
-        for (int i = 0; i < (int)cfg->n1; i++) kNorm += k_ptr[i] * k_ptr[i];
-        for (int i = 0; i < (int)cfg->n2; i++) vNorm += v_ptr[i] * v_ptr[i];
-        printf("[METAL L00 PRE-SDPA] q[0]=%+.4f norm=%.4f | k[0]=%+.4f norm=%.4f | v[0]=%+.4f norm=%.4f\n",
-            q_ptr[0], sqrtf(qNorm), k_ptr[0], sqrtf(kNorm), v_ptr[0], sqrtf(vNorm));
-        cmd = [g_queue commandBuffer];
-        enc = [cmd computeCommandEncoder];
-      }
-
-      // 4. Store K and V to KV cache at position pos — only if this layer owns its KV weights.
-      //    Layers with wK==NULL share a previous layer's KV cache (kvLayerIndex < l).
-      int kvIdx = cfg->kvLayerIndex;
-      if (cfg->wK && g_kv_k[kvIdx] && g_kv_v[kvIdx]) {
-        encode_kv_store_flat(enc, g_kv_k[kvIdx], g_woff_nextK, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
-        encode_kv_store_flat(enc, g_kv_v[kvIdx], g_woff_nextV, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
+      // 4. Store K and V to KV cache at position pos
+      if (g_kv_k[l] && g_kv_v[l]) {
+        encode_kv_store_flat(enc, g_kv_k[l], g_woff_nextK, (uint32_t)pos,
+                             (uint32_t)cfg->stride, pipelines);
+        encode_kv_store_flat(enc, g_kv_v[l], g_woff_nextV, (uint32_t)pos,
+                             (uint32_t)cfg->stride, pipelines);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 
-      // 5. SDPA attention -> g_woff_attnFull
-      //    Read KV from kvIdx (may differ from l when wK==NULL / KV is shared from a previous layer).
+      // 5. Resolve the actual KV source (shared-KV layers may not own a cache).
+      int kvLayer = cfg->kvLayerIndex;
+      // Shared layers may point at another shared layer. Follow the chain to
+      // the cache owner so we never read an unpopulated per-layer allocation.
+      int hops = 0;
+      while (kvLayer >= 0 && kvLayer < g_num_decode_layers &&
+             hops++ < g_num_decode_layers) {
+        DecodeLayerConfig *candidate = &g_decode_layers[kvLayer];
+        if (candidate->wK && candidate->wV)
+          break;
+        if (candidate->kvLayerIndex == kvLayer)
+          break;
+        kvLayer = candidate->kvLayerIndex;
+      }
+      if (kvLayer < 0 || kvLayer >= g_kv_layers || hops > g_num_decode_layers ||
+          !g_kv_k[kvLayer] || !g_kv_v[kvLayer]) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        return -4;
+      }
+      DecodeLayerConfig *kvCfg = &g_decode_layers[kvLayer];
+      if (!kvCfg->wK || !kvCfg->wV) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        return -4;
+      }
+      if (kvCfg->headDim != cfg->headDim ||
+          g_kv_stride[kvLayer] < (uint32_t)(kvCfg->nKVH * kvCfg->headDim)) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        return -5;
+      }
+
+      // 6. SDPA attention -> g_woff_attnFull
       uint32_t seqLen = (uint32_t)(pos + 1);
       uint32_t startPos = 0;
       if (cfg->isSwa && slidingWindow > 0 && seqLen > (uint32_t)slidingWindow) {
@@ -3037,13 +3448,15 @@ int aljabr_metal_decode_step(
       }
       float scale = cfg->attnScale;
       if (scale <= 0.0f) {
-        scale = (cfg->hasQNorm || cfg->hasKNorm) ? 1.0f : (1.0f / sqrtf((float)cfg->headDim));
+        scale = (cfg->hasQNorm || cfg->hasKNorm)
+                    ? 1.0f
+                    : (1.0f / sqrtf((float)cfg->headDim));
       }
-      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[kvIdx], g_kv_v[kvIdx],
-                       (uint32_t)cfg->nH, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)cfg->stride,
+      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[l], g_kv_v[l],
+                       (uint32_t)cfg->nH, (uint32_t)cfg->nKVH,
+                       (uint32_t)cfg->headDim, (uint32_t)cfg->stride,
                        (uint32_t)pos, startPos, scale, 0.0f, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-
 
       if (pos == 27 && l == 0) {
         [enc endEncoding];
@@ -3051,19 +3464,23 @@ int aljabr_metal_decode_step(
         [cmd waitUntilCompleted];
         float *a_ptr = (float *)[g_woff_attnFull contents];
         float aNorm = 0;
-        for (int i = 0; i < (int)(cfg->nH * cfg->headDim); i++) aNorm += a_ptr[i] * a_ptr[i];
-        printf("[METAL L00 POST-SDPA] attn[0]=%+.4f norm=%.4f\n", a_ptr[0], sqrtf(aNorm));
+        for (int i = 0; i < (int)(cfg->nH * cfg->headDim); i++)
+          aNorm += a_ptr[i] * a_ptr[i];
+        printf("[METAL L00 POST-SDPA] attn[0]=%+.4f norm=%.4f\n", a_ptr[0],
+               sqrtf(aNorm));
         cmd = [g_queue commandBuffer];
         enc = [cmd computeCommandEncoder];
       }
 
       // 6. xb = wO(attnFull)
-      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_attnFull, cfg->wO, kDim, nDim, cfg->typeWO, 1);
+      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_attnFull, cfg->wO,
+                        kDim, nDim, cfg->typeWO, 1);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 6b. Post-attention norm (if present)
       if (cfg->hasPostAttnNorm && bufPostAttnAll) {
-        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttnAll, normOff, nDim, eps, 0, pipelines);
+        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttnAll, normOff,
+                            nDim, eps, 0, pipelines);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 
@@ -3072,53 +3489,66 @@ int aljabr_metal_decode_step(
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 8. xb = ffnNorm(x)
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNormAll, normOff, nDim, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNormAll, normOff,
+                          nDim, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 9. Gate + Up + Act (GeGLU) -> g_woff_ffn_hb
-      BOOL can_fuse = (cfg->typeGate == 12 && cfg->typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr4 != nil);
-      BOOL gate_up_mr8 = (cfg->typeGate == 12 && cfg->typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
+      BOOL can_fuse = (cfg->typeGate == 12 && cfg->typeUp == 12 &&
+                       pipelines->ffn_gate_up_act_q4_k_mr4 != nil);
+      BOOL gate_up_mr8 =
+          (cfg->typeGate == 12 && cfg->typeUp == 12 &&
+           pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
       if (can_fuse) {
-        id<MTLComputePipelineState> fuseP = gate_up_mr8 ? pipelines->ffn_gate_up_act_q4_k_mr8 : pipelines->ffn_gate_up_act_q4_k_mr4;
+        id<MTLComputePipelineState> fuseP =
+            gate_up_mr8 ? pipelines->ffn_gate_up_act_q4_k_mr8
+                        : pipelines->ffn_gate_up_act_q4_k_mr4;
         uint32_t actK = 2; // GeGLU
         [enc setComputePipelineState:fuseP];
         [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
-        [enc setBuffer:g_woff_xb     offset:0 atIndex:1];
-        [enc setBuffer:cfg->bufGate  offset:cfg->offGate atIndex:2];
-        [enc setBuffer:cfg->bufUp    offset:cfg->offUp   atIndex:3];
+        [enc setBuffer:g_woff_xb offset:0 atIndex:1];
+        [enc setBuffer:cfg->bufGate offset:cfg->offGate atIndex:2];
+        [enc setBuffer:cfg->bufUp offset:cfg->offUp atIndex:3];
         [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
         [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:5];
         [enc setBytes:&actK length:sizeof(actK) atIndex:6];
         if (gate_up_mr8) {
-          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 7) / 8, 1, 1)
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 7) / 8, 1,
+                                                1)
               threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
         } else {
-          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 3) / 4, 1, 1)
+          [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 3) / 4, 1,
+                                                1)
               threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
         }
       } else {
-        encode_matvec_sub(enc, pipelines, g_woff_ffn_gate, g_woff_xb, cfg->gate, nDim, nFfn, cfg->typeGate, 1);
-        encode_matvec_sub(enc, pipelines, g_woff_ffn_up, g_woff_xb, cfg->up, nDim, nFfn, cfg->typeUp, 1);
+        encode_matvec_sub(enc, pipelines, g_woff_ffn_gate, g_woff_xb, cfg->gate,
+                          nDim, nFfn, cfg->typeGate, 1);
+        encode_matvec_sub(enc, pipelines, g_woff_ffn_up, g_woff_xb, cfg->up,
+                          nDim, nFfn, cfg->typeUp, 1);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
         id<MTLComputePipelineState> actP = pipelines->gelu_ffn;
         [enc setComputePipelineState:actP];
-        [enc setBuffer:g_woff_ffn_hb   offset:0 atIndex:0];
+        [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
         [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:1];
-        [enc setBuffer:g_woff_ffn_up   offset:0 atIndex:2];
+        [enc setBuffer:g_woff_ffn_up offset:0 atIndex:2];
         [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
-        NSUInteger actTh = MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
+        NSUInteger actTh =
+            MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
         [enc dispatchThreads:MTLSizeMake((NSUInteger)nFfn, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(actTh, 1, 1)];
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 10. xb = down(hb)
-      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_ffn_hb, cfg->down, nFfn, nDim, cfg->typeDown, 1);
+      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_ffn_hb, cfg->down,
+                        nFfn, nDim, cfg->typeDown, 1);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 10b. Post-FFN norm (if present)
       if (cfg->hasPostFfnNorm && bufPostFfnAll) {
-        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfnAll, normOff, nDim, eps, 0, pipelines);
+        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfnAll, normOff,
+                            nDim, eps, 0, pipelines);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 
@@ -3127,7 +3557,8 @@ int aljabr_metal_decode_step(
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 12. Optional layer output scale
-      if (cfg->outScale > 0.0f && cfg->outScale != 1.0f && pipelines->scale != nil) {
+      if (cfg->outScale > 0.0f && cfg->outScale != 1.0f &&
+          pipelines->scale != nil) {
         float os = cfg->outScale;
         [enc setComputePipelineState:pipelines->scale];
         [enc setBuffer:g_woff_x offset:0 atIndex:0];
@@ -3146,27 +3577,33 @@ int aljabr_metal_decode_step(
       [cmd waitUntilCompleted];
       float *x_ptr = (float *)[g_woff_x contents];
       float sumSq = 0.0f;
-      for (int k = 0; k < (int)(dimBytes / sizeof(float)); k++) sumSq += x_ptr[k] * x_ptr[k];
-      printf("[METAL L%02d] x[0]=%+.4f, norm=%.4f\n", g_num_decode_layers - 1, x_ptr[0], sqrtf(sumSq));
+      for (int k = 0; k < (int)(dimBytes / sizeof(float)); k++)
+        sumSq += x_ptr[k] * x_ptr[k];
+      printf("[METAL L%02d] x[0]=%+.4f, norm=%.4f\n", g_num_decode_layers - 1,
+             x_ptr[0], sqrtf(sumSq));
       cmd = [g_queue commandBuffer];
       enc = [cmd computeCommandEncoder];
     }
 
     // ── Final output logits projection ──────────────────────────────────────
-    if (g_output_w != NULL && g_buf_output_norm != nil && g_buf_output_w != nil && g_buf_output_logits != nil) {
+    if (g_output_w != NULL && g_buf_output_norm != nil &&
+        g_buf_output_w != nil && g_buf_output_logits != nil) {
       uint32_t outK = (uint32_t)g_output_K;
       uint32_t outN = (uint32_t)g_output_N;
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, g_buf_output_norm, g_off_output_norm, outK, eps, 0, pipelines);
+      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, g_buf_output_norm,
+                          g_off_output_norm, outK, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-      encode_matvec_sub(enc, pipelines, g_buf_output_logits, g_woff_xb, g_output_w, outK, outN, g_output_type_w, 1);
+      encode_matvec_sub(enc, pipelines, g_buf_output_logits, g_woff_xb,
+                        g_output_w, outK, outN, g_output_type_w, 1);
       if (g_output_logit_cap > 0.0f && pipelines->softcap != nil) {
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
         float cap = g_output_logit_cap;
         [enc setComputePipelineState:pipelines->softcap];
         [enc setBuffer:g_buf_output_logits offset:0 atIndex:0];
-        [enc setBytes:&cap  length:sizeof(cap)  atIndex:1];
+        [enc setBytes:&cap length:sizeof(cap) atIndex:1];
         [enc setBytes:&outN length:sizeof(outN) atIndex:2];
-        NSUInteger th = MIN((NSUInteger)256, pipelines->softcap.maxTotalThreadsPerThreadgroup);
+        NSUInteger th = MIN((NSUInteger)256,
+                            pipelines->softcap.maxTotalThreadsPerThreadgroup);
         [enc dispatchThreads:MTLSizeMake((NSUInteger)outN, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(th, 1, 1)];
       }
@@ -3181,16 +3618,18 @@ int aljabr_metal_decode_step(
     }
 
     if (logits_out != NULL && g_buf_output_logits != nil) {
-      memcpy(logits_out, [g_buf_output_logits contents], (size_t)g_output_N * sizeof(float));
+      memcpy(logits_out, [g_buf_output_logits contents],
+             (size_t)g_output_N * sizeof(float));
       if (pos == 27) {
         int best = 0;
-        for (int i = 1; i < (int)g_output_N; i++) if (logits_out[i] > logits_out[best]) best = i;
-        printf("[METAL LOGITS pos=27] argmax=%d score=%.4f (target 236828 score=%.4f, 236772 score=%.4f)\n",
-            best, logits_out[best], logits_out[236828], logits_out[236772]);
+        for (int i = 1; i < (int)g_output_N; i++)
+          if (logits_out[i] > logits_out[best])
+            best = i;
+        printf("[METAL LOGITS pos=27] argmax=%d score=%.4f (target 236828 "
+               "score=%.4f, 236772 score=%.4f)\n",
+               best, logits_out[best], logits_out[236828], logits_out[236772]);
       }
     }
     return 0;
   }
 }
-
-
