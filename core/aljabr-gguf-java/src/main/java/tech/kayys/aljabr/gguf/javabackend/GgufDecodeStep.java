@@ -377,6 +377,11 @@ final class GgufDecodeStep {
 
             int qDim = nH * layerHDim;
             int kvDim = layerNKVH * layerHDim;
+            boolean hasOwnKv = wK[layer] != null && wV[layer] != null;
+            int kvLayerToUse = hasOwnKv ? layer
+                    : Math.max(0, layer - (isSwa ? 2 : 1));
+            int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
+            int attentionKvDim = attentionKVHeads * layerHDim;
 
             // ── 3a. QKV projections for all T tokens ─────────────────────────
             for (int t = 0; t < T; t++) {
@@ -450,13 +455,28 @@ final class GgufDecodeStep {
                 }
             }
 
+            // Shared-KV layers must consume the selected source layer's cache, not
+            // stale K/V scratch left behind by an earlier projection.
+            if (!hasOwnKv) {
+                float[] sourceK = cache.kLayer(kvLayerToUse);
+                float[] sourceV = cache.vLayer(kvLayerToUse);
+                int sourceStride = cache.headStride(kvLayerToUse);
+                for (int t = 0; t < T; t++) {
+                    int sourceOffset = t * sourceStride;
+                    System.arraycopy(sourceK, sourceOffset, Kall[t], 0, attentionKvDim);
+                    System.arraycopy(sourceV, sourceOffset, Vall[t], 0, attentionKvDim);
+                    System.arraycopy(sourceK, sourceOffset, allK, t * attentionKvDim, attentionKvDim);
+                    System.arraycopy(sourceV, sourceOffset, allV, t * attentionKvDim, attentionKvDim);
+                }
+            }
+
             // ── 3b. Attention for all T tokens ───────────────────────────────
             long tAttn0 = System.nanoTime();
             int swWin  = cfg.slidingWindow();
             boolean gpuAttnDone = false;
             // Use Metal FlashAttention-4 (MPSGraph SDPA) when prompt fits within sliding window (or non-SWA)
             if ((!isSwa || swWin <= 0 || T <= swWin) && GgufMetalBridge.isAvailable()) {
-                gpuAttnDone = GgufMetalBridge.fa4Attention(allAttn, allQ, allK, allV, 1, T, T, nH, layerNKVH, layerHDim, scale, true);
+                gpuAttnDone = GgufMetalBridge.fa4Attention(allAttn, allQ, allK, allV, 1, T, T, nH, attentionKVHeads, layerHDim, scale, true);
             }
 
             if (!gpuAttnDone) {
@@ -473,7 +493,7 @@ final class GgufDecodeStep {
                     int activeLen = tEnd - tStart + 1;
 
                     for (int h = 0; h < nH; h++) {
-                        int kvH  = h / (nH / layerNKVH);
+                        int kvH  = h / (nH / attentionKVHeads);
                         int qOff = h * layerHDim;
                         int kvOff = kvH * layerHDim;
 
