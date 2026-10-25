@@ -523,7 +523,7 @@ final class GgufDecodeStep {
                                 eps);
                     }
                 }
-                GGUFVectorOps.rope(qLocal, nH, layerHDim, t, layerRopeFreq, layerRopeFreqs);
+                GGUFVectorOps.rope(qLocal, nH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq, layerRopeFreqs);
                 System.arraycopy(qLocal, 0, Qall[t], 0, qDim);
                 System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
 
@@ -547,7 +547,7 @@ final class GgufDecodeStep {
                         }
                     }
 
-                    GGUFVectorOps.rope(kLocal, layerNKVH, layerHDim, t, layerRopeFreq, layerRopeFreqs);
+                    GGUFVectorOps.rope(kLocal, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq, layerRopeFreqs);
                     System.arraycopy(kLocal, 0, Kall[t], 0, kvDim);
                     System.arraycopy(kLocal, 0, allK, t * kvDim, kvDim);
                     System.arraycopy(vLocal, 0, Vall[t], 0, kvDim);
@@ -969,7 +969,7 @@ final class GgufDecodeStep {
             }
 
             // RoPE on Q
-            GGUFVectorOps.rope(q, nH, layerHDim, pos, layerRopeFreq, layerRopeFreqs);
+            GGUFVectorOps.rope(q, nH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
             int kvLayerToUse = layer;
             if (wK[layer] != null) {
@@ -992,7 +992,7 @@ final class GgufDecodeStep {
                     }
                 }
 
-                GGUFVectorOps.rope(k, layerNKVH, layerHDim, pos, layerRopeFreq, layerRopeFreqs);
+                GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
                 cache.store(layer, k, v);
             } else {
