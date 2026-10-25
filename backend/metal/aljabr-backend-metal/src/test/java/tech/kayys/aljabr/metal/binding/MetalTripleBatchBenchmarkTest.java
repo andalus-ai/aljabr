@@ -33,10 +33,11 @@ class MetalTripleBatchBenchmarkTest {
     private static final int N2 = 2048;
     private static final int TYPE_Q4_K = 12;
     private static final int TYPE_Q6_K = 14;
-    private static final int MAX_BATCH = 15;
+    private static final int MAX_BATCH = 27;
     private static final int WARMUP_ITERATIONS = 3;
     private static final int MEASURED_ITERATIONS = 12;
-    private static final int[] BATCH_SIZES = {1, 4, 8, 15};
+    // Include both sides of the native B4 cutoff and the 27-row prompt-prefill workload.
+    private static final int[] BATCH_SIZES = {1, 4, 8, 15, 16, 27};
 
     @Test
     void reportsWarmTripleBatchLatencyAndThroughput() throws IOException {
