@@ -6,6 +6,7 @@ import tech.kayys.aljabr.gguf.loader.inference.KVCache;
 import tech.kayys.aljabr.gguf.loader.tensor.GGUFVectorOps;
 import tech.kayys.aljabr.gguf.runtime.GgufTensorOps;
 
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -111,6 +112,19 @@ final class GgufDecodeStep {
             return "native Metal decode-step failed after prior native tokens; the host KV cache is incomplete";
         }
         return "native Metal decode-step failed before any native token was committed; per-op fallback is safe";
+    }
+
+    /**
+     * Prompt KV synchronization happens before generation and before the native
+     * decoder has committed any token. If any layer fails to sync, the populated
+     * host cache remains the safe source of truth for per-op decoding.
+     */
+    static String fullGpuDecodeKvCacheSyncFailureReason(int failedLayer) {
+        if (failedLayer < 0) {
+            return null;
+        }
+        return "Metal KV-cache sync failed at layer " + failedLayer
+                + " before generation; host KV cache is intact and per-op fallback is safe";
     }
 
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
@@ -713,15 +727,21 @@ final class GgufDecodeStep {
         // the same data as the source layer they share (kvLayerIndex). Sync that source
         // data
         // into Metal buffer l so the decode step SDPA reads correct prefill KV.
-        if (canUseMetalDecodeStep) {
+        if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
             for (int l = 0; l < layers; l++) {
+                boolean synced;
                 if (wK[l] != null) {
                     // Layer has its own KV; sync directly.
-                    GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
+                    synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
                 } else {
                     // KV-sharing layer: sync source layer's data into Metal buffer l.
                     int src = Math.max(0, l - (cfg.isSwaLayer(l) ? 2 : 1));
-                    GgufMetalBridge.syncKVCache(l, T, cache.kLayer(src), cache.vLayer(src));
+                    synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(src), cache.vLayer(src));
+                }
+                if (!synced) {
+                    String reason = fullGpuDecodeKvCacheSyncFailureReason(l);
+                    disableMetalDecodeAfterRuntimeFallback(T, reason);
+                    break;
                 }
             }
         }
@@ -741,7 +761,75 @@ final class GgufDecodeStep {
                 logits[i] = cap * (float) Math.tanh(logits[i] * invCap);
             }
         }
+        // The first generated token is sampled from these prefill logits before
+        // forward() attempts the native single-token decode step. Keep a direct,
+        // opt-in diagnostic here so bad first-token distributions are not
+        // mistakenly attributed to the following native decode call.
+        if (System.getenv("ALJABR_DEBUG_LAYERS") != null) {
+            logPrefillLogits(T, xLast, xbFinal, logits);
+        }
         return logits;
+    }
+
+    private static void logPrefillLogits(
+            int promptTokens, float[] lastHidden, float[] normalized, float[] logits) {
+        double hiddenNormSq = 0.0;
+        double normalizedNormSq = 0.0;
+        int nonFiniteHidden = 0;
+        int nonFiniteNormalized = 0;
+        int nonFiniteLogits = 0;
+        for (float value : lastHidden) {
+            if (Float.isFinite(value)) {
+                hiddenNormSq += (double) value * value;
+            } else {
+                nonFiniteHidden++;
+            }
+        }
+        for (float value : normalized) {
+            if (Float.isFinite(value)) {
+                normalizedNormSq += (double) value * value;
+            } else {
+                nonFiniteNormalized++;
+            }
+        }
+
+        final int topCount = Math.min(8, logits.length);
+        int[] topIds = new int[topCount];
+        float[] topScores = new float[topCount];
+        java.util.Arrays.fill(topIds, -1);
+        java.util.Arrays.fill(topScores, Float.NEGATIVE_INFINITY);
+        for (int tokenId = 0; tokenId < logits.length; tokenId++) {
+            float score = logits[tokenId];
+            if (!Float.isFinite(score)) {
+                nonFiniteLogits++;
+                continue;
+            }
+            for (int slot = 0; slot < topCount; slot++) {
+                if (score > topScores[slot]) {
+                    for (int move = topCount - 1; move > slot; move--) {
+                        topScores[move] = topScores[move - 1];
+                        topIds[move] = topIds[move - 1];
+                    }
+                    topScores[slot] = score;
+                    topIds[slot] = tokenId;
+                    break;
+                }
+            }
+        }
+
+        StringBuilder top = new StringBuilder("[");
+        for (int i = 0; i < topCount; i++) {
+            if (i > 0) {
+                top.append(", ");
+            }
+            top.append(topIds[i]).append(":")
+                    .append(String.format(Locale.ROOT, "%.5f", topScores[i]));
+        }
+        top.append("]");
+        System.out.printf(Locale.ROOT,
+                "[JAVA PREFILL LOGITS] prompt_tokens=%d hidden_norm=%.5f normalized_norm=%.5f nonfinite_hidden=%d nonfinite_normalized=%d nonfinite_logits=%d top=%s%n",
+                promptTokens, Math.sqrt(hiddenNormSq), Math.sqrt(normalizedNormSq),
+                nonFiniteHidden, nonFiniteNormalized, nonFiniteLogits, top);
     }
 
     private void disableMetalDecodeAfterRuntimeFallback(int pos, String reason) {

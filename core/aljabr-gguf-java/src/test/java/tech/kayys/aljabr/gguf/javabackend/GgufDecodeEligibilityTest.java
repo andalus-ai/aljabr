@@ -52,4 +52,16 @@ class GgufDecodeEligibilityTest {
         assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(true, false));
         assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(true, true));
     }
+
+    @Test
+    void failedPromptKvSyncDisablesFullGpuDecodeBeforeGeneration() {
+        assertEquals(
+                "Metal KV-cache sync failed at layer 7 before generation; host KV cache is intact and per-op fallback is safe",
+                GgufDecodeStep.fullGpuDecodeKvCacheSyncFailureReason(7));
+    }
+
+    @Test
+    void absentKvSyncFailureLayerHasNoFailureReason() {
+        assertNull(GgufDecodeStep.fullGpuDecodeKvCacheSyncFailureReason(-1));
+    }
 }
