@@ -161,6 +161,10 @@ final class JavaGgufBackend implements GgufBackend {
                 long prefillMs = Math.max(1, System.currentTimeMillis() - t0);
                 System.err.printf("[java-engine] Prompt prefill: %d tokens in %d ms (%.1f tok/s)%n",
                         promptTokens.length, prefillMs, (promptTokens.length * 1000.0) / prefillMs);
+                DecodeOptions dbgOpts = DecodeOptions.builder().build();
+                for (int pIdx = 0; pIdx < tokenIds.length; pIdx++) {
+                    System.err.printf("  [PROMPT tok %d] %d -> '%s'%n", pIdx, tokenIds[pIdx], tokenizer.decode(new long[]{tokenIds[pIdx]}, dbgOpts));
+                }
             }
 
             InferenceResponse.FinishReason finishReason = InferenceResponse.FinishReason.LENGTH;
@@ -168,6 +172,9 @@ final class JavaGgufBackend implements GgufBackend {
             long genStart = System.currentTimeMillis();
             for (int i = 0; i < sampling.maxTokens() && pos < cfg.contextLength(); i++) {
                 int nextToken = sampler.sample(logits, history);
+                if (i < 10) {
+                    System.err.printf("  [GEN step %d] token=%d ('%s')%n", i, nextToken, tokenizer.decode(new long[]{nextToken}, DecodeOptions.builder().build()));
+                }
                 if (tokenizer.isEosToken(nextToken)) {
                     finishReason = InferenceResponse.FinishReason.STOP;
                     break;

@@ -92,6 +92,7 @@ public class MetalBinding {
     private static final String FN_INIT_KV_CACHE = "aljabr_metal_init_kv_cache";
     private static final String FN_SYNC_KV_CACHE = "aljabr_metal_sync_kv_cache";
     private static final String FN_REGISTER_NORM_BUFFER = "aljabr_metal_register_norm_buffer";
+    private static final String FN_REGISTER_ROPE_FREQS = "aljabr_metal_register_rope_freqs";
     private static final String FN_REGISTER_DECODE_LAYER = "aljabr_metal_register_decode_layer";
     private static final String FN_REGISTER_OUTPUT = "aljabr_metal_register_output";
     private static final String FN_DECODE_STEP = "aljabr_metal_decode_step";
@@ -1009,6 +1010,11 @@ public class MetalBinding {
         return (int) invoke(FN_REGISTER_NORM_BUFFER, slot, ptr, bytes);
     }
 
+    public int registerRopeFreqs(int layer, MemorySegment freqData, int freqLen) {
+        if (!handles.containsKey(FN_REGISTER_ROPE_FREQS)) return -2;
+        return (int) invoke(FN_REGISTER_ROPE_FREQS, layer, freqData, freqLen);
+    }
+
     public int registerDecodeLayer(
             int layer,
             MemorySegment wQ, MemorySegment wK, MemorySegment wV, MemorySegment wO,
@@ -1019,7 +1025,7 @@ public class MetalBinding {
             float freqBase, int isSwa,
             float outScale, float attnScale,
             int hasPostAttnNorm, int hasPostFfnNorm,
-            int hasQNorm, int hasKNorm) {
+            int hasQNorm, int hasKNorm, int hasUnitVNorm) {
         if (!handles.containsKey(FN_REGISTER_DECODE_LAYER)) return -2;
         return (int) invoke(FN_REGISTER_DECODE_LAYER,
                 layer,
@@ -1031,7 +1037,7 @@ public class MetalBinding {
                 freqBase, isSwa,
                 outScale, attnScale,
                 hasPostAttnNorm, hasPostFfnNorm,
-                hasQNorm, hasKNorm);
+                hasQNorm, hasKNorm, hasUnitVNorm);
     }
 
     public int registerOutput(
@@ -1780,6 +1786,9 @@ public class MetalBinding {
         bind(FN_REGISTER_NORM_BUFFER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
 
+        bind(FN_REGISTER_ROPE_FREQS, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+
         bind(FN_REGISTER_DECODE_LAYER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
@@ -1790,7 +1799,7 @@ public class MetalBinding {
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
-                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
 
         bind(FN_REGISTER_OUTPUT, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS,

@@ -49,6 +49,7 @@ public final class GgufMetalBridge {
     private static final MethodHandle INIT_KV_CACHE_MH;
     private static final MethodHandle SYNC_KV_CACHE_MH;
     private static final MethodHandle REGISTER_NORM_BUFFER_MH;
+    private static final MethodHandle REGISTER_ROPE_FREQS_MH;
     private static final MethodHandle REGISTER_DECODE_LAYER_MH;
     private static final MethodHandle REGISTER_OUTPUT_MH;
     private static final MethodHandle DECODE_STEP_MH;
@@ -89,6 +90,7 @@ public final class GgufMetalBridge {
         MethodHandle initKvCacheHandle = null;
         MethodHandle syncKvCacheHandle = null;
         MethodHandle registerNormBufferHandle = null;
+        MethodHandle registerRopeFreqsHandle = null;
         MethodHandle registerDecodeLayerHandle = null;
         MethodHandle registerOutputHandle = null;
         MethodHandle decodeStepHandle = null;
@@ -342,6 +344,13 @@ public final class GgufMetalBridge {
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerNormBuffer bind FAILED: " + t); }
 
                             try {
+                                registerRopeFreqsHandle = lookup.findVirtual(mbClass, "registerRopeFreqs",
+                                        MethodType.methodType(int.class, int.class, MemorySegment.class, int.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] registerRopeFreqs handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerRopeFreqs bind FAILED: " + t); }
+
+                            try {
                                 registerDecodeLayerHandle = lookup.findVirtual(mbClass, "registerDecodeLayer",
                                         MethodType.methodType(int.class,
                                                 int.class,
@@ -353,7 +362,8 @@ public final class GgufMetalBridge {
                                                 float.class, int.class,
                                                 float.class, float.class,
                                                 int.class, int.class,
-                                                int.class, int.class))
+                                                int.class, int.class,
+                                                int.class))
                                         .bindTo(instance);
                                 LOG.info("[GgufMetalBridge] registerDecodeLayer handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerDecodeLayer bind FAILED: " + t); }
@@ -411,6 +421,7 @@ public final class GgufMetalBridge {
         INIT_KV_CACHE_MH = initKvCacheHandle;
         SYNC_KV_CACHE_MH = syncKvCacheHandle;
         REGISTER_NORM_BUFFER_MH = registerNormBufferHandle;
+        REGISTER_ROPE_FREQS_MH = registerRopeFreqsHandle;
         REGISTER_DECODE_LAYER_MH = registerDecodeLayerHandle;
         REGISTER_OUTPUT_MH = registerOutputHandle;
         DECODE_STEP_MH = decodeStepHandle;
@@ -603,8 +614,9 @@ public final class GgufMetalBridge {
             int nFloats = slot < 4 ? dim : hDim;
             for (int layer = 0; layer < layers; layer++) {
                 float[] arr = (src != null && layer < src.length) ? src[layer] : null;
-                if (arr != null && arr.length >= nFloats) {
-                    MemorySegment.copy(arr, 0, segs[slot], ValueLayout.JAVA_FLOAT, (long) layer * nFloats * Float.BYTES, nFloats);
+                if (arr != null) {
+                    int copyLen = Math.min(arr.length, nFloats);
+                    MemorySegment.copy(arr, 0, segs[slot], ValueLayout.JAVA_FLOAT, (long) layer * nFloats * Float.BYTES, copyLen);
                 }
             }
         }
@@ -1723,6 +1735,20 @@ public final class GgufMetalBridge {
         }
     }
 
+    public static boolean registerRopeFreqs(int layer, float[] freqs) {
+        if (!isDecodeStepAvailable() || REGISTER_ROPE_FREQS_MH == null || freqs == null || freqs.length == 0) return false;
+        try {
+            Arena arena = Arena.ofShared();
+            MemorySegment seg = arena.allocate((long) freqs.length * Float.BYTES);
+            MemorySegment.copy(freqs, 0, seg, ValueLayout.JAVA_FLOAT, 0, freqs.length);
+            int rc = (int) REGISTER_ROPE_FREQS_MH.invokeExact(layer, seg, freqs.length);
+            return rc == 0;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Failed to register rope freqs for layer " + layer + ": " + t.getMessage(), t);
+            return false;
+        }
+    }
+
     public static boolean registerDecodeLayer(
             int layer,
             GGUFModel model,
@@ -1733,7 +1759,7 @@ public final class GgufMetalBridge {
             float freqBase, int isSwa,
             float outScale, float attnScale,
             int hasPostAttnNorm, int hasPostFfnNorm,
-            int hasQNorm, int hasKNorm) {
+            int hasQNorm, int hasKNorm, int hasUnitVNorm) {
         if (!isDecodeStepAvailable() || REGISTER_DECODE_LAYER_MH == null) return false;
         try {
             MemorySegment segWQ = (wQ != null) ? GgufTensorOps.tensorData(model, wQ) : MemorySegment.NULL;
@@ -1762,7 +1788,7 @@ public final class GgufMetalBridge {
                     freqBase, isSwa,
                     outScale, attnScale,
                     hasPostAttnNorm, hasPostFfnNorm,
-                    hasQNorm, hasKNorm);
+                    hasQNorm, hasKNorm, hasUnitVNorm);
             return rc == 0;
         } catch (Throwable t) {
             LOG.log(Level.WARNING, "Failed to register decode layer " + layer + ": " + t.getMessage(), t);

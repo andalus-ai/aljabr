@@ -201,7 +201,9 @@ final class GgufDecodeStep {
         }
 
         // Initialize full-GPU decode step pipeline if supported
-        boolean eligible = GgufMetalBridge.isDecodeStepAvailable() && (perLayerTokEmbd == null || nEmbdPerLayer <= 0);
+        boolean eligible = !Boolean.getBoolean("aljabr.metal.decode.disable")
+                && GgufMetalBridge.isDecodeStepAvailable()
+                && (perLayerTokEmbd == null || nEmbdPerLayer <= 0);
         for (int l = 0; l < layers && eligible; l++) {
             if (wQ[l] == null || wO[l] == null || ffnUp[l] == null || ffnDown[l] == null) {
                 eligible = false;
@@ -247,7 +249,11 @@ final class GgufDecodeStep {
                             postAttnNorm[l] != null ? 1 : 0,
                             postFfnNorm[l] != null ? 1 : 0,
                             attnQNorm[l] != null ? 1 : 0,
-                            attnKNorm[l] != null ? 1 : 0);
+                            attnKNorm[l] != null ? 1 : 0,
+                            (cfg.hasUnitVNorm() || attnVNorm[l] != null) ? 1 : 0);
+                    if (reg && ropeFreqs[l] != null) {
+                        GgufMetalBridge.registerRopeFreqs(l, ropeFreqs[l]);
+                    }
                     if (!reg) allLayersRegistered = false;
                 }
                 if (allLayersRegistered) {
@@ -623,6 +629,9 @@ final class GgufDecodeStep {
             long t0 = System.nanoTime();
             boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
             if (ok) {
+                if (System.getenv("ALJABR_DEBUG_LAYERS") != null && pos == 27) {
+                    forward(tokenId, pos, cache, false);
+                }
                 cache.advance();
                 long tElapsed = System.nanoTime() - t0;
                 if (pos % 10 == 0 || pos < 5) {
@@ -907,6 +916,11 @@ final class GgufDecodeStep {
             // If nextQkvReady is true, outScale was already applied on GPU in woFfnNextQkvFused.
             if (!nextQkvReady && !logitsComputed && outScale[layer] != 1.0f) {
                 GGUFVectorOps.scale(x, outScale[layer], dim);
+            }
+            if (System.getenv("ALJABR_DEBUG_LAYERS") != null && pos == 27) {
+                float sumSq = 0f;
+                for (float v : x) sumSq += v * v;
+                System.out.printf("[JAVA  L%02d] x[0]=%+.4f, norm=%.4f%n", layer, x[0], (float) Math.sqrt(sumSq));
             }
             if (pos == 25 && (layer == 0 || layer == 1 || layer == 24 || layer == layers - 1)) {
                 System.out.printf("[LAYER %d TIMING pos=%d] qkv=%.2fms attn=%.2fms wo=%.2fms ffn=%.2fms%n",

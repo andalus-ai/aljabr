@@ -383,6 +383,8 @@ void aljabr_metal_compile_runtime_pipelines(
       compile_pipeline(library, @"aljabr_flash_attention_kernel");
   pipelines->rope_single_token =
       compile_pipeline(library, @"aljabr_rope_single_token_kernel");
+  pipelines->rope_single_token_freqfact =
+      compile_pipeline(library, @"aljabr_rope_single_token_freqfact_kernel");
   pipelines->kv_store_flat =
       compile_pipeline(library, @"aljabr_kv_store_flat_kernel");
   pipelines->sdpa_flat =

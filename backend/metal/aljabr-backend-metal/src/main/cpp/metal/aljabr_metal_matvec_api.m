@@ -2630,6 +2630,9 @@ typedef struct {
   id<MTLBuffer> bufGate; size_t offGate;
   id<MTLBuffer> bufUp; size_t offUp;
   id<MTLBuffer> bufDown; size_t offDown;
+  // Optional rope_freqs.weight divisors (non-null only for layers that use proportional RoPE)
+  id<MTLBuffer> bufRopeFreqs;
+  uint32_t ropeFreqsLen;
 } DecodeLayerConfig;
 
 static DecodeLayerConfig g_decode_layers[MAX_DECODE_LAYERS];
@@ -2679,6 +2682,17 @@ int aljabr_metal_register_norm_buffer(int slot, const void *ptr, size_t bytes) {
   g_norm_buffers[slot] = wrap_ptr((void *)ptr, bytes);
   g_norm_buffer_bytes[slot] = bytes;
   return (g_norm_buffers[slot] != nil) ? 0 : -2;
+}
+
+int aljabr_metal_register_rope_freqs(int layer, const float *freqData, int freqLen) {
+  if (layer < 0 || layer >= MAX_DECODE_LAYERS || freqData == NULL || freqLen <= 0) return -1;
+  if (!g_initialized) return -1;
+  size_t bytes = (size_t)freqLen * sizeof(float);
+  id<MTLBuffer> buf = [g_device newBufferWithBytes:freqData length:bytes options:MTLResourceStorageModeShared];
+  if (buf == nil) return -2;
+  g_decode_layers[layer].bufRopeFreqs = buf;
+  g_decode_layers[layer].ropeFreqsLen = (uint32_t)freqLen;
+  return 0;
 }
 
 static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
@@ -2768,6 +2782,32 @@ static inline void encode_rope_single_token(
   [enc setBytes:&headDim  length:sizeof(headDim)  atIndex:2];
   [enc setBytes:&pos      length:sizeof(pos)      atIndex:3];
   [enc setBytes:&freqBase length:sizeof(freqBase) atIndex:4];
+  NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)total);
+  NSUInteger groups = (total + threads - 1) / threads;
+  [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+      threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+}
+
+static inline void encode_rope_single_token_freqfact(
+    id<MTLComputeCommandEncoder> enc,
+    id<MTLBuffer> bufX,
+    uint32_t nHeads, uint32_t headDim, uint32_t pos, float freqBase,
+    id<MTLBuffer> bufFreqFactors,
+    AljabrMetalPipelines *pipelines) {
+  if (bufFreqFactors == nil || pipelines->rope_single_token_freqfact == nil) {
+    encode_rope_single_token(enc, bufX, nHeads, headDim, pos, freqBase, pipelines);
+    return;
+  }
+  if (bufX == nil) return;
+  uint32_t half_dim = headDim / 2;
+  uint32_t total = nHeads * half_dim;
+  [enc setComputePipelineState:pipelines->rope_single_token_freqfact];
+  [enc setBuffer:bufX offset:0 atIndex:0];
+  [enc setBytes:&nHeads   length:sizeof(nHeads)   atIndex:1];
+  [enc setBytes:&headDim  length:sizeof(headDim)  atIndex:2];
+  [enc setBytes:&pos      length:sizeof(pos)      atIndex:3];
+  [enc setBytes:&freqBase length:sizeof(freqBase) atIndex:4];
+  [enc setBuffer:bufFreqFactors offset:0 atIndex:5];
   NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)total);
   NSUInteger groups = (total + threads - 1) / threads;
   [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
@@ -2864,7 +2904,19 @@ int aljabr_metal_decode_step(
       return -3;
     }
 
+    BOOL debugLayers = (getenv("ALJABR_DEBUG_LAYERS") != NULL && pos == 27);
     for (int l = 0; l < g_num_decode_layers; l++) {
+      if (debugLayers && l > 0) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        float *x_ptr = (float *)[g_woff_x contents];
+        float sumSq = 0.0f;
+        for (int k = 0; k < (int)(dimBytes / sizeof(float)); k++) sumSq += x_ptr[k] * x_ptr[k];
+        printf("[METAL L%02d] x[0]=%+.4f, norm=%.4f\n", l - 1, x_ptr[0], sqrtf(sumSq));
+        cmd = [g_queue commandBuffer];
+        enc = [cmd computeCommandEncoder];
+      }
       DecodeLayerConfig *cfg = &g_decode_layers[l];
       uint32_t nDim = (uint32_t)cfg->wO_N;
       uint32_t nFfn = (uint32_t)cfg->ffnDim;
@@ -2933,9 +2985,16 @@ int aljabr_metal_decode_step(
       }
 
       // 3. RoPE on Q and K
-      encode_rope_single_token(enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
-      if (cfg->wK) {
-        encode_rope_single_token(enc, g_woff_nextK, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
+      if (cfg->bufRopeFreqs != nil) {
+        encode_rope_single_token_freqfact(enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, cfg->bufRopeFreqs, pipelines);
+        if (cfg->wK) {
+          encode_rope_single_token_freqfact(enc, g_woff_nextK, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, cfg->bufRopeFreqs, pipelines);
+        }
+      } else {
+        encode_rope_single_token(enc, g_woff_nextQ, (uint32_t)cfg->nH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
+        if (cfg->wK) {
+          encode_rope_single_token(enc, g_woff_nextK, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)pos, cfg->freqBase, pipelines);
+        }
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
@@ -3042,6 +3101,18 @@ int aljabr_metal_decode_step(
             threadsPerThreadgroup:MTLSizeMake(th, 1, 1)];
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
+    }
+
+    if (debugLayers) {
+      [enc endEncoding];
+      [cmd commit];
+      [cmd waitUntilCompleted];
+      float *x_ptr = (float *)[g_woff_x contents];
+      float sumSq = 0.0f;
+      for (int k = 0; k < (int)(dimBytes / sizeof(float)); k++) sumSq += x_ptr[k] * x_ptr[k];
+      printf("[METAL L%02d] x[0]=%+.4f, norm=%.4f\n", g_num_decode_layers - 1, x_ptr[0], sqrtf(sumSq));
+      cmd = [g_queue commandBuffer];
+      enc = [cmd computeCommandEncoder];
     }
 
     // ── Final output logits projection ──────────────────────────────────────

@@ -222,6 +222,11 @@ int aljabr_metal_sync_kv_cache(int layer, int seqLen, const float *kData, const 
 int aljabr_metal_register_norm_buffer(int slot, const void *ptr, size_t bytes);
 
 /**
+ * Registers per-layer rope_freqs.weight divisor factors for proportional RoPE.
+ */
+int aljabr_metal_register_rope_freqs(int layer, const float *freqData, int freqLen);
+
+/**
  * Registers static weights and metadata for one decoder layer.
  */
 int aljabr_metal_register_decode_layer(

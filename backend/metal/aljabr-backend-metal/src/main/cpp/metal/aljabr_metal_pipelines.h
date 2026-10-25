@@ -83,6 +83,7 @@ typedef struct {
   __strong id<MTLComputePipelineState> decode_attention;
   __strong id<MTLComputePipelineState> flash_attention;
   __strong id<MTLComputePipelineState> rope_single_token;
+  __strong id<MTLComputePipelineState> rope_single_token_freqfact;
   __strong id<MTLComputePipelineState> kv_store_flat;
   __strong id<MTLComputePipelineState> sdpa_flat;
 } AljabrMetalPipelines;
