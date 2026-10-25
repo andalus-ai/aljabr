@@ -69,6 +69,10 @@ final class GgufDecodeStep {
     // Full-GPU single command buffer decode step available
     private final boolean canUseMetalDecodeStep;
 
+    // Once a token bypasses or fails the native step, the GPU KV cache may be stale.
+    // Keep subsequent tokens on the per-op path until this decoder is recreated.
+    private boolean metalDecodeRuntimeDisabled;
+
     /**
      * Explains why the native full-GPU decode path cannot be used before any
      * native buffers are registered. Kept pure so the eligibility policy can
@@ -86,6 +90,21 @@ final class GgufDecodeStep {
         }
         if (usesPerLayerTokenEmbeddings) {
             return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
+        }
+        return null;
+    }
+
+    /**
+     * Explains when runtime execution must stop using the native full-GPU path.
+     * If Java per-op execution advances the host KV cache, the separately
+     * allocated native cache cannot safely be reused without an explicit resync.
+     */
+    static String fullGpuDecodeRuntimeFallbackReason(boolean computeLogits, boolean nativeStepSucceeded) {
+        if (!computeLogits) {
+            return "logits were not requested; per-op decode would desynchronize the native KV cache";
+        }
+        if (!nativeStepSucceeded) {
+            return "native Metal decode-step invocation failed";
         }
         return null;
     }
@@ -721,6 +740,17 @@ final class GgufDecodeStep {
         return logits;
     }
 
+    private void disableMetalDecodeAfterRuntimeFallback(int pos, String reason) {
+        if (metalDecodeRuntimeDisabled) {
+            return;
+        }
+        metalDecodeRuntimeDisabled = true;
+        System.err.printf(
+                "[GgufDecodeStep] Full-GPU decode disabled after position %d: %s; "
+                        + "using per-op decode for remaining tokens to keep KV-cache state coherent.%n",
+                pos, reason);
+    }
+
     /** One token's forward pass with optional logit computation. */
     float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits) {
         int dim = cfg.embeddingDim();
@@ -730,20 +760,33 @@ final class GgufDecodeStep {
         int nEmbdPerLayer = cfg.nEmbdPerLayer();
         float eps = cfg.rmsNormEps();
 
-        if (canUseMetalDecodeStep && computeLogits) {
-            GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
-            if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
-                GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
-            }
-            long t0 = System.nanoTime();
-            boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
-            if (ok) {
-                cache.advance();
-                long tElapsed = System.nanoTime() - t0;
-                if (pos % 10 == 0 || pos < 5) {
-                    System.out.printf("[METAL DECODE %d] single cmd buffer step: %.2f ms%n", pos, tElapsed / 1e6);
+        if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
+            if (!computeLogits) {
+                // The per-op path below will write this token to the host KV cache,
+                // but not to the native cache. Do not reuse the stale native cache.
+                disableMetalDecodeAfterRuntimeFallback(
+                        pos, fullGpuDecodeRuntimeFallbackReason(false, true));
+            } else {
+                GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
+                if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
+                    GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
                 }
-                return this.logits;
+                long t0 = System.nanoTime();
+                boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
+                String fallbackReason = fullGpuDecodeRuntimeFallbackReason(true, ok);
+                if (fallbackReason == null) {
+                    cache.advance();
+                    long tElapsed = System.nanoTime() - t0;
+                    if (pos % 10 == 0 || pos < 5) {
+                        System.out.printf("[METAL DECODE %d] single cmd buffer step: %.2f ms%n", pos,
+                                tElapsed / 1e6);
+                    }
+                    return this.logits;
+                }
+                // A failed native step may have partially updated device buffers.
+                // Fall back for this token and keep all subsequent tokens off the
+                // native path rather than reading a potentially divergent KV cache.
+                disableMetalDecodeAfterRuntimeFallback(pos, fallbackReason);
             }
         }
 
