@@ -38,8 +38,17 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+// Show CSV output only for the opt-in native Metal benchmark. Regular test
+// runs keep Gradle's default output capture to avoid noisy successful tests.
+val metalBenchmarkEnabled = System.getenv("ALJABR_METAL_BENCH")?.let {
+    it == "1" || it.equals("true", ignoreCase = true)
+} ?: false
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    testLogging {
+        showStandardStreams = metalBenchmarkEnabled
+    }
 }
 
 publishing {
