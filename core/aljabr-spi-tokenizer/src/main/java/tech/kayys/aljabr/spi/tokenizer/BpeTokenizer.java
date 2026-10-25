@@ -228,6 +228,7 @@ public final class BpeTokenizer implements Tokenizer {
             Merge top = pq.poll();
             if (top.s1.deleted || top.s2.deleted) continue;
             if (top.s1.next != top.s2) continue;
+            if (!top.s1.text.equals(top.text1) || !top.s2.text.equals(top.text2)) continue; // stale entry
 
             // Perform merge
             String mergedText = top.s1.text + top.s2.text;
@@ -284,8 +285,12 @@ public final class BpeTokenizer implements Tokenizer {
     private static class Merge implements Comparable<Merge> {
         final Symbol s1, s2;
         final int rank;
+        // Text of each symbol when this merge was queued. A queued merge is stale (and must be
+        // skipped) once either symbol has since been merged into something else.
+        final String text1, text2;
         Merge(Symbol s1, Symbol s2, int rank) {
             this.s1 = s1; this.s2 = s2; this.rank = rank;
+            this.text1 = s1.text; this.text2 = s2.text;
         }
         @Override public int compareTo(Merge o) { return Integer.compare(this.rank, o.rank); }
     }

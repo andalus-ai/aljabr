@@ -100,17 +100,10 @@ public final class GgufMetalBridge {
 
         if (!disableMetal) {
             try {
-                // Ensure discovery checks for libaljabr_metal.dylib
-                String override = System.getProperty("aljabr.metal.dylib");
-                if (override == null || override.contains("libaqli_metal.dylib")) {
-                    String home = System.getProperty("user.home");
-                    if (home != null) {
-                        java.nio.file.Path p = java.nio.file.Path.of(home, ".aqli", "libs", "libaljabr_metal.dylib");
-                        if (java.nio.file.Files.exists(p)) {
-                            System.setProperty("aljabr.metal.dylib", p.toString());
-                        }
-                    }
-                }
+                // MetalLibraryDiscovery is the single source of truth for native
+                // library resolution. It prioritizes explicit overrides, local
+                // build outputs, and ~/.aljabr/libs. Do not force discovery into
+                // the legacy ~/.aqli location, which may contain stale binaries.
 
                 Class<?> mbClass = Class.forName("tech.kayys.aljabr.metal.binding.MetalBinding");
                 MethodHandles.Lookup lookup = MethodHandles.publicLookup();
