@@ -2914,7 +2914,6 @@ typedef struct {
   int hasQNorm;
   int hasKNorm;
   int hasUnitVNorm;
-  int kvLayerIndex;
   id<MTLBuffer> bufWQ;
   size_t offWQ;
   id<MTLBuffer> bufWK;
