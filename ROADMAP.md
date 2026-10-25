@@ -81,6 +81,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 ### Work
 
 - Use the Phase 0 diagnostics to identify the exact blocker for the target model/runtime; do not infer the blocker from a missing log line.
+- When the first generated token is implausible, inspect the *prefill* logits separately from the following native decode step: log the final hidden-state/normalized norms, non-finite counts, and top token logits under the existing `ALJABR_DEBUG_LAYERS` opt-in.
 - Keep full-GPU decode registration and runtime success distinct: a successful `ENABLED` line only confirms setup. A nonzero native step must log its return code and identify the exact failure stage (allocation, required buffers, KV-owner resolution/geometry, or command-buffer execution).
 - Trace eligibility from model metadata and weight registration through layer registration, KV-cache initialization, output-layer registration, and the first native decode step.
 - Address per-layer token embeddings deliberately:
@@ -99,6 +100,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 - On native decode failure, logs expose the native return code and specific Metal failure stage so a local reproduction can be diagnosed without rebuilding with an ad hoc patch.
 - On unsupported models, fallback is explicit and output remains correct.
 - For a fixed prompt and deterministic configuration, compare logits or token outputs with the established reference path. Document any expected numeric differences and tolerance.
+- For a prefill regression, record the top prefill token logits before sampling so template/sampler issues can be distinguished from tensor/kernel correctness issues.
 - Test at least one model with shared-KV layers and one model exercising the relevant embedding behavior before broadening eligibility.
 - A native failure before the first successful native token safely falls back; a failure after native-generated tokens aborts instead of returning potentially corrupted output. A caller that ignores logits still advances the GPU KV cache via the native step.
 
