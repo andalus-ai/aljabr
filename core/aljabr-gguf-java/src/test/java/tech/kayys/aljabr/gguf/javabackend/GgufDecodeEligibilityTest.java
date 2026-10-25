@@ -32,4 +32,23 @@ class GgufDecodeEligibilityTest {
     void returnsNoFailureWhenAllInitialEligibilityChecksPass() {
         assertNull(GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false));
     }
+
+    @Test
+    void disablesNativeDecodeWhenLogitsAreNotRequested() {
+        assertEquals(
+                "logits were not requested; per-op decode would desynchronize the native KV cache",
+                GgufDecodeStep.fullGpuDecodeRuntimeFallbackReason(false, true));
+    }
+
+    @Test
+    void disablesNativeDecodeAfterNativeStepFailure() {
+        assertEquals(
+                "native Metal decode-step invocation failed",
+                GgufDecodeStep.fullGpuDecodeRuntimeFallbackReason(true, false));
+    }
+
+    @Test
+    void retainsNativeDecodeWhenStepSucceedsAndLogitsAreRequested() {
+        assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFallbackReason(true, true));
+    }
 }
