@@ -3244,7 +3244,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
   if (!g_initialized || g_device == nil || g_queue == nil ||
       g_num_decode_layers == 0) {
     fprintf(stderr,
-            "[aljabr-metal] decode_step rejected pos=%d initialized=%d device=%d queue=%d registered_layers=%d\\n",
+            "[aljabr-metal] decode_step rejected pos=%d initialized=%d device=%d queue=%d registered_layers=%d\n",
             pos, (int)g_initialized, g_device != nil, g_queue != nil,
             g_num_decode_layers);
     return -1;
@@ -3263,13 +3263,13 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
   }
   if (!ensure_woff_dim_bufs(maxAttnBytes, dimBytes)) {
     fprintf(stderr,
-            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=dim attn_bytes=%zu dim_bytes=%zu\\n",
+            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=dim attn_bytes=%zu dim_bytes=%zu\n",
             pos, maxAttnBytes, dimBytes);
     return -2;
   }
   if (!ensure_woff_ffn_bufs(maxFfnBytes)) {
     fprintf(stderr,
-            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=ffn ffn_bytes=%zu\\n",
+            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=ffn ffn_bytes=%zu\n",
             pos, maxFfnBytes);
     return -2;
   }
@@ -3290,7 +3290,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
   }
   if (!ensure_woff_next_qkv(maxQ, maxK, maxV, dimBytes)) {
     fprintf(stderr,
-            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=next_qkv q_bytes=%zu k_bytes=%zu v_bytes=%zu dim_bytes=%zu\\n",
+            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=next_qkv q_bytes=%zu k_bytes=%zu v_bytes=%zu dim_bytes=%zu\n",
             pos, maxQ, maxK, maxV, dimBytes);
     return -2;
   }
@@ -3309,7 +3309,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
     id<MTLBuffer> bufKNormAll = g_norm_buffers[5];    // slot 5 = attnKNorm
     if (!bufAttnNormAll || !bufFfnNormAll) {
       fprintf(stderr,
-              "[aljabr-metal] decode_step missing required norm buffer pos=%d attn_norm=%d ffn_norm=%d\\n",
+              "[aljabr-metal] decode_step missing required norm buffer pos=%d attn_norm=%d ffn_norm=%d\n",
               pos, bufAttnNormAll != nil, bufFfnNormAll != nil);
       [enc endEncoding];
       return -3;
@@ -3453,7 +3453,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
       if (kvLayer < 0 || kvLayer >= g_kv_layers || hops > g_num_decode_layers ||
           !g_kv_k[kvLayer] || !g_kv_v[kvLayer]) {
         fprintf(stderr,
-                "[aljabr-metal] decode_step invalid KV owner pos=%d layer=%d configured_owner=%d resolved_owner=%d hops=%d decode_layers=%d kv_layers=%d K_buffer=%d V_buffer=%d\\n",
+                "[aljabr-metal] decode_step invalid KV owner pos=%d layer=%d configured_owner=%d resolved_owner=%d hops=%d decode_layers=%d kv_layers=%d K_buffer=%d V_buffer=%d\n",
                 pos, l, cfg->kvLayerIndex, kvLayer, hops, g_num_decode_layers,
                 g_kv_layers,
                 (kvLayer >= 0 && kvLayer < g_kv_layers && g_kv_k[kvLayer] != nil),
@@ -3466,7 +3466,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
       DecodeLayerConfig *kvCfg = &g_decode_layers[kvLayer];
       if (!kvCfg->wK || !kvCfg->wV) {
         fprintf(stderr,
-                "[aljabr-metal] decode_step KV owner has no K/V weights pos=%d layer=%d owner=%d hasK=%d hasV=%d\\n",
+                "[aljabr-metal] decode_step KV owner has no K/V weights pos=%d layer=%d owner=%d hasK=%d hasV=%d\n",
                 pos, l, kvLayer, kvCfg->wK != NULL, kvCfg->wV != NULL);
         [enc endEncoding];
         [cmd commit];
@@ -3478,7 +3478,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
           g_kv_stride[kvLayer] <
               (uint32_t)(cfg->nKVH * cfg->headDim)) {
         fprintf(stderr,
-                "[aljabr-metal] decode_step KV geometry mismatch pos=%d layer=%d owner=%d layer_head_dim=%d owner_head_dim=%d layer_kv_heads=%d owner_kv_heads=%d owner_stride=%u required_stride=%u\\n",
+                "[aljabr-metal] decode_step KV geometry mismatch pos=%d layer=%d owner=%d layer_head_dim=%d owner_head_dim=%d layer_kv_heads=%d owner_kv_heads=%d owner_stride=%u required_stride=%u\n",
                 pos, l, kvLayer, cfg->headDim, kvCfg->headDim, cfg->nKVH,
                 kvCfg->nKVH, g_kv_stride[kvLayer],
                 (uint32_t)(cfg->nKVH * cfg->headDim));
@@ -3668,7 +3668,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
       NSError *commandError = [cmd error];
       fprintf(stderr,
-              "[aljabr-metal] decode_step command buffer failed pos=%d status=%ld error_domain=%s error_code=%ld error=%s\\n",
+              "[aljabr-metal] decode_step command buffer failed pos=%d status=%ld error_domain=%s error_code=%ld error=%s\n",
               pos, (long)[cmd status],
               commandError != nil ? [[commandError domain] UTF8String] : "(none)",
               commandError != nil ? (long)[commandError code] : 0L,
