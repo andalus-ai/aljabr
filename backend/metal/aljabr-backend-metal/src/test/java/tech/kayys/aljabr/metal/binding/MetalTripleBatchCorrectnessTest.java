@@ -8,6 +8,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -91,6 +92,118 @@ class MetalTripleBatchCorrectnessTest {
                 }
             }
         }
+    }
+
+
+    @Test
+    void batchedMixedQuantizationMatchesRepeatedSingleRowCallsWithRepresentativeWeights() {
+        Path dylib = findBuiltDylib();
+        assumeTrue(dylib != null, "Native Metal dylib is not built in this checkout");
+
+        MetalBinding.reset();
+        assertTrue(MetalBinding.initialize(dylib));
+        MetalBinding binding = MetalBinding.getInstance();
+        assertEquals(0, binding.init());
+        assumeTrue(binding.isRuntimeActive(), "Native Metal runtime is not active");
+
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment input = arena.allocate((long) MAX_BATCH * K * Float.BYTES, 64);
+            MemorySegment batchOut0 = arena.allocate((long) MAX_BATCH * N0 * Float.BYTES, 64);
+            MemorySegment batchOut1 = arena.allocate((long) MAX_BATCH * N1 * Float.BYTES, 64);
+            MemorySegment batchOut2 = arena.allocate((long) MAX_BATCH * N2 * Float.BYTES, 64);
+
+            Random inputRandom = new Random(0xA1AB4L);
+            for (int i = 0; i < MAX_BATCH * K; i++) {
+                input.setAtIndex(ValueLayout.JAVA_FLOAT, i, inputRandom.nextFloat() * 2.0f - 1.0f);
+            }
+
+            MemorySegment weights0 = arena.allocate(q4KBytes(N0, K), 64);
+            MemorySegment weights1 = arena.allocate(q4KBytes(N1, K), 64);
+            MemorySegment weights2 = arena.allocate(q6KBytes(N2, K), 64);
+            fillQ4KWeights(weights0, N0, K, 0x4A401L);
+            fillQ4KWeights(weights1, N1, K, 0x4A402L);
+            fillQ6KWeights(weights2, N2, K, 0x6A403L);
+
+            MemorySegment ref0 = arena.allocate((long) N0 * Float.BYTES, 64);
+            MemorySegment ref1 = arena.allocate((long) N1 * Float.BYTES, 64);
+            MemorySegment ref2 = arena.allocate((long) N2 * Float.BYTES, 64);
+            long inputRowBytes = (long) K * Float.BYTES;
+
+            for (int batchSize : BATCH_SIZES) {
+                int batchRc = binding.matvecTransposedRightTripleBatch(
+                        batchOut0, batchOut1, batchOut2, input,
+                        weights0, weights1, weights2,
+                        K, N0, N1, N2,
+                        TYPE_Q4_K, TYPE_Q4_K, TYPE_Q6_K, batchSize);
+                assertEquals(0, batchRc,
+                        "Batched triple matvec failed for representative fixture batch=" + batchSize);
+
+                for (int row = 0; row < batchSize; row++) {
+                    MemorySegment inputRow = input.asSlice((long) row * inputRowBytes, inputRowBytes);
+                    int singleRc = binding.matvecTransposedRightTriple(
+                            ref0, ref1, ref2, inputRow,
+                            weights0, weights1, weights2,
+                            K, N0, N1, N2,
+                            TYPE_Q4_K, TYPE_Q4_K, TYPE_Q6_K);
+                    assertEquals(0, singleRc,
+                            "Single-row triple matvec failed for representative fixture batch="
+                                    + batchSize + ", row=" + row);
+
+                    assertRowClose("representative Q4_K output 0", batchOut0,
+                            (long) row * N0, ref0, N0, batchSize, row);
+                    assertRowClose("representative Q4_K output 1", batchOut1,
+                            (long) row * N1, ref1, N1, batchSize, row);
+                    assertRowClose("representative Q6_K output 2", batchOut2,
+                            (long) row * N2, ref2, N2, batchSize, row);
+                }
+            }
+        }
+    }
+
+    private static void fillQ4KWeights(MemorySegment weights, int n, int k, long seed) {
+        final int blockBytes = 144;
+        final int halfScale = 0x211f; // approximately 0.01 in IEEE-754 binary16
+        final int halfMinScale = 0x1d1f; // approximately 0.005 in IEEE-754 binary16
+        Random random = new Random(seed);
+        long blocks = (long) n * k / 256;
+
+        for (long block = 0; block < blocks; block++) {
+            long offset = block * blockBytes;
+            for (int i = 0; i < blockBytes; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i, (byte) random.nextInt(256));
+            }
+            // GGML Q4_K layout: d, dmin, 12 packed scale/min bytes, then 128 q bytes.
+            setHalfBits(weights, offset, halfScale);
+            setHalfBits(weights, offset + 2, halfMinScale);
+        }
+    }
+
+    private static void fillQ6KWeights(MemorySegment weights, int n, int k, long seed) {
+        final int blockBytes = 210;
+        final int scalesOffset = 192;
+        final int halfScale = 0x211f; // approximately 0.01 in IEEE-754 binary16
+        Random random = new Random(seed);
+        long blocks = (long) n * k / 256;
+
+        for (long block = 0; block < blocks; block++) {
+            long offset = block * blockBytes;
+            for (int i = 0; i < blockBytes; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i, (byte) random.nextInt(256));
+            }
+            // Bound signed sub-block scales while varying packed quantized values.
+            for (int i = 0; i < 16; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + scalesOffset + i,
+                        (byte) (random.nextInt(17) - 8));
+            }
+            // GGML Q6_K layout: ql[128], qh[64], scales[16], then d.
+            setHalfBits(weights, offset + 208, halfScale);
+        }
+    }
+
+    private static void setHalfBits(MemorySegment segment, long offset, int bits) {
+        // GGML quant blocks are little-endian on the supported Apple Silicon target.
+        segment.setAtIndex(ValueLayout.JAVA_BYTE, offset, (byte) (bits & 0xff));
+        segment.setAtIndex(ValueLayout.JAVA_BYTE, offset + 1, (byte) ((bits >>> 8) & 0xff));
     }
 
     private static void assertRowClose(
