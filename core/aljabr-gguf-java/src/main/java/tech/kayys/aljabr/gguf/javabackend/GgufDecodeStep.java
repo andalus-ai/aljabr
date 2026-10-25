@@ -250,12 +250,7 @@ final class GgufDecodeStep {
                                 : (1.0f / (float) Math.sqrt(layerHDim));
                     }
 
-                    // For layers without their own wK weights, the decode step must attend to
-                    // a previous layer's KV cache (Gemma 4 KV-sharing pattern).
-                    int kvLayerIndex = (wK[l] != null) ? l : Math.max(0, l - (cfg.isSwaLayer(l) ? 2 : 1));
-
-                    // Match Java decode's shared-KV selection for layers without their own
-                    // projections.
+                    // Select the KV cache owner for layers without independent K/V projections.
                     int kvLayerIndex = (wK[l] != null && wV[l] != null)
                             ? l
                             : Math.max(0, l - (isSwa ? 2 : 1));
@@ -265,7 +260,7 @@ final class GgufDecodeStep {
                             ffnGate[l], ffnUp[l], ffnDown[l],
                             n0, n1, n2, wO_K, wO_N, ffnIntermediate,
                             nH, layerNKVH, layerHDim, stride,
-                            layerRopeFreq, isSwa ? 1 : 0, kvLayerIndex,
+                            layerRopeFreq, isSwa ? 1 : 0,
                             outScale[l], attnScale,
                             postAttnNorm[l] != null ? 1 : 0,
                             postFfnNorm[l] != null ? 1 : 0,
