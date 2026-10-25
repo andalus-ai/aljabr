@@ -1,0 +1,96 @@
+name: Aljabr Metal Benchmark
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/metal-benchmark.yml"
+      - "backend/metal/aljabr-backend-metal/src/test/java/tech/kayys/aljabr/metal/binding/MetalTripleBatchBenchmarkTest.java"
+      - "backend/metal/aljabr-backend-metal/src/main/cpp/metal/**"
+      - "backend/metal/aljabr-backend-metal/build.gradle.kts"
+      - "gradle/**"
+      - "gradlew"
+      - "settings.gradle.kts"
+      - "build.gradle.kts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aljabr-metal-benchmark-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  triple-matvec-benchmark:
+    name: Triple-matvec batch benchmark (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Verify Apple Silicon and capture runner details
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "arm64"
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
+          system_profiler SPHardwareDataType | grep -E 'Chip|Model Name|Memory' || true
+          java -version
+
+      - name: Compile Objective-C Metal bridge
+        run: make -C backend/metal/aljabr-backend-metal/src/main/cpp/metal
+
+      - name: Run opt-in triple-matvec benchmark
+        env:
+          ALJABR_METAL_BENCH: "1"
+          GRADLE_OPTS: -Xmx3G
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace \
+            :backend:metal:aljabr-backend-metal:test \
+            --tests tech.kayys.aljabr.metal.binding.MetalTripleBatchBenchmarkTest
+
+      - name: Write benchmark environment metadata
+        if: always()
+        run: |
+          set -euo pipefail
+          report_dir="backend/metal/aljabr-backend-metal/build/reports"
+          mkdir -p "$report_dir"
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "event=${GITHUB_EVENT_NAME}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            echo "macos_version=$(sw_vers -productVersion)"
+            echo "hardware:"
+            system_profiler SPHardwareDataType 2>/dev/null | grep -E 'Chip|Model Name|Memory' || true
+            echo "java_version:"
+            java -version 2>&1 || true
+            echo "xcode_version:"
+            xcodebuild -version 2>&1 || true
+            echo "benchmark=MetalTripleBatchBenchmarkTest"
+            echo "batch_sizes=1,4,8,15,16,27"
+            echo "warmup_iterations=3"
+            echo "measured_iterations=12"
+          } > "$report_dir/metal-triple-batch-benchmark-environment.txt"
+
+      - name: Upload benchmark CSV and environment
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aljabr-metal-benchmark-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            backend/metal/aljabr-backend-metal/build/reports/metal-triple-batch-benchmark.csv
+            backend/metal/aljabr-backend-metal/build/reports/metal-triple-batch-benchmark-environment.txt
+            backend/metal/aljabr-backend-metal/build/test-results/test/**
+            backend/metal/aljabr-backend-metal/build/reports/tests/test/**
