@@ -6,16 +6,45 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class MetalBindingNativeFallbackTest {
+    @Test
+    void decodeLayerRegistrationKeepsSharedKvOwnerInStableAbiPosition() {
+        // The native ABI must begin with (layer, kvLayerIndex), followed by
+        // seven pointers, then metadata. In particular, kvLayerIndex must not
+        // be duplicated after isSwa: that would desynchronize FFM from C.
+        Class<?>[] expectedParameterTypes = {
+                int.class, int.class, // layer, kvLayerIndex
+                MemorySegment.class, MemorySegment.class, MemorySegment.class,
+                MemorySegment.class, MemorySegment.class, MemorySegment.class,
+                MemorySegment.class, // seven weight pointers
+                int.class, int.class, int.class, int.class, int.class, int.class, int.class,
+                int.class, int.class, int.class, int.class, int.class, int.class,
+                int.class, int.class, int.class, int.class,
+                float.class, int.class,
+                float.class, float.class,
+                int.class, int.class, int.class, int.class, int.class
+        };
+
+        List<Method> methods = Arrays.stream(MetalBinding.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals("registerDecodeLayer"))
+                .toList();
+
+        assertEquals(1, methods.size(), "registerDecodeLayer should have one stable entry point");
+        assertArrayEquals(expectedParameterTypes, methods.get(0).getParameterTypes());
+    }
+
     @Test
     void fallbackInitializationIsNotReportedAsActiveRuntime() {
         MetalBinding.reset();
