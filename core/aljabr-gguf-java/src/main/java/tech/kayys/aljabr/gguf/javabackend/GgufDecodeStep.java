@@ -69,6 +69,27 @@ final class GgufDecodeStep {
     // Full-GPU single command buffer decode step available
     private final boolean canUseMetalDecodeStep;
 
+    /**
+     * Explains why the native full-GPU decode path cannot be used before any
+     * native buffers are registered. Kept pure so the eligibility policy can
+     * be regression-tested without a GPU or a model file.
+     */
+    static String fullGpuDecodeEligibilityFailure(
+            boolean decodeDisabled,
+            boolean nativeDecodeAvailable,
+            boolean usesPerLayerTokenEmbeddings) {
+        if (decodeDisabled) {
+            return "disabled by -Daljabr.metal.decode.disable=true";
+        }
+        if (!nativeDecodeAvailable) {
+            return "native Metal decode-step entry point is unavailable";
+        }
+        if (usesPerLayerTokenEmbeddings) {
+            return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
+        }
+        return null;
+    }
+
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
         this.model = model;
         this.cfg = cfg;
@@ -211,18 +232,23 @@ final class GgufDecodeStep {
             GgufMetalBridge.ensureModelRegistered(model);
         }
 
-        // Initialize full-GPU decode step pipeline if supported
-        boolean eligible = !Boolean.getBoolean("aljabr.metal.decode.disable")
-                && GgufMetalBridge.isDecodeStepAvailable()
-                && (perLayerTokEmbd == null || nEmbdPerLayer <= 0);
-        for (int l = 0; l < layers && eligible; l++) {
+        // Initialize full-GPU decode step pipeline if supported. Keep the
+        // existing per-layer-embedding guard: the native step does not yet run
+        // the model's per-layer embedding projections.
+        boolean decodeDisabled = Boolean.getBoolean("aljabr.metal.decode.disable");
+        boolean nativeDecodeAvailable = !decodeDisabled && GgufMetalBridge.isDecodeStepAvailable();
+        boolean usesPerLayerTokenEmbeddings = perLayerTokEmbd != null && nEmbdPerLayer > 0;
+        String metalDecodeSkipReason = fullGpuDecodeEligibilityFailure(
+                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings);
+
+        for (int l = 0; l < layers && metalDecodeSkipReason == null; l++) {
             if (wQ[l] == null || wO[l] == null || ffnUp[l] == null || ffnDown[l] == null) {
-                eligible = false;
+                metalDecodeSkipReason = "layer " + l + " is missing a required Q/O/FFN weight";
             }
         }
 
         boolean metalDecodeActive = false;
-        if (eligible) {
+        if (metalDecodeSkipReason == null) {
             int[] strides = new int[layers];
             for (int i = 0; i < layers; i++) {
                 int layerNKVH = cfg.nKVHeadsForLayer(i);
@@ -231,6 +257,7 @@ final class GgufDecodeStep {
             }
             if (GgufMetalBridge.initKVCache(layers, cfg.contextLength(), strides)) {
                 boolean allLayersRegistered = true;
+                int failedRegistrationLayer = -1;
                 for (int l = 0; l < layers && allLayersRegistered; l++) {
                     int layerNKVH = cfg.nKVHeadsForLayer(l);
                     int layerHDim = cfg.headDimForLayer(l);
@@ -270,19 +297,35 @@ final class GgufDecodeStep {
                     if (reg && ropeFreqs[l] != null) {
                         GgufMetalBridge.registerRopeFreqs(l, ropeFreqs[l]);
                     }
-                    if (!reg)
+                    if (!reg) {
                         allLayersRegistered = false;
+                        failedRegistrationLayer = l;
+                    }
                 }
                 if (allLayersRegistered) {
                     metalDecodeActive = GgufMetalBridge.registerOutput(
                             model, outputNorm, outputWeight, dim, cfg.vocabSize(), cfg.finalLogitSoftcap());
+                    if (!metalDecodeActive) {
+                        metalDecodeSkipReason = "native output/logits registration failed";
+                    }
+                } else {
+                    metalDecodeSkipReason = "native decode-layer registration failed at layer "
+                            + failedRegistrationLayer;
                 }
+            } else {
+                metalDecodeSkipReason = "native KV-cache initialization failed";
             }
         }
         this.canUseMetalDecodeStep = metalDecodeActive;
         if (metalDecodeActive) {
             System.out.println(
                     "[GgufDecodeStep] Full-GPU single command buffer decode step ENABLED (" + layers + " layers).");
+        } else {
+            if (metalDecodeSkipReason == null) {
+                metalDecodeSkipReason = "unknown eligibility or registration failure";
+            }
+            System.out.println("[GgufDecodeStep] Full-GPU single command buffer decode step UNAVAILABLE: "
+                    + metalDecodeSkipReason + "; using the existing per-op decode path.");
         }
     }
 
