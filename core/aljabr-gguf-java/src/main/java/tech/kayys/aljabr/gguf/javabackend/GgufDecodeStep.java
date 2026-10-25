@@ -238,8 +238,11 @@ final class GgufDecodeStep {
                         attnScale = (attnQNorm[l] != null || attnKNorm[l] != null) ? 1.0f : (1.0f / (float) Math.sqrt(layerHDim));
                     }
 
+                    // Match Java decode's shared-KV selection for layers without their own projections.
+                    int kvLayerIndex = (wK[l] != null && wV[l] != null)
+                            ? l : Math.max(0, l - (isSwa ? 2 : 1));
                     boolean reg = GgufMetalBridge.registerDecodeLayer(
-                            l, model,
+                            l, kvLayerIndex, model,
                             wQ[l], wK[l], wV[l], wO[l],
                             ffnGate[l], ffnUp[l], ffnDown[l],
                             n0, n1, n2, wO_K, wO_N, ffnIntermediate,
@@ -393,16 +396,20 @@ final class GgufDecodeStep {
                         dispatchMatVec(wQ[layer], xbL, qLocal);
                     }
                     System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
-                    System.arraycopy(kLocal, 0, allK, t * kvDim, kvDim);
-                    System.arraycopy(vLocal, 0, allV, t * kvDim, kvDim);
+                    if (wK[layer] != null && wV[layer] != null) {
+                        System.arraycopy(kLocal, 0, allK, t * kvDim, kvDim);
+                        System.arraycopy(vLocal, 0, allV, t * kvDim, kvDim);
+                    }
                 }
             }
             long tQkv = System.nanoTime() - tQkv0;
 
             for (int t = 0; t < T; t++) {
                 System.arraycopy(allQ, t * qDim, qLocal, 0, qDim);
-                System.arraycopy(allK, t * kvDim, kLocal, 0, kvDim);
-                System.arraycopy(allV, t * kvDim, vLocal, 0, kvDim);
+                if (wK[layer] != null && wV[layer] != null) {
+                    System.arraycopy(allK, t * kvDim, kLocal, 0, kvDim);
+                    System.arraycopy(allV, t * kvDim, vLocal, 0, kvDim);
+                }
 
                 if (attnQNorm[layer] != null) {
                     int qNormLen = attnQNorm[layer].length;
@@ -414,7 +421,7 @@ final class GgufDecodeStep {
                 System.arraycopy(qLocal, 0, Qall[t], 0, qDim);
                 System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
 
-                if (wK[layer] != null) {
+                if (wK[layer] != null && wV[layer] != null) {
                     if (attnKNorm[layer] != null) {
                         int kNormLen = attnKNorm[layer].length;
                         for (int kvH = 0; kvH < layerNKVH; kvH++) {
