@@ -26,13 +26,15 @@ record GgufModelConfig(
         int eosTokenId,
         int[] nKVHeadsPerLayer, // null when uniform; non-null when heterogeneous
         int[] headDimPerLayer,  // null when uniform; non-null when heterogeneous
+        int ropeDimensionCount, // rotary dimensions for global/full-attention layers; 0 means architecture default
+        int ropeDimensionCountSwa, // rotary dimensions for SWA layers; 0 means architecture default
         int[] swaPattern,       // 1=SWA, 0=global per layer
         int slidingWindow,      // sliding window size (e.g. 1024 / 512, 0 if disabled)
         int nEmbdPerLayer,      // per-layer token embedding dimension (0 if absent)
         float finalLogitSoftcap,// softcapping factor (0 if disabled)
         float attentionScale,   // explicit attention scale factor (<= 0 for 1/sqrt(headDim))
         float embeddingScale,   // token embedding multiplier (e.g. sqrt(dim) or 1.0)
-        boolean hasUnitVNorm,   // whether V has unscaled/unit RMSNorm (when attn_v_norm tensor is absent)
+        boolean hasUnitVNorm,   // whether V has unscaled/unit RMSNorm (no learnable scale tensor)
         boolean isGeGLU,        // whether FFN uses GeGLU vs SwiGLU
         boolean isGemma4        // backward compatibility convenience flag
 ) {
@@ -54,6 +56,8 @@ record GgufModelConfig(
 
         int[] nKVHPerLayer  = intListMeta(meta, arch, "attention.head_count_kv");
         int[] swaPattern    = intListMeta(meta, arch, "attention.sliding_window_pattern");
+        int ropeDimensionCount = intMeta(meta, arch, "rope.dimension_count", 0);
+        int ropeDimensionCountSwa = intMeta(meta, arch, "rope.dimension_count_swa", 0);
         int slidingWindow   = intMeta(meta, arch, "attention.sliding_window", 0);
         int nEmbdPerLayer   = intMeta(meta, arch, "embedding_length_per_layer", 0);
         int[] headDimPerLyr = null;
@@ -122,6 +126,8 @@ record GgufModelConfig(
                 intMeta(meta, arch, "tokenizer.eos_token_id", intOf(meta, "tokenizer.ggml.eos_token_id", 2)),
                 nKVHPerLayer,
                 headDimPerLyr,
+                ropeDimensionCount,
+                ropeDimensionCountSwa,
                 swaPattern,
                 slidingWindow,
                 nEmbdPerLayer,
@@ -154,6 +160,48 @@ record GgufModelConfig(
         return false;
     }
 
+    int rotaryDimForLayer(int layer) {
+        int layerHeadDim = headDimForLayer(layer);
+        return resolveRotaryDimension(
+                architecture,
+                isSwaLayer(layer),
+                layerHeadDim,
+                isSwaLayer(layer) ? ropeDimensionCountSwa : ropeDimensionCount);
+    }
+
+    /**
+     * Resolves the number of head dimensions that participate in RoPE.
+     *
+     * GGUF metadata takes precedence. Gemma 4's architecture default uses full
+     * rotary dimensions for sliding-window layers and one quarter of the head
+     * dimension for global-attention layers (proportional RoPE).
+     */
+    static int resolveRotaryDimension(
+            String architecture, boolean swaLayer, int headDim, int configuredDimension) {
+        if (headDim <= 0) {
+            throw new IllegalArgumentException("headDim must be positive");
+        }
+
+        int resolved;
+        if (configuredDimension > 0) {
+            resolved = Math.min(headDim, configuredDimension);
+        } else if ("gemma4".equalsIgnoreCase(architecture)) {
+            resolved = swaLayer ? headDim : Math.max(2, (headDim / 4) & ~1);
+        } else {
+            resolved = headDim;
+        }
+
+        // RoPE rotates pairs of dimensions, so an odd configuration cannot be
+        // applied as-is. Keep the nearest lower even dimension.
+        if ((resolved & 1) != 0) {
+            resolved--;
+        }
+        if (resolved < 2) {
+            throw new IllegalArgumentException("rotary dimension must be at least 2");
+        }
+        return resolved;
+    }
+
     float ropeFreqBaseForLayer(int layer) {
         if (isSwaLayer(layer)) {
             return ropeFreqBaseSwa;
@@ -184,9 +232,8 @@ record GgufModelConfig(
         if (v instanceof List<?> list && !list.isEmpty()) {
             int[] arr = new int[list.size()];
             for (int i = 0; i < list.size(); i++) {
-                Object item = list.get(i);
-                if (item instanceof Number n) arr[i] = n.intValue();
-                else if (item instanceof Boolean b) arr[i] = b ? 1 : 0;
+                if (list.get(i) instanceof Number n) arr[i] = n.intValue();
+                else if (list.get(i) instanceof Boolean b) arr[i] = b ? 1 : 0;
             }
             return arr;
         }
