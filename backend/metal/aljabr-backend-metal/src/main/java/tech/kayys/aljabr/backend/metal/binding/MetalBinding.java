@@ -1028,7 +1028,7 @@ public class MetalBinding {
             int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
             int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
             int nH, int nKVH, int headDim, int stride,
-            float freqBase, int isSwa, int kvLayerIndex,
+            float freqBase, int isSwa,
             float outScale, float attnScale,
             int hasPostAttnNorm, int hasPostFfnNorm,
             int hasQNorm, int hasKNorm, int hasUnitVNorm) {
@@ -1041,7 +1041,7 @@ public class MetalBinding {
                 typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,
                 n0, n1, n2, wO_K, wO_N, ffnDim,
                 nH, nKVH, headDim, stride,
-                freqBase, isSwa, kvLayerIndex,
+                freqBase, isSwa,
                 outScale, attnScale,
                 hasPostAttnNorm, hasPostFfnNorm,
                 hasQNorm, hasKNorm, hasUnitVNorm);
