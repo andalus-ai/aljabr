@@ -1790,7 +1790,7 @@ public class MetalBinding {
                 ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
 
         bind(FN_REGISTER_DECODE_LAYER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
-                ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
