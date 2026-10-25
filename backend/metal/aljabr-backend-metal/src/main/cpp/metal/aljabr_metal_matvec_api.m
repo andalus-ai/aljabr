@@ -3027,6 +3027,12 @@ int aljabr_metal_decode_step(
         return -4;
       }
       DecodeLayerConfig *kvCfg = &g_decode_layers[kvLayer];
+      if (!kvCfg->wK || !kvCfg->wV) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        return -4;
+      }
       if (kvCfg->headDim != cfg->headDim ||
           g_kv_stride[kvLayer] < (uint32_t)(kvCfg->nKVH * kvCfg->headDim)) {
         [enc endEncoding];
