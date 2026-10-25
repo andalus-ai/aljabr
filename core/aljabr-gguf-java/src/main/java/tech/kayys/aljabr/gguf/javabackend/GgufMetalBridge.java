@@ -1834,9 +1834,16 @@ public final class GgufMetalBridge {
                 MemorySegment.copy(segLogits, ValueLayout.JAVA_FLOAT, 0, logits, 0, vocab);
                 return true;
             }
+            LOG.warning(String.format(
+                    "[GgufMetalBridge] Native decodeStep returned rc=%d at pos=%d (slidingWindow=%d, dim=%d, vocab=%d); see preceding [aljabr-metal] diagnostic for the failure stage.",
+                    rc, pos, slidingWindow, dim, vocab));
             return false;
         } catch (Throwable t) {
-            LOG.log(Level.WARNING, "Failed in decodeStep: " + t.getMessage(), t);
+            LOG.log(Level.WARNING,
+                    "[GgufMetalBridge] decodeStep threw at pos=" + pos
+                            + " slidingWindow=" + slidingWindow
+                            + " dim=" + (x != null ? x.length : -1)
+                            + " vocab=" + (logits != null ? logits.length : -1), t);
             return false;
         }
     }
