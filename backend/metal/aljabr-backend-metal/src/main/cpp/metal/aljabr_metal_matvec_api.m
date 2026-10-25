@@ -3010,15 +3010,25 @@ int aljabr_metal_decode_step(
 
       // 5. Resolve the actual KV source (shared-KV layers may not own a cache).
       int kvLayer = cfg->kvLayerIndex;
-      if (kvLayer < 0 || kvLayer >= g_kv_layers || !g_kv_k[kvLayer] || !g_kv_v[kvLayer]) {
+      // Shared layers may point at another shared layer. Follow the chain to the
+      // cache owner so we never read an unpopulated per-layer allocation.
+      int hops = 0;
+      while (kvLayer >= 0 && kvLayer < g_num_decode_layers && hops++ < g_num_decode_layers) {
+        DecodeLayerConfig *candidate = &g_decode_layers[kvLayer];
+        if (candidate->wK && candidate->wV) break;
+        if (candidate->kvLayerIndex == kvLayer) break;
+        kvLayer = candidate->kvLayerIndex;
+      }
+      if (kvLayer < 0 || kvLayer >= g_kv_layers || hops > g_num_decode_layers ||
+          !g_kv_k[kvLayer] || !g_kv_v[kvLayer]) {
         [enc endEncoding];
         [cmd commit];
         [cmd waitUntilCompleted];
         return -4;
       }
       DecodeLayerConfig *kvCfg = &g_decode_layers[kvLayer];
-      if (kvCfg->nKVH != cfg->nKVH || kvCfg->headDim != cfg->headDim ||
-          g_kv_stride[kvLayer] < (uint32_t)(cfg->nKVH * cfg->headDim)) {
+      if (kvCfg->headDim != cfg->headDim ||
+          g_kv_stride[kvLayer] < (uint32_t)(kvCfg->nKVH * kvCfg->headDim)) {
         [enc endEncoding];
         [cmd commit];
         [cmd waitUntilCompleted];
