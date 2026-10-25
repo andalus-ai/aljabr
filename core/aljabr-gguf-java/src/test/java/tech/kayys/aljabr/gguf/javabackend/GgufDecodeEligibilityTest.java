@@ -29,8 +29,16 @@ class GgufDecodeEligibilityTest {
     }
 
     @Test
+    void refusesFullGpuDecodeWhenModelUsesPartialRotaryDimensions() {
+        assertEquals(
+                "model uses per-layer partial RoPE, which the native full-GPU decode step does not implement",
+                GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false, true));
+    }
+
+    @Test
     void returnsNoFailureWhenAllInitialEligibilityChecksPass() {
         assertNull(GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false));
+        assertNull(GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false, false));
     }
 
     @Test
