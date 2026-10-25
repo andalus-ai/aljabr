@@ -114,6 +114,19 @@ final class GgufDecodeStep {
         return "native Metal decode-step failed before any native token was committed; per-op fallback is safe";
     }
 
+    /**
+     * Prompt KV synchronization happens before generation and before the native
+     * decoder has committed any token. If any layer fails to sync, the populated
+     * host cache remains the safe source of truth for per-op decoding.
+     */
+    static String fullGpuDecodeKvCacheSyncFailureReason(int failedLayer) {
+        if (failedLayer < 0) {
+            return null;
+        }
+        return "Metal KV-cache sync failed at layer " + failedLayer
+                + " before generation; host KV cache is intact and per-op fallback is safe";
+    }
+
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
         this.model = model;
         this.cfg = cfg;
@@ -714,15 +727,21 @@ final class GgufDecodeStep {
         // the same data as the source layer they share (kvLayerIndex). Sync that source
         // data
         // into Metal buffer l so the decode step SDPA reads correct prefill KV.
-        if (canUseMetalDecodeStep) {
+        if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
             for (int l = 0; l < layers; l++) {
+                boolean synced;
                 if (wK[l] != null) {
                     // Layer has its own KV; sync directly.
-                    GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
+                    synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
                 } else {
                     // KV-sharing layer: sync source layer's data into Metal buffer l.
                     int src = Math.max(0, l - (cfg.isSwaLayer(l) ? 2 : 1));
-                    GgufMetalBridge.syncKVCache(l, T, cache.kLayer(src), cache.vLayer(src));
+                    synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(src), cache.vLayer(src));
+                }
+                if (!synced) {
+                    String reason = fullGpuDecodeKvCacheSyncFailureReason(l);
+                    disableMetalDecodeAfterRuntimeFallback(T, reason);
+                    break;
                 }
             }
         }
