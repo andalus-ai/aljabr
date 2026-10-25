@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""
+Generates tiny random decoder checkpoints in HuggingFace safetensors layout plus
+expected logits computed by an INDEPENDENT numpy reference of the HF equations
+(full-sequence forward, not an incremental KV-cache loop), so the pure-Java
+safetensors engine can be checked numerically without downloading a model.
+
+Also generates a byte-level BPE tokenizer.json (via the official `tokenizers`
+library) with expected ids, to validate HfTokenizerLoader against the reference
+implementation.
+
+    pip install numpy safetensors tokenizers ml_dtypes
+    python3 scripts/gen_tiny_safetensor_fixtures.py core/aljabr-safetensor-java/src/test/resources/fixtures
+"""
+import json
+import os
+import sys
+
+import ml_dtypes
+import numpy as np
+from safetensors.numpy import save_file
+
+OUT = sys.argv[1] if len(sys.argv) > 1 else "fixtures"
+
+
+# ----------------------------------------------------------------- reference model
+def rms_norm(x, w, eps):
+    var = np.mean(x.astype(np.float32) ** 2, axis=-1, keepdims=True)
+    return (x * (1.0 / np.sqrt(var + eps))) * w
+
+
+def inv_freq(head_dim, theta, rope):
+    f = 1.0 / (theta ** (np.arange(0, head_dim, 2, dtype=np.float64) / head_dim))
+    if rope is None:
+        return f
+    t = rope.get("rope_type", rope.get("type", "default"))
+    if t == "linear":
+        return f / rope["factor"]
+    if t == "llama3":
+        factor, lo, hi, old = rope["factor"], rope["low_freq_factor"], rope["high_freq_factor"], rope["original_max_position_embeddings"]
+        low_wl, high_wl = old / lo, old / hi
+        wl = 2 * np.pi / f
+        out = np.where(wl > low_wl, f / factor, f)
+        smooth = (old / wl - lo) / (hi - lo)
+        smoothed = (1 - smooth) * out / factor + smooth * out
+        medium = ~(wl < high_wl) & ~(wl > low_wl)
+        return np.where(medium, smoothed, out)
+    raise ValueError(t)
+
+
+def rotate_half(x):
+    h = x.shape[-1] // 2
+    return np.concatenate([-x[..., h:], x[..., :h]], axis=-1)
+
+
+def reference_logits(w, cfg, tokens, prefix="model."):
+    H, nh, nkv, hd = cfg["hidden_size"], cfg["num_attention_heads"], cfg["num_key_value_heads"], cfg["head_dim"]
+    eps = cfg["rms_norm_eps"]
+    T = len(tokens)
+    rope = cfg.get("rope_scaling")
+    freqs = inv_freq(hd, cfg["rope_theta"], rope)
+    ang = np.outer(np.arange(T), freqs)                       # [T, hd/2]
+    emb = np.concatenate([ang, ang], axis=-1)                 # [T, hd]
+    cos, sin = np.cos(emb).astype(np.float32), np.sin(emb).astype(np.float32)
+
+    x = w[prefix + "embed_tokens.weight"][tokens].astype(np.float32)   # [T, H]
+    for l in range(cfg["num_hidden_layers"]):
+        p = f"{prefix}layers.{l}."
+        h = rms_norm(x, w[p + "input_layernorm.weight"], eps)
+        q = h @ w[p + "self_attn.q_proj.weight"].T
+        k = h @ w[p + "self_attn.k_proj.weight"].T
+        v = h @ w[p + "self_attn.v_proj.weight"].T
+        if p + "self_attn.q_proj.bias" in w:
+            q = q + w[p + "self_attn.q_proj.bias"]
+            k = k + w[p + "self_attn.k_proj.bias"]
+            v = v + w[p + "self_attn.v_proj.bias"]
+        q = q.reshape(T, nh, hd)
+        k = k.reshape(T, nkv, hd)
+        v = v.reshape(T, nkv, hd)
+        if p + "self_attn.q_norm.weight" in w:
+            q = rms_norm(q, w[p + "self_attn.q_norm.weight"], eps)
+            k = rms_norm(k, w[p + "self_attn.k_norm.weight"], eps)
+        q = q * cos[:, None, :] + rotate_half(q) * sin[:, None, :]
+        k = k * cos[:, None, :] + rotate_half(k) * sin[:, None, :]
+        rep = nh // nkv
+        k = np.repeat(k, rep, axis=1)
+        v = np.repeat(v, rep, axis=1)
+        scores = np.einsum("tnd,snd->nts", q, k) / np.sqrt(hd)
+        mask = np.triu(np.ones((T, T), dtype=bool), 1)
+        scores = np.where(mask[None], -1e30, scores)
+        scores = scores - scores.max(-1, keepdims=True)
+        probs = np.exp(scores)
+        probs = probs / probs.sum(-1, keepdims=True)
+        ctx = np.einsum("nts,snd->tnd", probs, v).reshape(T, nh * hd)
+        x = x + ctx @ w[p + "self_attn.o_proj.weight"].T
+        h = rms_norm(x, w[p + "post_attention_layernorm.weight"], eps)
+        g = h @ w[p + "mlp.gate_proj.weight"].T
+        u = h @ w[p + "mlp.up_proj.weight"].T
+        x = x + ((g / (1.0 + np.exp(-g))) * u) @ w[p + "mlp.down_proj.weight"].T
+    x = rms_norm(x, w[prefix + "norm.weight"], eps)
+    head = w["lm_head.weight"] if "lm_head.weight" in w else w[prefix + "embed_tokens.weight"]
+    return x @ head.T
+
+
+# ----------------------------------------------------------------- fixture builder
+def make_weights(rng, cfg, bias, qk_norm, tied, scale=0.08):
+    H, nh, nkv, hd, I, V = (cfg[k] for k in ("hidden_size", "num_attention_heads", "num_key_value_heads", "head_dim", "intermediate_size", "vocab_size"))
+    r = lambda *s: (rng.standard_normal(s) * scale).astype(np.float32)
+    norm = lambda n: (1.0 + rng.standard_normal(n) * 0.1).astype(np.float32)
+    w = {"model.embed_tokens.weight": r(V, H), "model.norm.weight": norm(H)}
+    if not tied:
+        w["lm_head.weight"] = r(V, H)
+    for l in range(cfg["num_hidden_layers"]):
+        p = f"model.layers.{l}."
+        w[p + "input_layernorm.weight"] = norm(H)
+        w[p + "post_attention_layernorm.weight"] = norm(H)
+        w[p + "self_attn.q_proj.weight"] = r(nh * hd, H)
+        w[p + "self_attn.k_proj.weight"] = r(nkv * hd, H)
+        w[p + "self_attn.v_proj.weight"] = r(nkv * hd, H)
+        w[p + "self_attn.o_proj.weight"] = r(H, nh * hd)
+        w[p + "mlp.gate_proj.weight"] = r(I, H)
+        w[p + "mlp.up_proj.weight"] = r(I, H)
+        w[p + "mlp.down_proj.weight"] = r(H, I)
+        if bias:
+            w[p + "self_attn.q_proj.bias"] = r(nh * hd) * 4
+            w[p + "self_attn.k_proj.bias"] = r(nkv * hd) * 4
+            w[p + "self_attn.v_proj.bias"] = r(nkv * hd) * 4
+        if qk_norm:
+            w[p + "self_attn.q_norm.weight"] = norm(hd)
+            w[p + "self_attn.k_norm.weight"] = norm(hd)
+    return w
+
+
+def quantize(w, dtype):
+    """Round weights to the storage dtype and return (stored, as_float32_for_reference)."""
+    np_dt = {"F32": np.float32, "F16": np.float16, "BF16": ml_dtypes.bfloat16}[dtype]
+    stored = {k: v.astype(np_dt) for k, v in w.items()}
+    return stored, {k: v.astype(np.float32) for k, v in stored.items()}
+
+
+def write_fixture(name, cfg, dtype, shards, seed, bias=False, qk_norm=False, tied=False, tokens=(1, 5, 9, 33, 2, 60, 17)):
+    d = os.path.join(OUT, name)
+    os.makedirs(d, exist_ok=True)
+    rng = np.random.default_rng(seed)
+    w = make_weights(rng, cfg, bias, qk_norm, tied)
+    stored, ref_w = quantize(w, dtype)
+    names = sorted(stored)
+    if shards == 1:
+        save_file(stored, os.path.join(d, "model.safetensors"))
+    else:
+        weight_map, per = {}, [dict() for _ in range(shards)]
+        for i, n in enumerate(names):
+            per[i % shards][n] = stored[n]
+            weight_map[n] = f"model-{i % shards + 1:05d}-of-{shards:05d}.safetensors"
+        for s in range(shards):
+            save_file(per[s], os.path.join(d, f"model-{s + 1:05d}-of-{shards:05d}.safetensors"))
+        with open(os.path.join(d, "model.safetensors.index.json"), "w") as f:
+            json.dump({"metadata": {}, "weight_map": weight_map}, f)
+    full_cfg = dict(cfg, model_type="llama", tie_word_embeddings=tied, hidden_act="silu")
+    with open(os.path.join(d, "config.json"), "w") as f:
+        json.dump(full_cfg, f, indent=1)
+    logits = reference_logits(ref_w, cfg, list(tokens))
+    with open(os.path.join(d, "expected.json"), "w") as f:
+        json.dump({"tokens": list(tokens), "logits": logits.tolist()}, f)
+    print(f"  {name}: dtype={dtype} shards={shards} tensors={len(stored)} logits{logits.shape}")
+
+
+def base_cfg(**kw):
+    c = dict(hidden_size=32, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2, head_dim=8,
+             intermediate_size=48, vocab_size=64, max_position_embeddings=128, rms_norm_eps=1e-5, rope_theta=10000.0)
+    c.update(kw)
+    return c
+
+
+def tokenizer_fixture():
+    from tokenizers import Tokenizer, models, pre_tokenizers, decoders, trainers
+    d = os.path.join(OUT, "tok_bytelevel")
+    os.makedirs(d, exist_ok=True)
+    tok = Tokenizer(models.BPE())
+    tok.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    tok.decoder = decoders.ByteLevel()
+    corpus = [
+        "Hello, who are you? I am a small language model.",
+        "The quick brown fox jumps over the lazy dog. 12345 times!",
+        "def add(a, b):\n    return a + b\n",
+        "Caf\u00e9 cr\u00e8me, na\u00efve fa\u00e7ade, \u4f60\u597d\u4e16\u754c, \u3053\u3093\u306b\u3061\u306f",
+        "<|im_start|>user\nWhat is 2 + 2?<|im_end|>\n<|im_start|>assistant\n",
+    ] * 20
+    trainer = trainers.BpeTrainer(vocab_size=420, special_tokens=["<|endoftext|>", "<|im_start|>", "<|im_end|>"],
+                                  initial_alphabet=pre_tokenizers.ByteLevel.alphabet())
+    tok.train_from_iterator(corpus, trainer)
+    tok.save(os.path.join(d, "tokenizer.json"))
+    with open(os.path.join(d, "tokenizer_config.json"), "w") as f:
+        json.dump({"add_bos_token": False, "eos_token": "<|endoftext|>"}, f)
+    with open(os.path.join(d, "config.json"), "w") as f:
+        json.dump({"model_type": "llama", "eos_token_id": 0}, f)
+    cases = ["Hello, who are you?", "The quick brown fox", " leading space", "newline\nhere\n\nand two",
+             "Caf\u00e9 na\u00efve \u4f60\u597d", "<|im_start|>user\nHi there<|im_end|>\n<|im_start|>assistant\n",
+             "numbers 12345 and 7", "def add(a, b):\n    return a + b", "don't can't it's"]
+    out = []
+    for t in cases:
+        enc = tok.encode(t)
+        out.append({"text": t, "ids": enc.ids, "decoded": tok.decode(enc.ids, skip_special_tokens=False)})
+    with open(os.path.join(d, "expected.json"), "w") as f:
+        json.dump(out, f)
+    print(f"  tok_bytelevel: vocab={tok.get_vocab_size()} cases={len(cases)}")
+
+
+if __name__ == "__main__":
+    print("writing fixtures to", OUT)
+    write_fixture("llama_f32", base_cfg(), "F32", 1, seed=1)
+    write_fixture("qwen_like_bf16_sharded_tied", base_cfg(head_dim=16, rope_theta=1000000.0), "BF16", 2, seed=2,
+                  bias=True, qk_norm=True, tied=True)
+    write_fixture("llama3_rope_f16", base_cfg(max_position_embeddings=64, rope_scaling=dict(
+        rope_type="llama3", factor=8.0, low_freq_factor=1.0, high_freq_factor=4.0, original_max_position_embeddings=64)),
+        "F16", 1, seed=3, tokens=tuple(range(1, 40, 3)))
+    write_fixture("linear_rope_f32", base_cfg(rope_scaling=dict(rope_type="linear", factor=4.0)), "F32", 1, seed=4)
+    tokenizer_fixture()
