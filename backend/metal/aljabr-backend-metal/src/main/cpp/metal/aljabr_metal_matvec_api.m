@@ -3395,7 +3395,10 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 4. Store K and V to KV cache at position pos
-      if (g_kv_k[l] && g_kv_v[l]) {
+      // Only layers with their own K/V projections may write this layer's
+      // cache. Shared-KV layers leave g_woff_nextK/V untouched and must not
+      // store stale values left over from a previous layer.
+      if (cfg->wK && cfg->wV && g_kv_k[l] && g_kv_v[l]) {
         encode_kv_store_flat(enc, g_kv_k[l], g_woff_nextK, (uint32_t)pos,
                              (uint32_t)cfg->stride, pipelines);
         encode_kv_store_flat(enc, g_kv_v[l], g_woff_nextV, (uint32_t)pos,
@@ -3432,7 +3435,9 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
         return -4;
       }
       if (kvCfg->headDim != cfg->headDim ||
-          g_kv_stride[kvLayer] < (uint32_t)(kvCfg->nKVH * kvCfg->headDim)) {
+          kvCfg->nKVH != cfg->nKVH ||
+          g_kv_stride[kvLayer] <
+              (uint32_t)(cfg->nKVH * cfg->headDim)) {
         [enc endEncoding];
         [cmd commit];
         [cmd waitUntilCompleted];
@@ -3451,9 +3456,13 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
                     ? 1.0f
                     : (1.0f / sqrtf((float)cfg->headDim));
       }
-      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[l], g_kv_v[l],
-                       (uint32_t)cfg->nH, (uint32_t)cfg->nKVH,
-                       (uint32_t)cfg->headDim, (uint32_t)cfg->stride,
+      // Attend to the resolved KV owner, not the current layer's cache.
+      // Layers without K/V projections do not append the current position to
+      // their own cache, so reading g_kv_k[l]/g_kv_v[l] omits the new token.
+      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ,
+                       g_kv_k[kvLayer], g_kv_v[kvLayer],
+                       (uint32_t)cfg->nH, (uint32_t)kvCfg->nKVH,
+                       (uint32_t)cfg->headDim, g_kv_stride[kvLayer],
                        (uint32_t)pos, startPos, scale, 0.0f, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
