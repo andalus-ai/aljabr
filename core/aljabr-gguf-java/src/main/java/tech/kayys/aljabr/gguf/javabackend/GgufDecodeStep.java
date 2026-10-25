@@ -267,11 +267,17 @@ final class GgufDecodeStep {
                             attnQNorm[l] != null ? 1 : 0,
                             attnKNorm[l] != null ? 1 : 0,
                             (cfg.hasUnitVNorm() || attnVNorm[l] != null) ? 1 : 0);
+                    boolean ropeFreqsRegistered = ropeFreqs[l] == null;
                     if (reg && ropeFreqs[l] != null) {
-                        GgufMetalBridge.registerRopeFreqs(l, ropeFreqs[l]);
+                        ropeFreqsRegistered = GgufMetalBridge.registerRopeFreqs(l, ropeFreqs[l]);
                     }
-                    if (!reg)
+                    if (!decodeLayerRegistrationComplete(reg, ropeFreqs[l], ropeFreqsRegistered)) {
+                        if (reg && ropeFreqs[l] != null && !ropeFreqsRegistered) {
+                            System.err.println("[GgufDecodeStep] Failed to register proportional RoPE frequencies for layer "
+                                    + l + "; disabling Metal decode to preserve correctness.");
+                        }
                         allLayersRegistered = false;
+                    }
                 }
                 if (allLayersRegistered) {
                     metalDecodeActive = GgufMetalBridge.registerOutput(
@@ -1191,4 +1197,13 @@ final class GgufDecodeStep {
         GgufTensorOps.dequantizeRow(model, tensor, 0L, out);
         return out;
     }
+    /**
+     * A layer is eligible for full-Metal decode only when its layer metadata and
+     * every required optional RoPE buffer were registered successfully.
+     */
+    static boolean decodeLayerRegistrationComplete(
+            boolean layerRegistered, float[] layerRopeFreqs, boolean ropeFreqsRegistered) {
+        return layerRegistered && (layerRopeFreqs == null || ropeFreqsRegistered);
+    }
+
 }
