@@ -3457,7 +3457,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
                        (uint32_t)pos, startPos, scale, 0.0f, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      if (pos == 27 && l == 0) {
+      if (debugLayers && l == 0) {
         [enc endEncoding];
         [cmd commit];
         [cmd waitUntilCompleted];
@@ -3619,7 +3619,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
     if (logits_out != NULL && g_buf_output_logits != nil) {
       memcpy(logits_out, [g_buf_output_logits contents],
              (size_t)g_output_N * sizeof(float));
-      if (pos == 27) {
+      if (debugLayers) {
         int best = 0;
         for (int i = 1; i < (int)g_output_N; i++)
           if (logits_out[i] > logits_out[best])
