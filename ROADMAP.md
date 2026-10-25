@@ -58,7 +58,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 
 - Complete review and validation of PR #33's Q4_K/Q4_K/Q6_K triple-matvec parity coverage, including batch sizes 4, 8, 15, and 27 where supported.
 - **Current blocker:** Apple Silicon CI now exposes the mismatch precisely: Q4_K output 0 at batch 27, row 15 returned `-0.0625` instead of `0.0078125` (tolerance `2e-3`). A conservative dispatch guard caps the specialized B4 Q4_K/Q6_K kernels at batch 15 and routes larger batches through the existing MR8/MR4 path. This is a correctness mitigation, not proof that the B4 large-batch kernel is fixed; retain that follow-up as open work.
-- Complete review and validation of PR #34's opt-in CSV benchmark output.
+- Extend the opt-in CSV benchmark through batch 16 (the first size above the B4 cutoff) and batch 27 (the prompt-prefill workload) to quantify the guarded MR8/MR4 route.
 - Keep single-row native operations as the reference when testing batched implementations.
 - Exercise finite-output checks, relative-error limits, edge dimensions, alignment/stride assumptions, and quantization-block boundaries.
 - Preserve shared-KV regression coverage: KV-owner resolution, owner geometry, cache stride, cache writes, and reads must all agree.
