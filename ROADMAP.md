@@ -81,6 +81,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 ### Work
 
 - Use the Phase 0 diagnostics to identify the exact blocker for the target model/runtime; do not infer the blocker from a missing log line.
+- When the first generated token is implausible, inspect the *prefill* logits separately from the following native decode step: log the final hidden-state/normalized norms, non-finite counts, and top token logits under the existing `ALJABR_DEBUG_LAYERS` opt-in.
 - Keep full-GPU decode registration and runtime success distinct: a successful `ENABLED` line only confirms setup. A nonzero native step must log its return code and identify the exact failure stage (allocation, required buffers, KV-owner resolution/geometry, or command-buffer execution).
 - Trace eligibility from model metadata and weight registration through layer registration, KV-cache initialization, output-layer registration, and the first native decode step.
 - Address per-layer token embeddings deliberately:
