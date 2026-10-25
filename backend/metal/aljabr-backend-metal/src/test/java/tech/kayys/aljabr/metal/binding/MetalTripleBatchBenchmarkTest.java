@@ -3,6 +3,10 @@ package tech.kayys.aljabr.metal.binding;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Locale;
 
@@ -35,7 +39,7 @@ class MetalTripleBatchBenchmarkTest {
     private static final int[] BATCH_SIZES = {1, 4, 8, 15};
 
     @Test
-    void reportsWarmTripleBatchLatencyAndThroughput() {
+    void reportsWarmTripleBatchLatencyAndThroughput() throws IOException {
         assumeTrue(benchmarkEnabled(),
                 "Set ALJABR_METAL_BENCH=1 to run the native Metal performance benchmark");
 
@@ -70,7 +74,9 @@ class MetalTripleBatchBenchmarkTest {
                     "ALJABR_METAL_TRIPLE_BENCH shape=K:%d,N:%d/%d/%d types:%d/%d/%d warmup:%d measured:%d%n",
                     K, N0, N1, N2, TYPE_Q4_K, TYPE_Q4_K, TYPE_Q6_K,
                     WARMUP_ITERATIONS, MEASURED_ITERATIONS);
-            System.out.println("batch,mean_ms,median_ms,p90_ms,mean_ms_per_item,items_per_second");
+            String header = "batch,mean_ms,median_ms,p90_ms,mean_ms_per_item,items_per_second";
+            System.out.println(header);
+            StringBuilder csv = new StringBuilder(header).append(System.lineSeparator());
 
             for (int batchSize : BATCH_SIZES) {
                 for (int i = 0; i < WARMUP_ITERATIONS; i++) {
@@ -98,10 +104,30 @@ class MetalTripleBatchBenchmarkTest {
                 double itemsPerSecond = batchSize * MEASURED_ITERATIONS * 1_000_000_000.0
                         / totalNanos;
 
-                System.out.printf(Locale.ROOT, "%d,%.3f,%.3f,%.3f,%.3f,%.1f%n",
+                String row = String.format(Locale.ROOT, "%d,%.3f,%.3f,%.3f,%.3f,%.1f",
                         batchSize, meanMs, medianMs, p90Ms, perItemMs, itemsPerSecond);
+                System.out.println(row);
+                csv.append(row).append(System.lineSeparator());
+            }
+
+            Path reportPath = repositoryRoot().resolve(
+                    "backend/metal/aljabr-backend-metal/build/reports/metal-triple-batch-benchmark.csv");
+            Files.createDirectories(reportPath.getParent());
+            Files.writeString(reportPath, csv.toString(), StandardCharsets.UTF_8);
+            System.err.println("Aljabr Metal benchmark CSV: " + reportPath);
+        }
+    }
+
+    private static Path repositoryRoot() {
+        Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
+        for (Path candidate = current; candidate != null; candidate = candidate.getParent()) {
+            if (Files.isRegularFile(candidate.resolve("settings.gradle.kts"))
+                    && Files.isRegularFile(candidate.resolve("gradlew"))) {
+                return candidate;
             }
         }
+        throw new IllegalStateException("Could not find the Aljabr repository root from "
+                + current);
     }
 
     private static int invoke(
