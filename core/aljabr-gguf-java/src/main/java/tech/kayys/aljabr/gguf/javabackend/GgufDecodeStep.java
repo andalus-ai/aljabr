@@ -78,6 +78,16 @@ final class GgufDecodeStep {
     private boolean metalDecodeRequiresRestart;
 
     /**
+     * A key projection means this layer owns its KV entries. Gemma 4 can omit
+     * {@code attn_v.weight}; in that case the projected key is reused as the
+     * value input, but the layer still owns its KV cache. Do not misclassify
+     * such layers as cross-layer KV-sharing layers during prefill.
+     */
+    static boolean hasOwnKvCache(boolean hasKeyProjection) {
+        return hasKeyProjection;
+    }
+
+    /**
      * Explains why the native full-GPU decode path cannot be used before any
      * native buffers are registered. Kept pure so the eligibility policy can
      * be regression-tested without a GPU or a model file.
@@ -523,7 +533,7 @@ final class GgufDecodeStep {
 
             int qDim = nH * layerHDim;
             int kvDim = layerNKVH * layerHDim;
-            boolean hasOwnKv = wK[layer] != null && wV[layer] != null;
+            boolean hasOwnKv = hasOwnKvCache(wK[layer] != null);
             int kvLayerToUse = hasOwnKv ? layer
                     : Math.max(0, layer - (isSwa ? 2 : 1));
             int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
@@ -547,7 +557,7 @@ final class GgufDecodeStep {
                         dispatchMatVec(wQ[layer], xbL, qLocal);
                     }
                     System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
-                    if (wK[layer] != null && wV[layer] != null) {
+                    if (hasOwnKv) {
                         System.arraycopy(kLocal, 0, allK, t * kvDim, kvDim);
                         System.arraycopy(vLocal, 0, allV, t * kvDim, kvDim);
                     }
@@ -557,7 +567,7 @@ final class GgufDecodeStep {
 
             for (int t = 0; t < T; t++) {
                 System.arraycopy(allQ, t * qDim, qLocal, 0, qDim);
-                if (wK[layer] != null && wV[layer] != null) {
+                if (hasOwnKv) {
                     System.arraycopy(allK, t * kvDim, kLocal, 0, kvDim);
                     System.arraycopy(allV, t * kvDim, vLocal, 0, kvDim);
                 }
@@ -573,7 +583,7 @@ final class GgufDecodeStep {
                 System.arraycopy(qLocal, 0, Qall[t], 0, qDim);
                 System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
 
-                if (wK[layer] != null && wV[layer] != null) {
+                if (hasOwnKv) {
                     if (attnKNorm[layer] != null) {
                         int kNormLen = attnKNorm[layer].length;
                         for (int kvH = 0; kvH < layerNKVH; kvH++) {

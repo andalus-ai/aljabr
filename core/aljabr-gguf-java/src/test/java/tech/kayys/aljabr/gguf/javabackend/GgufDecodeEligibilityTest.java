@@ -3,9 +3,18 @@ package tech.kayys.aljabr.gguf.javabackend;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class GgufDecodeEligibilityTest {
+
+    @Test
+    void keyProjectionOwnsKvCacheEvenWhenValueProjectionIsOmitted() {
+        // Gemma 4 may reuse K as V when attn_v.weight is absent.
+        assertTrue(GgufDecodeStep.hasOwnKvCache(true));
+        assertFalse(GgufDecodeStep.hasOwnKvCache(false));
+    }
 
     @Test
     void reportsExplicitlyDisabledDecodePath() {
