@@ -27,8 +27,8 @@ class MetalTripleBatchCorrectnessTest {
     private static final int N2 = 2048;
     private static final int TYPE_Q4_K = 12;
     private static final int TYPE_Q6_K = 14;
-    private static final int MAX_BATCH = 15;
-    private static final int[] BATCH_SIZES = {4, 8, 15};
+    private static final int MAX_BATCH = 27;
+    private static final int[] BATCH_SIZES = {4, 8, 15, 27};
     private static final float RELATIVE_TOLERANCE = 2.0e-3f;
 
     @Test
