@@ -235,6 +235,30 @@ final class GgufDecodeStep {
             }
         }
 
+        // Opt-in layer-shape diagnostics verify architecture-specific RoPE dimensions
+        // on the actual loaded GGUF, especially for Gemma 4's local/global attention mix.
+        if (System.getenv("ALJABR_DEBUG_LAYERS") != null) {
+            int previousHeadDim = -1;
+            int previousRotaryDim = -1;
+            boolean previousSwa = false;
+            for (int layer = 0; layer < layers; layer++) {
+                int layerHeadDim = cfg.headDimForLayer(layer);
+                int rotaryDim = cfg.rotaryDimForLayer(layer);
+                boolean swa = cfg.isSwaLayer(layer);
+                if (layer == 0 || layerHeadDim != previousHeadDim
+                        || rotaryDim != previousRotaryDim || swa != previousSwa) {
+                    System.out.printf(
+                            "[JAVA ROPE CONFIG] layer=%d attention=%s head_dim=%d rotary_dim=%d rope_base=%.1f freq_factors=%d%n",
+                            layer, swa ? "swa" : "global", layerHeadDim, rotaryDim,
+                            cfg.ropeFreqBaseForLayer(layer),
+                            ropeFreqs[layer] == null ? 0 : ropeFreqs[layer].length);
+                }
+                previousHeadDim = layerHeadDim;
+                previousRotaryDim = rotaryDim;
+                previousSwa = swa;
+            }
+        }
+
         // Register static layer norms on GPU bridge once to enable zero-copy decode
         // slices
         if (GgufMetalBridge.isAvailable()) {
