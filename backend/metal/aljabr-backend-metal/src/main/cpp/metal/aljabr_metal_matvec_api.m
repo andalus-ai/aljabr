@@ -2623,6 +2623,7 @@ typedef struct {
   int hasQNorm;
   int hasKNorm;
   int hasUnitVNorm;
+  int kvLayerIndex;
   id<MTLBuffer> bufWQ; size_t offWQ;
   id<MTLBuffer> bufWK; size_t offWK;
   id<MTLBuffer> bufWV; size_t offWV;
@@ -2704,7 +2705,7 @@ static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
 }
 
 int aljabr_metal_register_decode_layer(
-    int layer,
+    int layer, int kvLayerIndex,
     const void *wQ, const void *wK, const void *wV, const void *wO,
     const void *gate, const void *up, const void *down,
     int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
@@ -2716,8 +2717,10 @@ int aljabr_metal_register_decode_layer(
     int hasQNorm, int hasKNorm, int hasUnitVNorm
 ) {
   if (layer < 0 || layer >= MAX_DECODE_LAYERS) return -1;
+  if (kvLayerIndex < 0 || kvLayerIndex >= MAX_DECODE_LAYERS || kvLayerIndex > layer) return -1;
   if (layer >= g_num_decode_layers) g_num_decode_layers = layer + 1;
   DecodeLayerConfig *cfg = &g_decode_layers[layer];
+  cfg->kvLayerIndex = kvLayerIndex;
   cfg->wQ = wQ; cfg->wK = wK; cfg->wV = wV; cfg->wO = wO;
   cfg->gate = gate; cfg->up = up; cfg->down = down;
   cfg->typeQ = typeQ; cfg->typeK = typeK; cfg->typeV = typeV; cfg->typeWO = typeWO;
@@ -2998,14 +3001,31 @@ int aljabr_metal_decode_step(
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      // 4. Store K and V to KV cache at position pos
-      if (g_kv_k[l] && g_kv_v[l]) {
+      // 4. Only layers with independent K/V projections write their own cache.
+      if (cfg->wK && cfg->wV && g_kv_k[l] && g_kv_v[l]) {
         encode_kv_store_flat(enc, g_kv_k[l], g_woff_nextK, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
         encode_kv_store_flat(enc, g_kv_v[l], g_woff_nextV, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 
-      // 5. SDPA attention -> g_woff_attnFull
+      // 5. Resolve the actual KV source (shared-KV layers may not own a cache).
+      int kvLayer = cfg->kvLayerIndex;
+      if (kvLayer < 0 || kvLayer >= g_kv_layers || !g_kv_k[kvLayer] || !g_kv_v[kvLayer]) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        return -4;
+      }
+      DecodeLayerConfig *kvCfg = &g_decode_layers[kvLayer];
+      if (kvCfg->nKVH != cfg->nKVH || kvCfg->headDim != cfg->headDim ||
+          g_kv_stride[kvLayer] < (uint32_t)(cfg->nKVH * cfg->headDim)) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        return -5;
+      }
+
+      // 6. SDPA attention -> g_woff_attnFull
       uint32_t seqLen = (uint32_t)(pos + 1);
       uint32_t startPos = 0;
       if (cfg->isSwa && slidingWindow > 0 && seqLen > (uint32_t)slidingWindow) {
@@ -3015,9 +3035,9 @@ int aljabr_metal_decode_step(
       if (scale <= 0.0f) {
         scale = (cfg->hasQNorm || cfg->hasKNorm) ? 1.0f : (1.0f / sqrtf((float)cfg->headDim));
       }
-      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[l], g_kv_v[l],
-                       (uint32_t)cfg->nH, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)cfg->stride,
-                       (uint32_t)pos, startPos, scale, 0.0f, pipelines);
+      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[kvLayer], g_kv_v[kvLayer],
+                       (uint32_t)cfg->nH, (uint32_t)kvCfg->nKVH, (uint32_t)cfg->headDim,
+                       g_kv_stride[kvLayer], (uint32_t)pos, startPos, scale, 0.0f, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 6. xb = wO(attnFull)
