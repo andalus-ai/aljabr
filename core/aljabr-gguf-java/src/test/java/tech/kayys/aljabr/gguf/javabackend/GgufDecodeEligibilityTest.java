@@ -34,21 +34,22 @@ class GgufDecodeEligibilityTest {
     }
 
     @Test
-    void disablesNativeDecodeWhenLogitsAreNotRequested() {
+    void allowsPerOpFallbackWhenTheFirstNativeDecodeStepFails() {
         assertEquals(
-                "logits were not requested; per-op decode would desynchronize the native KV cache",
-                GgufDecodeStep.fullGpuDecodeRuntimeFallbackReason(false, true));
+                "native Metal decode-step failed before any native token was committed; per-op fallback is safe",
+                GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(false, false));
     }
 
     @Test
-    void disablesNativeDecodeAfterNativeStepFailure() {
+    void requiresDecoderRestartWhenNativeDecodeFailsAfterEarlierNativeTokens() {
         assertEquals(
-                "native Metal decode-step invocation failed",
-                GgufDecodeStep.fullGpuDecodeRuntimeFallbackReason(true, false));
+                "native Metal decode-step failed after prior native tokens; the host KV cache is incomplete",
+                GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(false, true));
     }
 
     @Test
-    void retainsNativeDecodeWhenStepSucceedsAndLogitsAreRequested() {
-        assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFallbackReason(true, true));
+    void hasNoRuntimeFailureReasonWhenNativeDecodeSucceeds() {
+        assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(true, false));
+        assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(true, true));
     }
 }
