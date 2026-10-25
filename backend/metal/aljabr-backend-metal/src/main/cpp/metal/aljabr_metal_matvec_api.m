@@ -2633,6 +2633,9 @@ typedef struct {
   // Optional rope_freqs.weight divisors (non-null only for layers that use proportional RoPE)
   id<MTLBuffer> bufRopeFreqs;
   uint32_t ropeFreqsLen;
+  // Index of the KV cache layer to attend to. Equals 'layer' when this layer has its own
+  // wK/wV weights; equals a previous layer index when wK==NULL (Gemma 4 KV-sharing).
+  int kvLayerIndex;
 } DecodeLayerConfig;
 
 static DecodeLayerConfig g_decode_layers[MAX_DECODE_LAYERS];
@@ -2710,7 +2713,7 @@ int aljabr_metal_register_decode_layer(
     int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
     int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
     int nH, int nKVH, int headDim, int stride,
-    float freqBase, int isSwa,
+    float freqBase, int isSwa, int kvLayerIndex,
     float outScale, float attnScale,
     int hasPostAttnNorm, int hasPostFfnNorm,
     int hasQNorm, int hasKNorm, int hasUnitVNorm
@@ -2726,6 +2729,7 @@ int aljabr_metal_register_decode_layer(
   cfg->wO_K = wO_K; cfg->wO_N = wO_N; cfg->ffnDim = ffnDim;
   cfg->nH = nH; cfg->nKVH = nKVH; cfg->headDim = headDim; cfg->stride = stride;
   cfg->freqBase = freqBase; cfg->isSwa = isSwa;
+  cfg->kvLayerIndex = (kvLayerIndex >= 0 && kvLayerIndex < MAX_DECODE_LAYERS) ? kvLayerIndex : layer;
   cfg->outScale = outScale; cfg->attnScale = attnScale;
   cfg->hasPostAttnNorm = hasPostAttnNorm; cfg->hasPostFfnNorm = hasPostFfnNorm;
   cfg->hasQNorm = hasQNorm; cfg->hasKNorm = hasKNorm;
@@ -2998,14 +3002,34 @@ int aljabr_metal_decode_step(
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      // 4. Store K and V to KV cache at position pos
-      if (g_kv_k[l] && g_kv_v[l]) {
-        encode_kv_store_flat(enc, g_kv_k[l], g_woff_nextK, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
-        encode_kv_store_flat(enc, g_kv_v[l], g_woff_nextV, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
+      if (pos == 27 && l == 0) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        float *q_ptr = (float *)[g_woff_nextQ contents];
+        float *k_ptr = (float *)[g_woff_nextK contents];
+        float *v_ptr = (float *)[g_woff_nextV contents];
+        float qNorm = 0, kNorm = 0, vNorm = 0;
+        for (int i = 0; i < (int)cfg->n0; i++) qNorm += q_ptr[i] * q_ptr[i];
+        for (int i = 0; i < (int)cfg->n1; i++) kNorm += k_ptr[i] * k_ptr[i];
+        for (int i = 0; i < (int)cfg->n2; i++) vNorm += v_ptr[i] * v_ptr[i];
+        printf("[METAL L00 PRE-SDPA] q[0]=%+.4f norm=%.4f | k[0]=%+.4f norm=%.4f | v[0]=%+.4f norm=%.4f\n",
+            q_ptr[0], sqrtf(qNorm), k_ptr[0], sqrtf(kNorm), v_ptr[0], sqrtf(vNorm));
+        cmd = [g_queue commandBuffer];
+        enc = [cmd computeCommandEncoder];
+      }
+
+      // 4. Store K and V to KV cache at position pos — only if this layer owns its KV weights.
+      //    Layers with wK==NULL share a previous layer's KV cache (kvLayerIndex < l).
+      int kvIdx = cfg->kvLayerIndex;
+      if (cfg->wK && g_kv_k[kvIdx] && g_kv_v[kvIdx]) {
+        encode_kv_store_flat(enc, g_kv_k[kvIdx], g_woff_nextK, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
+        encode_kv_store_flat(enc, g_kv_v[kvIdx], g_woff_nextV, (uint32_t)pos, (uint32_t)cfg->stride, pipelines);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 
       // 5. SDPA attention -> g_woff_attnFull
+      //    Read KV from kvIdx (may differ from l when wK==NULL / KV is shared from a previous layer).
       uint32_t seqLen = (uint32_t)(pos + 1);
       uint32_t startPos = 0;
       if (cfg->isSwa && slidingWindow > 0 && seqLen > (uint32_t)slidingWindow) {
@@ -3015,10 +3039,23 @@ int aljabr_metal_decode_step(
       if (scale <= 0.0f) {
         scale = (cfg->hasQNorm || cfg->hasKNorm) ? 1.0f : (1.0f / sqrtf((float)cfg->headDim));
       }
-      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[l], g_kv_v[l],
+      encode_sdpa_flat(enc, g_woff_attnFull, g_woff_nextQ, g_kv_k[kvIdx], g_kv_v[kvIdx],
                        (uint32_t)cfg->nH, (uint32_t)cfg->nKVH, (uint32_t)cfg->headDim, (uint32_t)cfg->stride,
                        (uint32_t)pos, startPos, scale, 0.0f, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+
+      if (pos == 27 && l == 0) {
+        [enc endEncoding];
+        [cmd commit];
+        [cmd waitUntilCompleted];
+        float *a_ptr = (float *)[g_woff_attnFull contents];
+        float aNorm = 0;
+        for (int i = 0; i < (int)(cfg->nH * cfg->headDim); i++) aNorm += a_ptr[i] * a_ptr[i];
+        printf("[METAL L00 POST-SDPA] attn[0]=%+.4f norm=%.4f\n", a_ptr[0], sqrtf(aNorm));
+        cmd = [g_queue commandBuffer];
+        enc = [cmd computeCommandEncoder];
+      }
 
       // 6. xb = wO(attnFull)
       encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_attnFull, cfg->wO, kDim, nDim, cfg->typeWO, 1);
@@ -3145,6 +3182,12 @@ int aljabr_metal_decode_step(
 
     if (logits_out != NULL && g_buf_output_logits != nil) {
       memcpy(logits_out, [g_buf_output_logits contents], (size_t)g_output_N * sizeof(float));
+      if (pos == 27) {
+        int best = 0;
+        for (int i = 1; i < (int)g_output_N; i++) if (logits_out[i] > logits_out[best]) best = i;
+        printf("[METAL LOGITS pos=27] argmax=%d score=%.4f (target 236828 score=%.4f, 236772 score=%.4f)\n",
+            best, logits_out[best], logits_out[236828], logits_out[236772]);
+      }
     }
     return 0;
   }

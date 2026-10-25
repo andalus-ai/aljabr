@@ -238,13 +238,17 @@ final class GgufDecodeStep {
                         attnScale = (attnQNorm[l] != null || attnKNorm[l] != null) ? 1.0f : (1.0f / (float) Math.sqrt(layerHDim));
                     }
 
+                    // For layers without their own wK weights, the decode step must attend to
+                    // a previous layer's KV cache (Gemma 4 KV-sharing pattern).
+                    int kvLayerIndex = (wK[l] != null) ? l : Math.max(0, l - (cfg.isSwaLayer(l) ? 2 : 1));
+
                     boolean reg = GgufMetalBridge.registerDecodeLayer(
                             l, model,
                             wQ[l], wK[l], wV[l], wO[l],
                             ffnGate[l], ffnUp[l], ffnDown[l],
                             n0, n1, n2, wO_K, wO_N, ffnIntermediate,
                             nH, layerNKVH, layerHDim, stride,
-                            layerRopeFreq, isSwa ? 1 : 0,
+                            layerRopeFreq, isSwa ? 1 : 0, kvLayerIndex,
                             outScale[l], attnScale,
                             postAttnNorm[l] != null ? 1 : 0,
                             postFfnNorm[l] != null ? 1 : 0,
@@ -587,10 +591,20 @@ final class GgufDecodeStep {
         // Advance KV cache past all prefill tokens
         for (int t = 0; t < T; t++) cache.advance();
 
-        // If Metal decode step is active, sync prompt KV cache to GPU
+        // If Metal decode step is active, sync prompt KV cache to GPU.
+        // For layers without own wK weights (wK[l]==null), their Metal KV buffer must contain
+        // the same data as the source layer they share (kvLayerIndex). Sync that source data
+        // into Metal buffer l so the decode step SDPA reads correct prefill KV.
         if (canUseMetalDecodeStep) {
             for (int l = 0; l < layers; l++) {
-                GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
+                if (wK[l] != null) {
+                    // Layer has its own KV; sync directly.
+                    GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
+                } else {
+                    // KV-sharing layer: sync source layer's data into Metal buffer l.
+                    int src = Math.max(0, l - (cfg.isSwaLayer(l) ? 2 : 1));
+                    GgufMetalBridge.syncKVCache(l, T, cache.kLayer(src), cache.vLayer(src));
+                }
             }
         }
 
@@ -629,9 +643,6 @@ final class GgufDecodeStep {
             long t0 = System.nanoTime();
             boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
             if (ok) {
-                if (System.getenv("ALJABR_DEBUG_LAYERS") != null && pos == 27) {
-                    forward(tokenId, pos, cache, false);
-                }
                 cache.advance();
                 long tElapsed = System.nanoTime() - t0;
                 if (pos % 10 == 0 || pos < 5) {
@@ -791,6 +802,16 @@ final class GgufDecodeStep {
             }
             long tAttnEnd = System.nanoTime();
             tAttn += (tAttnEnd - tAttn0);
+
+            if (pos == 27 && layer == 0) {
+                float qNorm = 0, kNorm = 0, vNorm = 0, aNorm = 0;
+                for (float f : q) qNorm += f * f;
+                for (float f : k) kNorm += f * f;
+                for (float f : v) vNorm += f * f;
+                for (float f : attnFull) aNorm += f * f;
+                System.out.printf("[JAVA L00] q[0]=%+.4f norm=%.4f | k[0]=%+.4f norm=%.4f | v[0]=%+.4f norm=%.4f | attn[0]=%+.4f norm=%.4f%n",
+                    q[0], (float)Math.sqrt(qNorm), k[0], (float)Math.sqrt(kNorm), v[0], (float)Math.sqrt(vNorm), attnFull[0], (float)Math.sqrt(aNorm));
+            }
 
             long tWo0 = System.nanoTime();
             boolean woFfnDone = false;
@@ -970,8 +991,11 @@ final class GgufDecodeStep {
                     pos, tTotal / 1e6, tQkv / 1e6, tRope / 1e6, tAttn / 1e6, tWo / 1e6, tFfn / 1e6, tLogits / 1e6);
         }
 
-        if (!computeLogits) {
-            return null;
+        if (pos == 27) {
+            int best = 0;
+            for (int i = 1; i < this.logits.length; i++) if (this.logits[i] > this.logits[best]) best = i;
+            System.out.printf("[JAVA LOGITS pos=27] argmax=%d score=%.4f (target 236828 score=%.4f, 236772 score=%.4f)%n",
+                best, this.logits[best], this.logits[236828], this.logits[236772]);
         }
         return this.logits;
     }

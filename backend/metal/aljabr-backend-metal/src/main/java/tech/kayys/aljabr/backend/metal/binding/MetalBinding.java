@@ -796,7 +796,8 @@ public class MetalBinding {
         return (int) invoke(FN_MATVEC_TB_Q4_K, C, A, B, K, N);
     }
 
-    public int matvecTransposedRightQ4KSoftcap(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N, float cap) {
+    public int matvecTransposedRightQ4KSoftcap(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N,
+            float cap) {
         if (useCpuFallback())
             throw new UnsupportedOperationException("Metal Q4_K softcap not available in CPU fallback");
         if (!handles.containsKey(FN_MATVEC_TB_Q4_K_SOFTCAP))
@@ -812,7 +813,8 @@ public class MetalBinding {
         return (int) invoke(FN_MATVEC_TB_Q6_K, C, A, B, K, N);
     }
 
-    public int matvecTransposedRightQ6KSoftcap(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N, float cap) {
+    public int matvecTransposedRightQ6KSoftcap(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N,
+            float cap) {
         if (useCpuFallback())
             throw new UnsupportedOperationException("Metal Q6_K softcap not available in CPU fallback");
         if (!handles.containsKey(FN_MATVEC_TB_Q6_K_SOFTCAP))
@@ -891,14 +893,14 @@ public class MetalBinding {
     }
 
     public int woFfnFused(MemorySegment x, MemorySegment attnFull,
-                          MemorySegment wO, int typeWO, int wO_K, int wO_N,
-                          MemorySegment postAttnW, int hasPostAttnNorm, int addOnePostAttn,
-                          MemorySegment ffnNormW, int addOneFfnNorm,
-                          MemorySegment postFfnW, int hasPostFfnNorm, int addOnePostFfn,
-                          float eps,
-                          MemorySegment gateW, MemorySegment upW, MemorySegment downW,
-                          int typeGate, int typeUp, int typeDown,
-                          int ffnDim, int activationKind) {
+            MemorySegment wO, int typeWO, int wO_K, int wO_N,
+            MemorySegment postAttnW, int hasPostAttnNorm, int addOnePostAttn,
+            MemorySegment ffnNormW, int addOneFfnNorm,
+            MemorySegment postFfnW, int hasPostFfnNorm, int addOnePostFfn,
+            float eps,
+            MemorySegment gateW, MemorySegment upW, MemorySegment downW,
+            int typeGate, int typeUp, int typeDown,
+            int ffnDim, int activationKind) {
         if (useCpuFallback())
             throw new UnsupportedOperationException("Metal woFfnFused not available in CPU fallback");
         if (!handles.containsKey(FN_WO_FFN_FUSED))
@@ -996,22 +998,26 @@ public class MetalBinding {
     }
 
     public int initKVCache(int nLayers, int maxSeq, MemorySegment layerStrides) {
-        if (!handles.containsKey(FN_INIT_KV_CACHE)) return -2;
+        if (!handles.containsKey(FN_INIT_KV_CACHE))
+            return -2;
         return (int) invoke(FN_INIT_KV_CACHE, nLayers, maxSeq, layerStrides);
     }
 
     public int syncKVCache(int layer, int seqLen, MemorySegment kData, MemorySegment vData) {
-        if (!handles.containsKey(FN_SYNC_KV_CACHE)) return -2;
+        if (!handles.containsKey(FN_SYNC_KV_CACHE))
+            return -2;
         return (int) invoke(FN_SYNC_KV_CACHE, layer, seqLen, kData, vData);
     }
 
     public int registerNormBuffer(int slot, MemorySegment ptr, long bytes) {
-        if (!handles.containsKey(FN_REGISTER_NORM_BUFFER)) return -2;
+        if (!handles.containsKey(FN_REGISTER_NORM_BUFFER))
+            return -2;
         return (int) invoke(FN_REGISTER_NORM_BUFFER, slot, ptr, bytes);
     }
 
     public int registerRopeFreqs(int layer, MemorySegment freqData, int freqLen) {
-        if (!handles.containsKey(FN_REGISTER_ROPE_FREQS)) return -2;
+        if (!handles.containsKey(FN_REGISTER_ROPE_FREQS))
+            return -2;
         return (int) invoke(FN_REGISTER_ROPE_FREQS, layer, freqData, freqLen);
     }
 
@@ -1022,11 +1028,12 @@ public class MetalBinding {
             int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
             int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
             int nH, int nKVH, int headDim, int stride,
-            float freqBase, int isSwa,
+            float freqBase, int isSwa, int kvLayerIndex,
             float outScale, float attnScale,
             int hasPostAttnNorm, int hasPostFfnNorm,
             int hasQNorm, int hasKNorm, int hasUnitVNorm) {
-        if (!handles.containsKey(FN_REGISTER_DECODE_LAYER)) return -2;
+        if (!handles.containsKey(FN_REGISTER_DECODE_LAYER))
+            return -2;
         return (int) invoke(FN_REGISTER_DECODE_LAYER,
                 layer,
                 wQ, wK, wV, wO,
@@ -1034,7 +1041,7 @@ public class MetalBinding {
                 typeQ, typeK, typeV, typeWO, typeGate, typeUp, typeDown,
                 n0, n1, n2, wO_K, wO_N, ffnDim,
                 nH, nKVH, headDim, stride,
-                freqBase, isSwa,
+                freqBase, isSwa, kvLayerIndex,
                 outScale, attnScale,
                 hasPostAttnNorm, hasPostFfnNorm,
                 hasQNorm, hasKNorm, hasUnitVNorm);
@@ -1044,12 +1051,14 @@ public class MetalBinding {
             MemorySegment outputNormW,
             MemorySegment outputW, int typeOutputW, int outputK, int outputN,
             float cap) {
-        if (!handles.containsKey(FN_REGISTER_OUTPUT)) return -2;
+        if (!handles.containsKey(FN_REGISTER_OUTPUT))
+            return -2;
         return (int) invoke(FN_REGISTER_OUTPUT, outputNormW, outputW, typeOutputW, outputK, outputN, cap);
     }
 
     public int decodeStep(int pos, int slidingWindow, float eps, MemorySegment xIn, MemorySegment logitsOut) {
-        if (!handles.containsKey(FN_DECODE_STEP)) return -2;
+        if (!handles.containsKey(FN_DECODE_STEP))
+            return -2;
         return (int) invoke(FN_DECODE_STEP, pos, slidingWindow, eps, xIn, logitsOut);
     }
 
@@ -1415,13 +1424,17 @@ public class MetalBinding {
     /**
      * GPU logit soft-capping (in-place): logits[i] = cap * tanh(logits[i] / cap).
      *
-     * <p>Replaces 262 144 {@code Math.tanh} calls on the CPU with a single
-     * GPU dispatch — typically 0.5–1 ms vs 6–14 ms on CPU for Gemma-4 12B.</p>
+     * <p>
+     * Replaces 262 144 {@code Math.tanh} calls on the CPU with a single
+     * GPU dispatch — typically 0.5–1 ms vs 6–14 ms on CPU for Gemma-4 12B.
+     * </p>
      *
-     * @param logits  {@link MemorySegment} wrapping the logit float[] (direct address)
-     * @param N       number of floats (vocab size, e.g. 262144)
-     * @param cap     soft-cap value (e.g. 30.0f)
-     * @return 0 on success, negative if GPU unavailable (caller must fall back to CPU)
+     * @param logits {@link MemorySegment} wrapping the logit float[] (direct
+     *               address)
+     * @param N      number of floats (vocab size, e.g. 262144)
+     * @param cap    soft-cap value (e.g. 30.0f)
+     * @return 0 on success, negative if GPU unavailable (caller must fall back to
+     *         CPU)
      */
     public int softcap(MemorySegment logits, int N, float cap) {
         if (useCpuFallback() || !handles.containsKey(FN_SOFTCAP))
@@ -1793,10 +1806,12 @@ public class MetalBinding {
                 ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
-                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
-                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
-                ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
