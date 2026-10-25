@@ -236,7 +236,7 @@ int aljabr_metal_register_decode_layer(
     int typeQ, int typeK, int typeV, int typeWO, int typeGate, int typeUp, int typeDown,
     int n0, int n1, int n2, int wO_K, int wO_N, int ffnDim,
     int nH, int nKVH, int headDim, int stride,
-    float freqBase, int isSwa, int kvLayerIndex,
+    float freqBase, int isSwa,
     float outScale, float attnScale,
     int hasPostAttnNorm, int hasPostFfnNorm,
     int hasQNorm, int hasKNorm, int hasUnitVNorm
