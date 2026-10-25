@@ -57,6 +57,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 ### Work
 
 - Complete review and validation of PR #33's Q4_K/Q4_K/Q6_K triple-matvec parity coverage, including batch sizes 4, 8, 15, and 27 where supported.
+- **Current blocker:** Apple Silicon CI failed `MetalTripleBatchCorrectnessTest` in the output-parity assertion. Treat Phase 1 as incomplete until the test's full assertion message identifies the failing output/batch row and the underlying kernel mismatch is fixed. The Metal workflow must retain test reports for this investigation.
 - Complete review and validation of PR #34's opt-in CSV benchmark output.
 - Keep single-row native operations as the reference when testing batched implementations.
 - Exercise finite-output checks, relative-error limits, edge dimensions, alignment/stride assumptions, and quantization-block boundaries.

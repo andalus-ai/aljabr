@@ -47,6 +47,14 @@ val metalBenchmarkEnabled = System.getenv("ALJABR_METAL_BENCH")?.let {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     testLogging {
+        // Show detailed assertion messages and the failing source line in CI.
+        // This is especially important for native numerical-parity failures,
+        // where a test name alone does not identify the bad output or row.
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
         showStandardStreams = metalBenchmarkEnabled
     }
 }
