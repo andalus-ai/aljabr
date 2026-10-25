@@ -359,7 +359,7 @@ public final class GgufMetalBridge {
                                                 int.class, int.class, int.class, int.class, int.class, int.class, int.class,
                                                 int.class, int.class, int.class, int.class, int.class, int.class,
                                                 int.class, int.class, int.class, int.class,
-                                                float.class, int.class, int.class,
+                                                float.class, int.class,
                                                 float.class, float.class,
                                                 int.class, int.class,
                                                 int.class, int.class,
