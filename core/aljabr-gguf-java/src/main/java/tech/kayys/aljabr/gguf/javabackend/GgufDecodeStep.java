@@ -69,9 +69,12 @@ final class GgufDecodeStep {
     // Full-GPU single command buffer decode step available
     private final boolean canUseMetalDecodeStep;
 
-    // Once a token bypasses or fails the native step, the GPU KV cache may be stale.
-    // Keep subsequent tokens on the per-op path until this decoder is recreated.
+    // A failed native step can leave device KV state partially updated.
     private boolean metalDecodeRuntimeDisabled;
+    // The host KV cache is not populated for tokens successfully decoded by the native full-GPU path.
+    private boolean metalDecodeStepHasCommitted;
+    // After a native failure following successful native tokens, the host cache cannot safely resume.
+    private boolean metalDecodeRequiresRestart;
 
     /**
      * Explains why the native full-GPU decode path cannot be used before any
@@ -95,18 +98,19 @@ final class GgufDecodeStep {
     }
 
     /**
-     * Explains when runtime execution must stop using the native full-GPU path.
-     * If Java per-op execution advances the host KV cache, the separately
-     * allocated native cache cannot safely be reused without an explicit resync.
+     * Classifies a failed native decode call. Falling back is safe only before
+     * the native path has successfully advanced any generated-token KV entries,
+     * because the host KV cache is not populated by successful native steps.
      */
-    static String fullGpuDecodeRuntimeFallbackReason(boolean computeLogits, boolean nativeStepSucceeded) {
-        if (!computeLogits) {
-            return "logits were not requested; per-op decode would desynchronize the native KV cache";
+    static String fullGpuDecodeRuntimeFailureReason(
+            boolean nativeStepSucceeded, boolean nativeStepPreviouslyCommitted) {
+        if (nativeStepSucceeded) {
+            return null;
         }
-        if (!nativeStepSucceeded) {
-            return "native Metal decode-step invocation failed";
+        if (nativeStepPreviouslyCommitted) {
+            return "native Metal decode-step failed after prior native tokens; the host KV cache is incomplete";
         }
-        return null;
+        return "native Metal decode-step failed before any native token was committed; per-op fallback is safe";
     }
 
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
@@ -747,7 +751,7 @@ final class GgufDecodeStep {
         metalDecodeRuntimeDisabled = true;
         System.err.printf(
                 "[GgufDecodeStep] Full-GPU decode disabled after position %d: %s; "
-                        + "using per-op decode for remaining tokens to keep KV-cache state coherent.%n",
+                        + "falling back to per-op decode for this and subsequent tokens.%n",
                 pos, reason);
     }
 
@@ -760,34 +764,46 @@ final class GgufDecodeStep {
         int nEmbdPerLayer = cfg.nEmbdPerLayer();
         float eps = cfg.rmsNormEps();
 
+        if (metalDecodeRequiresRestart) {
+            throw new IllegalStateException(
+                    "Full-GPU Metal decode failed after advancing the native KV cache. "
+                            + "Recreate the decoder and prefill the full context before retrying.");
+        }
+
         if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
-            if (!computeLogits) {
-                // The per-op path below will write this token to the host KV cache,
-                // but not to the native cache. Do not reuse the stale native cache.
-                disableMetalDecodeAfterRuntimeFallback(
-                        pos, fullGpuDecodeRuntimeFallbackReason(false, true));
-            } else {
-                GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
-                if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
-                    GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
-                }
-                long t0 = System.nanoTime();
-                boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
-                String fallbackReason = fullGpuDecodeRuntimeFallbackReason(true, ok);
-                if (fallbackReason == null) {
-                    cache.advance();
-                    long tElapsed = System.nanoTime() - t0;
-                    if (pos % 10 == 0 || pos < 5) {
-                        System.out.printf("[METAL DECODE %d] single cmd buffer step: %.2f ms%n", pos,
-                                tElapsed / 1e6);
-                    }
-                    return this.logits;
-                }
-                // A failed native step may have partially updated device buffers.
-                // Fall back for this token and keep all subsequent tokens off the
-                // native path rather than reading a potentially divergent KV cache.
-                disableMetalDecodeAfterRuntimeFallback(pos, fallbackReason);
+            // The current native entry point computes logits as part of its single-command-buffer step.
+            // Even when the caller will ignore logits, use it to keep the native KV cache authoritative.
+            GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
+            if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
+                GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
             }
+            long t0 = System.nanoTime();
+            boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
+            if (ok) {
+                cache.advance();
+                metalDecodeStepHasCommitted = true;
+                long tElapsed = System.nanoTime() - t0;
+                if (computeLogits && (pos % 10 == 0 || pos < 5)) {
+                    System.out.printf("[METAL DECODE %d] single cmd buffer step: %.2f ms%n", pos,
+                            tElapsed / 1e6);
+                }
+                return this.logits;
+            }
+
+            String fallbackReason = fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
+            if (metalDecodeStepHasCommitted) {
+                metalDecodeRuntimeDisabled = true;
+                metalDecodeRequiresRestart = true;
+                String message = "[GgufDecodeStep] " + fallbackReason
+                        + "; cannot safely continue with the incomplete host KV cache. "
+                        + "Recreate the decoder and prefill the full context.";
+                System.err.println(message);
+                throw new IllegalStateException(message);
+            }
+
+            // No generated token has been committed by the native path yet, so the
+            // host KV cache still contains all required history and per-op fallback is safe.
+            disableMetalDecodeAfterRuntimeFallback(pos, fallbackReason);
         }
 
         GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
