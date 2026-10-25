@@ -32,4 +32,24 @@ class GgufDecodeEligibilityTest {
     void returnsNoFailureWhenAllInitialEligibilityChecksPass() {
         assertNull(GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false));
     }
+
+    @Test
+    void allowsPerOpFallbackWhenTheFirstNativeDecodeStepFails() {
+        assertEquals(
+                "native Metal decode-step failed before any native token was committed; per-op fallback is safe",
+                GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(false, false));
+    }
+
+    @Test
+    void requiresDecoderRestartWhenNativeDecodeFailsAfterEarlierNativeTokens() {
+        assertEquals(
+                "native Metal decode-step failed after prior native tokens; the host KV cache is incomplete",
+                GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(false, true));
+    }
+
+    @Test
+    void hasNoRuntimeFailureReasonWhenNativeDecodeSucceeds() {
+        assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(true, false));
+        assertNull(GgufDecodeStep.fullGpuDecodeRuntimeFailureReason(true, true));
+    }
 }
