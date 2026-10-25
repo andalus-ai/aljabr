@@ -86,6 +86,15 @@ final class GgufDecodeStep {
             boolean decodeDisabled,
             boolean nativeDecodeAvailable,
             boolean usesPerLayerTokenEmbeddings) {
+        return fullGpuDecodeEligibilityFailure(
+                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings, false);
+    }
+
+    static String fullGpuDecodeEligibilityFailure(
+            boolean decodeDisabled,
+            boolean nativeDecodeAvailable,
+            boolean usesPerLayerTokenEmbeddings,
+            boolean usesPartialRotaryDimensions) {
         if (decodeDisabled) {
             return "disabled by -Daljabr.metal.decode.disable=true";
         }
@@ -94,6 +103,9 @@ final class GgufDecodeStep {
         }
         if (usesPerLayerTokenEmbeddings) {
             return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
+        }
+        if (usesPartialRotaryDimensions) {
+            return "model uses per-layer partial RoPE, which the native full-GPU decode step does not implement";
         }
         return null;
     }
@@ -299,8 +311,18 @@ final class GgufDecodeStep {
         boolean decodeDisabled = Boolean.getBoolean("aljabr.metal.decode.disable");
         boolean nativeDecodeAvailable = !decodeDisabled && GgufMetalBridge.isDecodeStepAvailable();
         boolean usesPerLayerTokenEmbeddings = perLayerTokEmbd != null && nEmbdPerLayer > 0;
+        boolean usesPartialRotaryDimensions = false;
+        for (int layer = 0; layer < layers; layer++) {
+            if (cfg.rotaryDimForLayer(layer) < cfg.headDimForLayer(layer)) {
+                usesPartialRotaryDimensions = true;
+                break;
+            }
+        }
         String metalDecodeSkipReason = fullGpuDecodeEligibilityFailure(
-                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings);
+                decodeDisabled,
+                nativeDecodeAvailable,
+                usesPerLayerTokenEmbeddings,
+                usesPartialRotaryDimensions);
 
         for (int l = 0; l < layers && metalDecodeSkipReason == null; l++) {
             if (wQ[l] == null || wO[l] == null || ffnUp[l] == null || ffnDown[l] == null) {
