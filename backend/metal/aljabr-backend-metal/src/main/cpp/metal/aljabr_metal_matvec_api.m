@@ -1071,6 +1071,14 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
                                               N1, N2, pipeline, threads);
 }
 
+/*
+ * The specialized two-token B4 Q4_K/Q6_K kernels have only been parity-validated
+ * through batch size 15. Apple Silicon CI reproduced a Q4_K mismatch at batch 27,
+ * row 15 (expected 0.0078125, actual -0.0625). Keep larger batches on the existing
+ * per-token MR8/MR4 dispatch until the B4 large-batch issue is isolated and fixed.
+ */
+static const uint32_t kMaxValidatedB4BatchSize = 15;
+
 static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
                               AljabrMetalPipelines *pipelines,
                               id<MTLBuffer> bufC, id<MTLBuffer> bufA,
@@ -1082,7 +1090,8 @@ static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
-    if (batchSize > 1 && pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
+    if (batchSize > 1 && batchSize <= kMaxValidatedB4BatchSize &&
+        pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
     } else if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
@@ -1096,7 +1105,8 @@ static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
     }
     bBytes = (size_t)nn * kk / 256 * 144;
   } else if (type == 14) { // Q6_K
-    if (batchSize > 1 && pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
+    if (batchSize > 1 && batchSize <= kMaxValidatedB4BatchSize &&
+        pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q6_k_b4_mr4;
       is_b4 = YES;
     } else if (pipelines->matvec_tb_q6_k_mr8 != nil && mr8_enabled()) {
