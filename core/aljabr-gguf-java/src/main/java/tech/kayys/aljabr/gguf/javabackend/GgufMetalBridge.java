@@ -1730,8 +1730,9 @@ public final class GgufMetalBridge {
 
     public static boolean registerRopeFreqs(int layer, float[] freqs) {
         if (!isDecodeStepAvailable() || REGISTER_ROPE_FREQS_MH == null || freqs == null || freqs.length == 0) return false;
-        try {
-            Arena arena = Arena.ofShared();
+        try (Arena arena = Arena.ofConfined()) {
+            // The native function copies freqData into an MTLBuffer synchronously,
+            // so the staging segment only needs to live for this FFM call.
             MemorySegment seg = arena.allocate((long) freqs.length * Float.BYTES);
             MemorySegment.copy(freqs, 0, seg, ValueLayout.JAVA_FLOAT, 0, freqs.length);
             int rc = (int) REGISTER_ROPE_FREQS_MH.invokeExact(layer, seg, freqs.length);
