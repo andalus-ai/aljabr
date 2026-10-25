@@ -85,6 +85,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
   - Never remove the guard solely to force the optimized path to activate.
 - Validate model-layer indexing, shared-KV owner mapping, RoPE/position handling, attention masks, cache positions, output projection, logits, and token selection against the existing correct path.
 - Keep diagnostic reasons specific enough to distinguish unsupported model features from missing weights, native-library unavailability, registration failure, or cache initialization failure.
+- If a token must use Java per-op decode after native decode was initialized (for example, logits were not requested or a native step fails), latch the full-GPU path off for that decoder instance unless both caches are explicitly resynchronized. Never re-enter with a potentially stale device KV cache.
 
 ### Acceptance criteria
 
@@ -94,6 +95,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 - On unsupported models, fallback is explicit and output remains correct.
 - For a fixed prompt and deterministic configuration, compare logits or token outputs with the established reference path. Document any expected numeric differences and tolerance.
 - Test at least one model with shared-KV layers and one model exercising the relevant embedding behavior before broadening eligibility.
+- After a native decode failure or a token that bypasses the native path, subsequent tokens stay on per-op decode; the failure is reported once and the native cache is not reused.
 
 ### Exit gate
 
