@@ -1713,7 +1713,13 @@ public final class GgufMetalBridge {
     }
 
     public static boolean syncKVCache(int layer, int seqLen, float[] kData, float[] vData) {
-        if (!isDecodeStepAvailable() || SYNC_KV_CACHE_MH == null || kData == null || vData == null) return false;
+        if (!isDecodeStepAvailable() || SYNC_KV_CACHE_MH == null || kData == null || vData == null) {
+            LOG.warning(String.format(
+                    "[GgufMetalBridge] KV-cache sync unavailable for layer=%d seqLen=%d (decodeAvailable=%b, symbolBound=%b, kData=%b, vData=%b)",
+                    layer, seqLen, isDecodeStepAvailable(), SYNC_KV_CACHE_MH != null,
+                    kData != null, vData != null));
+            return false;
+        }
         try (Arena arena = Arena.ofConfined()) {
             int len = kData.length;
             MemorySegment kSeg = arena.allocate((long) len * Float.BYTES);
@@ -1721,9 +1727,19 @@ public final class GgufMetalBridge {
             MemorySegment.copy(kData, 0, kSeg, ValueLayout.JAVA_FLOAT, 0, len);
             MemorySegment.copy(vData, 0, vSeg, ValueLayout.JAVA_FLOAT, 0, len);
             int rc = (int) SYNC_KV_CACHE_MH.invokeExact(layer, seqLen, kSeg, vSeg);
-            return rc == 0;
+            if (rc != 0) {
+                LOG.warning(String.format(
+                        "[GgufMetalBridge] Native KV-cache sync returned rc=%d for layer=%d seqLen=%d kvElements=%d",
+                        rc, layer, seqLen, len));
+                return false;
+            }
+            return true;
         } catch (Throwable t) {
-            LOG.log(Level.WARNING, "Failed to sync Metal KV cache: " + t.getMessage(), t);
+            LOG.log(Level.WARNING,
+                    "[GgufMetalBridge] Failed to sync Metal KV cache for layer=" + layer
+                            + " seqLen=" + seqLen
+                            + " kLength=" + (kData != null ? kData.length : -1)
+                            + " vLength=" + (vData != null ? vData.length : -1), t);
             return false;
         }
     }

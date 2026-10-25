@@ -91,6 +91,7 @@ Do not start tuning the full-GPU path until its activation state can be proven f
 - Validate model-layer indexing, shared-KV owner mapping, RoPE/position handling, attention masks, cache positions, output projection, logits, and token selection against the existing correct path.
 - Keep diagnostic reasons specific enough to distinguish unsupported model features from missing weights, native-library unavailability, registration failure, or cache initialization failure.
 - Keep the native KV cache authoritative while full-GPU decode is active, including when the caller ignores logits. If a native step fails before any generated token was committed, latch the path off and use the still-coherent host cache; if it fails after successful native tokens, abort with an explicit restart-required error because the host KV cache is incomplete. Never silently switch to per-op decode against stale history.
+- Check every prompt KV-cache sync result before starting native generation. If any layer fails to sync, disable full-GPU decode before the first native step and continue from the intact host KV cache; log the failing layer and native return code.
 
 ### Acceptance criteria
 
