@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class GgufDecodeEligibilityTest {
@@ -14,6 +16,45 @@ class GgufDecodeEligibilityTest {
         // Gemma 4 may reuse K as V when attn_v.weight is absent.
         assertTrue(GgufDecodeStep.hasOwnKvCache(true));
         assertFalse(GgufDecodeStep.hasOwnKvCache(false));
+    }
+
+    @Test
+    void rejectsKAsVProjectionLayoutForNativeDecode() {
+        assertTrue(GgufDecodeStep.hasUnsupportedNativeKvLayout(
+                new boolean[] {true, true},
+                new boolean[] {true, false},
+                new boolean[] {true, false},
+                new int[] {256, 512},
+                new int[] {8, 1}));
+        assertEquals(
+                "model uses K-as-V or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely",
+                GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false, false, true));
+    }
+
+    @Test
+    void allowsSharedKvOnlyWhenOwnerGeometryMatches() {
+        assertFalse(GgufDecodeStep.hasUnsupportedNativeKvLayout(
+                new boolean[] {true, false},
+                new boolean[] {true, false},
+                new boolean[] {true, false},
+                new int[] {256, 256},
+                new int[] {8, 8}));
+        assertTrue(GgufDecodeStep.hasUnsupportedNativeKvLayout(
+                new boolean[] {true, false},
+                new boolean[] {true, false},
+                new boolean[] {true, false},
+                new int[] {256, 512},
+                new int[] {8, 1}));
+    }
+
+    @Test
+    void rejectsMismatchedSharedSwaKvOwnerGeometry() {
+        assertTrue(GgufDecodeStep.hasUnsupportedNativeKvLayout(
+                new boolean[] {true, true, false},
+                new boolean[] {true, true, false},
+                new boolean[] {true, false, true},
+                new int[] {256, 512, 512},
+                new int[] {8, 1, 1}));
     }
 
     @Test

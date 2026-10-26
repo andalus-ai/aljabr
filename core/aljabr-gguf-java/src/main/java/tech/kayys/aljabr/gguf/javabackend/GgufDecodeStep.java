@@ -92,12 +92,64 @@ final class GgufDecodeStep {
      * native buffers are registered. Kept pure so the eligibility policy can
      * be regression-tested without a GPU or a model file.
      */
+    /**
+     * Returns whether a model's KV projection layout is not safe for the
+     * current native full-GPU decoder. The native ABI expects either independent
+     * K/V projections or a shared-KV owner with matching geometry. It does not
+     * yet implement K-as-V layers (K present, V projection absent).
+     *
+     * <p>Array entries are per-layer; a shared-KV layer with both projections
+     * absent uses the preceding one layer for global attention or two layers
+     * back for SWA, matching the current registration convention.</p>
+     */
+    static boolean hasUnsupportedNativeKvLayout(
+            boolean[] hasKeyProjection,
+            boolean[] hasValueProjection,
+            boolean[] swaLayers,
+            int[] headDims,
+            int[] kvHeads) {
+        if (hasKeyProjection == null || hasValueProjection == null || swaLayers == null
+                || headDims == null || kvHeads == null) {
+            throw new IllegalArgumentException("native KV layout arrays must not be null");
+        }
+        int layers = hasKeyProjection.length;
+        if (hasValueProjection.length != layers || swaLayers.length != layers
+                || headDims.length != layers || kvHeads.length != layers) {
+            throw new IllegalArgumentException("native KV layout arrays must have equal lengths");
+        }
+
+        for (int layer = 0; layer < layers; layer++) {
+            boolean hasKey = hasKeyProjection[layer];
+            boolean hasValue = hasValueProjection[layer];
+
+            // Asymmetric K/V projections are not represented correctly by the
+            // current native registration code; in particular, K-as-V must
+            // retain this layer's own K cache rather than inherit the previous
+            // layer's cache.
+            if (hasKey != hasValue) {
+                return true;
+            }
+
+            // If both projections are absent, this is a shared-KV layer.
+            // The native decoder cannot safely use an owner with a different
+            // head dimension or number of KV heads.
+            if (!hasKey) {
+                int ownerLayer = Math.max(0, layer - (swaLayers[layer] ? 2 : 1));
+                if (headDims[layer] != headDims[ownerLayer]
+                        || kvHeads[layer] != kvHeads[ownerLayer]) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     static String fullGpuDecodeEligibilityFailure(
             boolean decodeDisabled,
             boolean nativeDecodeAvailable,
             boolean usesPerLayerTokenEmbeddings) {
         return fullGpuDecodeEligibilityFailure(
-                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings, false);
+                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings, false, false);
     }
 
     static String fullGpuDecodeEligibilityFailure(
@@ -105,6 +157,17 @@ final class GgufDecodeStep {
             boolean nativeDecodeAvailable,
             boolean usesPerLayerTokenEmbeddings,
             boolean usesPartialRotaryDimensions) {
+        return fullGpuDecodeEligibilityFailure(
+                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings,
+                usesPartialRotaryDimensions, false);
+    }
+
+    static String fullGpuDecodeEligibilityFailure(
+            boolean decodeDisabled,
+            boolean nativeDecodeAvailable,
+            boolean usesPerLayerTokenEmbeddings,
+            boolean usesPartialRotaryDimensions,
+            boolean usesUnsupportedNativeKvLayout) {
         if (decodeDisabled) {
             return "disabled by -Daljabr.metal.decode.disable=true";
         }
@@ -113,6 +176,9 @@ final class GgufDecodeStep {
         }
         if (usesPerLayerTokenEmbeddings) {
             return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
+        }
+        if (usesUnsupportedNativeKvLayout) {
+            return "model uses K-as-V or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely";
         }
         if (usesPartialRotaryDimensions) {
             return "model uses per-layer partial RoPE, which the native full-GPU decode step does not implement";
@@ -322,17 +388,29 @@ final class GgufDecodeStep {
         boolean nativeDecodeAvailable = !decodeDisabled && GgufMetalBridge.isDecodeStepAvailable();
         boolean usesPerLayerTokenEmbeddings = perLayerTokEmbd != null && nEmbdPerLayer > 0;
         boolean usesPartialRotaryDimensions = false;
+        boolean[] hasKeyProjection = new boolean[layers];
+        boolean[] hasValueProjection = new boolean[layers];
+        boolean[] swaLayers = new boolean[layers];
+        int[] layerHeadDims = new int[layers];
+        int[] layerKvHeads = new int[layers];
         for (int layer = 0; layer < layers; layer++) {
             if (cfg.rotaryDimForLayer(layer) < cfg.headDimForLayer(layer)) {
                 usesPartialRotaryDimensions = true;
-                break;
             }
+            hasKeyProjection[layer] = wK[layer] != null;
+            hasValueProjection[layer] = wV[layer] != null;
+            swaLayers[layer] = cfg.isSwaLayer(layer);
+            layerHeadDims[layer] = cfg.headDimForLayer(layer);
+            layerKvHeads[layer] = cfg.nKVHeadsForLayer(layer);
         }
+        boolean usesUnsupportedNativeKvLayout = hasUnsupportedNativeKvLayout(
+                hasKeyProjection, hasValueProjection, swaLayers, layerHeadDims, layerKvHeads);
         String metalDecodeSkipReason = fullGpuDecodeEligibilityFailure(
                 decodeDisabled,
                 nativeDecodeAvailable,
                 usesPerLayerTokenEmbeddings,
-                usesPartialRotaryDimensions);
+                usesPartialRotaryDimensions,
+                usesUnsupportedNativeKvLayout);
 
         for (int l = 0; l < layers && metalDecodeSkipReason == null; l++) {
             if (wQ[l] == null || wO[l] == null || ffnUp[l] == null || ffnDown[l] == null) {
