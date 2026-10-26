@@ -78,6 +78,16 @@ final class GgufDecodeStep {
     private boolean metalDecodeRequiresRestart;
 
     /**
+     * A key projection means this layer owns its KV entries. Gemma 4 can omit
+     * {@code attn_v.weight}; in that case the projected key is reused as the
+     * value input, but the layer still owns its KV cache. Do not misclassify
+     * such layers as cross-layer KV-sharing layers during prefill.
+     */
+    static boolean hasOwnKvCache(boolean hasKeyProjection) {
+        return hasKeyProjection;
+    }
+
+    /**
      * Explains why the native full-GPU decode path cannot be used before any
      * native buffers are registered. Kept pure so the eligibility policy can
      * be regression-tested without a GPU or a model file.
@@ -86,6 +96,15 @@ final class GgufDecodeStep {
             boolean decodeDisabled,
             boolean nativeDecodeAvailable,
             boolean usesPerLayerTokenEmbeddings) {
+        return fullGpuDecodeEligibilityFailure(
+                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings, false);
+    }
+
+    static String fullGpuDecodeEligibilityFailure(
+            boolean decodeDisabled,
+            boolean nativeDecodeAvailable,
+            boolean usesPerLayerTokenEmbeddings,
+            boolean usesPartialRotaryDimensions) {
         if (decodeDisabled) {
             return "disabled by -Daljabr.metal.decode.disable=true";
         }
@@ -94,6 +113,9 @@ final class GgufDecodeStep {
         }
         if (usesPerLayerTokenEmbeddings) {
             return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
+        }
+        if (usesPartialRotaryDimensions) {
+            return "model uses per-layer partial RoPE, which the native full-GPU decode step does not implement";
         }
         return null;
     }
@@ -235,6 +257,30 @@ final class GgufDecodeStep {
             }
         }
 
+        // Opt-in layer-shape diagnostics verify architecture-specific RoPE dimensions
+        // on the actual loaded GGUF, especially for Gemma 4's local/global attention mix.
+        if (System.getenv("ALJABR_DEBUG_LAYERS") != null) {
+            int previousHeadDim = -1;
+            int previousRotaryDim = -1;
+            boolean previousSwa = false;
+            for (int layer = 0; layer < layers; layer++) {
+                int layerHeadDim = cfg.headDimForLayer(layer);
+                int rotaryDim = cfg.rotaryDimForLayer(layer);
+                boolean swa = cfg.isSwaLayer(layer);
+                if (layer == 0 || layerHeadDim != previousHeadDim
+                        || rotaryDim != previousRotaryDim || swa != previousSwa) {
+                    System.out.printf(
+                            "[JAVA ROPE CONFIG] layer=%d attention=%s head_dim=%d rotary_dim=%d rope_base=%.1f freq_factors=%d%n",
+                            layer, swa ? "swa" : "global", layerHeadDim, rotaryDim,
+                            cfg.ropeFreqBaseForLayer(layer),
+                            ropeFreqs[layer] == null ? 0 : ropeFreqs[layer].length);
+                }
+                previousHeadDim = layerHeadDim;
+                previousRotaryDim = rotaryDim;
+                previousSwa = swa;
+            }
+        }
+
         // Register static layer norms on GPU bridge once to enable zero-copy decode
         // slices
         if (GgufMetalBridge.isAvailable()) {
@@ -275,8 +321,18 @@ final class GgufDecodeStep {
         boolean decodeDisabled = Boolean.getBoolean("aljabr.metal.decode.disable");
         boolean nativeDecodeAvailable = !decodeDisabled && GgufMetalBridge.isDecodeStepAvailable();
         boolean usesPerLayerTokenEmbeddings = perLayerTokEmbd != null && nEmbdPerLayer > 0;
+        boolean usesPartialRotaryDimensions = false;
+        for (int layer = 0; layer < layers; layer++) {
+            if (cfg.rotaryDimForLayer(layer) < cfg.headDimForLayer(layer)) {
+                usesPartialRotaryDimensions = true;
+                break;
+            }
+        }
         String metalDecodeSkipReason = fullGpuDecodeEligibilityFailure(
-                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings);
+                decodeDisabled,
+                nativeDecodeAvailable,
+                usesPerLayerTokenEmbeddings,
+                usesPartialRotaryDimensions);
 
         for (int l = 0; l < layers && metalDecodeSkipReason == null; l++) {
             if (wQ[l] == null || wO[l] == null || ffnUp[l] == null || ffnDown[l] == null) {
@@ -477,7 +533,7 @@ final class GgufDecodeStep {
 
             int qDim = nH * layerHDim;
             int kvDim = layerNKVH * layerHDim;
-            boolean hasOwnKv = wK[layer] != null && wV[layer] != null;
+            boolean hasOwnKv = hasOwnKvCache(wK[layer] != null);
             int kvLayerToUse = hasOwnKv ? layer
                     : Math.max(0, layer - (isSwa ? 2 : 1));
             int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
@@ -501,7 +557,7 @@ final class GgufDecodeStep {
                         dispatchMatVec(wQ[layer], xbL, qLocal);
                     }
                     System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
-                    if (wK[layer] != null && wV[layer] != null) {
+                    if (hasOwnKv) {
                         System.arraycopy(kLocal, 0, allK, t * kvDim, kvDim);
                         System.arraycopy(vLocal, 0, allV, t * kvDim, kvDim);
                     }
@@ -511,7 +567,7 @@ final class GgufDecodeStep {
 
             for (int t = 0; t < T; t++) {
                 System.arraycopy(allQ, t * qDim, qLocal, 0, qDim);
-                if (wK[layer] != null && wV[layer] != null) {
+                if (hasOwnKv) {
                     System.arraycopy(allK, t * kvDim, kLocal, 0, kvDim);
                     System.arraycopy(allV, t * kvDim, vLocal, 0, kvDim);
                 }
@@ -523,11 +579,11 @@ final class GgufDecodeStep {
                                 eps);
                     }
                 }
-                GGUFVectorOps.rope(qLocal, nH, layerHDim, t, layerRopeFreq, layerRopeFreqs);
+                GGUFVectorOps.rope(qLocal, nH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq, layerRopeFreqs);
                 System.arraycopy(qLocal, 0, Qall[t], 0, qDim);
                 System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
 
-                if (wK[layer] != null && wV[layer] != null) {
+                if (hasOwnKv) {
                     if (attnKNorm[layer] != null) {
                         int kNormLen = attnKNorm[layer].length;
                         for (int kvH = 0; kvH < layerNKVH; kvH++) {
@@ -547,7 +603,7 @@ final class GgufDecodeStep {
                         }
                     }
 
-                    GGUFVectorOps.rope(kLocal, layerNKVH, layerHDim, t, layerRopeFreq, layerRopeFreqs);
+                    GGUFVectorOps.rope(kLocal, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq, layerRopeFreqs);
                     System.arraycopy(kLocal, 0, Kall[t], 0, kvDim);
                     System.arraycopy(kLocal, 0, allK, t * kvDim, kvDim);
                     System.arraycopy(vLocal, 0, Vall[t], 0, kvDim);
@@ -969,7 +1025,7 @@ final class GgufDecodeStep {
             }
 
             // RoPE on Q
-            GGUFVectorOps.rope(q, nH, layerHDim, pos, layerRopeFreq, layerRopeFreqs);
+            GGUFVectorOps.rope(q, nH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
             int kvLayerToUse = layer;
             if (wK[layer] != null) {
@@ -992,7 +1048,7 @@ final class GgufDecodeStep {
                     }
                 }
 
-                GGUFVectorOps.rope(k, layerNKVH, layerHDim, pos, layerRopeFreq, layerRopeFreqs);
+                GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
                 cache.store(layer, k, v);
             } else {

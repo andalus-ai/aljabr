@@ -341,7 +341,30 @@ public final class GGUFVectorOps {
     private static final ThreadLocal<float[]> ROPE_TABLE_CACHE = ThreadLocal.withInitial(() -> new float[1024]);
 
     public static void rope(float[] x, int nHeads, int headDim, int pos, float freqBase, float[] freqFactors) {
-        int half = headDim / 2;
+        rope(x, nHeads, headDim, headDim, pos, freqBase, freqFactors);
+    }
+
+    /**
+     * Apply split-half RoPE to only the first {@code rotaryDim} dimensions of each
+     * head. Dimensions at or beyond {@code rotaryDim} are left unchanged. The
+     * frequency denominator uses {@code rotaryDim}, matching partial-RoPE
+     * implementations such as Gemma 4's proportional global attention.
+     */
+    public static void rope(
+            float[] x, int nHeads, int headDim, int rotaryDim, int pos,
+            float freqBase, float[] freqFactors) {
+        if (headDim <= 0 || nHeads <= 0 || rotaryDim < 2 || rotaryDim > headDim
+                || (rotaryDim & 1) != 0) {
+            throw new IllegalArgumentException(
+                    "invalid RoPE dimensions: heads=" + nHeads
+                            + ", headDim=" + headDim + ", rotaryDim=" + rotaryDim);
+        }
+        if (x.length < (long) nHeads * headDim) {
+            throw new IllegalArgumentException(
+                    "input vector is shorter than nHeads * headDim");
+        }
+
+        int half = rotaryDim / 2;
         float[] table = ROPE_TABLE_CACHE.get();
         if (table.length < half * 2) {
             table = new float[half * 2];
@@ -349,7 +372,7 @@ public final class GGUFVectorOps {
         }
         for (int i = 0; i < half; i++) {
             float ff       = (freqFactors != null && i < freqFactors.length) ? freqFactors[i] : 1.0f;
-            float invFreq  = (float) Math.pow(freqBase, -2.0f * i / headDim);
+            float invFreq  = (float) Math.pow(freqBase, -2.0f * i / rotaryDim);
             float theta    = (pos * invFreq) / ff;
             table[i]        = (float) Math.cos(theta);
             table[half + i] = (float) Math.sin(theta);
