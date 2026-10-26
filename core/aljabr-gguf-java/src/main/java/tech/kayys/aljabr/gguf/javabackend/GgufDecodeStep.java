@@ -94,9 +94,9 @@ final class GgufDecodeStep {
      */
     /**
      * Returns whether a model's KV projection layout is not safe for the
-     * current native full-GPU decoder. The native ABI expects either independent
-     * K/V projections or a shared-KV owner with matching geometry. It does not
-     * yet implement K-as-V layers (K present, V projection absent).
+     * current native full-GPU decoder. Independent K/V projections, K-as-V
+     * layers, and shared-KV owners with matching geometry are supported. A
+     * V-only layer is not representable by the native decode path.
      *
      * <p>Array entries are per-layer; a shared-KV layer with both projections
      * absent uses the preceding one layer for global attention or two layers
@@ -122,11 +122,10 @@ final class GgufDecodeStep {
             boolean hasKey = hasKeyProjection[layer];
             boolean hasValue = hasValueProjection[layer];
 
-            // Asymmetric K/V projections are not represented correctly by the
-            // current native registration code; in particular, K-as-V must
-            // retain this layer's own K cache rather than inherit the previous
-            // layer's cache.
-            if (hasKey != hasValue) {
+            // A V-only layer is unsupported. K-as-V is supported: the native
+            // path copies the raw K projection into V before K normalization
+            // and RoPE, and this layer owns its own KV cache.
+            if (!hasKey && hasValue) {
                 return true;
             }
 
@@ -178,7 +177,7 @@ final class GgufDecodeStep {
             return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
         }
         if (usesUnsupportedNativeKvLayout) {
-            return "model uses K-as-V or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely";
+            return "model uses V-only projections or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely";
         }
         if (usesPartialRotaryDimensions) {
             return "model uses per-layer partial RoPE, which the native full-GPU decode step does not implement";
@@ -448,8 +447,8 @@ final class GgufDecodeStep {
                                 : (1.0f / (float) Math.sqrt(layerHDim));
                     }
 
-                    // Select the KV cache owner for layers without independent K/V projections.
-                    int kvLayerIndex = (wK[l] != null && wV[l] != null)
+                    // A key projection owns the KV cache, including K-as-V layers.
+                    int kvLayerIndex = wK[l] != null
                             ? l
                             : Math.max(0, l - (isSwa ? 2 : 1));
                     boolean reg = GgufMetalBridge.registerDecodeLayer(

@@ -3352,6 +3352,52 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
         encode_matvec_sub(enc, pipelines, g_woff_nextV, g_woff_xb, cfg->wV,
                           nDim, (uint32_t)cfg->n2, cfg->typeV, 1);
       }
+
+      // K-as-V uses the raw K projection for V. Copy before K normalization
+      // and RoPE, both of which mutate g_woff_nextK. A blit copy keeps this
+      // operation inside the same command buffer without a CPU round-trip.
+      if (cfg->wK && !cfg->wV) {
+        size_t kvBytes = (size_t)cfg->n1 * sizeof(float);
+        if (cfg->n1 <= 0 || cfg->n1 != cfg->n2 ||
+            [g_woff_nextK length] < kvBytes ||
+            [g_woff_nextV length] < kvBytes) {
+          fprintf(stderr,
+                  "[aljabr-metal] decode_step invalid K-as-V dimensions pos=%d layer=%d nK=%d nV=%d K_bytes=%lu V_bytes=%lu\n",
+                  pos, l, cfg->n1, cfg->n2,
+                  (unsigned long)[g_woff_nextK length],
+                  (unsigned long)[g_woff_nextV length]);
+          [enc endEncoding];
+          [cmd commit];
+          [cmd waitUntilCompleted];
+          return -6;
+        }
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        [enc endEncoding];
+        id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+        if (blit == nil) {
+          fprintf(stderr,
+                  "[aljabr-metal] decode_step could not create K-as-V blit encoder pos=%d layer=%d\n",
+                  pos, l);
+          [cmd commit];
+          [cmd waitUntilCompleted];
+          return -6;
+        }
+        [blit copyFromBuffer:g_woff_nextK
+                sourceOffset:0
+                    toBuffer:g_woff_nextV
+           destinationOffset:0
+                        size:kvBytes];
+        [blit endEncoding];
+        enc = [cmd computeCommandEncoder];
+        if (enc == nil) {
+          fprintf(stderr,
+                  "[aljabr-metal] decode_step could not resume compute encoder after K-as-V copy pos=%d layer=%d\n",
+                  pos, l);
+          [cmd commit];
+          [cmd waitUntilCompleted];
+          return -6;
+        }
+      }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 2b. Q & K Head Norms (if present, e.g. Gemma 4)
@@ -3387,7 +3433,8 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
             threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
       }
       // 2c. Unit V Norm (if present, e.g. Gemma 4)
-      if (cfg->hasUnitVNorm && cfg->wV && pipelines->rmsnorm_unit_rows != nil) {
+      if (cfg->hasUnitVNorm && (cfg->wV || cfg->wK) &&
+          pipelines->rmsnorm_unit_rows != nil) {
         uint32_t headDim = (uint32_t)cfg->headDim;
         uint32_t nKVH = (uint32_t)cfg->nKVH;
         [enc setComputePipelineState:pipelines->rmsnorm_unit_rows];
@@ -3424,11 +3471,11 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      // 4. Store K and V to KV cache at position pos
-      // Only layers with their own K/V projections may write this layer's
-      // cache. Shared-KV layers leave g_woff_nextK/V untouched and must not
-      // store stale values left over from a previous layer.
-      if (cfg->wK && cfg->wV && g_kv_k[l] && g_kv_v[l]) {
+      // 4. Store K and V to KV cache at position pos.
+      // Any layer with a K projection owns its cache. For K-as-V, nextV was
+      // copied from the raw K projection above before K was normalized/RoPE'd.
+      // Shared-KV layers must not store stale nextK/V scratch values.
+      if (cfg->wK && g_kv_k[l] && g_kv_v[l]) {
         encode_kv_store_flat(enc, g_kv_k[l], g_woff_nextK, (uint32_t)pos,
                              (uint32_t)cfg->stride, pipelines);
         encode_kv_store_flat(enc, g_kv_v[l], g_woff_nextV, (uint32_t)pos,
@@ -3444,7 +3491,7 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
       while (kvLayer >= 0 && kvLayer < g_num_decode_layers &&
              hops++ < g_num_decode_layers) {
         DecodeLayerConfig *candidate = &g_decode_layers[kvLayer];
-        if (candidate->wK && candidate->wV)
+        if (candidate->wK)
           break;
         if (candidate->kvLayerIndex == kvLayer)
           break;
@@ -3464,9 +3511,9 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
         return -4;
       }
       DecodeLayerConfig *kvCfg = &g_decode_layers[kvLayer];
-      if (!kvCfg->wK || !kvCfg->wV) {
+      if (!kvCfg->wK) {
         fprintf(stderr,
-                "[aljabr-metal] decode_step KV owner has no K/V weights pos=%d layer=%d owner=%d hasK=%d hasV=%d\n",
+                "[aljabr-metal] decode_step KV owner has no K projection pos=%d layer=%d owner=%d hasK=%d hasV=%d\n",
                 pos, l, kvLayer, kvCfg->wK != NULL, kvCfg->wV != NULL);
         [enc endEncoding];
         [cmd commit];

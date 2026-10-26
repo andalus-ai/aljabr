@@ -19,15 +19,26 @@ class GgufDecodeEligibilityTest {
     }
 
     @Test
-    void rejectsKAsVProjectionLayoutForNativeDecode() {
-        assertTrue(GgufDecodeStep.hasUnsupportedNativeKvLayout(
+    void allowsKAsVProjectionLayoutForNativeDecode() {
+        assertFalse(GgufDecodeStep.hasUnsupportedNativeKvLayout(
                 new boolean[] {true, true},
                 new boolean[] {true, false},
                 new boolean[] {true, false},
                 new int[] {256, 512},
                 new int[] {8, 1}));
+        assertNull(GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false, false, false));
+    }
+
+    @Test
+    void rejectsValueOnlyProjectionLayoutForNativeDecode() {
+        assertTrue(GgufDecodeStep.hasUnsupportedNativeKvLayout(
+                new boolean[] {true, false},
+                new boolean[] {true, true},
+                new boolean[] {true, false},
+                new int[] {256, 512},
+                new int[] {8, 1}));
         assertEquals(
-                "model uses K-as-V or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely",
+                "model uses V-only projections or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely",
                 GgufDecodeStep.fullGpuDecodeEligibilityFailure(false, true, false, false, true));
     }
 
