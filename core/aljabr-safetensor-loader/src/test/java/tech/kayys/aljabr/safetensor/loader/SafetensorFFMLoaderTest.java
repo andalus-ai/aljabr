@@ -692,6 +692,15 @@ class SafetensorFFMLoaderTest {
     }
 
     @Test
+    void tensorInfo_rejectsByteSizeOverflow() {
+        assertThatThrownBy(() -> SafetensorTensorInfo.of(
+                "byte-overflow", SafetensorDType.F32,
+                new long[] {Long.MAX_VALUE}, 0, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("byte size overflows long");
+    }
+
+    @Test
     void tensorInfo_acceptsZeroSizedDimension() {
         SafetensorTensorInfo info = SafetensorTensorInfo.of(
                 "empty", SafetensorDType.F32, new long[] {0, 3}, 0, 0);
