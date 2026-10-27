@@ -37,6 +37,7 @@ package tech.kayys.aljabr.safetensor.loader;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonParser;
 
 import tech.kayys.aljabr.safetensor.exception.SafetensorException;
 
@@ -135,8 +136,13 @@ public final class SafetensorShardIndex {
         }
 
         try {
-            byte[] json = Files.readAllBytes(abs);
-            IndexDto dto = mapper.readValue(json, IndexDto.class);
+            IndexDto dto;
+            // Reject duplicate JSON keys instead of silently accepting the last
+            // value supplied by an ambiguous or corrupted index.
+            try (JsonParser parser = mapper.getFactory().createParser(Files.readAllBytes(abs))) {
+                parser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+                dto = mapper.readValue(parser, IndexDto.class);
+            }
 
             if (dto.weightMap == null || dto.weightMap.isEmpty()) {
                 throw new SafetensorException.ValidationException(
@@ -210,6 +216,89 @@ public final class SafetensorShardIndex {
         } catch (IOException e) {
             throw new SafetensorException.IoException(
                     "Failed to parse shard index JSON", abs, e);
+        }
+    }
+
+    private static boolean isSafeShardFileName(String shardName) {
+        if (shardName == null || shardName.isBlank()) {
+            return false;
+        }
+        // Reject both POSIX and Windows separators regardless of host OS.
+        if (shardName.indexOf('/') >= 0 || shardName.indexOf('\\') >= 0) {
+            return false;
+        }
+        Path path;
+        try {
+            path = Path.of(shardName);
+        } catch (RuntimeException invalidPath) {
+            return false;
+        }
+        return !path.isAbsolute()
+                && path.getNameCount() == 1
+                && !".".equals(shardName)
+                && !"..".equals(shardName);
+    }
+
+    /**
+     * Cross-validate the index mapping against parsed headers from every shard.
+     *
+     * <p>The supplied map must contain exactly the shard names referenced by this
+     * index. Every indexed tensor must exist in its assigned shard, and every
+     * tensor found in a shard must be represented by the index and assigned to
+     * that same shard. This method reads metadata only; it does not materialize
+     * tensor payloads.
+     *
+     * @param shardHeaders shard filename to parsed header
+     * @throws SafetensorException.ValidationException if index and headers disagree
+     */
+    public void validateShardHeaders(Map<String, SafetensorHeader> shardHeaders) {
+        Objects.requireNonNull(shardHeaders, "shardHeaders must not be null");
+
+        Set<String> expectedShards = new LinkedHashSet<>(shardFileNames);
+        if (!shardHeaders.keySet().equals(expectedShards)) {
+            Set<String> missing = new LinkedHashSet<>(expectedShards);
+            missing.removeAll(shardHeaders.keySet());
+            Set<String> unexpected = new LinkedHashSet<>(shardHeaders.keySet());
+            unexpected.removeAll(expectedShards);
+            throw new SafetensorException.ValidationException(
+                    "Shard header set does not match index; missing=" + missing
+                            + ", unexpected=" + unexpected, indexPath);
+        }
+
+        Map<String, String> actualTensorShards = new LinkedHashMap<>();
+        for (String shardName : shardFileNames) {
+            SafetensorHeader header = shardHeaders.get(shardName);
+            if (header == null) {
+                throw new SafetensorException.ValidationException(
+                        "Missing parsed header for shard: " + shardName, indexPath);
+            }
+            for (String tensorName : header.tensors().keySet()) {
+                String previous = actualTensorShards.putIfAbsent(tensorName, shardName);
+                if (previous != null) {
+                    throw new SafetensorException.ValidationException(
+                            "Tensor '" + tensorName + "' appears in multiple shards: "
+                                    + previous + " and " + shardName, indexPath);
+                }
+                String indexedShard = weightMap.get(tensorName);
+                if (indexedShard == null) {
+                    throw new SafetensorException.ValidationException(
+                            "Shard '" + shardName + "' contains tensor absent from index: "
+                                    + tensorName, indexPath);
+                }
+                if (!indexedShard.equals(shardName)) {
+                    throw new SafetensorException.ValidationException(
+                            "Tensor '" + tensorName + "' is in shard '" + shardName
+                                    + "' but index assigns it to '" + indexedShard + "'", indexPath);
+                }
+            }
+        }
+
+        for (Map.Entry<String, String> entry : weightMap.entrySet()) {
+            if (!actualTensorShards.containsKey(entry.getKey())) {
+                throw new SafetensorException.ValidationException(
+                        "Index references tensor missing from shard headers: " + entry.getKey()
+                                + " (expected in " + entry.getValue() + ")", indexPath);
+            }
         }
     }
 

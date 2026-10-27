@@ -144,11 +144,12 @@ public class SafetensorShardLoader {
                 Path indexPath = SafetensorShardIndex.resolveIndexPath(resolved);
                 SafetensorShardIndex index = SafetensorShardIndex.load(indexPath, objectMapper);
 
+                Map<String, SafetensorHeader> headers = loadShardHeaders(index);
+                index.validateShardHeaders(headers);
+
                 List<SafetensorTensorInfo> all = new ArrayList<>();
                 for (String shardName : index.shardFileNames()) {
-                    Path shardPath = index.shardPath(shardName);
-                    SafetensorHeader hdr = ffmLoader.loadHeaderOnly(shardPath);
-                    all.addAll(hdr.tensors().values());
+                    all.addAll(headers.get(shardName).tensors().values());
                 }
                 return Collections.unmodifiableList(all);
             } else {
@@ -160,6 +161,36 @@ public class SafetensorShardLoader {
 
         throw new SafetensorException.IoException(
                 "Path not found: " + resolved, resolved, null);
+    }
+
+    /**
+     * Validate a sharded model's index against every shard header without
+     * materializing tensor payloads. This is an explicit integrity check so
+     * callers can keep {@link #open(Path)} lazy for inference startup.
+     *
+     * @param modelDir directory containing the index and shard files
+     * @throws SafetensorException if the path is not a sharded model or the
+     *         index disagrees with shard headers
+     */
+    public void validateIndexConsistency(Path modelDir) {
+        Objects.requireNonNull(modelDir, "modelDir must not be null");
+        Path resolved = modelDir.toAbsolutePath().normalize();
+        if (!Files.isDirectory(resolved) || !SafetensorShardIndex.isShardedModel(resolved)) {
+            throw new SafetensorException.ValidationException(
+                    "Index consistency validation requires a directory containing a shard index",
+                    resolved);
+        }
+        SafetensorShardIndex index = SafetensorShardIndex.load(
+                SafetensorShardIndex.resolveIndexPath(resolved), objectMapper);
+        index.validateShardHeaders(loadShardHeaders(index));
+    }
+
+    private Map<String, SafetensorHeader> loadShardHeaders(SafetensorShardIndex index) {
+        Map<String, SafetensorHeader> headers = new LinkedHashMap<>();
+        for (String shardName : index.shardFileNames()) {
+            headers.put(shardName, ffmLoader.loadHeaderOnly(index.shardPath(shardName)));
+        }
+        return headers;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
