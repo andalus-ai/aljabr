@@ -168,7 +168,7 @@ public final class SafetensorShardIndex {
                         || ".".equals(shardName)
                         || "..".equals(shardName)
                         || shardName.indexOf('/') >= 0
-                        || shardName.indexOf('\\\\') >= 0) {
+                        || shardName.indexOf('\\') >= 0) {
                     throw new SafetensorException.ValidationException(
                             "Shard entry must be a bare filename inside the model directory: " + shardName,
                             abs);
