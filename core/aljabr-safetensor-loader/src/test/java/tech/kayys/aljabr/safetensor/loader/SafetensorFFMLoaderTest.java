@@ -500,7 +500,7 @@ class SafetensorFFMLoaderTest {
 
         assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
                 .isInstanceOf(SafetensorException.ShardException.class)
-                .hasMessageContaining("missing shard");
+                .hasMessageContaining("missing shard file(s)");
     }
 
     @Test
