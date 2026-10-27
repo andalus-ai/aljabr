@@ -144,6 +144,33 @@ class GGUFConverterTest {
     }
 
     @Test
+    @DisplayName("Should report unavailable native bridge before invoking native FFM")
+    void testNativeConversionUnavailableIsActionable() throws IOException {
+        if (converter.isNativeAvailable()) {
+            return; // This contract specifically covers native-free CI/runtime environments.
+        }
+
+        Path input = tempDir.resolve("input.bin");
+        Path output = tempDir.resolve("output.gguf");
+        Files.write(input, new byte[] { 1, 2, 3 });
+
+        GGUFConversionParams params = GGUFConversionParams.builder()
+                .inputPath(input)
+                .outputPath(output)
+                .quantization(QuantizationType.F16)
+                .overwriteExisting(true)
+                .build();
+
+        GGUFException error = assertThrows(
+                GGUFException.class, () -> converter.convert(params, null));
+
+        assertThat(error)
+                .hasMessageContaining("requires the optional native GGUF bridge")
+                .hasMessageContaining("pure-Java conversion path currently supports Safetensors input")
+                .hasMessageNotContaining("Failed to initialize default params");
+    }
+
+    @Test
     @DisplayName("Should handle concurrent conversions safely")
     void testConcurrentConversions() throws InterruptedException {
         AtomicInteger successCount = new AtomicInteger(0);

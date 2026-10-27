@@ -281,6 +281,19 @@ public class GGUFConverter {
             return convertSafetensors(params, progressCallback);
         }
 
+        // Native conversion is an optional capability. Fail before entering the FFM
+        // layer so a missing library is reported as an actionable capability error,
+        // rather than a nested "Failed to initialize default params" exception.
+        if (!isNativeAvailable()) {
+            String reason = getNativeUnavailableReason();
+            String detail = reason == null || reason.isBlank() ? "" : " (" + reason + ")";
+            throw new GGUFException(
+                    "Conversion for input format " + format
+                            + " requires the optional native GGUF bridge, which is unavailable."
+                            + " The pure-Java conversion path currently supports Safetensors input."
+                            + detail);
+        }
+
         log.info("Using native GGUF bridge for conversion (format: " + format + ")");
         // Use native GGUF bridge for other formats
         return convertWithNativeBridge(params, progressCallback);
