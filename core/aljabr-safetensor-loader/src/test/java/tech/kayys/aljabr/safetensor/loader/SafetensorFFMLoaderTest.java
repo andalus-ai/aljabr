@@ -640,6 +640,36 @@ class SafetensorFFMLoaderTest {
         assertThat(SafetensorShardIndex.isShardedModel(dir)).isTrue();
     }
 
+    @Test
+    @Order(53)
+    void shardIndex_pathTraversal_isRejected(@TempDir Path dir) throws Exception {
+        String indexJson = """
+                {"weight_map":{"embed.weight":"../outside.safetensors"}}
+                """;
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("Invalid shard filename");
+    }
+
+    @Test
+    @Order(54)
+    void shardIndex_duplicateJsonKeys_areRejected(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("model-00001.safetensors"), "");
+        String indexJson = """
+                {"weight_map":{"embed.weight":"model-00001.safetensors",
+                               "embed.weight":"model-00001.safetensors"}}
+                """;
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.IoException.class)
+                .hasMessageContaining("Failed to parse shard index JSON");
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // 7. File I/O tests (write real files, load via FFM mmap)
     // ─────────────────────────────────────────────────────────────────────────
