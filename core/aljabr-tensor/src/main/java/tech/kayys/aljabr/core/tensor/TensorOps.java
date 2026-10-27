@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.core.tensor;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -10,15 +11,27 @@ import java.util.Objects;
  * or fail explicitly when the requested operation is not implemented.
  */
 public final class TensorOps {
+    private static final int LABEL_COUNT = 52;
+
     private TensorOps() {
     }
 
     /**
-     * Einstein summation is not implemented yet. In particular, this method must
-     * not return an input tensor as a placeholder because that silently produces
-     * a result unrelated to the requested equation.
+     * Computes Einstein summation for F32 CPU tensors using an explicit equation.
      *
-     * @throws UnsupportedOperationException until einsum contraction support lands
+     * <p>The reference implementation supports single-letter ASCII labels,
+     * explicit output labels, arbitrary operand counts, transposes, reductions,
+     * outer products, and contractions. A label may occur at most once in each
+     * operand and once in the output. Ellipses, implicit output labels, repeated
+     * labels (diagonals), non-F32 tensors, and non-CPU tensors are rejected.
+     *
+     * <p>This implementation prioritizes a clear correctness baseline. It
+     * enumerates the full index space and is not intended to replace optimized
+     * backend kernels for large contractions.
+     *
+     * @param equation explicit einsum equation, for example {@code ij,jk->ik}
+     * @param tensors tensors in equation operand order
+     * @return a new tensor with the dimensions named by the output labels
      */
     public static Tensor einsum(String equation, Tensor... tensors) {
         Objects.requireNonNull(equation, "equation must not be null");
@@ -31,9 +44,133 @@ public final class TensorOps {
         }
         for (int i = 0; i < tensors.length; i++) {
             Objects.requireNonNull(tensors[i], "tensor at index " + i + " must not be null");
+            if (tensors[i].dtype() != DType.F32 || tensors[i].device() != DeviceType.CPU) {
+                throw new UnsupportedOperationException("einsum currently supports F32 CPU tensors only");
+            }
         }
-        throw new UnsupportedOperationException(
-                "TensorOps.einsum is not implemented yet; refusing to return a misleading placeholder result");
+
+        String normalized = equation.replaceAll("\\s+", "");
+        String[] sides = normalized.split("->", -1);
+        if (sides.length != 2) {
+            throw new IllegalArgumentException("einsum requires exactly one explicit '->' output");
+        }
+        String[] inputLabels = sides[0].split(",", -1);
+        String outputLabels = sides[1];
+        if (inputLabels.length != tensors.length) {
+            throw new IllegalArgumentException("equation has " + inputLabels.length
+                    + " operands but received " + tensors.length + " tensors");
+        }
+
+        int[] labelDimensions = new int[LABEL_COUNT];
+        boolean[] labelSeen = new boolean[LABEL_COUNT];
+        List<Integer> labelsInOrder = new ArrayList<>(LABEL_COUNT);
+        for (int operand = 0; operand < tensors.length; operand++) {
+            String labels = inputLabels[operand];
+            if (labels.length() != tensors[operand].shape().rank()) {
+                throw new IllegalArgumentException("operand " + operand + " has rank "
+                        + tensors[operand].shape().rank() + " but equation labels '" + labels
+                        + "' have length " + labels.length());
+            }
+            boolean[] localSeen = new boolean[LABEL_COUNT];
+            for (int axis = 0; axis < labels.length(); axis++) {
+                int slot = labelSlot(labels.charAt(axis));
+                if (localSeen[slot]) {
+                    throw new IllegalArgumentException("repeated label '" + labels.charAt(axis)
+                            + "' within operand " + operand + " is not supported");
+                }
+                localSeen[slot] = true;
+                int dimension = Math.toIntExact(tensors[operand].shape().dim(axis));
+                if (labelSeen[slot] && labelDimensions[slot] != dimension) {
+                    throw new IllegalArgumentException("dimension mismatch for label '" + labels.charAt(axis)
+                            + "': expected " + labelDimensions[slot] + " but got " + dimension);
+                }
+                if (!labelSeen[slot]) {
+                    labelSeen[slot] = true;
+                    labelDimensions[slot] = dimension;
+                    labelsInOrder.add(slot);
+                }
+            }
+        }
+
+        boolean[] outputSeen = new boolean[LABEL_COUNT];
+        long[] outputDims = new long[outputLabels.length()];
+        for (int axis = 0; axis < outputLabels.length(); axis++) {
+            int slot = labelSlot(outputLabels.charAt(axis));
+            if (outputSeen[slot]) {
+                throw new IllegalArgumentException("repeated output label '" + outputLabels.charAt(axis) + "'");
+            }
+            if (!labelSeen[slot]) {
+                throw new IllegalArgumentException("output label '" + outputLabels.charAt(axis)
+                        + "' does not occur in an input");
+            }
+            outputSeen[slot] = true;
+            outputDims[axis] = labelDimensions[slot];
+        }
+
+        long outputElements = new Shape(outputDims).numel();
+        if (outputElements > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("einsum output is too large for a Java float[]: " + outputElements);
+        }
+
+        long assignmentCount = 1;
+        try {
+            for (int slot : labelsInOrder) {
+                assignmentCount = Math.multiplyExact(assignmentCount, labelDimensions[slot]);
+            }
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("einsum index space overflows long", e);
+        }
+        if (assignmentCount > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("einsum index space is too large for the reference CPU implementation: "
+                    + assignmentCount);
+        }
+
+        float[][] values = new float[tensors.length][];
+        for (int i = 0; i < tensors.length; i++) {
+            values[i] = tensors[i].toFloatArray();
+        }
+        float[] output = new float[Math.toIntExact(outputElements)];
+        int[] coordinates = new int[LABEL_COUNT];
+        for (long assignment = 0; assignment < assignmentCount; assignment++) {
+            long remainder = assignment;
+            for (int i = labelsInOrder.size() - 1; i >= 0; i--) {
+                int slot = labelsInOrder.get(i);
+                int dimension = labelDimensions[slot];
+                coordinates[slot] = dimension == 0 ? 0 : (int) (remainder % dimension);
+                if (dimension != 0) {
+                    remainder /= dimension;
+                }
+            }
+
+            float product = 1.0f;
+            for (int operand = 0; operand < tensors.length; operand++) {
+                String labels = inputLabels[operand];
+                long offset = 0;
+                for (int axis = 0; axis < labels.length(); axis++) {
+                    int slot = labelSlot(labels.charAt(axis));
+                    offset = offset * labelDimensions[slot] + coordinates[slot];
+                }
+                product *= values[operand][Math.toIntExact(offset)];
+            }
+
+            long outputOffset = 0;
+            for (int axis = 0; axis < outputLabels.length(); axis++) {
+                int slot = labelSlot(outputLabels.charAt(axis));
+                outputOffset = outputOffset * labelDimensions[slot] + coordinates[slot];
+            }
+            output[Math.toIntExact(outputOffset)] += product;
+        }
+        return Tensor.of(output, outputDims);
+    }
+
+    private static int labelSlot(char label) {
+        if (label >= 'a' && label <= 'z') {
+            return label - 'a';
+        }
+        if (label >= 'A' && label <= 'Z') {
+            return 26 + label - 'A';
+        }
+        throw new IllegalArgumentException("einsum labels must be ASCII letters; found '" + label + "'");
     }
 
     /**
@@ -98,22 +235,31 @@ public final class TensorOps {
 
         long outer = 1;
         long inner = 1;
-        for (int d = 0; d < axis; d++) {
-            outer = Math.multiplyExact(outer, first.shape().dim(d));
+        try {
+            for (int d = 0; d < axis; d++) {
+                outer = Math.multiplyExact(outer, first.shape().dim(d));
+            }
+            for (int d = axis + 1; d < rank; d++) {
+                inner = Math.multiplyExact(inner, first.shape().dim(d));
+            }
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("cat block size overflows long", e);
         }
-        for (int d = axis + 1; d < rank; d++) {
-            inner = Math.multiplyExact(inner, first.shape().dim(d));
+
+        float[][] sources = new float[tensors.size()][];
+        for (int i = 0; i < tensors.size(); i++) {
+            sources[i] = tensors.get(i).toFloatArray();
         }
 
         float[] output = new float[Math.toIntExact(outputElements)];
         int destination = 0;
         for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
-            for (Tensor tensor : tensors) {
+            for (int i = 0; i < tensors.size(); i++) {
+                Tensor tensor = tensors.get(i);
                 long blockElements = Math.multiplyExact(tensor.shape().dim(axis), inner);
-                float[] source = tensor.toFloatArray();
                 long sourceOffset = Math.multiplyExact(outerIndex, blockElements);
                 int blockLength = Math.toIntExact(blockElements);
-                System.arraycopy(source, Math.toIntExact(sourceOffset), output, destination, blockLength);
+                System.arraycopy(sources[i], Math.toIntExact(sourceOffset), output, destination, blockLength);
                 destination += blockLength;
             }
         }
