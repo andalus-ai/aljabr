@@ -195,45 +195,39 @@ public class SafetensorFFMLoader {
      * eventually page in all data, but the initial map call is O(1).
      */
     private SafetensorLoadResult loadMmap(Path resolved) {
-        // Arena.ofShared() instead of ofAuto(): thread-safe and has explicit lifecycle.
-        // GraalVM Native Image cannot track GC-managed (ofAuto) arena finalization;
-        // ofShared is fully AOT-safe and is closed when SafetensorLoadResult.close() is called.
+        // The arena is transferred to the result only after parsing succeeds.
+        // Every failure path before that point must release the mapped region.
         Arena arena = Arena.ofShared();
-        try {
-            FileChannel channel = FileChannel.open(resolved, StandardOpenOption.READ);
+        boolean arenaTransferred = false;
+        try (FileChannel channel = FileChannel.open(resolved, StandardOpenOption.READ)) {
             long fileSize = channel.size();
-
             if (fileSize == 0) {
-                throw new SafetensorException.ValidationException(
-                        "File is empty", resolved);
+                throw new SafetensorException.ValidationException("File is empty", resolved);
             }
 
-            // JDK 22+ API: FileChannel.map(mode, offset, size, arena) → MemorySegment
-            // NOTE: only called in JVM mode (native profile forces prefer-mmap=false)
             MemorySegment fileSegment = channel.map(
                     FileChannel.MapMode.READ_ONLY, 0L, fileSize, arena);
-
-            // Channel can be closed after mmap — the segment remains valid
-            channel.close();
-
             SafetensorHeaderParser parser = SafetensorHeaderParser.create(objectMapper);
             SafetensorHeader header = parser.parse(fileSegment, resolved);
 
-            return new SafetensorLoadResult(
+            SafetensorLoadResult result = new SafetensorLoadResult(
                     resolved, header, fileSegment, arena, SafetensorLoadResult.LoadMode.MMAP);
-
+            arenaTransferred = true;
+            return result;
         } catch (SafetensorException e) {
-            // safeClose(arena);
             throw e;
         } catch (UnsupportedOperationException e) {
-            // mmap not supported on this filesystem — fall back to copy
-            // safeClose(arena);
+            // Some filesystems do not support mmap; release the failed arena
+            // before attempting the portable copy path.
             log.infof("mmap not supported for [%s], falling back to COPY mode: %s",
                     resolved, e.getMessage());
             return loadCopy(resolved);
         } catch (IOException e) {
-            // safeClose(arena);
             throw new SafetensorException.IoException(resolved, e);
+        } finally {
+            if (!arenaTransferred) {
+                closeArenaQuietly(arena);
+            }
         }
     }
 
@@ -322,18 +316,25 @@ public class SafetensorFFMLoader {
                     int toRead = (int) Math.min(bytesRemaining, chunkSize);
                     chunk.limit(toRead);
                     
-                    int read = channel.read(chunk, currentReadPos);
-                    if (read < 0) {
-                        throw new IOException("Unexpected EOF while copying tensor " + name);
+                    // FileChannel reads may be partial or temporarily return zero.
+                    // Fill the requested chunk before copying it into native memory.
+                    while (chunk.hasRemaining()) {
+                        int read = channel.read(chunk, currentReadPos + chunk.position());
+                        if (read < 0) {
+                            throw new IOException("Unexpected EOF while copying tensor " + name);
+                        }
+                        if (read == 0) {
+                            Thread.onSpinWait();
+                        }
                     }
                     chunk.flip();
-                    
+
                     MemorySegment src = MemorySegment.ofBuffer(chunk);
-                    MemorySegment.copy(src, 0, nativeBuffer, currentWritePos, read);
-                    
-                    currentReadPos += read;
-                    currentWritePos += read;
-                    bytesRemaining -= read;
+                    MemorySegment.copy(src, 0, nativeBuffer, currentWritePos, toRead);
+
+                    currentReadPos += toRead;
+                    currentWritePos += toRead;
+                    bytesRemaining -= toRead;
                 }
             }
 
@@ -347,8 +348,17 @@ public class SafetensorFFMLoader {
                     resolved, syntheticHeader, nativeBuffer, arena, SafetensorLoadResult.LoadMode.COPY);
 
         } catch (Exception e) {
+            closeArenaQuietly(arena);
             if (e instanceof SafetensorException se) throw se;
             throw new SafetensorException.IoException(resolved, e);
+        }
+    }
+
+    private static void closeArenaQuietly(Arena arena) {
+        try {
+            arena.close();
+        } catch (RuntimeException | Error closeFailure) {
+            // Preserve the original load failure; cleanup is best-effort.
         }
     }
 
