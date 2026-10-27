@@ -773,4 +773,72 @@ class SafetensorFFMLoaderTest {
         }
     }
 
+    @Test
+    void parser_customHeaderLimit_rejectsOversizedHeader() {
+        SafetensorHeaderParser parser = SafetensorHeaderParser.create(
+                MAPPER, new SafetensorParserLimits(10, 10, 10, 100, 8, 100));
+        byte[] bytes = buildSafetensors(
+                "{\\"x\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[1],\\"data_offsets\\":[0,1]}}",
+                new byte[] { 1 });
+        try (Arena arena = Arena.ofConfined()) {
+            assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("large-header.safetensors")))
+                    .isInstanceOf(SafetensorException.ValidationException.class)
+                    .hasMessageContaining("exceeds safety cap");
+        }
+    }
+
+    @Test
+    void parser_customTensorCountLimit_rejectsTooManyTensors() {
+        SafetensorHeaderParser parser = SafetensorHeaderParser.create(
+                MAPPER, new SafetensorParserLimits(1024, 1, 10, 100, 8, 100));
+        String json = "{\\"a\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[0],\\"data_offsets\\":[0,0]},"
+                + "\\"b\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[0],\\"data_offsets\\":[0,0]}}";
+        byte[] bytes = buildSafetensors(json, new byte[0]);
+        try (Arena arena = Arena.ofConfined()) {
+            assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("too-many-tensors.safetensors")))
+                    .isInstanceOf(SafetensorException.ValidationException.class)
+                    .hasMessageContaining("Tensor count")
+                    .hasMessageContaining("configured limit");
+        }
+    }
+
+    @Test
+    void parser_customTensorRankLimit_rejectsExcessiveRank() {
+        SafetensorHeaderParser parser = SafetensorHeaderParser.create(
+                MAPPER, new SafetensorParserLimits(1024, 10, 10, 100, 1, 100));
+        String json = "{\\"x\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[1,1],\\"data_offsets\\":[0,1]}}";
+        byte[] bytes = buildSafetensors(json, new byte[] { 1 });
+        try (Arena arena = Arena.ofConfined()) {
+            assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("high-rank.safetensors")))
+                    .isInstanceOf(SafetensorException.ValidationException.class)
+                    .hasMessageContaining("rank")
+                    .hasMessageContaining("configured limit");
+        }
+    }
+
+    @Test
+    void parser_customMetadataLimits_rejectLongMetadataValue() {
+        SafetensorHeaderParser parser = SafetensorHeaderParser.create(
+                MAPPER, new SafetensorParserLimits(1024, 10, 2, 3, 8, 100));
+        String json = "{\\"__metadata__\\":{\\"format\\":\\"pytorch\\"},"
+                + "\\"x\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[1],\\"data_offsets\\":[0,1]}}";
+        byte[] bytes = buildSafetensors(json, new byte[] { 1 });
+        try (Arena arena = Arena.ofConfined()) {
+            assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("long-metadata.safetensors")))
+                    .isInstanceOf(SafetensorException.ValidationException.class)
+                    .hasMessageContaining("Metadata key/value")
+                    .hasMessageContaining("string length limit");
+        }
+    }
+
+    @Test
+    void parser_limits_rejectInvalidConfiguration() {
+        assertThatThrownBy(() -> new SafetensorParserLimits(0, 1, 1, 10, 8, 100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxHeaderBytes");
+        assertThatThrownBy(() -> new SafetensorParserLimits(10, 1, -1, 10, 8, 100))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("maxMetadataEntries");
+    }
+
 }
