@@ -3785,7 +3785,7 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
       double submitWaitMs =
           (double)(profileCompletedNanos - profileSubmitNanos) / 1000000.0;
       fprintf(stderr,
-              "[METAL DECODE PROFILE] pos=%d layers=%d path=%s wall_ms=%.3f encode_ms=%.3f submit_wait_ms=%.3f gpu_ms=%.3f\\n",
+              "[METAL DECODE PROFILE] pos=%d layers=%d path=%s wall_ms=%.3f encode_ms=%.3f submit_wait_ms=%.3f gpu_ms=%.3f\n",
               pos, g_num_decode_layers, useTokenEmbedding ? "token" : "vector",
               wallMs, encodeMs, submitWaitMs, gpuMs);
     }
