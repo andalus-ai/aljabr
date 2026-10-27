@@ -3337,6 +3337,8 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
       [enc setBytes:&scale length:sizeof(scale) atIndex:4];
       [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)(K / 256u), 1, 1)
           threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+      // Make the embedding writes visible to layer-zero kernels in this encoder.
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
     }
 
     id<MTLBuffer> bufPostAttnAll = g_norm_buffers[0]; // slot 0 = postAttnNorm
