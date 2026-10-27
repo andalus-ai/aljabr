@@ -1,0 +1,68 @@
+name: GGUF Native Bridge
+
+on:
+  workflow_dispatch:
+    inputs:
+      llama_cpp_ref:
+        description: "Pinned llama.cpp tag or commit compatible with the bridge"
+        required: true
+        default: "b4512"
+  pull_request:
+    paths:
+      - "core/aljabr-gguf-bridge/**"
+      - ".github/workflows/gguf-native-bridge.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build Linux GGUF bridge
+    runs-on: ubuntu-24.04
+    env:
+      LLAMA_CPP_REF: ${{ inputs.llama_cpp_ref || 'b4512' }}
+
+    steps:
+      - name: Checkout Aljabr
+        uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential cmake ninja-build zlib1g-dev
+
+      - name: Checkout pinned llama.cpp source
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/ggml-org/llama.cpp.git .deps/llama.cpp
+          git -C .deps/llama.cpp checkout --detach "${LLAMA_CPP_REF}"
+          git -C .deps/llama.cpp rev-parse HEAD | tee llama-cpp-commit.txt
+
+      - name: Configure GGUF bridge
+        run: |
+          cmake -S core/aljabr-gguf-bridge -B build/gguf-bridge -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLAMA_SOURCE_DIR="${GITHUB_WORKSPACE}/.deps/llama.cpp" \
+            -DGGUF_BUILD_SHARED=ON \
+            -DGGUF_BUILD_TESTS=OFF \
+            -DGGUF_ENABLE_CUDA=OFF \
+            -DGGUF_ENABLE_METAL=OFF \
+            -DGGUF_ENABLE_OPENCL=OFF \
+            -DGGUF_ENABLE_VULKAN=OFF
+
+      - name: Build native bridge
+        run: cmake --build build/gguf-bridge --target gguf_bridge --parallel 2
+
+      - name: Verify shared library artifact
+        run: |
+          set -euo pipefail
+          find build/gguf-bridge -type f \\( -name 'libgguf_bridge.so*' -o -name 'gguf_bridge.dll' \\) -print -quit | grep .
+
+      - name: Upload bridge and source pin
+        uses: actions/upload-artifact@v4
+        with:
+          name: gguf-bridge-linux-x86_64
+          path: |
+            build/gguf-bridge/**/libgguf_bridge.so*
+            llama-cpp-commit.txt
+          if-no-files-found: error
