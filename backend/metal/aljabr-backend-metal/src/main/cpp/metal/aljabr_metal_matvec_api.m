@@ -3763,7 +3763,7 @@ int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
       !isfinite(scale) || g_output_N <= 0)
     return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
-  if (pipelines->embed_token_q4_k == nil)
+  if (pipelines == NULL || pipelines->embed_token_q4_k == nil)
     return -3;
 
   size_t rowBytes = (size_t)(dim / 256) * 144u;
