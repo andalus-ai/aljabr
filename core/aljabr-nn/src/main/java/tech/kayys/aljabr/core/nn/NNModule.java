@@ -120,24 +120,103 @@ public abstract class NNModule implements AutoCloseable {
         return count;
     }
 
-    public void loadStateDict(Map<String, Tensor> stateDict) {
-        Map<String, Tensor> current = namedParameters();
-        for (Map.Entry<String, Tensor> entry : stateDict.entrySet()) {
-            Tensor src = entry.getValue();
-            Tensor dst = current.get(entry.getKey());
-            if (dst != null) {
-                if (src.shape().numel() != dst.shape().numel()) {
-                    throw new IllegalArgumentException("Shape mismatch for parameter " + entry.getKey() +
-                            ": expected " + dst.shape() + " but got " + src.shape());
-                }
-                if (src instanceof DefaultTensor && dst instanceof DefaultTensor) {
-                    MemorySegment srcSeg = ((DefaultTensor) src).buffer().segment();
-                    MemorySegment dstSeg = ((DefaultTensor) dst).buffer().segment();
-                    MemorySegment.copy(srcSeg, 0, dstSeg, 0, srcSeg.byteSize());
-                } else {
-                    throw new UnsupportedOperationException("In-place loadStateDict only supported for DefaultTensor");
-                }
+    /**
+     * Returns an immutable mapping of fully qualified parameter and buffer names to
+     * their live tensors. The map is a snapshot; tensor values are not cloned.
+     */
+    public Map<String, Tensor> stateDict() {
+        Map<String, Tensor> result = new LinkedHashMap<>(namedParameters());
+        namedBuffers().forEach((name, tensor) -> {
+            if (result.putIfAbsent(name, tensor) != null) {
+                throw new IllegalStateException("Duplicate state name: " + name);
             }
+        });
+        return Collections.unmodifiableMap(result);
+    }
+
+    /** Returns fully qualified registered buffers, including child modules. */
+    public Map<String, Tensor> namedBuffers() {
+        Map<String, Tensor> result = new LinkedHashMap<>(buffers);
+        submodules.forEach((name, module) -> module.namedBuffers()
+                .forEach((bufferName, tensor) -> result.put(name + "." + bufferName, tensor)));
+        return Collections.unmodifiableMap(result);
+    }
+
+    /**
+     * Loads a complete state dictionary. Strict mode rejects missing and unexpected
+     * names. All names, shapes, dtypes, and storage compatibility are checked before
+     * any tensor is mutated.
+     */
+    public void loadStateDict(Map<String, Tensor> stateDict) {
+        loadStateDict(stateDict, true);
+    }
+
+    /**
+     * Loads matching tensors from a state dictionary.
+     *
+     * @param stateDict source tensors keyed by fully qualified state name
+     * @param strict when true, source and destination state names must match exactly
+     * @throws IllegalArgumentException if names, shapes, or dtypes are incompatible
+     * @throws UnsupportedOperationException if a tensor implementation cannot be copied in place
+     */
+    public void loadStateDict(Map<String, Tensor> stateDict, boolean strict) {
+        Objects.requireNonNull(stateDict, "stateDict must not be null");
+        Map<String, Tensor> current = stateDict();
+        Map<String, Tensor> supplied = new LinkedHashMap<>();
+        stateDict.forEach((name, tensor) -> {
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("State names must not be null or blank");
+            }
+            supplied.put(name, Objects.requireNonNull(tensor, "State tensor must not be null: " + name));
+        });
+
+        if (strict) {
+            List<String> missing = current.keySet().stream()
+                    .filter(name -> !supplied.containsKey(name)).toList();
+            List<String> unexpected = supplied.keySet().stream()
+                    .filter(name -> !current.containsKey(name)).toList();
+            if (!missing.isEmpty() || !unexpected.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "State dictionary keys do not match; missing=" + missing + ", unexpected=" + unexpected);
+            }
+        }
+
+        // Validate every matching entry before mutating any destination tensor.
+        for (Map.Entry<String, Tensor> entry : supplied.entrySet()) {
+            Tensor dst = current.get(entry.getKey());
+            if (dst == null) {
+                continue; // Only permitted in non-strict mode.
+            }
+            Tensor src = entry.getValue();
+            if (!java.util.Arrays.equals(src.shape().dims(), dst.shape().dims())) {
+                throw new IllegalArgumentException("Shape mismatch for state " + entry.getKey()
+                        + ": expected " + dst.shape() + " but got " + src.shape());
+            }
+            if (src.dtype() != dst.dtype()) {
+                throw new IllegalArgumentException("DType mismatch for state " + entry.getKey()
+                        + ": expected " + dst.dtype() + " but got " + src.dtype());
+            }
+            if (!(src instanceof DefaultTensor) || !(dst instanceof DefaultTensor)) {
+                throw new UnsupportedOperationException(
+                        "In-place loadStateDict currently supports DefaultTensor only: " + entry.getKey());
+            }
+            long requiredBytes = dst.dtype().memoryFootprintBytes(dst.numel());
+            if (((DefaultTensor) src).buffer().sizeBytes() < requiredBytes
+                    || ((DefaultTensor) dst).buffer().sizeBytes() < requiredBytes) {
+                throw new IllegalArgumentException("Insufficient storage for state " + entry.getKey()
+                        + "; required " + requiredBytes + " bytes");
+            }
+        }
+
+        for (Map.Entry<String, Tensor> entry : supplied.entrySet()) {
+            Tensor dst = current.get(entry.getKey());
+            if (dst == null) {
+                continue;
+            }
+            long requiredBytes = dst.dtype().memoryFootprintBytes(dst.numel());
+            MemorySegment srcSeg = ((DefaultTensor) entry.getValue()).buffer().segment();
+            MemorySegment dstSeg = ((DefaultTensor) dst).buffer().segment();
+            MemorySegment.copy(srcSeg, 0, dstSeg, 0, requiredBytes);
         }
     }
 
