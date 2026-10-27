@@ -170,8 +170,16 @@ final class JavaGgufBackend implements GgufBackend {
             InferenceResponse.FinishReason finishReason = InferenceResponse.FinishReason.LENGTH;
             System.err.println("[java-engine] Generating tokens...");
             long genStart = System.currentTimeMillis();
+            boolean isGreedy = (sampling.temperature() <= 0.0f);
+            int nextToken = -1;
+            boolean hasNextToken = false;
+
             for (int i = 0; i < sampling.maxTokens() && pos < cfg.contextLength(); i++) {
-                int nextToken = sampler.sample(logits, history);
+                if (!hasNextToken) {
+                    nextToken = sampler.sample(logits, history);
+                } else {
+                    hasNextToken = false;
+                }
                 if (i < 10) {
                     System.err.printf("  [GEN step %d] token=%d ('%s')%n", i, nextToken, tokenizer.decode(new long[]{nextToken}, DecodeOptions.builder().build()));
                 }
@@ -181,6 +189,22 @@ final class JavaGgufBackend implements GgufBackend {
                 }
                 generated.add(nextToken);
                 history.add(nextToken);
+
+                if (i + 1 >= sampling.maxTokens() || pos + 1 >= cfg.contextLength()) {
+                    pos++;
+                    break;
+                }
+
+                if (isGreedy && decodeStep.canUseMetalGreedy()) {
+                    int greedyNext = decodeStep.forwardGreedy(nextToken, pos, cache);
+                    if (greedyNext >= 0) {
+                        nextToken = greedyNext;
+                        hasNextToken = true;
+                        pos++;
+                        continue;
+                    }
+                }
+
                 logits = decodeStep.forward(nextToken, pos, cache, true);
                 pos++;
             }

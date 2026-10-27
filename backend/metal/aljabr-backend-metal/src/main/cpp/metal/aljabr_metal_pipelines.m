@@ -385,10 +385,16 @@ void aljabr_metal_compile_runtime_pipelines(
       compile_pipeline(library, @"aljabr_rope_single_token_kernel");
   pipelines->rope_single_token_freqfact =
       compile_pipeline(library, @"aljabr_rope_single_token_freqfact_kernel");
+  pipelines->kv_copy_flat =
+      compile_pipeline(library, @"aljabr_kv_copy_flat_kernel");
   pipelines->kv_store_flat =
       compile_pipeline(library, @"aljabr_kv_store_flat_kernel");
   pipelines->sdpa_flat =
       compile_pipeline(library, @"aljabr_sdpa_flat_kernel");
+  pipelines->post_attn_add_ffn_norm =
+      compile_pipeline(library, @"aljabr_post_attn_add_ffn_norm_kernel");
+  pipelines->post_ffn_add_out_scale =
+      compile_pipeline(library, @"aljabr_post_ffn_add_out_scale_kernel");
 
   NSError *matvec256Error = nil;
   id<MTLLibrary> matvec256Library =
@@ -412,6 +418,8 @@ void aljabr_metal_compile_runtime_pipelines(
         matvec256Library, @"aljabr_matvec_tb_q4_k_mr4_kernel");
     pipelines->matvec_tb_q4_k_mr8 = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q4_k_mr8_kernel");
+    pipelines->embed_token_q4_k = compile_pipeline(
+        matvec256Library, @"aljabr_embed_token_q4_k_kernel");
     pipelines->matvec_tb_q4_k_mr4_softcap = compile_pipeline(
         matvec256Library, @"aljabr_matvec_tb_q4_k_mr4_softcap_kernel");
     pipelines->matvec_tb_q4_k_b4_mr4 = compile_pipeline(

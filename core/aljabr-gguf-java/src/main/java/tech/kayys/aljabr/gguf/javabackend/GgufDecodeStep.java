@@ -69,6 +69,7 @@ final class GgufDecodeStep {
 
     // Full-GPU single command buffer decode step available
     private final boolean canUseMetalDecodeStep;
+    private final boolean canUseMetalTokenEmbd;
 
     // A failed native step can leave device KV state partially updated.
     private boolean metalDecodeRuntimeDisabled;
@@ -490,7 +491,16 @@ final class GgufDecodeStep {
                 metalDecodeSkipReason = "native KV-cache initialization failed";
             }
         }
+        boolean tokenEmbdRegistered = false;
+        if (metalDecodeActive && tokenEmbed != null && !usesPerLayerTokenEmbeddings) {
+            tokenEmbdRegistered = GgufMetalBridge.registerTokenEmbd(
+                    model, tokenEmbed, dim, cfg.embeddingScale());
+            if (tokenEmbdRegistered) {
+                System.out.println("[GgufDecodeStep] GPU-resident token embedding registered.");
+            }
+        }
         this.canUseMetalDecodeStep = metalDecodeActive;
+        this.canUseMetalTokenEmbd = tokenEmbdRegistered;
         if (metalDecodeActive) {
             System.out.println(
                     "[GgufDecodeStep] Full-GPU single command buffer decode step ENABLED (" + layers + " layers).");
@@ -624,21 +634,12 @@ final class GgufDecodeStep {
             long tQkv0 = System.nanoTime();
             if (wK[layer] != null && wV[layer] != null) {
                 dispatchMatVecTripleBatch(wQ[layer], allQ, wK[layer], allK, wV[layer], allV, allXb, T);
+            } else if (wK[layer] != null) {
+                dispatchMatVecBatch(wQ[layer], allXb, allQ, T);
+                dispatchMatVecBatch(wK[layer], allXb, allK, T);
+                System.arraycopy(allK, 0, allV, 0, T * kvDim);
             } else {
-                for (int t = 0; t < T; t++) {
-                    System.arraycopy(allXb, t * dim, xbL, 0, dim);
-                    if (wK[layer] != null) {
-                        dispatchMatVecPair(wQ[layer], qLocal, wK[layer], kLocal, xbL);
-                        System.arraycopy(kLocal, 0, vLocal, 0, kvDim);
-                    } else {
-                        dispatchMatVec(wQ[layer], xbL, qLocal);
-                    }
-                    System.arraycopy(qLocal, 0, allQ, t * qDim, qDim);
-                    if (hasOwnKv) {
-                        System.arraycopy(kLocal, 0, allK, t * kvDim, kvDim);
-                        System.arraycopy(vLocal, 0, allV, t * kvDim, kvDim);
-                    }
-                }
+                dispatchMatVecBatch(wQ[layer], allXb, allQ, T);
             }
             long tQkv = System.nanoTime() - tQkv0;
 
@@ -976,6 +977,66 @@ final class GgufDecodeStep {
                 pos, reason);
     }
 
+    public boolean canUseMetalGreedy() {
+        return canUseMetalDecodeStep && !metalDecodeRuntimeDisabled && !metalDecodeRequiresRestart;
+    }
+
+    /**
+     * Fast-path forward pass for greedy decoding.
+     * Evaluates the model on GPU, computes vDSP argmax directly on GPU logits,
+     * and returns the best token without copying vocabulary logits to host memory.
+     */
+    int forwardGreedy(int tokenId, int pos, KVCache cache) {
+        if (!canUseMetalDecodeStep || metalDecodeRuntimeDisabled) {
+            return -1;
+        }
+        if (metalDecodeRequiresRestart) {
+            throw new IllegalStateException(
+                    "Full-GPU Metal decode failed after advancing the native KV cache. "
+                            + "Recreate the decoder and prefill the full context before retrying.");
+        }
+        int dim = cfg.embeddingDim();
+        float eps = cfg.rmsNormEps();
+
+        long t0 = System.nanoTime();
+        int bestToken = -1;
+        if (canUseMetalTokenEmbd) {
+            bestToken = GgufMetalBridge.decodeStepTokenGreedy(pos, cfg.slidingWindow(), eps, tokenId);
+        }
+        if (bestToken < 0) {
+            GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
+            if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
+                GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
+            }
+            t0 = System.nanoTime();
+            bestToken = GgufMetalBridge.decodeStepGreedy(pos, cfg.slidingWindow(), eps, x);
+        }
+        if (bestToken >= 0) {
+            cache.advance();
+            metalDecodeStepHasCommitted = true;
+            long tElapsed = System.nanoTime() - t0;
+            if (pos % 10 == 0 || pos < 5) {
+                System.out.printf("[METAL DECODE GREEDY %d] single cmd buffer step: %.2f ms%n", pos,
+                        tElapsed / 1e6);
+            }
+            return bestToken;
+        }
+
+        String fallbackReason = fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
+        if (metalDecodeStepHasCommitted) {
+            metalDecodeRuntimeDisabled = true;
+            metalDecodeRequiresRestart = true;
+            String message = "[GgufDecodeStep] " + fallbackReason
+                    + "; cannot safely continue with the incomplete host KV cache. "
+                    + "Recreate the decoder and prefill the full context.";
+            System.err.println(message);
+            throw new IllegalStateException(message);
+        }
+
+        disableMetalDecodeAfterRuntimeFallback(pos, fallbackReason);
+        return -1;
+    }
+
     /** One token's forward pass with optional logit computation. */
     float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits) {
         int dim = cfg.embeddingDim();
@@ -992,14 +1053,19 @@ final class GgufDecodeStep {
         }
 
         if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
-            // The current native entry point computes logits as part of its single-command-buffer step.
-            // Even when the caller will ignore logits, use it to keep the native KV cache authoritative.
-            GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
-            if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
-                GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
-            }
             long t0 = System.nanoTime();
-            boolean ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
+            boolean ok = false;
+            if (canUseMetalTokenEmbd) {
+                ok = GgufMetalBridge.decodeStepToken(pos, cfg.slidingWindow(), eps, tokenId, this.logits);
+            }
+            if (!ok) {
+                GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenId, x);
+                if (cfg.embeddingScale() > 0f && cfg.embeddingScale() != 1.0f) {
+                    GGUFVectorOps.scale(x, cfg.embeddingScale(), dim);
+                }
+                t0 = System.nanoTime();
+                ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
+            }
             if (ok) {
                 cache.advance();
                 metalDecodeStepHasCommitted = true;
