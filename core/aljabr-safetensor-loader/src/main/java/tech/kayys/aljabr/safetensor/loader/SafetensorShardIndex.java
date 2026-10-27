@@ -37,6 +37,7 @@ package tech.kayys.aljabr.safetensor.loader;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonParser;
 
 import tech.kayys.aljabr.safetensor.exception.SafetensorException;
 
@@ -135,8 +136,13 @@ public final class SafetensorShardIndex {
         }
 
         try {
-            byte[] json = Files.readAllBytes(abs);
-            IndexDto dto = mapper.readValue(json, IndexDto.class);
+            IndexDto dto;
+            // Reject duplicate JSON keys instead of silently accepting the last
+            // value supplied by an ambiguous or corrupted index.
+            try (JsonParser parser = mapper.getFactory().createParser(Files.readAllBytes(abs))) {
+                parser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+                dto = mapper.readValue(parser, IndexDto.class);
+            }
 
             if (dto.weightMap == null || dto.weightMap.isEmpty()) {
                 throw new SafetensorException.ValidationException(
@@ -211,6 +217,26 @@ public final class SafetensorShardIndex {
             throw new SafetensorException.IoException(
                     "Failed to parse shard index JSON", abs, e);
         }
+    }
+
+    private static boolean isSafeShardFileName(String shardName) {
+        if (shardName == null || shardName.isBlank()) {
+            return false;
+        }
+        // Reject both POSIX and Windows separators regardless of host OS.
+        if (shardName.indexOf('/') >= 0 || shardName.indexOf('\\') >= 0) {
+            return false;
+        }
+        Path path;
+        try {
+            path = Path.of(shardName);
+        } catch (RuntimeException invalidPath) {
+            return false;
+        }
+        return !path.isAbsolute()
+                && path.getNameCount() == 1
+                && !".".equals(shardName)
+                && !"..".equals(shardName);
     }
 
     /**
