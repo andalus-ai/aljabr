@@ -1058,7 +1058,16 @@ public class MetalBinding {
         return (int) invoke(FN_REGISTER_OUTPUT, outputNormW, outputW, typeOutputW, outputK, outputN, cap);
     }
 
+    // GGML_TYPE_Q4_K is 12. The current GPU token-embedding kernel decodes
+    // Q4_K rows only; accepting another GGUF type here would interpret an
+    // incompatible block layout on the GPU.
+    static boolean isTokenEmbeddingEligible(int typeEmbdW, int dim, float scale) {
+        return typeEmbdW == 12 && dim > 0 && Float.isFinite(scale);
+    }
+
     public int registerTokenEmbd(MemorySegment embdW, int typeEmbdW, int dim, float scale) {
+        if (!isTokenEmbeddingEligible(typeEmbdW, dim, scale))
+            return -3;
         if (!handles.containsKey(FN_REGISTER_TOKEN_EMBD))
             return -2;
         return (int) invoke(FN_REGISTER_TOKEN_EMBD, embdW, typeEmbdW, dim, scale);
