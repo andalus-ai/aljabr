@@ -25,6 +25,7 @@
  */
 package tech.kayys.aljabr.safetensor.loader;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import tech.kayys.aljabr.safetensor.exception.SafetensorException;
@@ -34,6 +35,9 @@ import org.jboss.logging.Logger;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
@@ -196,7 +200,11 @@ public final class SafetensorHeaderParser {
             // MemorySegment.getString reads UTF-8 null-terminated; we use the
             // array path to get the exact slice
             byte[] bytes = jsonSeg.toArray(ValueLayout.JAVA_BYTE);
-            return new String(bytes, StandardCharsets.UTF_8);
+            return StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
         } catch (Exception e) {
             throw new SafetensorException.HeaderParseException(
                     "Failed to decode JSON header as UTF-8", path, 8L, e);
@@ -215,26 +223,33 @@ public final class SafetensorHeaderParser {
             Map<String, String> fileMeta,
             Path path) {
         try {
-            Map<String, Object> root = mapper.readValue(jsonString, LinkedHashMap.class);
+            // Enable duplicate-key rejection per parser instance. Do not mutate the
+            // shared ObjectMapper: it may be used concurrently by other components.
+            try (JsonParser jsonParser = mapper.getFactory().createParser(jsonString)) {
+                jsonParser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+                Map<String, Object> root = mapper.readValue(jsonParser, LinkedHashMap.class);
 
-            for (Map.Entry<String, Object> entry : root.entrySet()) {
-                String key = entry.getKey();
-                Object value = entry.getValue();
+                for (Map.Entry<String, Object> entry : root.entrySet()) {
+                    String key = entry.getKey();
+                    Object value = entry.getValue();
 
-                if ("__metadata__".equals(key)) {
-                    if (value instanceof Map<?, ?> metaMap) {
+                    if ("__metadata__".equals(key)) {
+                        if (!(value instanceof Map<?, ?> metaMap)) {
+                            throw new SafetensorException.HeaderParseException(
+                                    "'__metadata__' must be an object", path, -1L, null);
+                        }
                         metaMap.forEach(
                                 (k, v) -> fileMeta.put(String.valueOf(k), v != null ? String.valueOf(v) : null));
+                    } else {
+                        if (!(value instanceof Map<?, ?> tensorMap)) {
+                            throw new SafetensorException.HeaderParseException(
+                                    "Expected an object for tensor key '" + key
+                                            + "', got " + (value == null ? "null" : value.getClass().getSimpleName()),
+                                    path, -1L, null);
+                        }
+                        SafetensorTensorInfo info = buildTensorInfo(key, (Map<String, Object>) tensorMap, path);
+                        tensors.put(key, info);
                     }
-                } else {
-                    if (!(value instanceof Map<?, ?> tensorMap)) {
-                        throw new SafetensorException.HeaderParseException(
-                                "Expected an object for tensor key '" + key
-                                        + "', got " + (value == null ? "null" : value.getClass().getSimpleName()),
-                                path, -1L, null);
-                    }
-                    SafetensorTensorInfo info = buildTensorInfo(key, (Map<String, Object>) tensorMap, path);
-                    tensors.put(key, info);
                 }
             }
         } catch (SafetensorException e) {
@@ -244,7 +259,6 @@ public final class SafetensorHeaderParser {
                     "JSON parsing failed: " + e.getMessage(), path, -1L, e);
         }
     }
-
     @SuppressWarnings("unchecked")
     private static SafetensorTensorInfo buildTensorInfo(
             String name, Map<String, Object> raw, Path path) {

@@ -556,4 +556,28 @@ class SafetensorFFMLoaderTest {
             buf.putFloat(f);
         return buf.array();
     }
+
+    @Test
+    void parser_duplicateJsonKeys_areRejected() {
+        String json = "{\"x\":{\"dtype\":\"U8\",\"shape\":[1],\"data_offsets\":[0,1]},"
+                + "\"x\":{\"dtype\":\"U8\",\"shape\":[1],\"data_offsets\":[0,1]}}";
+        byte[] bytes = buildSafetensors(json, new byte[] { 7 });
+        try (Arena arena = Arena.ofConfined()) {
+            assertThatThrownBy(() -> PARSER.parse(toSegment(bytes, arena), Path.of("duplicate.safetensors")))
+                    .isInstanceOf(SafetensorException.HeaderParseException.class);
+        }
+    }
+
+    @Test
+    void parser_invalidUtf8_isRejected() {
+        String json = "{\"x\":{\"dtype\":\"U8\",\"shape\":[1],\"data_offsets\":[0,1]}}";
+        byte[] bytes = buildSafetensors(json, new byte[] { 7 });
+        // Corrupt the first byte of the JSON header with an incomplete UTF-8 sequence.
+        bytes[8] = (byte) 0xC3;
+        try (Arena arena = Arena.ofConfined()) {
+            assertThatThrownBy(() -> PARSER.parse(toSegment(bytes, arena), Path.of("invalid-utf8.safetensors")))
+                    .isInstanceOf(SafetensorException.HeaderParseException.class);
+        }
+    }
+
 }
