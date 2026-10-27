@@ -38,6 +38,8 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import tech.kayys.aljabr.safetensor.exception.SafetensorException;
 
@@ -500,11 +502,137 @@ class SafetensorFFMLoaderTest {
 
         assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
                 .isInstanceOf(SafetensorException.ShardException.class)
-                .hasMessageContaining("missing shard");
+                .hasMessageContaining("missing or non-regular shard file(s)");
     }
 
     @Test
     @Order(52)
+    void shardIndex_rejectsPathTraversal(@TempDir Path dir) throws Exception {
+        String indexJson = """
+                {
+                  "weight_map": {
+                    "weight": "../outside.safetensors"
+                  }
+                }""";
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("bare filename");
+    }
+
+    @Test
+    @Order(53)
+    void shardIndex_rejectsDirectoryAsShard(@TempDir Path dir) throws Exception {
+        Files.createDirectory(dir.resolve("model-00001-of-00001.safetensors"));
+        String indexJson = """
+                {
+                  "weight_map": {
+                    "weight": "model-00001-of-00001.safetensors"
+                  }
+                }""";
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ShardException.class)
+                .hasMessageContaining("missing or non-regular shard file(s)");
+    }
+
+    @Test
+    @Order(54)
+    void shardIndex_rejectsNegativeTotalSize(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("model-00001-of-00001.safetensors"), "");
+        String indexJson = """
+                {
+                  "metadata": {"total_size": -2},
+                  "weight_map": {
+                    "weight": "model-00001-of-00001.safetensors"
+                  }
+                }""";
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("total_size")
+                .hasMessageContaining("non-negative");
+    }
+
+    @Test
+    @Order(55)
+    void shardIndex_rejectsDirectoryAsIndex(@TempDir Path dir) throws Exception {
+        Path indexPath = Files.createDirectory(dir.resolve("model.safetensors.index.json"));
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("regular file");
+    }
+
+    @Test
+    @Order(56)
+    void shardIndex_validateHeaders_acceptsConsistentIndex(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("shard-1.safetensors"), "");
+        Files.writeString(dir.resolve("shard-2.safetensors"), "");
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, """
+                {"weight_map":{"a":"shard-1.safetensors","b":"shard-2.safetensors"}}
+                """);
+        SafetensorShardIndex index = SafetensorShardIndex.load(indexPath, MAPPER);
+        Map<String, SafetensorHeader> headers = new LinkedHashMap<>();
+        headers.put("shard-1.safetensors", SafetensorHeader.of(0,
+                Map.of("a", SafetensorTensorInfo.of("a", SafetensorDType.F32,
+                        new long[] {1}, 0, 4)), Map.of()));
+        headers.put("shard-2.safetensors", SafetensorHeader.of(0,
+                Map.of("b", SafetensorTensorInfo.of("b", SafetensorDType.F32,
+                        new long[] {1}, 0, 4)), Map.of()));
+
+        assertThatCode(() -> index.validateShardHeaders(headers)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @Order(57)
+    void shardIndex_validateHeaders_rejectsWrongShardAssignment(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("shard-1.safetensors"), "");
+        Files.writeString(dir.resolve("shard-2.safetensors"), "");
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, """
+                {"weight_map":{"a":"shard-1.safetensors","b":"shard-2.safetensors"}}
+                """);
+        SafetensorShardIndex index = SafetensorShardIndex.load(indexPath, MAPPER);
+        Map<String, SafetensorHeader> headers = new LinkedHashMap<>();
+        headers.put("shard-1.safetensors", SafetensorHeader.of(0,
+                Map.of("b", SafetensorTensorInfo.of("b", SafetensorDType.F32,
+                        new long[] {1}, 0, 4)), Map.of()));
+        headers.put("shard-2.safetensors", SafetensorHeader.of(0,
+                Map.of("a", SafetensorTensorInfo.of("a", SafetensorDType.F32,
+                        new long[] {1}, 0, 4)), Map.of()));
+
+        assertThatThrownBy(() -> index.validateShardHeaders(headers))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("index assigns it to");
+    }
+
+    @Test
+    @Order(58)
+    void shardIndex_validateHeaders_rejectsTensorMissingFromShard(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("shard-1.safetensors"), "");
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, """
+                {"weight_map":{"missing":"shard-1.safetensors"}}
+                """);
+        SafetensorShardIndex index = SafetensorShardIndex.load(indexPath, MAPPER);
+        Map<String, SafetensorHeader> headers = Map.of("shard-1.safetensors",
+                SafetensorHeader.of(0, Map.of(), Map.of()));
+
+        assertThatThrownBy(() -> index.validateShardHeaders(headers))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("tensor missing from shard headers");
+    }
+
+    @Test
+    @Order(59)
     void shardIndex_isShardedModel_detects(@TempDir Path dir) throws Exception {
         assertThat(SafetensorShardIndex.isShardedModel(dir)).isFalse();
 
