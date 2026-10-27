@@ -33,13 +33,22 @@ public class Sampler {
 
         // Greedy fast-path when temperature <= 0
         if (temperature <= 0.0f) {
-            float[] probs = logits.clone();
-            if (repeatPenalty != 1.0f && previousTokens != null && !previousTokens.isEmpty()) {
-                for (int token : previousTokens) {
-                    if (token >= 0 && token < n) {
-                        if (probs[token] < 0) probs[token] *= repeatPenalty;
-                        else probs[token] /= repeatPenalty;
+            if (repeatPenalty == 1.0f || previousTokens == null || previousTokens.isEmpty()) {
+                float bestVal = logits[0];
+                int bestIdx = 0;
+                for (int i = 1; i < n; i++) {
+                    if (logits[i] > bestVal) {
+                        bestVal = logits[i];
+                        bestIdx = i;
                     }
+                }
+                return bestIdx;
+            }
+            float[] probs = logits.clone();
+            for (int token : previousTokens) {
+                if (token >= 0 && token < n) {
+                    if (probs[token] < 0) probs[token] *= repeatPenalty;
+                    else probs[token] /= repeatPenalty;
                 }
             }
             float bestVal = probs[0];

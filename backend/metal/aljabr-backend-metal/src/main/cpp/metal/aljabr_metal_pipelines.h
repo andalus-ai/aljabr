@@ -84,8 +84,12 @@ typedef struct {
   __strong id<MTLComputePipelineState> flash_attention;
   __strong id<MTLComputePipelineState> rope_single_token;
   __strong id<MTLComputePipelineState> rope_single_token_freqfact;
+  __strong id<MTLComputePipelineState> kv_copy_flat;
   __strong id<MTLComputePipelineState> kv_store_flat;
   __strong id<MTLComputePipelineState> sdpa_flat;
+  __strong id<MTLComputePipelineState> post_attn_add_ffn_norm;
+  __strong id<MTLComputePipelineState> post_ffn_add_out_scale;
+  __strong id<MTLComputePipelineState> embed_token_q4_k;
 } AljabrMetalPipelines;
 
 AljabrMetalPipelines *aljabr_metal_pipelines(void);

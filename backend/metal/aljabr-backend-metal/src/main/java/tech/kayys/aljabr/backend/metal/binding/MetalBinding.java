@@ -95,7 +95,9 @@ public class MetalBinding {
     private static final String FN_REGISTER_ROPE_FREQS = "aljabr_metal_register_rope_freqs";
     private static final String FN_REGISTER_DECODE_LAYER = "aljabr_metal_register_decode_layer";
     private static final String FN_REGISTER_OUTPUT = "aljabr_metal_register_output";
+    private static final String FN_REGISTER_TOKEN_EMBD = "aljabr_metal_register_token_embd";
     private static final String FN_DECODE_STEP = "aljabr_metal_decode_step";
+    private static final String FN_DECODE_STEP_TOKEN = "aljabr_metal_decode_step_token";
     private static final String FN_REGISTER_MODEL_BUFFER = "aljabr_metal_register_model_buffer";
     private static final String FN_MATVEC_T_HALF = "aljabr_metal_matvec_t_half";
     private static final String FN_MATVEC_TB_HALF_PAIR = "aljabr_metal_matvec_tb_half_pair";
@@ -1056,10 +1058,22 @@ public class MetalBinding {
         return (int) invoke(FN_REGISTER_OUTPUT, outputNormW, outputW, typeOutputW, outputK, outputN, cap);
     }
 
+    public int registerTokenEmbd(MemorySegment embdW, int typeEmbdW, int dim, float scale) {
+        if (!handles.containsKey(FN_REGISTER_TOKEN_EMBD))
+            return -2;
+        return (int) invoke(FN_REGISTER_TOKEN_EMBD, embdW, typeEmbdW, dim, scale);
+    }
+
     public int decodeStep(int pos, int slidingWindow, float eps, MemorySegment xIn, MemorySegment logitsOut) {
         if (!handles.containsKey(FN_DECODE_STEP))
             return -2;
         return (int) invoke(FN_DECODE_STEP, pos, slidingWindow, eps, xIn, logitsOut);
+    }
+
+    public int decodeStepToken(int pos, int slidingWindow, float eps, int tokenId, MemorySegment logitsOut) {
+        if (!handles.containsKey(FN_DECODE_STEP_TOKEN))
+            return -2;
+        return (int) invoke(FN_DECODE_STEP_TOKEN, pos, slidingWindow, eps, tokenId, logitsOut);
     }
 
     public int matvecTransposedRightNf4(MemorySegment C,
@@ -1821,9 +1835,16 @@ public class MetalBinding {
                 ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_FLOAT));
 
+        bind(FN_REGISTER_TOKEN_EMBD, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT));
+
         bind(FN_DECODE_STEP, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+
+        bind(FN_DECODE_STEP_TOKEN, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT,
+                ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
 
         bind(FN_MATVEC_TB_BF16, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,

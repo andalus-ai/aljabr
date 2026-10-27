@@ -52,7 +52,9 @@ public final class GgufMetalBridge {
     private static final MethodHandle REGISTER_ROPE_FREQS_MH;
     private static final MethodHandle REGISTER_DECODE_LAYER_MH;
     private static final MethodHandle REGISTER_OUTPUT_MH;
+    private static final MethodHandle REGISTER_TOKEN_EMBD_MH;
     private static final MethodHandle DECODE_STEP_MH;
+    private static final MethodHandle DECODE_STEP_TOKEN_MH;
 
     // Thread-local or reusable buffers for inputs/outputs to prevent allocations in inner loop
     private static final ThreadLocal<MetalBufferCache> BUFFERS = ThreadLocal.withInitial(MetalBufferCache::new);
@@ -93,7 +95,9 @@ public final class GgufMetalBridge {
         MethodHandle registerRopeFreqsHandle = null;
         MethodHandle registerDecodeLayerHandle = null;
         MethodHandle registerOutputHandle = null;
+        MethodHandle registerTokenEmbdHandle = null;
         MethodHandle decodeStepHandle = null;
+        MethodHandle decodeStepTokenHandle = null;
 
         boolean disableMetal = Boolean.getBoolean("aljabr.metal.disable") ||
                 "false".equalsIgnoreCase(System.getProperty("aljabr.metal.enabled"));
@@ -380,6 +384,20 @@ public final class GgufMetalBridge {
                                 LOG.info("[GgufMetalBridge] decodeStep handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] decodeStep bind FAILED: " + t); }
 
+                            try {
+                                registerTokenEmbdHandle = lookup.findVirtual(mbClass, "registerTokenEmbd",
+                                        MethodType.methodType(int.class, MemorySegment.class, int.class, int.class, float.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] registerTokenEmbd handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerTokenEmbd bind FAILED: " + t); }
+
+                            try {
+                                decodeStepTokenHandle = lookup.findVirtual(mbClass, "decodeStepToken",
+                                        MethodType.methodType(int.class, int.class, int.class, float.class, int.class, MemorySegment.class))
+                                        .bindTo(instance);
+                                LOG.info("[GgufMetalBridge] decodeStepToken handle bound.");
+                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] decodeStepToken bind FAILED: " + t); }
+
                             enabled = true;
                             LOG.info("Aljabr Metal GPU acceleration enabled for Java GGUF backend.");
                         }
@@ -417,7 +435,9 @@ public final class GgufMetalBridge {
         REGISTER_ROPE_FREQS_MH = registerRopeFreqsHandle;
         REGISTER_DECODE_LAYER_MH = registerDecodeLayerHandle;
         REGISTER_OUTPUT_MH = registerOutputHandle;
+        REGISTER_TOKEN_EMBD_MH = registerTokenEmbdHandle;
         DECODE_STEP_MH = decodeStepHandle;
+        DECODE_STEP_TOKEN_MH = decodeStepTokenHandle;
     }
 
     private static final class MetalBufferCache {
@@ -1846,7 +1866,7 @@ public final class GgufMetalBridge {
             MemorySegment.copy(x, 0, segX, ValueLayout.JAVA_FLOAT, 0, dim);
 
             int rc = (int) DECODE_STEP_MH.invokeExact(pos, slidingWindow, eps, segX, segLogits);
-            if (rc == 0) {
+            if (rc >= 0) {
                 MemorySegment.copy(segLogits, ValueLayout.JAVA_FLOAT, 0, logits, 0, vocab);
                 return true;
             }
@@ -1860,6 +1880,73 @@ public final class GgufMetalBridge {
                             + " slidingWindow=" + slidingWindow
                             + " dim=" + (x != null ? x.length : -1)
                             + " vocab=" + (logits != null ? logits.length : -1), t);
+            return false;
+        }
+    }
+
+    public static int decodeStepGreedy(int pos, int slidingWindow, float eps, float[] x) {
+        if (!isDecodeStepAvailable() || DECODE_STEP_MH == null || x == null) return -1;
+        try {
+            MetalBufferCache cache = BUFFERS.get();
+            int dim = x.length;
+            MemorySegment segX = cache.ensureX(dim);
+            MemorySegment.copy(x, 0, segX, ValueLayout.JAVA_FLOAT, 0, dim);
+
+            int rc = (int) DECODE_STEP_MH.invokeExact(pos, slidingWindow, eps, segX, MemorySegment.NULL);
+            if (rc >= 0) {
+                return rc;
+            }
+            LOG.warning(String.format(
+                    "[GgufMetalBridge] Native decodeStepGreedy returned rc=%d at pos=%d (slidingWindow=%d, dim=%d); see preceding [aljabr-metal] diagnostic for the failure stage.",
+                    rc, pos, slidingWindow, dim));
+            return -1;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING,
+                    "[GgufMetalBridge] decodeStepGreedy threw at pos=" + pos
+                            + " slidingWindow=" + slidingWindow
+                            + " dim=" + (x != null ? x.length : -1), t);
+            return -1;
+        }
+    }
+
+    public static boolean registerTokenEmbd(GGUFModel model, GGUFTensorInfo embdW, int dim, float scale) {
+        if (!isDecodeStepAvailable() || REGISTER_TOKEN_EMBD_MH == null || embdW == null) return false;
+        try {
+            ensureModelRegistered(model);
+            MemorySegment segEmbd = GgufTensorOps.tensorData(model, embdW);
+            int rc = (int) REGISTER_TOKEN_EMBD_MH.invokeExact(segEmbd, (int) embdW.typeId(), dim, scale);
+            return rc == 0;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "Failed to register token embedding on GPU: " + t.getMessage(), t);
+            return false;
+        }
+    }
+
+    public static int decodeStepTokenGreedy(int pos, int slidingWindow, float eps, int tokenId) {
+        if (!isDecodeStepAvailable() || DECODE_STEP_TOKEN_MH == null || tokenId < 0) return -1;
+        try {
+            int rc = (int) DECODE_STEP_TOKEN_MH.invokeExact(pos, slidingWindow, eps, tokenId, MemorySegment.NULL);
+            return rc >= 0 ? rc : -1;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "[GgufMetalBridge] decodeStepTokenGreedy threw at pos=" + pos + " token=" + tokenId, t);
+            return -1;
+        }
+    }
+
+    public static boolean decodeStepToken(int pos, int slidingWindow, float eps, int tokenId, float[] logits) {
+        if (!isDecodeStepAvailable() || DECODE_STEP_TOKEN_MH == null || tokenId < 0 || logits == null) return false;
+        try {
+            MetalBufferCache cache = BUFFERS.get();
+            int vocab = logits.length;
+            MemorySegment segLogits = cache.ensureLogits(vocab);
+            int rc = (int) DECODE_STEP_TOKEN_MH.invokeExact(pos, slidingWindow, eps, tokenId, segLogits);
+            if (rc >= 0) {
+                MemorySegment.copy(segLogits, ValueLayout.JAVA_FLOAT, 0, logits, 0, vocab);
+                return true;
+            }
+            return false;
+        } catch (Throwable t) {
+            LOG.log(Level.WARNING, "[GgufMetalBridge] decodeStepToken threw at pos=" + pos + " token=" + tokenId, t);
             return false;
         }
     }

@@ -251,6 +251,10 @@ int aljabr_metal_register_output(
     float cap
 );
 
+int aljabr_metal_register_token_embd(
+    const void *embdW, int typeEmbdW, int dim, float scale
+);
+
 /**
  * Executes ALL 48 transformer layers and logits projection in a SINGLE Metal command buffer.
  * Eliminates all CPU-GPU synchronization bubbles and inter-layer memcpy operations.
@@ -258,6 +262,11 @@ int aljabr_metal_register_output(
 int aljabr_metal_decode_step(
     int pos, int slidingWindow, float eps,
     const float *x_in, float *logits_out
+);
+
+int aljabr_metal_decode_step_token(
+    int pos, int slidingWindow, float eps,
+    int tokenId, float *logits_out
 );
 
 #ifdef __cplusplus
