@@ -3239,8 +3239,8 @@ encode_sdpa_flat(id<MTLComputeCommandEncoder> enc, id<MTLBuffer> bufOut,
       threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
 }
 
-int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
-                             const float *x_in, float *logits_out) {
+static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float eps,
+                             const float *x_in, float *logits_out, int tokenId, BOOL useTokenEmbedding) {
   if (!g_initialized || g_device == nil || g_queue == nil ||
       g_num_decode_layers == 0) {
     fprintf(stderr,
