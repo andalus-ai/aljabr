@@ -500,11 +500,46 @@ class SafetensorFFMLoaderTest {
 
         assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
                 .isInstanceOf(SafetensorException.ShardException.class)
-                .hasMessageContaining("missing shard file(s)");
+                .hasMessageContaining("missing or non-regular shard file(s)");
     }
 
     @Test
     @Order(52)
+    void shardIndex_rejectsPathTraversal(@TempDir Path dir) throws Exception {
+        String indexJson = """
+                {
+                  "weight_map": {
+                    "weight": "../outside.safetensors"
+                  }
+                }""";
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("bare filename");
+    }
+
+    @Test
+    @Order(53)
+    void shardIndex_rejectsDirectoryAsShard(@TempDir Path dir) throws Exception {
+        Files.createDirectory(dir.resolve("model-00001-of-00001.safetensors"));
+        String indexJson = """
+                {
+                  "weight_map": {
+                    "weight": "model-00001-of-00001.safetensors"
+                  }
+                }""";
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ShardException.class)
+                .hasMessageContaining("missing or non-regular shard file(s)");
+    }
+
+    @Test
+    @Order(54)
     void shardIndex_isShardedModel_detects(@TempDir Path dir) throws Exception {
         assertThat(SafetensorShardIndex.isShardedModel(dir)).isFalse();
 
