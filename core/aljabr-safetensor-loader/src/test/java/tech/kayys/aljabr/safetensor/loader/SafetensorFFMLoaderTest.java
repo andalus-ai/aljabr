@@ -651,7 +651,7 @@ class SafetensorFFMLoaderTest {
 
         assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
                 .isInstanceOf(SafetensorException.ValidationException.class)
-                .hasMessageContaining("Invalid shard filename");
+                .hasMessageContaining("Shard entry must be a bare filename inside the model directory");
     }
 
     @Test
