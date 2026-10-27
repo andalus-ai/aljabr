@@ -778,7 +778,7 @@ class SafetensorFFMLoaderTest {
         SafetensorHeaderParser parser = SafetensorHeaderParser.create(
                 MAPPER, new SafetensorParserLimits(10, 10, 10, 100, 8, 100));
         byte[] bytes = buildSafetensors(
-                "{\\"x\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[1],\\"data_offsets\\":[0,1]}}",
+                "{\"x\":{\"dtype\":\"U8\",\"shape\":[1],\"data_offsets\":[0,1]}}",
                 new byte[] { 1 });
         try (Arena arena = Arena.ofConfined()) {
             assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("large-header.safetensors")))
@@ -791,8 +791,8 @@ class SafetensorFFMLoaderTest {
     void parser_customTensorCountLimit_rejectsTooManyTensors() {
         SafetensorHeaderParser parser = SafetensorHeaderParser.create(
                 MAPPER, new SafetensorParserLimits(1024, 1, 10, 100, 8, 100));
-        String json = "{\\"a\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[0],\\"data_offsets\\":[0,0]},"
-                + "\\"b\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[0],\\"data_offsets\\":[0,0]}}";
+        String json = "{\"a\":{\"dtype\":\"U8\",\"shape\":[0],\"data_offsets\":[0,0]},"
+                + "\"b\":{\"dtype\":\"U8\",\"shape\":[0],\"data_offsets\":[0,0]}}";
         byte[] bytes = buildSafetensors(json, new byte[0]);
         try (Arena arena = Arena.ofConfined()) {
             assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("too-many-tensors.safetensors")))
@@ -806,7 +806,7 @@ class SafetensorFFMLoaderTest {
     void parser_customTensorRankLimit_rejectsExcessiveRank() {
         SafetensorHeaderParser parser = SafetensorHeaderParser.create(
                 MAPPER, new SafetensorParserLimits(1024, 10, 10, 100, 1, 100));
-        String json = "{\\"x\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[1,1],\\"data_offsets\\":[0,1]}}";
+        String json = "{\"x\":{\"dtype\":\"U8\",\"shape\":[1,1],\"data_offsets\":[0,1]}}";
         byte[] bytes = buildSafetensors(json, new byte[] { 1 });
         try (Arena arena = Arena.ofConfined()) {
             assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("high-rank.safetensors")))
@@ -820,8 +820,8 @@ class SafetensorFFMLoaderTest {
     void parser_customMetadataLimits_rejectLongMetadataValue() {
         SafetensorHeaderParser parser = SafetensorHeaderParser.create(
                 MAPPER, new SafetensorParserLimits(1024, 10, 2, 3, 8, 100));
-        String json = "{\\"__metadata__\\":{\\"format\\":\\"pytorch\\"},"
-                + "\\"x\\":{\\"dtype\\":\\"U8\\",\\"shape\\":[1],\\"data_offsets\\":[0,1]}}";
+        String json = "{\"__metadata__\":{\"format\":\"pytorch\"},"
+                + "\"x\":{\"dtype\":\"U8\",\"shape\":[1],\"data_offsets\":[0,1]}}";
         byte[] bytes = buildSafetensors(json, new byte[] { 1 });
         try (Arena arena = Arena.ofConfined()) {
             assertThatThrownBy(() -> parser.parse(toSegment(bytes, arena), Path.of("long-metadata.safetensors")))
