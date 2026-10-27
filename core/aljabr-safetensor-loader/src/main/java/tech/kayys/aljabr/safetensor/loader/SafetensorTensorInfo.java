@@ -119,7 +119,12 @@ public final class SafetensorTensorInfo {
 
         // Validate that declared byte range matches dtype × shape
         long expectedBytes = this.dtype.totalBytes(this.shape);
-        if (expectedBytes >= 0 && expectedBytes != this.byteLength) {
+        if (expectedBytes < 0) {
+            throw new IllegalArgumentException(
+                    "Tensor byte size overflows long for tensor '" + name
+                            + "' with shape " + Arrays.toString(this.shape));
+        }
+        if (expectedBytes != this.byteLength) {
             throw new IllegalArgumentException(
                     "Byte-length mismatch for tensor '" + name + "': "
                             + "dtype=" + dtype + " × shape=" + Arrays.toString(shape)
