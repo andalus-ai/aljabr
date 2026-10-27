@@ -146,7 +146,7 @@ public final class SafetensorShardIndex {
             long totalSize = dto.metadata != null && dto.metadata.totalSize != null
                     ? dto.metadata.totalSize
                     : -1L;
-            if (totalSize < -1L) {
+            if (dto.metadata != null && dto.metadata.totalSize != null && totalSize < 0L) {
                 throw new SafetensorException.ValidationException(
                         "Index metadata 'total_size' must be non-negative when provided", abs);
             }
