@@ -143,17 +143,50 @@ public final class SafetensorShardIndex {
                     ? dto.metadata.totalSize
                     : -1L;
 
-            // Validate that all referenced shard files actually exist
+            // Validate index-controlled names before resolving or opening shard files.
+            // Shards must be plain files directly inside the model directory.
+            for (Map.Entry<String, String> entry : dto.weightMap.entrySet()) {
+                String tensorName = entry.getKey();
+                String shardName = entry.getValue();
+                if (tensorName == null || tensorName.isBlank()) {
+                    throw new SafetensorException.ValidationException(
+                            "Index contains an empty tensor name", abs);
+                }
+                if (shardName == null || shardName.isBlank()) {
+                    throw new SafetensorException.ValidationException(
+                            "Index contains an empty shard filename for tensor: " + tensorName, abs);
+                }
+                final Path shardRelative;
+                try {
+                    shardRelative = Path.of(shardName);
+                } catch (java.nio.file.InvalidPathException e) {
+                    throw new SafetensorException.ValidationException(
+                            "Index contains an invalid shard filename: " + shardName, abs);
+                }
+                if (shardRelative.isAbsolute()
+                        || shardRelative.getNameCount() != 1
+                        || ".".equals(shardName)
+                        || "..".equals(shardName)
+                        || shardName.indexOf('/') >= 0
+                        || shardName.indexOf('\\') >= 0) {
+                    throw new SafetensorException.ValidationException(
+                            "Shard entry must be a bare filename inside the model directory: " + shardName,
+                            abs);
+                }
+            }
+
             Set<String> missingShards = new LinkedHashSet<>();
             for (String shardName : new TreeSet<>(dto.weightMap.values())) {
-                if (!Files.exists(modelDir.resolve(shardName))) {
+                Path shardPath = modelDir.resolve(shardName).normalize();
+                if (!shardPath.getParent().equals(modelDir)
+                        || !Files.isRegularFile(shardPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                     missingShards.add(shardName);
                 }
             }
             if (!missingShards.isEmpty()) {
                 throw new SafetensorException.ShardException(
-                        "Index references " + missingShards.size() + " missing shard file(s): "
-                                + missingShards,
+                        "Index references " + missingShards.size()
+                                + " missing or non-regular shard file(s): " + missingShards,
                         abs, null);
             }
 
