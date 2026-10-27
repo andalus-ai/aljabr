@@ -704,6 +704,41 @@ class SafetensorFFMLoaderTest {
         }
     }
 
+    @Test
+    void tensorInfo_rejectsNegativeShapeDimension() {
+        assertThatThrownBy(() -> SafetensorTensorInfo.of(
+                "bad", SafetensorDType.F32, new long[] {2, -1}, 0, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("must be >= 0");
+    }
+
+    @Test
+    void tensorInfo_rejectsElementCountOverflow() {
+        assertThatThrownBy(() -> SafetensorTensorInfo.of(
+                "overflow", SafetensorDType.U8,
+                new long[] {Long.MAX_VALUE, 2}, 0, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("element count overflows long");
+    }
+
+    @Test
+    void tensorInfo_rejectsByteSizeOverflow() {
+        assertThatThrownBy(() -> SafetensorTensorInfo.of(
+                "byte-overflow", SafetensorDType.F32,
+                new long[] {Long.MAX_VALUE}, 0, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("byte size overflows long");
+    }
+
+    @Test
+    void tensorInfo_acceptsZeroSizedDimension() {
+        SafetensorTensorInfo info = SafetensorTensorInfo.of(
+                "empty", SafetensorDType.F32, new long[] {0, 3}, 0, 0);
+
+        assertThat(info.numElements()).isZero();
+        assertThat(info.byteLength()).isZero();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Utility helpers
     // ─────────────────────────────────────────────────────────────────────────
