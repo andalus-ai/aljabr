@@ -195,7 +195,9 @@ final class JavaGgufBackend implements GgufBackend {
                     break;
                 }
 
-                if (isGreedy && decodeStep.canUseMetalGreedy()) {
+                // The native argmax path does not apply Sampler's repetition penalty.
+                // Keep greedy requests with a configured penalty on the regular sampler path.
+                if (canUseMetalGreedy(isGreedy, sampling.repeatPenalty(), decodeStep.canUseMetalGreedy())) {
                     int greedyNext = decodeStep.forwardGreedy(nextToken, pos, cache);
                     if (greedyNext >= 0) {
                         nextToken = greedyNext;
@@ -302,6 +304,10 @@ final class JavaGgufBackend implements GgufBackend {
             arena.close();
             throw error;
         }
+    }
+
+    static boolean canUseMetalGreedy(boolean isGreedy, float repeatPenalty, boolean metalDecodeAvailable) {
+        return isGreedy && repeatPenalty == 1.0f && metalDecodeAvailable;
     }
 
     private record SamplingParams(float temperature, int topK, float topP, float repeatPenalty, int maxTokens) {
