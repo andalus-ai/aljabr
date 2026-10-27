@@ -3239,6 +3239,12 @@ encode_sdpa_flat(id<MTLComputeCommandEncoder> enc, id<MTLBuffer> bufOut,
       threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
 }
 
+static id<MTLBuffer> g_token_embd_buffer = nil;
+static size_t g_token_embd_offset = 0;
+static int g_token_embd_dim = 0;
+static int g_token_embd_vocab = 0;
+static float g_token_embd_scale = 1.0f;
+
 static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float eps,
                              const float *x_in, float *logits_out, int tokenId, BOOL useTokenEmbedding) {
   if (!g_initialized || g_device == nil || g_queue == nil ||
@@ -3777,11 +3783,6 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
 // The token path encodes embedding and transformer decode into one command
 // buffer. The embedding kernel writes directly into the decoder's input scratch
 // vector, avoiding an intermediate shared buffer, CPU wait, and second submit.
-static id<MTLBuffer> g_token_embd_buffer = nil;
-static size_t g_token_embd_offset = 0;
-static int g_token_embd_dim = 0;
-static int g_token_embd_vocab = 0;
-static float g_token_embd_scale = 1.0f;
 
 int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
                                      int dim, float scale) {
