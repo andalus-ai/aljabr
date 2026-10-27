@@ -20,7 +20,7 @@ plugins {
     id("io.quarkus") version "3.32.2" apply false
 }
 
-extra["aljabrVersion"] = "0.1.0-SNAPSHOT"
+extra["aljabrVersion"] = providers.gradleProperty("aljabrVersion").orElse("0.1.0-SNAPSHOT").get()
 extra["quarkusVersion"] = "3.32.2"
 
 allprojects {

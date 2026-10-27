@@ -1,5 +1,14 @@
 # Aljabr
 
+<!-- Project status badges -->
+[![Aljabr CI](https://github.com/andalus-ai/aljabr/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/andalus-ai/aljabr/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/andalus-ai/aljabr?display_name=tag)](https://github.com/andalus-ai/aljabr/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
+[![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.org/projects/jdk/25/)
+[![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-Maven-8A2BE2.svg)](https://github.com/andalus-ai/aljabr/packages)
+[![GitHub issues](https://img.shields.io/github/issues/andalus-ai/aljabr)](https://github.com/andalus-ai/aljabr/issues)
+
+
 ## "Modern AI Technology start from zero"
 
 **Aljabr** is the foundational tensor, compute, and modeling infrastructure in Java. 
@@ -124,6 +133,66 @@ class node_cpu,node_cuda,node_metal,node_rocm,node_blackwell toneRose
 class node_autograd,node_rag,node_sd,node_whisper,node_engine toneIndigo
 ```
 
+
+## Aljabr for research, development, and education
+
+Aljabr is a **Java-first tensor and machine-learning framework inspired by the developer experience of PyTorch**. It aims to make tensor programming, neural-network building blocks, hardware experimentation, and model-system research accessible to Java developers without requiring Python or LibTorch in the core runtime.
+
+Use Aljabr to:
+
+- **Research:** prototype tensor operations, numerical methods, model architectures, and backend kernels.
+- **Develop:** build reusable Java ML components and applications with explicit APIs and modular backends.
+- **Teach and learn:** explore tensors, matrix operations, neural-network primitives, memory layouts, and accelerator execution in a familiar JVM toolchain.
+- **Build and deploy:** integrate CPU and supported accelerator execution with model-loading and inference projects such as AQLI.
+- **Extend:** implement new compute backends, tensor operations, model architecture adapters, and file-format integrations.
+
+### Design goals
+
+- Java APIs first, with JDK 25 as the default toolchain.
+- Modular tensor, neural-network, model, and compute-backend contracts.
+- CPU-first development and tests, with hardware-specific validation for accelerator backends.
+- GGUF and SafeTensors model-weight support, with ONNX and LiteRT integration through their appropriate runtime adapters.
+- FFM-based Java/native interoperability for new native integrations; no new JNI dependency by design.
+- Reproducible builds, focused tests, explicit resource lifecycles, and documented capability boundaries.
+
+**Scope note:** Aljabr is not a drop-in replacement for every PyTorch API, nor does the core alone promise a complete training stack. Autograd, optimizers, training loops, distributed training, and model-family support must be assessed by the status of their individual modules. See the module map and build profiles below for the current boundaries.
+
+### Quick start
+
+Requirements: JDK 25 and Git.
+
+```bash
+git clone https://github.com/andalus-ai/aljabr.git
+cd aljabr
+./gradlew test
+```
+
+Start with the tensor and neural-network modules for learning and experiments. Add backend- or model-specific modules only when needed, and validate native acceleration on the target operating system and hardware.
+
+### Maven packages
+
+Tagged releases can be published to GitHub Packages as Maven artifacts. For a private or organization-scoped package, configure GitHub Packages credentials in your Gradle user-level `gradle.properties` (never commit tokens):
+
+```properties
+gpr.user=YOUR_GITHUB_USERNAME
+gpr.key=YOUR_GITHUB_TOKEN
+```
+
+Consumer repository configuration:
+
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/andalus-ai/aljabr")
+        credentials {
+            username = providers.gradleProperty("gpr.user").orNull
+            password = providers.gradleProperty("gpr.key").orNull
+        }
+    }
+}
+```
+
+Artifact coordinates depend on the published module. The default group is `tech.kayys.aljabr`; use the specific module artifact ID and release version shown in the GitHub Packages page. GitHub Packages authentication and package visibility follow GitHub's repository and organization settings.
 
 ## Build profiles
 
