@@ -47,7 +47,7 @@ import java.util.*;
  *
  * <p>
  * Instances should be obtained via the Quarkus CDI container or by calling
- * {@link #create(ObjectMapper)}. The {@link ObjectMapper} is expected to be
+ * {@link #create(ObjectMapper)} or {@link #create(ObjectMapper, SafetensorParserLimits)}. The {@link ObjectMapper} is expected to be
  * the application-wide Quarkus-managed instance.
  * @author bhangun
  */
@@ -70,11 +70,13 @@ public final class SafetensorHeaderParser {
     private static final ValueLayout.OfLong UINT64_LE = ValueLayout.JAVA_LONG.withOrder(ByteOrder.LITTLE_ENDIAN);
 
     private final ObjectMapper mapper;
+    private final SafetensorParserLimits limits;
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    private SafetensorHeaderParser(ObjectMapper mapper) {
+    private SafetensorHeaderParser(ObjectMapper mapper, SafetensorParserLimits limits) {
         this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
+        this.limits = Objects.requireNonNull(limits, "limits must not be null");
     }
 
     /**
@@ -85,7 +87,12 @@ public final class SafetensorHeaderParser {
      * @return a new, stateless parser instance
      */
     public static SafetensorHeaderParser create(ObjectMapper mapper) {
-        return new SafetensorHeaderParser(mapper);
+        return create(mapper, SafetensorParserLimits.defaults());
+    }
+
+    /** Create a parser with caller-selected resource limits. */
+    public static SafetensorHeaderParser create(ObjectMapper mapper, SafetensorParserLimits limits) {
+        return new SafetensorHeaderParser(mapper, limits);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -126,10 +133,10 @@ public final class SafetensorHeaderParser {
             throw new SafetensorException.ValidationException(
                     "Header JSON length must be > 0, got " + headerJsonLength, filePath);
         }
-        if (headerJsonLength > MAX_HEADER_BYTES) {
+        if (headerJsonLength > limits.maxHeaderBytes()) {
             throw new SafetensorException.ValidationException(
                     "Header JSON length " + headerJsonLength
-                            + " bytes exceeds safety cap of " + MAX_HEADER_BYTES + " bytes. "
+                            + " bytes exceeds safety cap of " + limits.maxHeaderBytes() + " bytes. "
                             + "File may be corrupt.",
                     filePath);
         }
@@ -228,6 +235,12 @@ public final class SafetensorHeaderParser {
             try (JsonParser jsonParser = mapper.getFactory().createParser(jsonString)) {
                 jsonParser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
                 Map<String, Object> root = mapper.readValue(jsonParser, LinkedHashMap.class);
+                long tensorEntries = root.keySet().stream().filter(key -> !"__metadata__".equals(key)).count();
+                if (tensorEntries > limits.maxTensorCount()) {
+                    throw new SafetensorException.ValidationException(
+                            "Tensor count " + tensorEntries + " exceeds configured limit "
+                                    + limits.maxTensorCount(), path);
+                }
 
                 for (Map.Entry<String, Object> entry : root.entrySet()) {
                     String key = entry.getKey();
@@ -238,8 +251,23 @@ public final class SafetensorHeaderParser {
                             throw new SafetensorException.HeaderParseException(
                                     "'__metadata__' must be an object", path, -1L, null);
                         }
-                        metaMap.forEach(
-                                (k, v) -> fileMeta.put(String.valueOf(k), v != null ? String.valueOf(v) : null));
+                        if (metaMap.size() > limits.maxMetadataEntries()) {
+                            throw new SafetensorException.ValidationException(
+                                    "Metadata entry count " + metaMap.size() + " exceeds configured limit "
+                                            + limits.maxMetadataEntries(), path);
+                        }
+                        for (Map.Entry<?, ?> metadataEntry : metaMap.entrySet()) {
+                            String metadataKey = String.valueOf(metadataEntry.getKey());
+                            String metadataValue = metadataEntry.getValue() == null
+                                    ? null : String.valueOf(metadataEntry.getValue());
+                            if (metadataKey.length() > limits.maxMetadataStringLength()
+                                    || (metadataValue != null && metadataValue.length() > limits.maxMetadataStringLength())) {
+                                throw new SafetensorException.ValidationException(
+                                        "Metadata key/value exceeds configured string length limit "
+                                                + limits.maxMetadataStringLength(), path);
+                            }
+                            fileMeta.put(metadataKey, metadataValue);
+                        }
                     } else {
                         if (!(value instanceof Map<?, ?> tensorMap)) {
                             throw new SafetensorException.HeaderParseException(
@@ -247,7 +275,12 @@ public final class SafetensorHeaderParser {
                                             + "', got " + (value == null ? "null" : value.getClass().getSimpleName()),
                                     path, -1L, null);
                         }
-                        SafetensorTensorInfo info = buildTensorInfo(key, (Map<String, Object>) tensorMap, path);
+                        if (key.length() > limits.maxTensorNameLength()) {
+                            throw new SafetensorException.ValidationException(
+                                    "Tensor name length " + key.length() + " exceeds configured limit "
+                                            + limits.maxTensorNameLength(), path);
+                        }
+                        SafetensorTensorInfo info = buildTensorInfo(key, (Map<String, Object>) tensorMap, path, limits);
                         tensors.put(key, info);
                     }
                 }
@@ -261,7 +294,7 @@ public final class SafetensorHeaderParser {
     }
     @SuppressWarnings("unchecked")
     private static SafetensorTensorInfo buildTensorInfo(
-            String name, Map<String, Object> raw, Path path) {
+            String name, Map<String, Object> raw, Path path, SafetensorParserLimits limits) {
         try {
             Object dtypeObj = raw.get("dtype");
             if (!(dtypeObj instanceof String dtype)) {
@@ -270,6 +303,11 @@ public final class SafetensorHeaderParser {
             }
 
             List<Number> shapeList = (List<Number>) raw.get("shape");
+            if (shapeList != null && shapeList.size() > limits.maxTensorRank()) {
+                throw new SafetensorException.ValidationException(
+                        "Tensor '" + name + "' rank " + shapeList.size() + " exceeds configured limit "
+                                + limits.maxTensorRank(), path, name);
+            }
             long[] shape = shapeList == null
                     ? new long[0]
                     : shapeList.stream().mapToLong(Number::longValue).toArray();
