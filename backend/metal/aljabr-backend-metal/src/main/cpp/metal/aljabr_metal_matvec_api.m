@@ -3811,21 +3811,6 @@ int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
       weightBytes > weights.length - offset)
     return -5;
 
-  // Keep a reusable output vector for the opt-in two-command-buffer
-  // reference path. It is disabled by default and exists for parity/benchmark
-  // comparisons against the fused single-command-buffer path.
-  size_t outputBytes = (size_t)dim * sizeof(float);
-  if (g_token_embd_output == nil ||
-      g_token_embd_output_capacity < outputBytes) {
-    id<MTLBuffer> output =
-        [g_device newBufferWithLength:outputBytes
-                              options:MTLResourceStorageModeShared];
-    if (output == nil)
-      return -6;
-    g_token_embd_output = output;
-    g_token_embd_output_capacity = outputBytes;
-  }
-
   g_token_embd_buffer = weights;
   g_token_embd_offset = offset;
   g_token_embd_dim = dim;
@@ -3852,9 +3837,19 @@ int aljabr_metal_decode_step_token(int pos, int slidingWindow, float eps,
   // developer can compare logits and latency with the fused path on-device.
   // The fused path remains the default and does not allocate/copy this vector.
   if (env_truthy("ALJABR_METAL_DISABLE_FUSED_TOKEN_EMBEDDING")) {
+    // Allocate the diagnostic output lazily so the default fused path has no
+    // extra shared-buffer allocation or retained host-visible memory.
+    size_t outputBytes = (size_t)g_token_embd_dim * sizeof(float);
     if (g_token_embd_output == nil ||
-        g_token_embd_output_capacity < (size_t)g_token_embd_dim * sizeof(float))
-      return -6;
+        g_token_embd_output_capacity < outputBytes) {
+      id<MTLBuffer> output =
+          [g_device newBufferWithLength:outputBytes
+                                options:MTLResourceStorageModeShared];
+      if (output == nil)
+        return -6;
+      g_token_embd_output = output;
+      g_token_embd_output_capacity = outputBytes;
+    }
     if (g_num_decode_layers <= 0 || g_decode_layers[0].wO_N <= 0 ||
         g_token_embd_dim != g_decode_layers[0].wO_N)
       return -6;
