@@ -3244,6 +3244,8 @@ static size_t g_token_embd_offset = 0;
 static int g_token_embd_dim = 0;
 static int g_token_embd_vocab = 0;
 static float g_token_embd_scale = 1.0f;
+static id<MTLBuffer> g_token_embd_output = nil;
+static size_t g_token_embd_output_capacity = 0;
 
 static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float eps,
                              const float *x_in, float *logits_out, int tokenId, BOOL useTokenEmbedding) {
@@ -3809,6 +3811,21 @@ int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
       weightBytes > weights.length - offset)
     return -5;
 
+  // Keep a reusable output vector for the opt-in two-command-buffer
+  // reference path. It is disabled by default and exists for parity/benchmark
+  // comparisons against the fused single-command-buffer path.
+  size_t outputBytes = (size_t)dim * sizeof(float);
+  if (g_token_embd_output == nil ||
+      g_token_embd_output_capacity < outputBytes) {
+    id<MTLBuffer> output =
+        [g_device newBufferWithLength:outputBytes
+                              options:MTLResourceStorageModeShared];
+    if (output == nil)
+      return -6;
+    g_token_embd_output = output;
+    g_token_embd_output_capacity = outputBytes;
+  }
+
   g_token_embd_buffer = weights;
   g_token_embd_offset = offset;
   g_token_embd_dim = dim;
@@ -3830,6 +3847,50 @@ int aljabr_metal_decode_step_token(int pos, int slidingWindow, float eps,
     return -1;
   if (!g_initialized || g_queue == nil)
     return -2;
+
+  // Diagnostic fallback: preserve the former two-command-buffer path so a
+  // developer can compare logits and latency with the fused path on-device.
+  // The fused path remains the default and does not allocate/copy this vector.
+  if (env_truthy("ALJABR_METAL_DISABLE_FUSED_TOKEN_EMBEDDING")) {
+    if (g_token_embd_output == nil ||
+        g_token_embd_output_capacity < (size_t)g_token_embd_dim * sizeof(float))
+      return -6;
+    if (g_num_decode_layers <= 0 || g_decode_layers[0].wO_N <= 0 ||
+        g_token_embd_dim != g_decode_layers[0].wO_N)
+      return -6;
+
+    @autoreleasepool {
+      AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
+      if (pipelines == NULL || pipelines->embed_token_q4_k == nil)
+        return -3;
+      uint32_t token = (uint32_t)tokenId;
+      uint32_t K = (uint32_t)g_token_embd_dim;
+      float scale = g_token_embd_scale;
+      id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+      if (cmd == nil)
+        return -4;
+      id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+      if (enc == nil)
+        return -4;
+      [enc setComputePipelineState:pipelines->embed_token_q4_k];
+      [enc setBuffer:g_token_embd_output offset:0 atIndex:0];
+      [enc setBuffer:g_token_embd_buffer offset:g_token_embd_offset atIndex:1];
+      [enc setBytes:&token length:sizeof(token) atIndex:2];
+      [enc setBytes:&K length:sizeof(K) atIndex:3];
+      [enc setBytes:&scale length:sizeof(scale) atIndex:4];
+      [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)(K / 256u), 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+      [enc endEncoding];
+      [cmd commit];
+      [cmd waitUntilCompleted];
+      if ([cmd status] != MTLCommandBufferStatusCompleted)
+        return -5;
+
+      return aljabr_metal_decode_step_internal(
+          pos, slidingWindow, eps,
+          (const float *)[g_token_embd_output contents], logits_out, -1, NO);
+    }
+  }
 
   return aljabr_metal_decode_step_internal(pos, slidingWindow, eps, NULL,
                                            logits_out, tokenId, YES);
