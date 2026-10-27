@@ -204,7 +204,7 @@ public final class SafetensorShardIndex {
             return false;
         }
         // Reject both POSIX and Windows separators regardless of host OS.
-        if (shardName.indexOf('/') >= 0 || shardName.indexOf('\\\\') >= 0) {
+        if (shardName.indexOf('/') >= 0 || shardName.indexOf('\\') >= 0) {
             return false;
         }
         Path path;
