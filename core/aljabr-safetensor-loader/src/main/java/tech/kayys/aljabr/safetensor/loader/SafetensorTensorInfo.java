@@ -95,6 +95,7 @@ public final class SafetensorTensorInfo {
         this.dtype = SafetensorDType.fromJson(
                 Objects.requireNonNull(dtype, "dtype must not be null"));
         this.shape = shape != null ? Arrays.copyOf(shape, shape.length) : new long[0];
+        validateShape(this.shape, name);
 
         if (dataOffsets == null || dataOffsets.length != 2) {
             throw new IllegalArgumentException(
@@ -229,20 +230,45 @@ public final class SafetensorTensorInfo {
         // Compute row-major flat index (last dimension fastest)
         for (int i = shape.length - 1; i >= 0; i--) {
             Objects.checkIndex(indices[i], shape[i]);
-            flatIndex += indices[i] * stride;
-            stride *= shape[i];
+            try {
+                flatIndex = Math.addExact(flatIndex, Math.multiplyExact(indices[i], stride));
+                stride = Math.multiplyExact(stride, shape[i]);
+            } catch (ArithmeticException e) {
+                throw new IllegalArgumentException(
+                        "Element offset overflows long for tensor '" + name + "'", e);
+            }
         }
-        return flatIndex * dtype.byteSize();
+        try {
+            return Math.multiplyExact(flatIndex, dtype.byteSize());
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "Element byte offset overflows long for tensor '" + name + "'", e);
+        }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private static void validateShape(long[] shape, String name) {
+        for (int i = 0; i < shape.length; i++) {
+            if (shape[i] < 0) {
+                throw new IllegalArgumentException(
+                        "Shape dimension " + i + " must be >= 0 for tensor '" + name
+                                + "', got " + shape[i]);
+            }
+        }
+    }
 
     private static long computeNumElements(long[] shape) {
         if (shape.length == 0)
             return 1L; // scalar
         long n = 1L;
-        for (long d : shape) {
-            n *= d;
+        try {
+            for (long d : shape) {
+                n = Math.multiplyExact(n, d);
+            }
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "Shape element count overflows long: " + Arrays.toString(shape), e);
         }
         return n;
     }
