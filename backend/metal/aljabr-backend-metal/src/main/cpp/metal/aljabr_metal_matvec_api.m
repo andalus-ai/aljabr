@@ -3296,10 +3296,42 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
   }
 
   @autoreleasepool {
-    memcpy([g_woff_x contents], x_in, dimBytes);
+    if (useTokenEmbedding) {
+      if (g_token_embd_buffer == nil || g_token_embd_dim != cfg0->wO_N ||
+          tokenId < 0 || tokenId >= g_token_embd_vocab)
+        return -6;
+    } else {
+      if (x_in == NULL)
+        return -5;
+      memcpy([g_woff_x contents], x_in, dimBytes);
+    }
 
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    if (cmd == nil || enc == nil)
+      return -5;
+
+    // Encode the embedding first into the same vector consumed by layer zero.
+    // Subsequent commands in this encoder observe it without an intermediate
+    // commit, wait, or CPU-side copy.
+    if (useTokenEmbedding) {
+      AljabrMetalPipelines *embedPipelines = aljabr_metal_pipelines();
+      if (embedPipelines == NULL || embedPipelines->embed_token_q4_k == nil) {
+        [enc endEncoding];
+        return -3;
+      }
+      uint32_t token = (uint32_t)tokenId;
+      uint32_t K = (uint32_t)g_token_embd_dim;
+      float scale = g_token_embd_scale;
+      [enc setComputePipelineState:embedPipelines->embed_token_q4_k];
+      [enc setBuffer:g_woff_x offset:0 atIndex:0];
+      [enc setBuffer:g_token_embd_buffer offset:g_token_embd_offset atIndex:1];
+      [enc setBytes:&token length:sizeof(token) atIndex:2];
+      [enc setBytes:&K length:sizeof(K) atIndex:3];
+      [enc setBytes:&scale length:sizeof(scale) atIndex:4];
+      [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)(K / 256u), 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+    }
 
     id<MTLBuffer> bufPostAttnAll = g_norm_buffers[0]; // slot 0 = postAttnNorm
     id<MTLBuffer> bufFfnNormAll = g_norm_buffers[1];  // slot 1 = ffnNorm
