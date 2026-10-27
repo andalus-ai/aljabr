@@ -33,7 +33,8 @@ p95 for wall, host-through-encoding, submit/wait, and command-buffer GPU time.
 It uses only Python's standard library.
 
 ```bash
-python3 scripts/metal-decode-profile-summary.py metal-fused.log metal-fallback.log
+python3 scripts/metal-decode-profile-summary.py metal-fused.log
+python3 scripts/metal-decode-profile-summary.py metal-fallback.log
 python3 scripts/metal-decode-profile-summary.py --warmup 2 --format csv metal-fused.log
 python3 scripts/metal-decode-profile-summary.py --format json metal-fused.log
 ```
