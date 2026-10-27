@@ -3783,8 +3783,6 @@ static size_t g_token_embd_offset = 0;
 static int g_token_embd_dim = 0;
 static int g_token_embd_vocab = 0;
 static float g_token_embd_scale = 1.0f;
-static id<MTLBuffer> g_token_embd_output = nil;
-static size_t g_token_embd_output_capacity = 0;
 
 int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
                                      int dim, float scale) {
@@ -3809,17 +3807,6 @@ int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
       weightBytes > weights.length - offset)
     return -5;
 
-  size_t outputBytes = (size_t)dim * sizeof(float);
-  if (g_token_embd_output == nil ||
-      g_token_embd_output_capacity < outputBytes) {
-    g_token_embd_output =
-        [g_device newBufferWithLength:outputBytes
-                              options:MTLResourceStorageModeShared];
-    if (g_token_embd_output == nil)
-      return -6;
-    g_token_embd_output_capacity = outputBytes;
-  }
-
   g_token_embd_buffer = weights;
   g_token_embd_offset = offset;
   g_token_embd_dim = dim;
@@ -3828,53 +3815,20 @@ int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
   return 0;
 }
 
+int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
+                             const float *x_in, float *logits_out) {
+  return aljabr_metal_decode_step_internal(pos, slidingWindow, eps, x_in,
+                                           logits_out, -1, NO);
+}
+
 int aljabr_metal_decode_step_token(int pos, int slidingWindow, float eps,
                                    int tokenId, float *logits_out) {
   if (tokenId < 0 || tokenId >= g_token_embd_vocab ||
-      g_token_embd_buffer == nil || g_token_embd_output == nil ||
-      g_token_embd_dim <= 0)
+      g_token_embd_buffer == nil || g_token_embd_dim <= 0)
     return -1;
   if (!g_initialized || g_queue == nil)
     return -2;
 
-  // decode_step copies exactly cfg0->wO_N floats from x_in into its scratch
-  // buffer. Reject a mismatched embedding dimension before dispatch/copy so a
-  // malformed registration cannot cause an out-of-bounds host read or truncate
-  // the embedding vector.
-  if (g_num_decode_layers <= 0 || g_decode_layers[0].wO_N <= 0 ||
-      g_token_embd_dim != g_decode_layers[0].wO_N)
-    return -6;
-
-  @autoreleasepool {
-    AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
-    if (pipelines == NULL || pipelines->embed_token_q4_k == nil)
-      return -3;
-    uint32_t token = (uint32_t)tokenId;
-    uint32_t K = (uint32_t)g_token_embd_dim;
-    float scale = g_token_embd_scale;
-    id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
-    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
-    if (cmd == nil || enc == nil)
-      return -4;
-    [enc setComputePipelineState:pipelines->embed_token_q4_k];
-    [enc setBuffer:g_token_embd_output offset:0 atIndex:0];
-    [enc setBuffer:g_token_embd_buffer offset:g_token_embd_offset atIndex:1];
-    [enc setBytes:&token length:sizeof(token) atIndex:2];
-    [enc setBytes:&K length:sizeof(K) atIndex:3];
-    [enc setBytes:&scale length:sizeof(scale) atIndex:4];
-    // The shader writes 256 embedding elements per threadgroup using 32 lanes.
-    [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)(K / 256u), 1, 1)
-        threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
-    [enc endEncoding];
-    [cmd commit];
-    [cmd waitUntilCompleted];
-    if ([cmd status] != MTLCommandBufferStatusCompleted)
-      return -5;
-
-    // Existing decode_step copies x_in into its scratch buffer before encoding.
-    // Passing the shared output contents is safe after the completed wait above.
-    return aljabr_metal_decode_step(pos, slidingWindow, eps,
-                                    (const float *)[g_token_embd_output contents],
-                                    logits_out);
-  }
+  return aljabr_metal_decode_step_internal(pos, slidingWindow, eps, NULL,
+                                           logits_out, tokenId, YES);
 }
