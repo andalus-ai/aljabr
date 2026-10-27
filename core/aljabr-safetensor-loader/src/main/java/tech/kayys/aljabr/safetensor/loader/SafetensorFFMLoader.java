@@ -207,6 +207,9 @@ public class SafetensorFFMLoader {
 
             MemorySegment fileSegment = channel.map(
                     FileChannel.MapMode.READ_ONLY, 0L, fileSize, arena);
+            // The mapped segment remains valid after the channel is closed.
+            // Close before ownership transfers to avoid a close failure after return.
+            channel.close();
             SafetensorHeaderParser parser = SafetensorHeaderParser.create(objectMapper);
             SafetensorHeader header = parser.parse(fileSegment, resolved);
 
