@@ -120,8 +120,12 @@ public final class SafetensorShardIndex {
         Objects.requireNonNull(mapper, "mapper must not be null");
 
         Path abs = indexPath.toAbsolutePath().normalize();
-        if (!Files.exists(abs)) {
+        if (!Files.exists(abs, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             throw new SafetensorException.IoException("Index file not found: " + abs, abs, null);
+        }
+        if (!Files.isRegularFile(abs, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new SafetensorException.ValidationException(
+                    "Index path must be a regular file and must not be a symbolic link", abs);
         }
 
         Path modelDir = abs.getParent();
@@ -142,6 +146,10 @@ public final class SafetensorShardIndex {
             long totalSize = dto.metadata != null && dto.metadata.totalSize != null
                     ? dto.metadata.totalSize
                     : -1L;
+            if (totalSize < -1L) {
+                throw new SafetensorException.ValidationException(
+                        "Index metadata 'total_size' must be non-negative when provided", abs);
+            }
 
             // Validate index-controlled names before resolving or opening shard files.
             // Shards must be plain files directly inside the model directory.
