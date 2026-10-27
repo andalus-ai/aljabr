@@ -60,6 +60,7 @@ class TensorOpsTest {
                     .hasMessageContaining("shape mismatch");
         } finally {
             a.release();
+            aVector.release();
             wrongShape.release();
         }
     }
@@ -138,6 +139,7 @@ class TensorOpsTest {
     @Test
     void einsumRejectsMalformedEquationsAndIncompatibleDimensions() {
         Tensor a = Tensor.of(new float[] { 1, 2, 3, 4 }, 2, 2);
+        Tensor aVector = Tensor.of(new float[] { 1, 2, 3, 4 }, 4);
         Tensor wrongShape = Tensor.of(new float[] { 1, 2, 3 }, 3);
         try {
             assertThatThrownBy(() -> TensorOps.einsum("ij,jk", a, a))
@@ -146,7 +148,7 @@ class TensorOpsTest {
             assertThatThrownBy(() -> TensorOps.einsum("ii->i", a))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("repeated label");
-            assertThatThrownBy(() -> TensorOps.einsum("i,i->i", a.reshape(4), wrongShape))
+            assertThatThrownBy(() -> TensorOps.einsum("i,i->i", aVector, wrongShape))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("dimension mismatch");
             assertThatThrownBy(() -> TensorOps.einsum("i->i", a))
