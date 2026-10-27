@@ -1062,7 +1062,7 @@ public class MetalBinding {
     // Q4_K rows only; accepting another GGUF type here would interpret an
     // incompatible block layout on the GPU.
     static boolean isTokenEmbeddingEligible(int typeEmbdW, int dim, float scale) {
-        return typeEmbdW == 12 && dim > 0 && Float.isFinite(scale);
+        return typeEmbdW == 12 && dim > 0 && dim % 256 == 0 && Float.isFinite(scale);
     }
 
     public int registerTokenEmbd(MemorySegment embdW, int typeEmbdW, int dim, float scale) {
