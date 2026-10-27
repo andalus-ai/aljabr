@@ -15,6 +15,8 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <cstdarg>
+#include <cstdio>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
