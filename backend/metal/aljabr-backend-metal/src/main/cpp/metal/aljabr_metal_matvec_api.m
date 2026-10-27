@@ -2384,14 +2384,8 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     }
 
     [enc endEncoding];
-    uint64_t profileEncodedNanos =
-        profileDecode ? monotonic_nanos() : 0;
-    uint64_t profileSubmitNanos =
-        profileDecode ? monotonic_nanos() : 0;
     [cmd commit];
     [cmd waitUntilCompleted];
-    uint64_t profileCompletedNanos =
-        profileDecode ? monotonic_nanos() : 0;
 
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
       g_woff_x_valid = NO;
@@ -3760,8 +3754,14 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
     }
 
     [enc endEncoding];
+    uint64_t profileEncodedNanos =
+        profileDecode ? monotonic_nanos() : 0;
+    uint64_t profileSubmitNanos =
+        profileDecode ? monotonic_nanos() : 0;
     [cmd commit];
     [cmd waitUntilCompleted];
+    uint64_t profileCompletedNanos =
+        profileDecode ? monotonic_nanos() : 0;
 
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
       NSError *commandError = [cmd error];
