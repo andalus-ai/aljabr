@@ -3763,7 +3763,7 @@ int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
       !isfinite(scale) || g_output_N <= 0)
     return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
-  if (pipelines->embed_token_q4_k == nil)
+  if (pipelines == NULL || pipelines->embed_token_q4_k == nil)
     return -3;
 
   size_t rowBytes = (size_t)(dim / 256) * 144u;
@@ -3805,9 +3805,17 @@ int aljabr_metal_decode_step_token(int pos, int slidingWindow, float eps,
   if (!g_initialized || g_queue == nil)
     return -2;
 
+  // decode_step copies exactly cfg0->wO_N floats from x_in into its scratch
+  // buffer. Reject a mismatched embedding dimension before dispatch/copy so a
+  // malformed registration cannot cause an out-of-bounds host read or truncate
+  // the embedding vector.
+  if (g_num_decode_layers <= 0 || g_decode_layers[0].wO_N <= 0 ||
+      g_token_embd_dim != g_decode_layers[0].wO_N)
+    return -6;
+
   @autoreleasepool {
     AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
-    if (pipelines->embed_token_q4_k == nil)
+    if (pipelines == NULL || pipelines->embed_token_q4_k == nil)
       return -3;
     uint32_t token = (uint32_t)tokenId;
     uint32_t K = (uint32_t)g_token_embd_dim;
