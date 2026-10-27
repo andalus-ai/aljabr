@@ -234,13 +234,12 @@ public final class SafetensorHeaderParser {
                     Object value = entry.getValue();
 
                     if ("__metadata__".equals(key)) {
-                        if (value instanceof Map<?, ?> metaMap) {
-                            metaMap.forEach(
-                                    (k, v) -> fileMeta.put(String.valueOf(k), v != null ? String.valueOf(v) : null));
-                        } else {
+                        if (!(value instanceof Map<?, ?> metaMap)) {
                             throw new SafetensorException.HeaderParseException(
                                     "'__metadata__' must be an object", path, -1L, null);
                         }
+                        metaMap.forEach(
+                                (k, v) -> fileMeta.put(String.valueOf(k), v != null ? String.valueOf(v) : null));
                     } else {
                         if (!(value instanceof Map<?, ?> tensorMap)) {
                             throw new SafetensorException.HeaderParseException(
@@ -253,27 +252,6 @@ public final class SafetensorHeaderParser {
                     }
                 }
             }
-
-            for (Map.Entry<String, Object> entry : root.entrySet()) {
-                String key = entry.getKey();
-                Object value = entry.getValue();
-
-                if ("__metadata__".equals(key)) {
-                    if (value instanceof Map<?, ?> metaMap) {
-                        metaMap.forEach(
-                                (k, v) -> fileMeta.put(String.valueOf(k), v != null ? String.valueOf(v) : null));
-                    }
-                } else {
-                    if (!(value instanceof Map<?, ?> tensorMap)) {
-                        throw new SafetensorException.HeaderParseException(
-                                "Expected an object for tensor key '" + key
-                                        + "', got " + (value == null ? "null" : value.getClass().getSimpleName()),
-                                path, -1L, null);
-                    }
-                    SafetensorTensorInfo info = buildTensorInfo(key, (Map<String, Object>) tensorMap, path);
-                    tensors.put(key, info);
-                }
-            }
         } catch (SafetensorException e) {
             throw e;
         } catch (Exception e) {
@@ -281,7 +259,6 @@ public final class SafetensorHeaderParser {
                     "JSON parsing failed: " + e.getMessage(), path, -1L, e);
         }
     }
-
     @SuppressWarnings("unchecked")
     private static SafetensorTensorInfo buildTensorInfo(
             String name, Map<String, Object> raw, Path path) {
