@@ -37,6 +37,7 @@ package tech.kayys.aljabr.safetensor.loader;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonParser;
 
 import tech.kayys.aljabr.safetensor.exception.SafetensorException;
 
@@ -131,8 +132,13 @@ public final class SafetensorShardIndex {
         }
 
         try {
-            byte[] json = Files.readAllBytes(abs);
-            IndexDto dto = mapper.readValue(json, IndexDto.class);
+            IndexDto dto;
+            // Reject duplicate JSON keys instead of silently accepting the last
+            // value supplied by an ambiguous or corrupted index.
+            try (JsonParser parser = mapper.getFactory().createParser(Files.readAllBytes(abs))) {
+                parser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+                dto = mapper.readValue(parser, IndexDto.class);
+            }
 
             if (dto.weightMap == null || dto.weightMap.isEmpty()) {
                 throw new SafetensorException.ValidationException(
@@ -142,17 +148,38 @@ public final class SafetensorShardIndex {
             long totalSize = dto.metadata != null && dto.metadata.totalSize != null
                     ? dto.metadata.totalSize
                     : -1L;
+            if (totalSize < -1L) {
+                throw new SafetensorException.ValidationException(
+                        "Index metadata 'total_size' must be non-negative", abs);
+            }
 
-            // Validate that all referenced shard files actually exist
+            // Validate tensor names and shard paths before touching referenced files.
+            // A shard must be a single filename, not an absolute or traversing path.
+            for (Map.Entry<String, String> entry : dto.weightMap.entrySet()) {
+                String tensorName = entry.getKey();
+                String shardName = entry.getValue();
+                if (tensorName == null || tensorName.isBlank()) {
+                    throw new SafetensorException.ValidationException(
+                            "Index contains an empty tensor name", abs);
+                }
+                if (!isSafeShardFileName(shardName)) {
+                    throw new SafetensorException.ValidationException(
+                            "Invalid shard filename for tensor '" + tensorName + "': " + shardName, abs);
+                }
+            }
+
+            // Validate that all referenced shard files are regular files. Resolve
+            // against the index directory only after validating the bare filename.
             Set<String> missingShards = new LinkedHashSet<>();
             for (String shardName : new TreeSet<>(dto.weightMap.values())) {
-                if (!Files.exists(modelDir.resolve(shardName))) {
+                Path shardPath = modelDir.resolve(shardName).normalize();
+                if (!shardPath.getParent().equals(modelDir) || !Files.isRegularFile(shardPath)) {
                     missingShards.add(shardName);
                 }
             }
             if (!missingShards.isEmpty()) {
                 throw new SafetensorException.ShardException(
-                        "Index references " + missingShards.size() + " missing shard file(s): "
+                        "Index references " + missingShards.size() + " missing or non-regular shard file(s): "
                                 + missingShards,
                         abs, null);
             }
@@ -170,6 +197,26 @@ public final class SafetensorShardIndex {
             throw new SafetensorException.IoException(
                     "Failed to parse shard index JSON", abs, e);
         }
+    }
+
+    private static boolean isSafeShardFileName(String shardName) {
+        if (shardName == null || shardName.isBlank()) {
+            return false;
+        }
+        // Reject both POSIX and Windows separators regardless of host OS.
+        if (shardName.indexOf('/') >= 0 || shardName.indexOf('\\\\') >= 0) {
+            return false;
+        }
+        Path path;
+        try {
+            path = Path.of(shardName);
+        } catch (RuntimeException invalidPath) {
+            return false;
+        }
+        return !path.isAbsolute()
+                && path.getNameCount() == 1
+                && !".".equals(shardName)
+                && !"..".equals(shardName);
     }
 
     /**
