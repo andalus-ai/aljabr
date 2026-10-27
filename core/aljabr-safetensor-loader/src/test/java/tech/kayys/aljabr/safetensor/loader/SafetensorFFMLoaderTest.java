@@ -540,6 +540,36 @@ class SafetensorFFMLoaderTest {
 
     @Test
     @Order(54)
+    void shardIndex_rejectsNegativeTotalSize(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("model-00001-of-00001.safetensors"), "");
+        String indexJson = """
+                {
+                  "metadata": {"total_size": -2},
+                  "weight_map": {
+                    "weight": "model-00001-of-00001.safetensors"
+                  }
+                }""";
+        Path indexPath = dir.resolve("model.safetensors.index.json");
+        Files.writeString(indexPath, indexJson);
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("total_size")
+                .hasMessageContaining("non-negative");
+    }
+
+    @Test
+    @Order(55)
+    void shardIndex_rejectsDirectoryAsIndex(@TempDir Path dir) throws Exception {
+        Path indexPath = Files.createDirectory(dir.resolve("model.safetensors.index.json"));
+
+        assertThatThrownBy(() -> SafetensorShardIndex.load(indexPath, MAPPER))
+                .isInstanceOf(SafetensorException.ValidationException.class)
+                .hasMessageContaining("regular file");
+    }
+
+    @Test
+    @Order(56)
     void shardIndex_isShardedModel_detects(@TempDir Path dir) throws Exception {
         assertThat(SafetensorShardIndex.isShardedModel(dir)).isFalse();
 
