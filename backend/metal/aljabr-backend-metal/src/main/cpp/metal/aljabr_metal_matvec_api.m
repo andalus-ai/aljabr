@@ -3257,6 +3257,9 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
             g_num_decode_layers);
     return -1;
   }
+  BOOL profileDecode = env_truthy("ALJABR_METAL_DECODE_PROFILE");
+  uint64_t profileStartNanos =
+      profileDecode ? monotonic_nanos() : 0;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   DecodeLayerConfig *cfg0 = &g_decode_layers[0];
@@ -3751,8 +3754,14 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
     }
 
     [enc endEncoding];
+    uint64_t profileEncodedNanos =
+        profileDecode ? monotonic_nanos() : 0;
+    uint64_t profileSubmitNanos =
+        profileDecode ? monotonic_nanos() : 0;
     [cmd commit];
     [cmd waitUntilCompleted];
+    uint64_t profileCompletedNanos =
+        profileDecode ? monotonic_nanos() : 0;
 
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
       NSError *commandError = [cmd error];
@@ -3763,6 +3772,22 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
               commandError != nil ? (long)[commandError code] : 0L,
               commandError != nil ? [[commandError localizedDescription] UTF8String] : "(none)");
       return -4;
+    }
+
+    if (profileDecode) {
+      double gpuMs = 0.0;
+      if (cmd.GPUStartTime > 0.0 && cmd.GPUEndTime >= cmd.GPUStartTime)
+        gpuMs = (cmd.GPUEndTime - cmd.GPUStartTime) * 1000.0;
+      double wallMs =
+          (double)(profileCompletedNanos - profileStartNanos) / 1000000.0;
+      double encodeMs =
+          (double)(profileEncodedNanos - profileStartNanos) / 1000000.0;
+      double submitWaitMs =
+          (double)(profileCompletedNanos - profileSubmitNanos) / 1000000.0;
+      fprintf(stderr,
+              "[METAL DECODE PROFILE] pos=%d layers=%d path=%s wall_ms=%.3f encode_ms=%.3f submit_wait_ms=%.3f gpu_ms=%.3f\n",
+              pos, g_num_decode_layers, useTokenEmbedding ? "token" : "vector",
+              wallMs, encodeMs, submitWaitMs, gpuMs);
     }
 
     if (logits_out != NULL && g_buf_output_logits != nil) {
