@@ -3774,10 +3774,9 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
 
  
 // ── Q4_K token embedding entry points ───────────────────────────────────────
-// These entry points intentionally use two command buffers today: one to
-// materialize the selected embedding row, then the existing decoder command
-// buffer. This restores a correct functional path without falsely claiming
-// that embedding and all transformer layers share a single command buffer.
+// The token path encodes embedding and transformer decode into one command
+// buffer. The embedding kernel writes directly into the decoder's input scratch
+// vector, avoiding an intermediate shared buffer, CPU wait, and second submit.
 static id<MTLBuffer> g_token_embd_buffer = nil;
 static size_t g_token_embd_offset = 0;
 static int g_token_embd_dim = 0;
