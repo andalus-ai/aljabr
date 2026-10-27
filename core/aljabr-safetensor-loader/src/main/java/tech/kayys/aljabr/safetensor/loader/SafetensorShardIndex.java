@@ -121,8 +121,12 @@ public final class SafetensorShardIndex {
         Objects.requireNonNull(mapper, "mapper must not be null");
 
         Path abs = indexPath.toAbsolutePath().normalize();
-        if (!Files.exists(abs)) {
+        if (!Files.exists(abs, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             throw new SafetensorException.IoException("Index file not found: " + abs, abs, null);
+        }
+        if (!Files.isRegularFile(abs, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new SafetensorException.ValidationException(
+                    "Index path must be a regular file and must not be a symbolic link", abs);
         }
 
         Path modelDir = abs.getParent();
@@ -148,13 +152,13 @@ public final class SafetensorShardIndex {
             long totalSize = dto.metadata != null && dto.metadata.totalSize != null
                     ? dto.metadata.totalSize
                     : -1L;
-            if (totalSize < -1L) {
+            if (dto.metadata != null && dto.metadata.totalSize != null && totalSize < 0L) {
                 throw new SafetensorException.ValidationException(
-                        "Index metadata 'total_size' must be non-negative", abs);
+                        "Index metadata 'total_size' must be non-negative when provided", abs);
             }
 
-            // Validate tensor names and shard paths before touching referenced files.
-            // A shard must be a single filename, not an absolute or traversing path.
+            // Validate index-controlled names before resolving or opening shard files.
+            // Shards must be plain files directly inside the model directory.
             for (Map.Entry<String, String> entry : dto.weightMap.entrySet()) {
                 String tensorName = entry.getKey();
                 String shardName = entry.getValue();
@@ -162,25 +166,41 @@ public final class SafetensorShardIndex {
                     throw new SafetensorException.ValidationException(
                             "Index contains an empty tensor name", abs);
                 }
-                if (!isSafeShardFileName(shardName)) {
+                if (shardName == null || shardName.isBlank()) {
                     throw new SafetensorException.ValidationException(
-                            "Invalid shard filename for tensor '" + tensorName + "': " + shardName, abs);
+                            "Index contains an empty shard filename for tensor: " + tensorName, abs);
+                }
+                final Path shardRelative;
+                try {
+                    shardRelative = Path.of(shardName);
+                } catch (java.nio.file.InvalidPathException e) {
+                    throw new SafetensorException.ValidationException(
+                            "Index contains an invalid shard filename: " + shardName, abs);
+                }
+                if (shardRelative.isAbsolute()
+                        || shardRelative.getNameCount() != 1
+                        || ".".equals(shardName)
+                        || "..".equals(shardName)
+                        || shardName.indexOf('/') >= 0
+                        || shardName.indexOf('\\') >= 0) {
+                    throw new SafetensorException.ValidationException(
+                            "Shard entry must be a bare filename inside the model directory: " + shardName,
+                            abs);
                 }
             }
 
-            // Validate that all referenced shard files are regular files. Resolve
-            // against the index directory only after validating the bare filename.
             Set<String> missingShards = new LinkedHashSet<>();
             for (String shardName : new TreeSet<>(dto.weightMap.values())) {
                 Path shardPath = modelDir.resolve(shardName).normalize();
-                if (!shardPath.getParent().equals(modelDir) || !Files.isRegularFile(shardPath)) {
+                if (!shardPath.getParent().equals(modelDir)
+                        || !Files.isRegularFile(shardPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                     missingShards.add(shardName);
                 }
             }
             if (!missingShards.isEmpty()) {
                 throw new SafetensorException.ShardException(
-                        "Index references " + missingShards.size() + " missing or non-regular shard file(s): "
-                                + missingShards,
+                        "Index references " + missingShards.size()
+                                + " missing or non-regular shard file(s): " + missingShards,
                         abs, null);
             }
 
@@ -217,6 +237,69 @@ public final class SafetensorShardIndex {
                 && path.getNameCount() == 1
                 && !".".equals(shardName)
                 && !"..".equals(shardName);
+    }
+
+    /**
+     * Cross-validate the index mapping against parsed headers from every shard.
+     *
+     * <p>The supplied map must contain exactly the shard names referenced by this
+     * index. Every indexed tensor must exist in its assigned shard, and every
+     * tensor found in a shard must be represented by the index and assigned to
+     * that same shard. This method reads metadata only; it does not materialize
+     * tensor payloads.
+     *
+     * @param shardHeaders shard filename to parsed header
+     * @throws SafetensorException.ValidationException if index and headers disagree
+     */
+    public void validateShardHeaders(Map<String, SafetensorHeader> shardHeaders) {
+        Objects.requireNonNull(shardHeaders, "shardHeaders must not be null");
+
+        Set<String> expectedShards = new LinkedHashSet<>(shardFileNames);
+        if (!shardHeaders.keySet().equals(expectedShards)) {
+            Set<String> missing = new LinkedHashSet<>(expectedShards);
+            missing.removeAll(shardHeaders.keySet());
+            Set<String> unexpected = new LinkedHashSet<>(shardHeaders.keySet());
+            unexpected.removeAll(expectedShards);
+            throw new SafetensorException.ValidationException(
+                    "Shard header set does not match index; missing=" + missing
+                            + ", unexpected=" + unexpected, indexPath);
+        }
+
+        Map<String, String> actualTensorShards = new LinkedHashMap<>();
+        for (String shardName : shardFileNames) {
+            SafetensorHeader header = shardHeaders.get(shardName);
+            if (header == null) {
+                throw new SafetensorException.ValidationException(
+                        "Missing parsed header for shard: " + shardName, indexPath);
+            }
+            for (String tensorName : header.tensors().keySet()) {
+                String previous = actualTensorShards.putIfAbsent(tensorName, shardName);
+                if (previous != null) {
+                    throw new SafetensorException.ValidationException(
+                            "Tensor '" + tensorName + "' appears in multiple shards: "
+                                    + previous + " and " + shardName, indexPath);
+                }
+                String indexedShard = weightMap.get(tensorName);
+                if (indexedShard == null) {
+                    throw new SafetensorException.ValidationException(
+                            "Shard '" + shardName + "' contains tensor absent from index: "
+                                    + tensorName, indexPath);
+                }
+                if (!indexedShard.equals(shardName)) {
+                    throw new SafetensorException.ValidationException(
+                            "Tensor '" + tensorName + "' is in shard '" + shardName
+                                    + "' but index assigns it to '" + indexedShard + "'", indexPath);
+                }
+            }
+        }
+
+        for (Map.Entry<String, String> entry : weightMap.entrySet()) {
+            if (!actualTensorShards.containsKey(entry.getKey())) {
+                throw new SafetensorException.ValidationException(
+                        "Index references tensor missing from shard headers: " + entry.getKey()
+                                + " (expected in " + entry.getValue() + ")", indexPath);
+            }
+        }
     }
 
     /**

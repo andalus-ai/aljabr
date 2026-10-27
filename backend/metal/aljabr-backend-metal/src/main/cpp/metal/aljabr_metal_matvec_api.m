@@ -3239,8 +3239,14 @@ encode_sdpa_flat(id<MTLComputeCommandEncoder> enc, id<MTLBuffer> bufOut,
       threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
 }
 
-int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
-                             const float *x_in, float *logits_out) {
+static id<MTLBuffer> g_token_embd_buffer = nil;
+static size_t g_token_embd_offset = 0;
+static int g_token_embd_dim = 0;
+static int g_token_embd_vocab = 0;
+static float g_token_embd_scale = 1.0f;
+
+static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float eps,
+                             const float *x_in, float *logits_out, int tokenId, BOOL useTokenEmbedding) {
   if (!g_initialized || g_device == nil || g_queue == nil ||
       g_num_decode_layers == 0) {
     fprintf(stderr,
@@ -3296,10 +3302,44 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
   }
 
   @autoreleasepool {
-    memcpy([g_woff_x contents], x_in, dimBytes);
+    if (useTokenEmbedding) {
+      if (g_token_embd_buffer == nil || g_token_embd_dim != cfg0->wO_N ||
+          tokenId < 0 || tokenId >= g_token_embd_vocab)
+        return -6;
+    } else {
+      if (x_in == NULL)
+        return -5;
+      memcpy([g_woff_x contents], x_in, dimBytes);
+    }
 
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    if (cmd == nil || enc == nil)
+      return -5;
+
+    // Encode the embedding first into the same vector consumed by layer zero.
+    // Subsequent commands in this encoder observe it without an intermediate
+    // commit, wait, or CPU-side copy.
+    if (useTokenEmbedding) {
+      AljabrMetalPipelines *embedPipelines = aljabr_metal_pipelines();
+      if (embedPipelines == NULL || embedPipelines->embed_token_q4_k == nil) {
+        [enc endEncoding];
+        return -3;
+      }
+      uint32_t token = (uint32_t)tokenId;
+      uint32_t K = (uint32_t)g_token_embd_dim;
+      float scale = g_token_embd_scale;
+      [enc setComputePipelineState:embedPipelines->embed_token_q4_k];
+      [enc setBuffer:g_woff_x offset:0 atIndex:0];
+      [enc setBuffer:g_token_embd_buffer offset:g_token_embd_offset atIndex:1];
+      [enc setBytes:&token length:sizeof(token) atIndex:2];
+      [enc setBytes:&K length:sizeof(K) atIndex:3];
+      [enc setBytes:&scale length:sizeof(scale) atIndex:4];
+      [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)(K / 256u), 1, 1)
+          threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+      // Make the embedding writes visible to layer-zero kernels in this encoder.
+      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+    }
 
     id<MTLBuffer> bufPostAttnAll = g_norm_buffers[0]; // slot 0 = postAttnNorm
     id<MTLBuffer> bufFfnNormAll = g_norm_buffers[1];  // slot 1 = ffnNorm
@@ -3738,4 +3778,59 @@ int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
     }
     return 0;
   }
+}
+
+ 
+// ── Q4_K token embedding entry points ───────────────────────────────────────
+// The token path encodes embedding and transformer decode into one command
+// buffer. The embedding kernel writes directly into the decoder's input scratch
+// vector, avoiding an intermediate shared buffer, CPU wait, and second submit.
+
+int aljabr_metal_register_token_embd(const void *embdW, int typeEmbdW,
+                                     int dim, float scale) {
+  if (!g_initialized || g_device == nil || g_queue == nil)
+    return -1;
+  // The current shader decodes GGML Q4_K blocks (256 elements, 144 bytes).
+  if (embdW == NULL || typeEmbdW != 12 || dim <= 0 || (dim % 256) != 0 ||
+      !isfinite(scale) || g_output_N <= 0)
+    return -2;
+  AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
+  if (pipelines == NULL || pipelines->embed_token_q4_k == nil)
+    return -3;
+
+  size_t rowBytes = (size_t)(dim / 256) * 144u;
+  if ((size_t)g_output_N > SIZE_MAX / rowBytes)
+    return -4;
+  size_t weightBytes = (size_t)g_output_N * rowBytes;
+  size_t offset = 0;
+  id<MTLBuffer> weights =
+      wrap_weight_ptr_offset(embdW, weightBytes, &offset);
+  if (weights == nil || offset > weights.length ||
+      weightBytes > weights.length - offset)
+    return -5;
+
+  g_token_embd_buffer = weights;
+  g_token_embd_offset = offset;
+  g_token_embd_dim = dim;
+  g_token_embd_vocab = g_output_N;
+  g_token_embd_scale = scale;
+  return 0;
+}
+
+int aljabr_metal_decode_step(int pos, int slidingWindow, float eps,
+                             const float *x_in, float *logits_out) {
+  return aljabr_metal_decode_step_internal(pos, slidingWindow, eps, x_in,
+                                           logits_out, -1, NO);
+}
+
+int aljabr_metal_decode_step_token(int pos, int slidingWindow, float eps,
+                                   int tokenId, float *logits_out) {
+  if (tokenId < 0 || tokenId >= g_token_embd_vocab ||
+      g_token_embd_buffer == nil || g_token_embd_dim <= 0)
+    return -1;
+  if (!g_initialized || g_queue == nil)
+    return -2;
+
+  return aljabr_metal_decode_step_internal(pos, slidingWindow, eps, NULL,
+                                           logits_out, tokenId, YES);
 }
