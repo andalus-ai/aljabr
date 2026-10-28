@@ -19,7 +19,7 @@ import java.util.Map;
 @Deprecated(forRemoval = false)
 public class AccelWeightBridge {
     private final tech.kayys.aljabr.safetensor.bridge.AccelWeightBridge delegate =
-            new tech.kayys.aljabr.safetensor.core.bridge.AccelWeightBridge();
+            new tech.kayys.aljabr.safetensor.bridge.AccelWeightBridge();
 
     public AccelTensor bridge(SafetensorTensor tensor) {
         return delegate.bridge(tensor);
