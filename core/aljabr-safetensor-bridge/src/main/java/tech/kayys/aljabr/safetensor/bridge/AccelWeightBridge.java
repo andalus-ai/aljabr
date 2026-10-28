@@ -10,7 +10,7 @@
  *
  * BF16/F16 weights are upcast to F32 at load time using pure Java.
  */
-package tech.kayys.aljabr.safetensor.core.bridge;
+package tech.kayys.aljabr.safetensor.bridge;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
