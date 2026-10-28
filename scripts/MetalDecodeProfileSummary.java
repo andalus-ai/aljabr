@@ -175,7 +175,7 @@ public final class MetalDecodeProfileSummary {
             System.out.println("    \"layers\": " + s.layers + ",");
             int j = 0;
             for (var e : s.metrics.entrySet()) {
-                System.out.printf(Locale.ROOT, "    %s%s: %.6f%n", json(e.getKey()), j++ == s.metrics.size() - 1 ? "" : ",", e.getValue());
+                System.out.printf(Locale.ROOT, "    %s: %.6f%s%n", json(e.getKey()), e.getValue(), j++ == s.metrics.size() - 1 ? "" : ",");
             }
             System.out.print("  }" + (i == summaries.size() - 1 ? "\n" : ",\n"));
         }
