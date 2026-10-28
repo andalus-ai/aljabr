@@ -34,8 +34,13 @@ fun includeOptionalProject(projectPath: String, vararg candidatePaths: String) {
 includeOptionalProject("core:aljabr-core", "core/aljabr-core")
 
 // Autograd is training-only; exclude from foundational builds
-val skipAutograd = true
-if (!skipAutograd) {
+// Legacy autograd sources depend on IR/trainer snapshot artifacts that are not
+// part of this repository's current source tree. Keep excluded by default, but
+// allow maintainers to explicitly probe the integration while migrating it.
+val withLegacyAutograd = providers.gradleProperty("withLegacyAutograd")
+    .map { it.toBoolean() }
+    .getOrElse(false)
+if (withLegacyAutograd) {
     include("core:autograd")
 }
 
