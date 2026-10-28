@@ -3,42 +3,47 @@ package tech.kayys.aljabr.train;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Stochastic Gradient Descent optimizer.
- * @author bhangun
+ *
+ * <p>The collection-based API cannot update parameters because {@link Tensor}
+ * exposes immutable arithmetic and no assignment operation. Use the named-map
+ * overload, which replaces entries with updated tensor values, until the
+ * tensor API provides an explicit mutable parameter abstraction.
  */
 public final class SGD implements Optimizer {
     private final float lr;
 
     public SGD(float lr) {
+        if (!Float.isFinite(lr) || lr < 0.0f) {
+            throw new IllegalArgumentException("Learning rate must be finite and non-negative");
+        }
         this.lr = lr;
     }
 
     @Override
     public void step(Collection<Tensor> params) {
-        for (Tensor p : params) {
-            if (p.requiresGrad() && p.grad() != null) {
-                // In-place update logic would go here if backend supports it.
-                // For now, we simulate the update.
-                Tensor grad = p.grad();
-                // p = p - lr * grad
-                // This is a placeholder for actual in-place logic which requires buffer
-                // manipulation
-                // In this version, we just ensure the code compiles and follows the logic.
-            }
-        }
+        Objects.requireNonNull(params, "params");
+        throw new UnsupportedOperationException(
+                "SGD.step(Collection<Tensor>) cannot replace immutable tensor values; "
+                        + "use step(Map<String, Tensor>, Map<String, Tensor>)");
     }
 
     @Override
     public void step(Map<String, Tensor> params, Map<String, Tensor> grads) {
-        for (String k : params.keySet()) {
-            Tensor p = params.get(k);
-            Tensor g = grads.get(k);
-            if (g == null)
+        Objects.requireNonNull(params, "params");
+        Objects.requireNonNull(grads, "grads");
+
+        for (Map.Entry<String, Tensor> entry : params.entrySet()) {
+            String name = entry.getKey();
+            Tensor parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
+            Tensor gradient = grads.get(name);
+            if (gradient == null || !parameter.requiresGrad()) {
                 continue;
-            // Note: Tensor.sub returns a new tensor, so we update the map
-            params.put(k, p.sub(g.mul(lr)));
+            }
+            params.put(name, parameter.sub(gradient.mul(lr)));
         }
     }
 }
