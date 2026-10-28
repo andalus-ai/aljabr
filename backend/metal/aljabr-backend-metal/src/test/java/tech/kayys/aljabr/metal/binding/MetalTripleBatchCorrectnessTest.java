@@ -250,13 +250,27 @@ class MetalTripleBatchCorrectnessTest {
     }
 
     private static Path findBuiltDylib() {
-        return List.of(
-                Path.of("target/native/darwin-aarch64/libaljabr_metal.dylib"),
+        // Prefer the module-local build output over repository-root or installed
+        // copies. The older ordering could silently load a stale dylib after a
+        // native rebuild, making a dispatch fix appear ineffective.
+        List<Path> candidates = List.of(
                 Path.of("backend/metal/aljabr-backend-metal/target/native/darwin-aarch64/libaljabr_metal.dylib"),
-                Path.of(System.getProperty("user.home"), ".aljabr", "libs", "libaljabr_metal.dylib"))
-                .stream()
-                .filter(Files::isRegularFile)
-                .findFirst()
-                .orElse(null);
+                Path.of("target/native/darwin-aarch64/libaljabr_metal.dylib"),
+                Path.of(System.getProperty("user.home"), ".aljabr", "libs", "libaljabr_metal.dylib"));
+        for (Path candidate : candidates) {
+            if (Files.isRegularFile(candidate)) {
+                try {
+                    System.out.println("[MetalTripleBatchCorrectnessTest] Loading native Metal dylib: "
+                            + candidate.toAbsolutePath().normalize()
+                            + " (modified=" + Files.getLastModifiedTime(candidate) + ")");
+                } catch (java.io.IOException e) {
+                    System.out.println("[MetalTripleBatchCorrectnessTest] Loading native Metal dylib: "
+                            + candidate.toAbsolutePath().normalize()
+                            + " (modification time unavailable: " + e.getMessage() + ")");
+                }
+                return candidate;
+            }
+        }
+        return null;
     }
 }
