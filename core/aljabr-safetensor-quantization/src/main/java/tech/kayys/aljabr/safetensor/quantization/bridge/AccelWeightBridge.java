@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Compatibility adapter. The canonical safetensor-to-AccelTensor bridge lives
- * in aljabr-safetensor-loader so default inference does not need the optional
+ * in aljabr-safetensor-core so default inference does not need the optional
  * Tafkir-backed quantization module.
  */
 package tech.kayys.aljabr.safetensor.quantization.bridge;
@@ -18,8 +18,8 @@ import java.util.Map;
 @ApplicationScoped
 @Deprecated(forRemoval = false)
 public class AccelWeightBridge {
-    private final tech.kayys.aljabr.safetensor.loader.bridge.AccelWeightBridge delegate =
-            new tech.kayys.aljabr.safetensor.loader.bridge.AccelWeightBridge();
+    private final tech.kayys.aljabr.safetensor.core.bridge.AccelWeightBridge delegate =
+            new tech.kayys.aljabr.safetensor.core.bridge.AccelWeightBridge();
 
     public AccelTensor bridge(SafetensorTensor tensor) {
         return delegate.bridge(tensor);
