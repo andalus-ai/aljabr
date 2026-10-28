@@ -69,7 +69,7 @@ Use JDK 25 and the Gradle module coordinates published for the version you selec
 ./gradlew :core:aljabr-tensor:test
 ```
 
-The second command runs the repository's tensor-module tests; it does not compile this documentation snippet as a dedicated example target. Treat the snippet as an API illustration until it is added to an executable example/test source set and verified in CI.
+The second command includes `TensorResearchQuickstartTest`, an executable test counterpart that checks the documented matrix values and mean. The Markdown snippet itself is not compiled as a source file; keep the test counterpart aligned with the example and require CI to pass before treating it as verified.
 
 ## What comes next for a PyTorch-like workflow
 
