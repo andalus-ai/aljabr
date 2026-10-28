@@ -453,6 +453,15 @@ public final class GgufMetalBridge {
         DECODE_STEP_TOKEN_MH = decodeStepTokenHandle;
     }
 
+    public static boolean isVerbose() {
+        return Boolean.getBoolean("aljabr.metal.verbose")
+                || Boolean.getBoolean("aqli.verbose")
+                || System.getenv("ALJABR_METAL_VERBOSE") != null
+                || System.getenv("ALJABR_DEBUG") != null
+                || System.getenv("AQLI_DEBUG") != null
+                || LOG.isLoggable(Level.FINE);
+    }
+
     private static final class MetalBufferCache {
         final Arena arena = Arena.ofShared();
         MemorySegment segA;
@@ -1393,13 +1402,15 @@ public final class GgufMetalBridge {
                 MemorySegment.copy(segX, ValueLayout.JAVA_FLOAT, 0, x, 0, totalDim);
                 return true;
             } else {
-                if (layer == 0) {
-                    System.err.println("[GgufMetalBridge] woFfnFusedLayerBatch layer 0 rc=" + rc);
+                if (isVerbose() && layer == 0) {
+                    LOG.fine("[GgufMetalBridge] woFfnFusedLayerBatch layer 0 rc=" + rc);
                 }
                 return false;
             }
         } catch (Throwable t) {
-            System.err.println("[GgufMetalBridge] woFfnFusedLayerBatch threw: " + t);
+            if (isVerbose()) {
+                LOG.log(Level.FINE, "[GgufMetalBridge] woFfnFusedLayerBatch threw", t);
+            }
             return false;
         }
     }

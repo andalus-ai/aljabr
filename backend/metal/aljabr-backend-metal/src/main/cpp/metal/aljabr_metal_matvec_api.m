@@ -71,6 +71,29 @@
   g_pipelines.matvec_half_gated_pair_128
 #define g_matvec_bf16_gated_pair_128_pipeline                                  \
   g_pipelines.matvec_bf16_gated_pair_128
+
+static int g_metal_verbose = -1;
+
+void aljabr_metal_set_verbose(int enable) {
+  g_metal_verbose = enable ? 1 : 0;
+}
+
+static inline BOOL aljabr_metal_is_verbose(void) {
+  if (g_metal_verbose >= 0) {
+    return g_metal_verbose == 1;
+  }
+  return (getenv("ALJABR_METAL_VERBOSE") != NULL ||
+          getenv("ALJABR_METAL_DEBUG") != NULL ||
+          getenv("ALJABR_DEBUG") != NULL ||
+          getenv("AQLI_DEBUG") != NULL);
+}
+
+#define ALJABR_METAL_LOG(...) do { \
+  if (aljabr_metal_is_verbose()) { \
+    fprintf(stderr, __VA_ARGS__); \
+  } \
+} while(0)
+
 // ── aljabr_metal_softcap
 // ────────────────────────────────────────────────────── GPU logit
 // soft-capping: x[i] = cap * tanh(x[i] / cap)  (in-place) Uses
@@ -4015,19 +4038,19 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     float *x, const float *attn_full,
     int layer, int batchSize, float eps, int activationKind) {
   if (!g_initialized || layer < 0 || layer >= g_num_decode_layers || batchSize <= 0) {
-    fprintf(stderr, "[wo_ffn_batch] rc=-1: init=%d layer=%d num_layers=%d bSz=%d\n",
-            g_initialized, layer, g_num_decode_layers, batchSize);
+    ALJABR_METAL_LOG("[wo_ffn_batch] rc=-1: init=%d layer=%d num_layers=%d bSz=%d\n",
+                     g_initialized, layer, g_num_decode_layers, batchSize);
     return -1;
   }
   DecodeLayerConfig *cfg = &g_decode_layers[layer];
   if (cfg->bufWO == nil || cfg->bufDown == nil) {
-    fprintf(stderr, "[wo_ffn_batch] rc=-2: bufWO=%p bufDown=%p\n", cfg->bufWO, cfg->bufDown);
+    ALJABR_METAL_LOG("[wo_ffn_batch] rc=-2: bufWO=%p bufDown=%p\n", cfg->bufWO, cfg->bufDown);
     return -2;
   }
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
   if (pipelines->post_attn_add_ffn_norm == nil || pipelines->post_ffn_add_out_scale == nil) {
-    fprintf(stderr, "[wo_ffn_batch] rc=-3: post_attn=%p post_ffn=%p\n",
-            pipelines->post_attn_add_ffn_norm, pipelines->post_ffn_add_out_scale);
+    ALJABR_METAL_LOG("[wo_ffn_batch] rc=-3: post_attn=%p post_ffn=%p\n",
+                     pipelines->post_attn_add_ffn_norm, pipelines->post_ffn_add_out_scale);
     return -3;
   }
 
@@ -4044,7 +4067,7 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     id<MTLBuffer> bufAttn = ensure_shared_buf(&g_scratch_wo_ffn_attn, &g_scratch_wo_ffn_attn_bytes, attnBytes);
     id<MTLBuffer> bufXB = ensure_shared_buf(&g_scratch_wo_ffn_xb, &g_scratch_wo_ffn_xb_bytes, dimBytes);
     if (!bufX || !bufAttn || !bufXB) {
-      fprintf(stderr, "[wo_ffn_batch] rc=-4: shared bufs failed\n");
+      ALJABR_METAL_LOG("[wo_ffn_batch] rc=-4: shared bufs failed\n");
       return -4;
     }
 
@@ -4054,7 +4077,7 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
       g_scratch_ffn_bytes = sz;
     }
     if (!g_scratch_hb) {
-      fprintf(stderr, "[wo_ffn_batch] rc=-4: g_scratch_hb failed\n");
+      ALJABR_METAL_LOG("[wo_ffn_batch] rc=-4: g_scratch_hb failed\n");
       return -4;
     }
 
@@ -4067,7 +4090,7 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     // 1. wO projection: bufAttn -> bufXB
     if (!encode_matvec_buf(enc, pipelines, bufXB, bufAttn, cfg->bufWO, cfg->offWO,
                            kDim, nDim, cfg->typeWO, (uint32_t)bSz)) {
-      fprintf(stderr, "[wo_ffn_batch] rc=-5: encode wO failed typeWO=%d\n", cfg->typeWO);
+      ALJABR_METAL_LOG("[wo_ffn_batch] rc=-5: encode wO failed typeWO=%d\n", cfg->typeWO);
       [enc endEncoding];
       return -5;
     }
@@ -4099,8 +4122,8 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
       fuseP = pipelines->ffn_gate_up_act_q4_k_mr4;
     }
     if (fuseP == nil) {
-      fprintf(stderr, "[wo_ffn_batch] rc=-6: fuseP nil typeGate=%d typeUp=%d use_b4=%d\n",
-              cfg->typeGate, cfg->typeUp, (int)use_b4);
+      ALJABR_METAL_LOG("[wo_ffn_batch] rc=-6: fuseP nil typeGate=%d typeUp=%d use_b4=%d\n",
+                       cfg->typeGate, cfg->typeUp, (int)use_b4);
       [enc endEncoding];
       return -6;
     }
@@ -4131,7 +4154,7 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     // 4. Down projection: g_scratch_hb -> bufXB
     if (!encode_matvec_buf(enc, pipelines, bufXB, g_scratch_hb, cfg->bufDown, cfg->offDown,
                            nFfn, nDim, cfg->typeDown, (uint32_t)bSz)) {
-      fprintf(stderr, "[wo_ffn_batch] rc=-7: encode Down failed typeDown=%d\n", cfg->typeDown);
+      ALJABR_METAL_LOG("[wo_ffn_batch] rc=-7: encode Down failed typeDown=%d\n", cfg->typeDown);
       [enc endEncoding];
       return -7;
     }
@@ -4146,7 +4169,7 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     [cmd waitUntilCompleted];
 
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
-      fprintf(stderr, "[wo_ffn_batch] rc=-8: cmd failed status=%lu\n", (unsigned long)[cmd status]);
+      ALJABR_METAL_LOG("[wo_ffn_batch] rc=-8: cmd failed status=%lu\n", (unsigned long)[cmd status]);
       return -8;
     }
 

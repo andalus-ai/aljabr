@@ -88,6 +88,7 @@ public class MetalBinding {
     private static final String FN_FFN_GATED_FUSED_BATCH = "aljabr_metal_ffn_gated_fused_batch";
     private static final String FN_WO_FFN_FUSED = "aljabr_metal_wo_ffn_fused";
     private static final String FN_WO_FFN_FUSED_LAYER_BATCH = "aljabr_metal_wo_ffn_fused_layer_batch";
+    private static final String FN_SET_VERBOSE = "aljabr_metal_set_verbose";
     private static final String FN_WO_FFN_NEXT_QKV_FUSED = "aljabr_metal_wo_ffn_next_qkv_fused";
     private static final String FN_WO_FFN_LOGITS_FUSED = "aljabr_metal_wo_ffn_logits_fused";
     private static final String FN_INIT_KV_CACHE = "aljabr_metal_init_kv_cache";
@@ -163,8 +164,26 @@ public class MetalBinding {
     private MetalBinding(SymbolLookup lookup) {
         this.lookup = lookup;
         this.nativeAvailable = (lookup != null);
-        if (nativeAvailable)
+        if (nativeAvailable) {
             bindAll();
+            if (isVerboseConfigured()) {
+                setVerbose(true);
+            }
+        }
+    }
+
+    private static boolean isVerboseConfigured() {
+        return Boolean.getBoolean("aljabr.metal.verbose")
+                || Boolean.getBoolean("aqli.verbose")
+                || System.getenv("ALJABR_METAL_VERBOSE") != null
+                || System.getenv("ALJABR_DEBUG") != null
+                || System.getenv("AQLI_DEBUG") != null;
+    }
+
+    public void setVerbose(boolean enable) {
+        if (!useCpuFallback() && handles.containsKey(FN_SET_VERBOSE)) {
+            invoke(FN_SET_VERBOSE, enable ? 1 : 0);
+        }
     }
 
     // ── Initialisation ────────────────────────────────────────────────────────
@@ -1790,6 +1809,8 @@ public class MetalBinding {
         bind(FN_WO_FFN_FUSED_LAYER_BATCH, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT));
+
+        bind(FN_SET_VERBOSE, FunctionDescriptor.ofVoid(ValueLayout.JAVA_INT));
 
         bind(FN_WO_FFN_NEXT_QKV_FUSED, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS,

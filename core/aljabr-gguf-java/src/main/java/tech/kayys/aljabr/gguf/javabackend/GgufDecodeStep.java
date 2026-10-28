@@ -8,6 +8,8 @@ import tech.kayys.aljabr.gguf.runtime.GgufTensorOps;
 
 import java.util.Locale;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * One decoder forward pass: {@code token, position -> logits}, given a
@@ -30,6 +32,17 @@ import java.util.Optional;
  * </p>
  */
 final class GgufDecodeStep {
+    private static final Logger LOG = Logger.getLogger(GgufDecodeStep.class.getName());
+
+    public static boolean isVerbose() {
+        return Boolean.getBoolean("aljabr.metal.verbose")
+                || Boolean.getBoolean("aqli.verbose")
+                || System.getenv("ALJABR_METAL_VERBOSE") != null
+                || System.getenv("ALJABR_DEBUG") != null
+                || System.getenv("AQLI_DEBUG") != null
+                || LOG.isLoggable(Level.FINE);
+    }
+
     private final GGUFModel model;
     private final GgufModelConfig cfg;
 
@@ -333,8 +346,8 @@ final class GgufDecodeStep {
                 int layerHeadDim = cfg.headDimForLayer(layer);
                 int rotaryDim = cfg.rotaryDimForLayer(layer);
                 boolean swa = cfg.isSwaLayer(layer);
-                if (layer == 0 || layerHeadDim != previousHeadDim
-                        || rotaryDim != previousRotaryDim || swa != previousSwa) {
+                if (isVerbose() && (layer == 0 || layerHeadDim != previousHeadDim
+                        || rotaryDim != previousRotaryDim || swa != previousSwa)) {
                     System.out.printf(
                             "[JAVA ROPE CONFIG] layer=%d attention=%s head_dim=%d rotary_dim=%d rope_base=%.1f freq_factors=%d%n",
                             layer, swa ? "swa" : "global", layerHeadDim, rotaryDim,
@@ -495,21 +508,25 @@ final class GgufDecodeStep {
         if (metalDecodeActive && tokenEmbed != null && !usesPerLayerTokenEmbeddings) {
             tokenEmbdRegistered = GgufMetalBridge.registerTokenEmbd(
                     model, tokenEmbed, dim, cfg.embeddingScale());
-            if (tokenEmbdRegistered) {
+            if (tokenEmbdRegistered && isVerbose()) {
                 System.out.println("[GgufDecodeStep] GPU-resident token embedding registered.");
             }
         }
         this.canUseMetalDecodeStep = metalDecodeActive;
         this.canUseMetalTokenEmbd = tokenEmbdRegistered;
         if (metalDecodeActive) {
-            System.out.println(
-                    "[GgufDecodeStep] Full-GPU single command buffer decode step ENABLED (" + layers + " layers).");
+            if (isVerbose()) {
+                System.out.println(
+                        "[GgufDecodeStep] Full-GPU single command buffer decode step ENABLED (" + layers + " layers).");
+            }
         } else {
             if (metalDecodeSkipReason == null) {
                 metalDecodeSkipReason = "unknown eligibility or registration failure";
             }
-            System.out.println("[GgufDecodeStep] Full-GPU single command buffer decode step UNAVAILABLE: "
-                    + metalDecodeSkipReason + "; using the existing per-op decode path.");
+            if (isVerbose()) {
+                System.out.println("[GgufDecodeStep] Full-GPU single command buffer decode step UNAVAILABLE: "
+                        + metalDecodeSkipReason + "; using the existing per-op decode path.");
+            }
         }
     }
 
@@ -866,7 +883,7 @@ final class GgufDecodeStep {
                 }
             }
 
-            if (layer == 0 || layer == 24 || layer == layers - 1) {
+            if (isVerbose() && (layer == 0 || layer == 24 || layer == layers - 1)) {
                 if (fusedLayerDone) {
                     System.out.printf("[PREFILL LAYER %d] qkv=%.2fms attn=%.2fms wo_ffn_fused=%.2fms%n",
                             layer, tQkv / 1e6, tAttn / 1e6, (System.nanoTime() - tWo0) / 1e6);
@@ -977,19 +994,21 @@ final class GgufDecodeStep {
             }
         }
 
-        StringBuilder top = new StringBuilder("[");
-        for (int i = 0; i < topCount; i++) {
-            if (i > 0) {
-                top.append(", ");
+        if (isVerbose()) {
+            StringBuilder top = new StringBuilder("[");
+            for (int i = 0; i < topCount; i++) {
+                if (i > 0) {
+                    top.append(", ");
+                }
+                top.append(topIds[i]).append(":")
+                        .append(String.format(Locale.ROOT, "%.5f", topScores[i]));
             }
-            top.append(topIds[i]).append(":")
-                    .append(String.format(Locale.ROOT, "%.5f", topScores[i]));
+            top.append("]");
+            System.out.printf(Locale.ROOT,
+                    "[JAVA PREFILL LOGITS] prompt_tokens=%d hidden_norm=%.5f normalized_norm=%.5f nonfinite_hidden=%d nonfinite_normalized=%d nonfinite_logits=%d top=%s%n",
+                    promptTokens, Math.sqrt(hiddenNormSq), Math.sqrt(normalizedNormSq),
+                    nonFiniteHidden, nonFiniteNormalized, nonFiniteLogits, top);
         }
-        top.append("]");
-        System.out.printf(Locale.ROOT,
-                "[JAVA PREFILL LOGITS] prompt_tokens=%d hidden_norm=%.5f normalized_norm=%.5f nonfinite_hidden=%d nonfinite_normalized=%d nonfinite_logits=%d top=%s%n",
-                promptTokens, Math.sqrt(hiddenNormSq), Math.sqrt(normalizedNormSq),
-                nonFiniteHidden, nonFiniteNormalized, nonFiniteLogits, top);
     }
 
     private void disableMetalDecodeAfterRuntimeFallback(int pos, String reason) {
@@ -1041,7 +1060,7 @@ final class GgufDecodeStep {
             cache.advance();
             metalDecodeStepHasCommitted = true;
             long tElapsed = System.nanoTime() - t0;
-            if (pos % 10 == 0 || pos < 5) {
+            if (isVerbose() && (pos % 10 == 0 || pos < 5)) {
                 System.out.printf("[METAL DECODE GREEDY %d] single cmd buffer step: %.2f ms%n", pos,
                         tElapsed / 1e6);
             }
@@ -1096,7 +1115,7 @@ final class GgufDecodeStep {
                 cache.advance();
                 metalDecodeStepHasCommitted = true;
                 long tElapsed = System.nanoTime() - t0;
-                if (computeLogits && (pos % 10 == 0 || pos < 5)) {
+                if (isVerbose() && computeLogits && (pos % 10 == 0 || pos < 5)) {
                     System.out.printf("[METAL DECODE %d] single cmd buffer step: %.2f ms%n", pos,
                             tElapsed / 1e6);
                 }
@@ -1272,7 +1291,7 @@ final class GgufDecodeStep {
             long tAttnEnd = System.nanoTime();
             tAttn += (tAttnEnd - tAttn0);
 
-            if (pos == 27 && layer == 0) {
+            if (isVerbose() && pos == 27 && layer == 0) {
                 float qNorm = 0, kNorm = 0, vNorm = 0, aNorm = 0;
                 for (float f : q)
                     qNorm += f * f;
@@ -1423,7 +1442,7 @@ final class GgufDecodeStep {
                     sumSq += v * v;
                 System.out.printf("[JAVA  L%02d] x[0]=%+.4f, norm=%.4f%n", layer, x[0], (float) Math.sqrt(sumSq));
             }
-            if (pos == 25 && (layer == 0 || layer == 1 || layer == 24 || layer == layers - 1)) {
+            if (isVerbose() && pos == 25 && (layer == 0 || layer == 1 || layer == 24 || layer == layers - 1)) {
                 System.out.printf("[LAYER %d TIMING pos=%d] qkv=%.2fms attn=%.2fms wo=%.2fms ffn=%.2fms%n",
                         layer, pos, (tQkv) / 1e6, (tAttn) / 1e6, (tWo) / 1e6, (tFfn) / 1e6);
             }
@@ -1460,7 +1479,7 @@ final class GgufDecodeStep {
                 tTanhEnd = System.nanoTime();
             }
             tLogits = tTanhEnd - tLogits0;
-            if (pos <= 2 || pos == 24 || pos == 25) {
+            if (isVerbose() && (pos <= 2 || pos == 24 || pos == 25)) {
                 System.out.printf(
                         "[LOGITS DETAIL pos=%d] norm=%.2fms, matvec=%.2fms, tanh(cap=%.1f)=%.2fms, total=%.2fms%n",
                         pos, (tNormEnd - tLogits0) / 1e6, (tMatVecEnd - tNormEnd) / 1e6, cap,
@@ -1469,13 +1488,13 @@ final class GgufDecodeStep {
         }
 
         long tTotal = System.nanoTime() - tStartTotal;
-        if (Boolean.getBoolean("aljabr.timing") || pos <= 2 || pos == 24 || pos == 25) {
+        if ((Boolean.getBoolean("aljabr.timing") || (isVerbose() && (pos <= 2 || pos == 24 || pos == 25)))) {
             System.out.printf(
                     "[TIMING pos=%d] total=%.1fms (qkv=%.1fms, rope=%.1fms, attn=%.1fms, wo=%.1fms, ffn=%.1fms, logits=%.1fms)%n",
                     pos, tTotal / 1e6, tQkv / 1e6, tRope / 1e6, tAttn / 1e6, tWo / 1e6, tFfn / 1e6, tLogits / 1e6);
         }
 
-        if (pos == 27) {
+        if (isVerbose() && pos == 27) {
             int best = 0;
             for (int i = 1; i < this.logits.length; i++)
                 if (this.logits[i] > this.logits[best])

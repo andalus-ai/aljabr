@@ -12,6 +12,13 @@ extern "C" {
 #endif
 
 /**
+ * Configure verbosity / debug logging for the Metal backend.
+ *
+ * @param enable 1 to enable debug output to stderr, 0 to silence it.
+ */
+void aljabr_metal_set_verbose(int enable);
+
+/**
  * Apply logit soft-capping in-place on the GPU: x[i] = cap * tanh(x[i] / cap).
  *
  * @param logits  float* to the logit buffer (in-place, caller-managed memory)
