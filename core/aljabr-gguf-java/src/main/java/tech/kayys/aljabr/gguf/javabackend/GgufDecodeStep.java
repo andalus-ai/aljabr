@@ -673,7 +673,7 @@ final class GgufDecodeStep {
                 dispatchMatVecBatch(wQ[layer], allXb, allQ, T);
             }
             long tQkv = System.nanoTime() - tQkv0;
-            profileQkvNanos += tQkv;
+            if (profilePrefill) profileQkvNanos += tQkv;
 
             for (int t = 0; t < T; t++) {
                 System.arraycopy(allQ, t * qDim, qLocal, 0, qDim);
@@ -791,8 +791,8 @@ final class GgufDecodeStep {
                 }
             }
             long tAttn = System.nanoTime() - tAttn0;
-            profileAttentionNanos += tAttn;
-            if (gpuAttnDone) {
+            if (profilePrefill) profileAttentionNanos += tAttn;
+            if (profilePrefill && gpuAttnDone) {
                 profileGpuAttentionLayers++;
             }
 
@@ -876,8 +876,10 @@ final class GgufDecodeStep {
                     }
                 }
                 tFfn = System.nanoTime() - tFfn0;
-                profileWoNanos += tWo;
-                profileFfnNanos += tFfn;
+                if (profilePrefill) {
+                    profileWoNanos += tWo;
+                    profileFfnNanos += tFfn;
+                }
 
                 // Per-layer embedding + Layer output scale
                 for (int t = 0; t < T; t++) {
@@ -903,7 +905,7 @@ final class GgufDecodeStep {
                 }
             }
 
-            if (fusedLayerDone) {
+            if (profilePrefill && fusedLayerDone) {
                 profileFusedLayers++;
                 profileFusedLayerNanos += System.nanoTime() - tWo0;
             }
