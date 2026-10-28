@@ -215,7 +215,7 @@ public class MetalBinding {
         try {
             SymbolLookup lk = SymbolLookup.libraryLookup(libraryPath, Arena.global());
             instance = new MetalBinding(lk);
-            LOG.infof("MetalBinding loaded from %s", libraryPath);
+            LOG.debugf("MetalBinding loaded from %s", libraryPath);
             return true;
         } catch (Exception e) {
             LOG.warnf("MetalBinding: failed to load %s (%s) — CPU fallback active",

@@ -314,7 +314,7 @@ static void warmup_pipelines(AljabrMetalPipelines *pipelines) {
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
       NSLog(@"[aljabr-metal] warmup failed: %@", [cmd error]);
     } else {
-      printf("[aljabr-metal] Pre-warmed MR4 pipelines on GPU in %.2f ms\n", (tw1 - tw0) / 1e6);
+      ALJABR_METAL_LOG("[aljabr-metal] Pre-warmed MR4 pipelines on GPU in %.2f ms\n", (tw1 - tw0) / 1e6);
     }
   }
 }
@@ -534,7 +534,7 @@ void aljabr_metal_compile_runtime_pipelines(
   warmup_pipelines(pipelines);
 
   uint64_t t_end = aljabr_metal_monotonic_nanos();
-  printf("[aljabr-metal] Runtime pipelines initialized in %.2f ms (runtime_lib: %.2f ms)\n",
-         (t_end - t_start) / 1e6, (t_lib1 - t_start) / 1e6);
+  ALJABR_METAL_LOG("[aljabr-metal] Runtime pipelines initialized in %.2f ms (runtime_lib: %.2f ms)\n",
+                   (t_end - t_start) / 1e6, (t_lib1 - t_start) / 1e6);
 }
 

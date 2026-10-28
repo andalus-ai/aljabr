@@ -325,7 +325,7 @@ public final class GgufMetalBridge {
                                         MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
                                                 int.class, int.class, int.class, int.class, int.class, int.class, float.class, boolean.class, boolean.class))
                                         .bindTo(faInstance);
-                                LOG.info("[GgufMetalBridge] MetalFlashAttentionBinding bound successfully.");
+                                LOG.fine("[GgufMetalBridge] MetalFlashAttentionBinding bound successfully.");
                             } catch (Throwable t) {
                                 LOG.fine("MetalFlashAttentionBinding lookup failed: " + t.getMessage());
                             }
@@ -335,28 +335,28 @@ public final class GgufMetalBridge {
                                 initKvCacheHandle = lookup.findVirtual(mbClass, "initKVCache",
                                         MethodType.methodType(int.class, int.class, int.class, MemorySegment.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] initKVCache handle bound.");
+                                LOG.fine("[GgufMetalBridge] initKVCache handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] initKVCache bind FAILED: " + t); }
 
                             try {
                                 syncKvCacheHandle = lookup.findVirtual(mbClass, "syncKVCache",
                                         MethodType.methodType(int.class, int.class, int.class, MemorySegment.class, MemorySegment.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] syncKVCache handle bound.");
+                                LOG.fine("[GgufMetalBridge] syncKVCache handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] syncKVCache bind FAILED: " + t); }
 
                             try {
                                 registerNormBufferHandle = lookup.findVirtual(mbClass, "registerNormBuffer",
                                         MethodType.methodType(int.class, int.class, MemorySegment.class, long.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] registerNormBuffer handle bound.");
+                                LOG.fine("[GgufMetalBridge] registerNormBuffer handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerNormBuffer bind FAILED: " + t); }
 
                             try {
                                 registerRopeFreqsHandle = lookup.findVirtual(mbClass, "registerRopeFreqs",
                                         MethodType.methodType(int.class, int.class, MemorySegment.class, int.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] registerRopeFreqs handle bound.");
+                                LOG.fine("[GgufMetalBridge] registerRopeFreqs handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerRopeFreqs bind FAILED: " + t); }
 
                             try {
@@ -374,7 +374,7 @@ public final class GgufMetalBridge {
                                                 int.class, int.class,
                                                 int.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] registerDecodeLayer handle bound.");
+                                LOG.fine("[GgufMetalBridge] registerDecodeLayer handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerDecodeLayer bind FAILED: " + t); }
 
                             try {
@@ -384,7 +384,7 @@ public final class GgufMetalBridge {
                                                 MemorySegment.class, int.class, int.class, int.class,
                                                 float.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] registerOutput handle bound.");
+                                LOG.fine("[GgufMetalBridge] registerOutput handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerOutput bind FAILED: " + t); }
 
                             try {
@@ -393,25 +393,25 @@ public final class GgufMetalBridge {
                                                 int.class, int.class, float.class,
                                                 MemorySegment.class, MemorySegment.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] decodeStep handle bound.");
+                                LOG.fine("[GgufMetalBridge] decodeStep handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] decodeStep bind FAILED: " + t); }
 
                             try {
                                 registerTokenEmbdHandle = lookup.findVirtual(mbClass, "registerTokenEmbd",
                                         MethodType.methodType(int.class, MemorySegment.class, int.class, int.class, float.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] registerTokenEmbd handle bound.");
+                                LOG.fine("[GgufMetalBridge] registerTokenEmbd handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerTokenEmbd bind FAILED: " + t); }
 
                             try {
                                 decodeStepTokenHandle = lookup.findVirtual(mbClass, "decodeStepToken",
                                         MethodType.methodType(int.class, int.class, int.class, float.class, int.class, MemorySegment.class))
                                         .bindTo(instance);
-                                LOG.info("[GgufMetalBridge] decodeStepToken handle bound.");
+                                LOG.fine("[GgufMetalBridge] decodeStepToken handle bound.");
                             } catch (Throwable t) { LOG.warning("[GgufMetalBridge] decodeStepToken bind FAILED: " + t); }
 
                             enabled = true;
-                            LOG.info("Aljabr Metal GPU acceleration enabled for Java GGUF backend.");
+                            LOG.fine("Aljabr Metal GPU acceleration enabled for Java GGUF backend.");
                         }
                     }
                 }
@@ -591,7 +591,7 @@ public final class GgufMetalBridge {
                 MemorySegment seg = model.segment();
                 int rc = (int) REGISTER_MODEL_BUFFER_MH.invokeExact(seg, seg.byteSize());
                 if (rc == 0) {
-                    LOG.info("Registered master Metal model buffer: " + (seg.byteSize() / (1024 * 1024)) + " MB");
+                    LOG.fine("Registered master Metal model buffer: " + (seg.byteSize() / (1024 * 1024)) + " MB");
                 }
             } catch (Throwable t) {
                 LOG.log(Level.WARNING, "Failed to register master model buffer", t);
@@ -674,7 +674,7 @@ public final class GgufMetalBridge {
             }
         }
 
-        LOG.info("[GgufMetalBridge] Pre-loaded norm buffers: " + layers + " layers × (4 slots × " + dim + " + 2 slots × " + hDim + ") floats");
+        LOG.fine("[GgufMetalBridge] Pre-loaded norm buffers: " + layers + " layers × (4 slots × " + dim + " + 2 slots × " + hDim + ") floats");
     }
 
     /**

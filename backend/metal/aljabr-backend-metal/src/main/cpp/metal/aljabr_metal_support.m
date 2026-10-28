@@ -55,3 +55,19 @@ uint64_t aljabr_metal_monotonic_nanos(void) {
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return ((uint64_t)ts.tv_sec * 1000000000ull) + (uint64_t)ts.tv_nsec;
 }
+
+static int g_metal_verbose = -1;
+
+void aljabr_metal_set_verbose(int enable) {
+  g_metal_verbose = enable ? 1 : 0;
+}
+
+BOOL aljabr_metal_is_verbose(void) {
+  if (g_metal_verbose >= 0) {
+    return g_metal_verbose == 1;
+  }
+  return aljabr_metal_env_truthy("ALJABR_METAL_VERBOSE") ||
+         aljabr_metal_env_truthy("ALJABR_METAL_DEBUG") ||
+         aljabr_metal_env_truthy("ALJABR_DEBUG") ||
+         aljabr_metal_env_truthy("AQLI_DEBUG");
+}

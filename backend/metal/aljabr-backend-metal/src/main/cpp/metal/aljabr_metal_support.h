@@ -20,4 +20,13 @@ float aljabr_metal_env_float_or_default(const char *name,
                                              float default_value);
 uint64_t aljabr_metal_monotonic_nanos(void);
 
+void aljabr_metal_set_verbose(int enable);
+BOOL aljabr_metal_is_verbose(void);
+
+#define ALJABR_METAL_LOG(...) do { \
+  if (aljabr_metal_is_verbose()) { \
+    fprintf(stderr, __VA_ARGS__); \
+  } \
+} while(0)
+
 #endif

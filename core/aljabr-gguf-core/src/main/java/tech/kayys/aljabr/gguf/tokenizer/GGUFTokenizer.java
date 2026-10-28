@@ -96,7 +96,7 @@ public final class GGUFTokenizer implements Tokenizer {
 
         boolean isRawUtf8Vocab = detectRawUtf8Vocab(meta, arch, tokenizerModel, tokens);
 
-        log.infof("GGUF Tokenizer init: model=%s arch=%s rawUtf8=%b vocab=%d", tokenizerModel, arch, isRawUtf8Vocab, tokens.size());
+        log.debugf("GGUF Tokenizer init: model=%s arch=%s rawUtf8=%b vocab=%d", tokenizerModel, arch, isRawUtf8Vocab, tokens.size());
 
         // Build special token map from explicit metadata if present
         this.specialTokens = new HashMap<>();
@@ -168,7 +168,7 @@ public final class GGUFTokenizer implements Tokenizer {
                 padId,
                 specialTokens
         );
-        System.out.println("GGUFTokenizer initialized with " + specialTokens.size() + " special tokens: " + specialTokens);
+        log.debugf("GGUFTokenizer initialized with %d special tokens: %s", specialTokens.size(), specialTokens);
     }
 
     private static boolean isLikelyEosName(String name) {

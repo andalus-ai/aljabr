@@ -142,8 +142,8 @@ int aljabr_metal_register_model_buffer(const void *base_ptr, size_t total_bytes)
   }
   uint64_t t1 = aljabr_metal_monotonic_nanos();
 
-  printf("[Metal Master Buffer] Registered and pre-faulted 0-copy MTLBuffer for model: %zu MB (aligned=%p, len=%zu MB) in %.2f ms\n",
-         total_bytes / (1024 * 1024), aligned_ptr, aligned_bytes / (1024 * 1024), (t1 - t0) * 1e-6);
+  ALJABR_METAL_LOG("[Metal Master Buffer] Registered and pre-faulted 0-copy MTLBuffer for model: %zu MB (aligned=%p, len=%zu MB) in %.2f ms\n",
+                   total_bytes / (1024 * 1024), aligned_ptr, aligned_bytes / (1024 * 1024), (t1 - t0) * 1e-6);
   return 0;
 }
 

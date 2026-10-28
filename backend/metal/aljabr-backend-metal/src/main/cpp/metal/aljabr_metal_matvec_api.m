@@ -72,28 +72,6 @@
 #define g_matvec_bf16_gated_pair_128_pipeline                                  \
   g_pipelines.matvec_bf16_gated_pair_128
 
-static int g_metal_verbose = -1;
-
-void aljabr_metal_set_verbose(int enable) {
-  g_metal_verbose = enable ? 1 : 0;
-}
-
-static inline BOOL aljabr_metal_is_verbose(void) {
-  if (g_metal_verbose >= 0) {
-    return g_metal_verbose == 1;
-  }
-  return (getenv("ALJABR_METAL_VERBOSE") != NULL ||
-          getenv("ALJABR_METAL_DEBUG") != NULL ||
-          getenv("ALJABR_DEBUG") != NULL ||
-          getenv("AQLI_DEBUG") != NULL);
-}
-
-#define ALJABR_METAL_LOG(...) do { \
-  if (aljabr_metal_is_verbose()) { \
-    fprintf(stderr, __VA_ARGS__); \
-  } \
-} while(0)
-
 // ── aljabr_metal_softcap
 // ────────────────────────────────────────────────────── GPU logit
 // soft-capping: x[i] = cap * tanh(x[i] / cap)  (in-place) Uses
@@ -1385,12 +1363,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
       static int triple_batch_call_count = 0;
       triple_batch_call_count++;
       if (triple_batch_call_count <= 2) {
-        printf("[NATIVE TRIPLE BATCH #%d] K=%d N0=%d N1=%d N2=%d bSz=%d "
-               "types=(%d,%d,%d) prep: %.2f ms, gpu: %.2f ms, copy_out: %.2f "
-               "ms, total: %.2f ms\n",
-               triple_batch_call_count, K, N0, N1, N2, batchSize, type0, type1,
-               type2, (t_commit - t_start) / 1e6, (t_done - t_commit) / 1e6,
-               (t_end - t_done) / 1e6, (t_end - t_start) / 1e6);
+        ALJABR_METAL_LOG("[NATIVE TRIPLE BATCH #%d] K=%d N0=%d N1=%d N2=%d bSz=%d "
+                         "types=(%d,%d,%d) prep: %.2f ms, gpu: %.2f ms, copy_out: %.2f "
+                         "ms, total: %.2f ms\n",
+                         triple_batch_call_count, K, N0, N1, N2, batchSize, type0, type1,
+                         type2, (t_commit - t_start) / 1e6, (t_done - t_commit) / 1e6,
+                         (t_end - t_done) / 1e6, (t_end - t_start) / 1e6);
       }
       return 0;
     }

@@ -47,6 +47,14 @@ import java.util.Map;
  * llama.cpp backend.</p>
  */
 final class JavaGgufBackend implements GgufBackend {
+    private static boolean isVerbose() {
+        return Boolean.getBoolean("aljabr.metal.verbose")
+                || Boolean.getBoolean("aqli.verbose")
+                || System.getenv("ALJABR_METAL_VERBOSE") != null
+                || System.getenv("ALJABR_DEBUG") != null
+                || System.getenv("AQLI_DEBUG") != null;
+    }
+
     private final GGUFModel model;
     private final GgufRuntimeProfile profile;
     private final GgufRuntimeProbe.PreparedMatrixCacheDecision preparedCacheDecision;
@@ -149,7 +157,9 @@ final class JavaGgufBackend implements GgufBackend {
             int pos = 0;
             float[] logits = null;
             long t0 = System.currentTimeMillis();
-            System.err.printf("[java-engine] Prefilling %d prompt tokens...%n", promptTokens.length);
+            if (isVerbose()) {
+                System.err.printf("[java-engine] Prefilling %d prompt tokens...%n", promptTokens.length);
+            }
             if (promptTokens.length > 0) {
                 int[] tokenIds = new int[promptTokens.length];
                 for (int pIdx = 0; pIdx < promptTokens.length; pIdx++) {
@@ -159,16 +169,20 @@ final class JavaGgufBackend implements GgufBackend {
                 logits = decodeStep.prefill(tokenIds, cache);
                 pos = promptTokens.length;
                 long prefillMs = Math.max(1, System.currentTimeMillis() - t0);
-                System.err.printf("[java-engine] Prompt prefill: %d tokens in %d ms (%.1f tok/s)%n",
-                        promptTokens.length, prefillMs, (promptTokens.length * 1000.0) / prefillMs);
-                DecodeOptions dbgOpts = DecodeOptions.builder().build();
-                for (int pIdx = 0; pIdx < tokenIds.length; pIdx++) {
-                    System.err.printf("  [PROMPT tok %d] %d -> '%s'%n", pIdx, tokenIds[pIdx], tokenizer.decode(new long[]{tokenIds[pIdx]}, dbgOpts));
+                if (isVerbose()) {
+                    System.err.printf("[java-engine] Prompt prefill: %d tokens in %d ms (%.1f tok/s)%n",
+                            promptTokens.length, prefillMs, (promptTokens.length * 1000.0) / prefillMs);
+                    DecodeOptions dbgOpts = DecodeOptions.builder().build();
+                    for (int pIdx = 0; pIdx < tokenIds.length; pIdx++) {
+                        System.err.printf("  [PROMPT tok %d] %d -> '%s'%n", pIdx, tokenIds[pIdx], tokenizer.decode(new long[]{tokenIds[pIdx]}, dbgOpts));
+                    }
                 }
             }
 
             InferenceResponse.FinishReason finishReason = InferenceResponse.FinishReason.LENGTH;
-            System.err.println("[java-engine] Generating tokens...");
+            if (isVerbose()) {
+                System.err.println("[java-engine] Generating tokens...");
+            }
             long genStart = System.currentTimeMillis();
             boolean isGreedy = (sampling.temperature() <= 0.0f);
             int nextToken = -1;
@@ -180,7 +194,7 @@ final class JavaGgufBackend implements GgufBackend {
                 } else {
                     hasNextToken = false;
                 }
-                if (i < 10) {
+                if (isVerbose() && i < 10) {
                     System.err.printf("  [GEN step %d] token=%d ('%s')%n", i, nextToken, tokenizer.decode(new long[]{nextToken}, DecodeOptions.builder().build()));
                 }
                 if (tokenizer.isEosToken(nextToken)) {
@@ -211,7 +225,7 @@ final class JavaGgufBackend implements GgufBackend {
                 pos++;
             }
             long genElapsed = System.currentTimeMillis() - genStart;
-            if (!generated.isEmpty()) {
+            if (isVerbose() && !generated.isEmpty()) {
                 System.err.printf("[java-engine] Generated %d tokens in %d ms (%.2f tok/s)%n",
                         generated.size(), genElapsed, (generated.size() * 1000.0) / Math.max(1, genElapsed));
             }
