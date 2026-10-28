@@ -7,15 +7,34 @@ Use this protocol before claiming a Metal decode or prefill optimization. A comm
 From a checkout with the AQLI CLI available on `PATH`:
 
 ```bash
-python3 scripts/benchmark-aqli.py \
+java scripts/BenchmarkAqli.java \
   --model hf:unsloth/gemma-4-12b-it-GGUF \
   --prompt "who are you" \
   --max-tokens 50 \
   --warmup 1 \
   --runs 5
+
+# Optional JBang source-file launcher:
+jbang scripts/BenchmarkAqli.java --model hf:unsloth/gemma-4-12b-it-GGUF --prompt "who are you" --max-tokens 50 --warmup 1 --runs 5
 ```
 
-The runner writes `build/metal-benchmark/runs.csv` and one combined output log per run. Keep model revision/quantization, prompt, token limit, runtime flags, power mode, and machine state unchanged between revisions. Compare medians and dispersion, not a single run. The optional `--disable-metal` flag sets `-Daljabr.metal.disable=true` for a reference comparison; it is not guaranteed to select an equivalent or faster fallback for every model.
+The JDK 25 source-file runner uses only the Java standard library. It writes `build/metal-benchmark/runs.csv` and one combined output log per run. JBang is an optional launcher, not a runtime dependency. Keep model revision/quantization, prompt, token limit, runtime flags, power mode, and machine state unchanged between revisions. Compare medians and dispersion, not a single run. The optional `--disable-metal` flag sets `-Daljabr.metal.disable=true` for a reference comparison; it is not guaranteed to select an equivalent or faster fallback for every model.
+
+## Java decode-profile summary
+
+The Java source-file tool replaces the Python profile summarizer and supports table, CSV, JSON, multiple log files, or standard input:
+
+```bash
+java scripts/MetalDecodeProfileSummary.java metal-fused.log
+java scripts/MetalDecodeProfileSummary.java metal-fallback.log
+java scripts/MetalDecodeProfileSummary.java --warmup 2 --format csv metal-fused.log
+java scripts/MetalDecodeProfileSummary.java --format json metal-fused.log
+
+# Multiple files are grouped by the reported execution path:
+java scripts/MetalDecodeProfileSummary.java metal-fused.log metal-fallback.log
+```
+
+The profile summary reports median, nearest-rank p95, min, and max for `wall_ms`, `encode_ms`, `submit_wait_ms`, and `gpu_ms`, grouped by path. Warm-up samples are discarded independently for each path. These profile values are diagnostic and should be compared with unprofiled benchmark runs; do not treat instrumented timings as final performance numbers.
 
 ## What this runner does and does not measure
 
