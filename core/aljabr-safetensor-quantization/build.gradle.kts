@@ -15,6 +15,7 @@ val tafkirAvailable = file("../../../tafkir").let {
 dependencies {
     implementation(project(":core:aljabr-safetensor-api"))
     implementation(project(":core:aljabr-safetensor-core"))
+    implementation(project(":core:aljabr-safetensor-bridge"))
     implementation(project(":core:aljabr-safetensor-loader"))
     implementation("io.quarkus:quarkus-core")
     implementation("io.smallrye.reactive:mutiny:2.5.5")
