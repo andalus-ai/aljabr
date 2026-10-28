@@ -37,6 +37,7 @@ public final class GgufMetalBridge {
     private static final MethodHandle FFN_GATED_FUSED_MH;
     private static final MethodHandle FFN_GATED_FUSED_BATCH_MH;
     private static final MethodHandle WO_FFN_FUSED_MH;
+    private static final MethodHandle WO_FFN_FUSED_LAYER_BATCH_MH;
     private static final MethodHandle WO_FFN_NEXT_QKV_FUSED_MH;
     private static final MethodHandle WO_FFN_LOGITS_FUSED_MH;
     private static final MethodHandle REGISTER_MODEL_BUFFER_MH;
@@ -84,6 +85,7 @@ public final class GgufMetalBridge {
         MethodHandle ffnFusedHandle = null;
         MethodHandle ffnFusedBatchHandle = null;
         MethodHandle woFfnFusedHandle = null;
+        MethodHandle woFfnFusedLayerBatchHandle = null;
         MethodHandle woFfnNextQkvFusedHandle = null;
         MethodHandle woFfnLogitsFusedHandle = null;
         MethodHandle registerModelBufferHandle = null;
@@ -246,6 +248,16 @@ public final class GgufMetalBridge {
                                                 MemorySegment.class, MemorySegment.class, MemorySegment.class,
                                                 int.class, int.class, int.class,
                                                 int.class, int.class))
+                                        .bindTo(instance);
+                            } catch (NoSuchMethodException ignored) {
+                            }
+
+                            // woFfnFusedLayerBatch(...)
+                            try {
+                                woFfnFusedLayerBatchHandle = lookup.findVirtual(mbClass, "woFfnFusedLayerBatch",
+                                        MethodType.methodType(int.class,
+                                                MemorySegment.class, MemorySegment.class,
+                                                int.class, int.class, float.class, int.class))
                                         .bindTo(instance);
                             } catch (NoSuchMethodException ignored) {
                             }
@@ -424,6 +436,7 @@ public final class GgufMetalBridge {
         FFN_GATED_FUSED_MH = ffnFusedHandle;
         FFN_GATED_FUSED_BATCH_MH = ffnFusedBatchHandle;
         WO_FFN_FUSED_MH = woFfnFusedHandle;
+        WO_FFN_FUSED_LAYER_BATCH_MH = woFfnFusedLayerBatchHandle;
         WO_FFN_NEXT_QKV_FUSED_MH = woFfnNextQkvFusedHandle;
         WO_FFN_LOGITS_FUSED_MH = woFfnLogitsFusedHandle;
         REGISTER_MODEL_BUFFER_MH = registerModelBufferHandle;
@@ -1334,6 +1347,59 @@ public final class GgufMetalBridge {
             }
         } catch (Throwable t) {
             LOG.log(Level.FINE, "Metal woFfnFused failed, falling back", t);
+            return false;
+        }
+    }
+
+    /**
+     * Executes fused wO projection + postAttnNorm + residual add + ffnNorm + FFN + postFfnNorm + residual add + outScale
+     * for a batch of tokens in a single Metal command buffer submission.
+     */
+    public static boolean woFfnFusedLayerBatch(
+            GGUFModel model,
+            int layer,
+            float[] x,
+            float[] attnFull,
+            int dim,
+            int qDim,
+            int batchSize,
+            float eps,
+            boolean isGeGLU
+    ) {
+        if (!METAL_ENABLED || WO_FFN_FUSED_LAYER_BATCH_MH == null ||
+                x == null || attnFull == null || batchSize <= 0 || dim <= 0 || qDim <= 0 || layer < 0) {
+            return false;
+        }
+        ensureModelRegistered(model);
+
+        int totalDim = batchSize * dim;
+        int totalAttn = batchSize * qDim;
+        if (x.length < totalDim || attnFull.length < totalAttn) {
+            return false;
+        }
+
+        try {
+            MetalBufferCache cache = BUFFERS.get();
+            MemorySegment segX = cache.ensureA(totalDim);
+            MemorySegment segAttn = cache.ensureC0(totalAttn);
+
+            MemorySegment.copy(x, 0, segX, ValueLayout.JAVA_FLOAT, 0, totalDim);
+            MemorySegment.copy(attnFull, 0, segAttn, ValueLayout.JAVA_FLOAT, 0, totalAttn);
+
+            int activationKind = isGeGLU ? 2 : 1;
+            int rc = (int) WO_FFN_FUSED_LAYER_BATCH_MH.invokeExact(segX, segAttn, layer, batchSize, eps, activationKind);
+
+            if (rc == 0) {
+                MemorySegment.copy(segX, ValueLayout.JAVA_FLOAT, 0, x, 0, totalDim);
+                return true;
+            } else {
+                if (layer == 0) {
+                    System.err.println("[GgufMetalBridge] woFfnFusedLayerBatch layer 0 rc=" + rc);
+                }
+                return false;
+            }
+        } catch (Throwable t) {
+            System.err.println("[GgufMetalBridge] woFfnFusedLayerBatch threw: " + t);
             return false;
         }
     }

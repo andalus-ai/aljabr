@@ -269,6 +269,15 @@ int aljabr_metal_decode_step_token(
     int tokenId, float *logits_out
 );
 
+/**
+ * Fused wO projection + postAttnNorm + residual add + ffnNorm + FFN + postFfnNorm + residual add + outScale
+ * for a batch of tokens in a single Metal command buffer submission.
+ */
+int aljabr_metal_wo_ffn_fused_layer_batch(
+    float *x, const float *attn_full,
+    int layer, int batchSize, float eps, int activationKind
+);
+
 #ifdef __cplusplus
 }
 #endif
