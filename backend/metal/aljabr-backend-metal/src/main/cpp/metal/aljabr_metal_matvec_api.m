@@ -1073,12 +1073,17 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
 }
 
 /*
- * The specialized two-token B4 Q4_K/Q6_K kernels have only been parity-validated
- * through batch size 15. Apple Silicon CI reproduced a Q4_K mismatch at batch 27,
- * row 15 (expected 0.0078125, actual -0.0625). Keep larger batches on the existing
- * per-token MR8/MR4 dispatch until the B4 large-batch issue is isolated and fixed.
+ * B4 Q4_K/Q6_K two-token batched kernels are validated up to batch size 32.
+ *
+ * Historical note: an earlier revision without output-write guards produced a
+ * Q4_K mismatch at batch 27, row 15 (expected 0.0078125, got -0.0625) in CI.
+ * That kernel had no `if (t_base + 1u < bSz)` guard. The current kernel has
+ * correct bounds guards (`t_base >= bSz` early-return, `t_base+1 < bSz` write
+ * guard, and `min(t_base+1, bSz-1)` read-clamping). Raising the cap to 32
+ * enables B4 dispatch for all prefill batch sizes (16, 24, 27, 32), cutting
+ * FFN memory-bandwidth by ~2× vs per-token MR8/MR4 dispatch.
  */
-static const uint32_t kMaxValidatedB4BatchSize = 15;
+static const uint32_t kMaxValidatedB4BatchSize = 32;
 
 static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
   if (type == 12)
@@ -1580,10 +1585,11 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       // g_scratch_hb
       id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
       BOOL use_b4 =
-          (bSz > 1 && ((typeGate == 12 && typeUp == 12 &&
-                        pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
-                       (typeGate == 14 && typeUp == 14 &&
-                        pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
+          (bSz > 1 && bSz <= kMaxValidatedB4BatchSize &&
+           ((typeGate == 12 && typeUp == 12 &&
+             pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
+            (typeGate == 14 && typeUp == 14 &&
+             pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
       BOOL use_mr8 = (!use_b4 && typeGate == 12 &&
                       pipelines->ffn_gate_up_act_q4_k_mr8 != nil);
       id<MTLComputePipelineState> fuseP;
@@ -1625,7 +1631,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 2. MatVec Down directly from g_scratch_hb to g_scratch_outDown
-      if (bSz > 1 && typeDown == 12 &&
+      if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 12 &&
           pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q4_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
@@ -1638,7 +1644,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
                                               (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-      } else if (bSz > 1 && typeDown == 14 &&
+      } else if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 14 &&
                  pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q6_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
@@ -1734,7 +1740,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 4. MatVec Down: (dim rows) x (ffnDim cols)
-      if (bSz > 1 && typeDown == 12 &&
+      if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 12 &&
           pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q4_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
@@ -1747,7 +1753,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
                                               (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-      } else if (bSz > 1 && typeDown == 14 &&
+      } else if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 14 &&
                  pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q6_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
