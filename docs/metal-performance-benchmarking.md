@@ -30,6 +30,15 @@ Include the exact commit SHA, JDK and AQLI/Aljabr versions, model file/revision 
 
 For GPU token embedding or prefill changes, correctness is a hard gate: compare embedding outputs or next-token logits against the Java reference, verify greedy token IDs on fixed prompts, and test short and longer prompts. Keep eligibility guards for unsupported per-layer embeddings, partial RoPE, or KV layouts until their implementation and parity are proven.
 
-## Prefill GEMM algorithm and phase metrics
 
-See [GGUF Metal prefill and decode performance plan](performance/gguf-metal-prefill-gemm-plan.md) for the phase-throughput formulas, batched-GEMM algorithm, Metal implementation sequence, correctness gates, and interpretation of the proposed prefill latency target.
+## Aggregate prefill profiling (opt-in)
+
+Enable the aggregate per-prefill summary with either:
+
+```bash
+ALJABR_METAL_PREFILL_PROFILE=1 aqli run --model hf:unsloth/gemma-4-12b-it-GGUF --no-banner --prompt --java "who are you" --max-tokens 50
+```
+
+or add `-Daljabr.metal.prefill.profile=true` to the Java process. The summary reports the prompt-token count, layer-loop time, accumulated QKV projection time, attention time, and how many layers used Metal FA4 attention versus Java/fallback attention. It also reports output-projection and FFN timings for non-fused layers, plus combined WO+FFN time for fused layers. These are inclusive phase totals across layers, not additive wall-clock buckets: host-side normalization, RoPE, KV writes, copies, and dispatch overhead can overlap the measured regions or remain outside them. Do not sum the fields to estimate total prefill time.
+
+Keep this profiler disabled for final performance comparisons. Use it to identify the dominant phase, then compare unprofiled repeated runs with the same model, prompt, token limit, and backend eligibility. The current output is deliberately aggregate-level; add finer per-kernel GPU timestamps only when the aggregate profile identifies a phase that needs further decomposition.
