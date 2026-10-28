@@ -1177,8 +1177,11 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
     [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 7) / 8, bSz, 1)
         threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
   } else if (is_mr4) {
+    // The MR4 kernels map four SIMD groups (4 × 32 lanes) to each
+    // threadgroup. Dispatching only 64 threads leaves the upper two rows
+    // unwritten; this becomes visible as stale output at batch boundaries.
     [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nn + 3) / 4, bSz, 1)
-        threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+        threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
   } else {
     [enc dispatchThreadgroups:MTLSizeMake((NSUInteger)nn, bSz, 1)
         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
