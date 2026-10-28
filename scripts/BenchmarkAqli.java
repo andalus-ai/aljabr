@@ -22,6 +22,10 @@ public final class BenchmarkAqli {
 
     public static void main(String[] argv) throws Exception {
         Map<String, String> options = parseArgs(argv);
+        if (options.containsKey("help")) {
+            usage();
+            return;
+        }
         String cli = options.getOrDefault("cli", "aqli");
         String model = required(options, "model");
         String prompt = options.getOrDefault("prompt", "who are you");
@@ -32,11 +36,6 @@ public final class BenchmarkAqli {
                 .toAbsolutePath().normalize();
         boolean noJava = options.containsKey("no-java");
         boolean disableMetal = options.containsKey("disable-metal");
-        if (options.containsKey("help")) {
-            usage();
-            return;
-        }
-
         Path logsDir = outDir.resolve("logs");
         Files.createDirectories(logsDir);
         Path csvPath = outDir.resolve("runs.csv");
