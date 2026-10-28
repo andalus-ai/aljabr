@@ -6,26 +6,30 @@ import java.util.Map;
 
 /**
  * Optimizer contract for parameter updates during training.
- * @author bhangun
  */
 public interface Optimizer {
 
     /**
      * Perform an optimization step on a collection of tensors.
-     * This is used by the Trainer for standard neural network training.
-     * 
-     * @param params collection of parameter tensors to update in-place.
+     *
+     * <p>This overload is only supported by implementations that can mutate
+     * parameter storage. Aljabr's current {@link Tensor} arithmetic returns
+     * new tensors and has no assignment operation, so implementations may
+     * throw {@link UnsupportedOperationException}. Prefer the named-map
+     * overload until a mutable parameter abstraction is available.
+     *
+     * @param params collection of parameter tensors to update
      */
     void step(Collection<Tensor> params);
 
     /**
      * Perform an optimization step using named parameters and gradients.
-     * This is useful for more complex training scenarios or IR-based training.
-     * 
-     * @param params mutable map of parameter name -> current parameter tensor.
-     * @param grads  map of parameter name -> gradient tensor.
+     * Implementations may replace map values with updated tensors.
+     *
+     * @param params mutable map of parameter name to current parameter tensor
+     * @param grads map of parameter name to gradient tensor
      */
     default void step(Map<String, Tensor> params, Map<String, Tensor> grads) {
-        // Optional implementation
+        throw new UnsupportedOperationException("Named-parameter updates are not implemented by this optimizer");
     }
 }
