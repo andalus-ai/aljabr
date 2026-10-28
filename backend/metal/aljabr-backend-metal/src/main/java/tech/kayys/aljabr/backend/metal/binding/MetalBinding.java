@@ -87,6 +87,7 @@ public class MetalBinding {
     private static final String FN_FFN_GATED_FUSED = "aljabr_metal_ffn_gated_fused";
     private static final String FN_FFN_GATED_FUSED_BATCH = "aljabr_metal_ffn_gated_fused_batch";
     private static final String FN_WO_FFN_FUSED = "aljabr_metal_wo_ffn_fused";
+    private static final String FN_WO_FFN_FUSED_LAYER_BATCH = "aljabr_metal_wo_ffn_fused_layer_batch";
     private static final String FN_WO_FFN_NEXT_QKV_FUSED = "aljabr_metal_wo_ffn_next_qkv_fused";
     private static final String FN_WO_FFN_LOGITS_FUSED = "aljabr_metal_wo_ffn_logits_fused";
     private static final String FN_INIT_KV_CACHE = "aljabr_metal_init_kv_cache";
@@ -915,6 +916,15 @@ public class MetalBinding {
                 gateW, upW, downW,
                 typeGate, typeUp, typeDown,
                 ffnDim, activationKind);
+    }
+
+    public int woFfnFusedLayerBatch(MemorySegment x, MemorySegment attnFull,
+            int layer, int batchSize, float eps, int activationKind) {
+        if (useCpuFallback())
+            throw new UnsupportedOperationException("Metal woFfnFusedLayerBatch not available in CPU fallback");
+        if (!handles.containsKey(FN_WO_FFN_FUSED_LAYER_BATCH))
+            return -2;
+        return (int) invoke(FN_WO_FFN_FUSED_LAYER_BATCH, x, attnFull, layer, batchSize, eps, activationKind);
     }
 
     public int woFfnNextQkvFused(
@@ -1776,6 +1786,10 @@ public class MetalBinding {
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+
+        bind(FN_WO_FFN_FUSED_LAYER_BATCH, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT));
 
         bind(FN_WO_FFN_NEXT_QKV_FUSED, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS,

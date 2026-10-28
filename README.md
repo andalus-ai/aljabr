@@ -217,6 +217,12 @@ settings; it does not guarantee that Tafkir itself is currently buildable.
 
 By isolating the heavy infrastructure into Aljabr, both Tafkir and Aljabr can share the exact same hardware backends and memory models without dragging each other's specific dependencies around.
 
+## Architecture and ecosystem boundaries
+
+The target framework responsibilities, tensor/model execution sequences, native integration rules and cross-project boundaries are documented in the [Aljabr Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md). For the serving/runtime side, see the [AQLI System Architecture](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SYSTEM_ARCHITECTURE.md), [AQLI Sequence Flows](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SEQUENCE_FLOWS.md), and [Aljabr–AQLI Consolidation Roadmap](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/ALJABR_AQLI_CONSOLIDATION_ROADMAP.md).
+
+Aljabr provides reusable computation and model execution; AQLI owns serving policy, request scheduling and operational lifecycle; Tafkir owns optional training workflows. These are target ownership rules and should not be interpreted as proof that all migrations are complete.
+
 ## 🏗️ Core Architecture & Modules
 
 Aljabr is designed with a strict modular structure to maintain a clear Separation of Concerns:

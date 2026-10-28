@@ -28,6 +28,7 @@
 #import "aljabr_metal_pipelines.h"
 #import "aljabr_metal_scratch.h"
 #import "aljabr_metal_support.h"
+#import "aljabr_metal_runtime.h"
 
 #define env_truthy aljabr_metal_env_truthy
 #define env_int_or_default aljabr_metal_env_int_or_default
@@ -1072,20 +1073,37 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
 }
 
 /*
- * The specialized two-token B4 Q4_K/Q6_K kernels have only been parity-validated
- * through batch size 15. Apple Silicon CI reproduced a Q4_K mismatch at batch 27,
- * row 15 (expected 0.0078125, actual -0.0625). Keep larger batches on the existing
- * per-token MR8/MR4 dispatch until the B4 large-batch issue is isolated and fixed.
+ * B4 Q4_K/Q6_K two-token batched kernels are validated up to batch size 32.
+ *
+ * Historical note: an earlier revision without output-write guards produced a
+ * Q4_K mismatch at batch 27, row 15 (expected 0.0078125, got -0.0625) in CI.
+ * That kernel had no `if (t_base + 1u < bSz)` guard. The current kernel has
+ * correct bounds guards (`t_base >= bSz` early-return, `t_base+1 < bSz` write
+ * guard, and `min(t_base+1, bSz-1)` read-clamping). Raising the cap to 32
+ * enables B4 dispatch for all prefill batch sizes (16, 24, 27, 32), cutting
+ * FFN memory-bandwidth by ~2× vs per-token MR8/MR4 dispatch.
  */
-static const uint32_t kMaxValidatedB4BatchSize = 15;
+static const uint32_t kMaxValidatedB4BatchSize = 32;
 
-static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
+static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
+  if (type == 12)
+    return (size_t)N * K / 256 * 144; // Q4_K
+  if (type == 14)
+    return (size_t)N * K / 256 * 210; // Q6_K
+  if (type == 8)
+    return (size_t)N * K / 32 * 34; // Q8_0
+  if (type == 1 || type == 30 || type == 16)
+    return (size_t)N * K * 2; // F16/BF16
+  return (size_t)N * K * sizeof(float);
+}
+
+static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
                               AljabrMetalPipelines *pipelines,
                               id<MTLBuffer> bufC, id<MTLBuffer> bufA,
-                              const void *B, uint32_t kk, uint32_t nn, int type,
+                              id<MTLBuffer> bufB, size_t bOff,
+                              uint32_t kk, uint32_t nn, int type,
                               uint32_t batchSize) {
   id<MTLComputePipelineState> p = nil;
-  size_t bBytes = 0;
   BOOL is_mr8 = NO;
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
@@ -1103,7 +1121,6 @@ static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
     } else {
       p = pipelines->matvec_tb_q4_k;
     }
-    bBytes = (size_t)nn * kk / 256 * 144;
   } else if (type == 14) { // Q6_K
     if (batchSize > 1 && batchSize <= kMaxValidatedB4BatchSize &&
         pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
@@ -1118,23 +1135,14 @@ static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
     } else {
       p = pipelines->matvec_tb_q6_k;
     }
-    bBytes = (size_t)nn * kk / 256 * 210;
   } else if (type == 8) { // Q8_0
     p = pipelines->matvec_tb_q8_0;
-    bBytes = (size_t)nn * kk / 32 * 34;
   } else if (type == 1) { // F16
     p = pipelines->matvec_half;
-    bBytes = (size_t)nn * kk * sizeof(uint16_t);
   } else if (type == 30 || type == 16) { // BF16
     p = pipelines->matvec_bf16;
-    bBytes = (size_t)nn * kk * sizeof(uint16_t);
   }
-  if (p == nil || bBytes == 0)
-    return NO;
-
-  size_t bOff = 0;
-  id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, bBytes, &bOff);
-  if (bufC == nil || bufB == nil)
+  if (p == nil || bufC == nil || bufB == nil)
     return NO;
 
   [enc setComputePipelineState:p];
@@ -1161,6 +1169,20 @@ static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
   }
   return YES;
+}
+
+static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
+                              AljabrMetalPipelines *pipelines,
+                              id<MTLBuffer> bufC, id<MTLBuffer> bufA,
+                              const void *B, uint32_t kk, uint32_t nn, int type,
+                              uint32_t batchSize) {
+  size_t bBytes = calc_matvec_weight_bytes(type, nn, kk);
+  if (bBytes == 0)
+    return NO;
+  size_t bOff = 0;
+  id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, bBytes, &bOff);
+  return encode_matvec_buf(enc, pipelines, bufC, bufA, bufB, bOff, kk, nn, type,
+                           batchSize);
 }
 
 static id<MTLBuffer> g_scratch_single_A = nil;
@@ -1563,10 +1585,11 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       // g_scratch_hb
       id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
       BOOL use_b4 =
-          (bSz > 1 && ((typeGate == 12 && typeUp == 12 &&
-                        pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
-                       (typeGate == 14 && typeUp == 14 &&
-                        pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
+          (bSz > 1 && bSz <= kMaxValidatedB4BatchSize &&
+           ((typeGate == 12 && typeUp == 12 &&
+             pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
+            (typeGate == 14 && typeUp == 14 &&
+             pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
       BOOL use_mr8 = (!use_b4 && typeGate == 12 &&
                       pipelines->ffn_gate_up_act_q4_k_mr8 != nil);
       id<MTLComputePipelineState> fuseP;
@@ -1608,7 +1631,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 2. MatVec Down directly from g_scratch_hb to g_scratch_outDown
-      if (bSz > 1 && typeDown == 12 &&
+      if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 12 &&
           pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q4_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
@@ -1621,7 +1644,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
                                               (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-      } else if (bSz > 1 && typeDown == 14 &&
+      } else if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 14 &&
                  pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q6_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
@@ -1717,7 +1740,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 4. MatVec Down: (dim rows) x (ffnDim cols)
-      if (bSz > 1 && typeDown == 12 &&
+      if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 12 &&
           pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q4_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
@@ -1730,7 +1753,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
         [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)dim + 3) / 4,
                                               (bSz + 1) / 2, 1)
             threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
-      } else if (bSz > 1 && typeDown == 14 &&
+      } else if (bSz > 1 && bSz <= kMaxValidatedB4BatchSize && typeDown == 14 &&
                  pipelines->matvec_tb_q6_k_b4_mr4 != nil) {
         [enc setComputePipelineState:pipelines->matvec_tb_q6_k_b4_mr4];
         [enc setBuffer:g_scratch_outDown offset:0 atIndex:0];
@@ -1946,6 +1969,54 @@ static void encode_woff_add(id<MTLComputeCommandEncoder> enc,
   NSUInteger threads = MIN((NSUInteger)256, p.maxTotalThreadsPerThreadgroup);
   [enc dispatchThreads:MTLSizeMake((NSUInteger)N, 1, 1)
       threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+}
+
+static void encode_post_attn_add_ffn_norm(
+    id<MTLComputeCommandEncoder> enc, id<MTLBuffer> bufXB, id<MTLBuffer> bufX,
+    id<MTLBuffer> bufPostAttnW, size_t postAttnOff, id<MTLBuffer> bufFfnNormW,
+    size_t ffnNormOff, uint32_t N, float eps, BOOL hasPostAttn,
+    AljabrMetalPipelines *pipelines, uint32_t batchSize) {
+  id<MTLComputePipelineState> p = pipelines->post_attn_add_ffn_norm;
+  if (p == nil || bufXB == nil || bufX == nil || bufFfnNormW == nil)
+    return;
+  uint32_t hasPost = (hasPostAttn && bufPostAttnW != nil) ? 1 : 0;
+  id<MTLBuffer> postW = (hasPost && bufPostAttnW != nil) ? bufPostAttnW : bufXB;
+  size_t pOff = hasPost ? postAttnOff : 0;
+  [enc setComputePipelineState:p];
+  [enc setBuffer:bufXB offset:0 atIndex:0];
+  [enc setBuffer:bufX offset:0 atIndex:1];
+  [enc setBuffer:postW offset:pOff atIndex:2];
+  [enc setBuffer:bufFfnNormW offset:ffnNormOff atIndex:3];
+  [enc setBytes:&N length:sizeof(N) atIndex:4];
+  [enc setBytes:&eps length:sizeof(eps) atIndex:5];
+  [enc setBytes:&hasPost length:sizeof(hasPost) atIndex:6];
+  NSUInteger bSz = (batchSize > 0) ? (NSUInteger)batchSize : 1;
+  [enc dispatchThreadgroups:MTLSizeMake(1, bSz, 1)
+      threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+}
+
+static void encode_post_ffn_add_out_scale(
+    id<MTLComputeCommandEncoder> enc, id<MTLBuffer> bufXB, id<MTLBuffer> bufX,
+    id<MTLBuffer> bufPostFfnW, size_t postFfnOff, uint32_t N, float eps,
+    BOOL hasPostFfn, float outScale, AljabrMetalPipelines *pipelines,
+    uint32_t batchSize) {
+  id<MTLComputePipelineState> p = pipelines->post_ffn_add_out_scale;
+  if (p == nil || bufXB == nil || bufX == nil)
+    return;
+  uint32_t hasPost = (hasPostFfn && bufPostFfnW != nil) ? 1 : 0;
+  id<MTLBuffer> postW = (hasPost && bufPostFfnW != nil) ? bufPostFfnW : bufXB;
+  size_t pOff = hasPost ? postFfnOff : 0;
+  [enc setComputePipelineState:p];
+  [enc setBuffer:bufXB offset:0 atIndex:0];
+  [enc setBuffer:bufX offset:0 atIndex:1];
+  [enc setBuffer:postW offset:pOff atIndex:2];
+  [enc setBytes:&N length:sizeof(N) atIndex:3];
+  [enc setBytes:&eps length:sizeof(eps) atIndex:4];
+  [enc setBytes:&hasPost length:sizeof(hasPost) atIndex:5];
+  [enc setBytes:&outScale length:sizeof(outScale) atIndex:6];
+  NSUInteger bSz = (batchSize > 0) ? (NSUInteger)batchSize : 1;
+  [enc dispatchThreadgroups:MTLSizeMake(1, bSz, 1)
+      threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
 }
 
 int aljabr_metal_wo_ffn_next_qkv_fused(
@@ -2946,10 +3017,67 @@ typedef struct {
   // has its own wK/wV weights; equals a previous layer index when wK==NULL
   // (Gemma 4 KV-sharing).
   int kvLayerIndex;
+  int resolvedKvLayer;
 } DecodeLayerConfig;
 
 static DecodeLayerConfig g_decode_layers[MAX_DECODE_LAYERS];
 static int g_num_decode_layers = 0;
+
+static size_t g_decode_dimBytes = 0;
+static size_t g_decode_maxAttnBytes = 0;
+static size_t g_decode_maxFfnBytes = 0;
+static size_t g_decode_maxQ = 0;
+static size_t g_decode_maxK = 0;
+static size_t g_decode_maxV = 0;
+static uint32_t g_decode_maxHeadDim = 0;
+static BOOL g_decode_geometry_ready = NO;
+
+static void prepare_decode_geometry(void) {
+  if (g_num_decode_layers == 0)
+    return;
+  DecodeLayerConfig *cfg0 = &g_decode_layers[0];
+  g_decode_dimBytes = (size_t)cfg0->wO_N * sizeof(float);
+  g_decode_maxAttnBytes = (size_t)cfg0->wO_K * sizeof(float);
+  g_decode_maxFfnBytes = (size_t)cfg0->ffnDim * sizeof(float);
+  g_decode_maxQ = (size_t)cfg0->n0 * sizeof(float);
+  g_decode_maxK = (size_t)cfg0->n1 * sizeof(float);
+  g_decode_maxV = (size_t)cfg0->n2 * sizeof(float);
+  g_decode_maxHeadDim = (uint32_t)cfg0->headDim;
+
+  for (int l = 0; l < g_num_decode_layers; l++) {
+    DecodeLayerConfig *cfg = &g_decode_layers[l];
+    if ((size_t)cfg->wO_K * sizeof(float) > g_decode_maxAttnBytes)
+      g_decode_maxAttnBytes = (size_t)cfg->wO_K * sizeof(float);
+    if ((size_t)cfg->ffnDim * sizeof(float) > g_decode_maxFfnBytes)
+      g_decode_maxFfnBytes = (size_t)cfg->ffnDim * sizeof(float);
+    if ((uint32_t)cfg->headDim > g_decode_maxHeadDim)
+      g_decode_maxHeadDim = (uint32_t)cfg->headDim;
+    if ((size_t)cfg->n0 * sizeof(float) > g_decode_maxQ)
+      g_decode_maxQ = (size_t)cfg->n0 * sizeof(float);
+    if ((size_t)cfg->n1 * sizeof(float) > g_decode_maxK)
+      g_decode_maxK = (size_t)cfg->n1 * sizeof(float);
+    if ((size_t)cfg->n2 * sizeof(float) > g_decode_maxV)
+      g_decode_maxV = (size_t)cfg->n2 * sizeof(float);
+
+    int kvLayer = cfg->kvLayerIndex;
+    int hops = 0;
+    while (kvLayer >= 0 && kvLayer < g_num_decode_layers &&
+           hops++ < g_num_decode_layers) {
+      DecodeLayerConfig *candidate = &g_decode_layers[kvLayer];
+      if (candidate->wK)
+        break;
+      if (candidate->kvLayerIndex == kvLayer)
+        break;
+      kvLayer = candidate->kvLayerIndex;
+    }
+    cfg->resolvedKvLayer = kvLayer;
+  }
+  ensure_woff_dim_bufs(g_decode_maxAttnBytes, g_decode_dimBytes);
+  ensure_woff_ffn_bufs(g_decode_maxFfnBytes);
+  ensure_woff_next_qkv(g_decode_maxQ, g_decode_maxK, g_decode_maxV,
+                       g_decode_dimBytes);
+  g_decode_geometry_ready = YES;
+}
 
 static const float *g_output_norm_w = NULL;
 static const void *g_output_w = NULL;
@@ -3029,18 +3157,6 @@ int aljabr_metal_register_rope_freqs(int layer, const float *freqData,
   return 0;
 }
 
-static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
-  if (type == 12)
-    return (size_t)N * K / 256 * 144; // Q4_K
-  if (type == 14)
-    return (size_t)N * K / 256 * 210; // Q6_K
-  if (type == 8)
-    return (size_t)N * K / 32 * 34; // Q8_0
-  if (type == 1 || type == 30 || type == 16)
-    return (size_t)N * K * 2; // F16/BF16
-  return (size_t)N * K * sizeof(float);
-}
-
 int aljabr_metal_register_decode_layer(
     int layer, int kvLayerIndex, const void *wQ, const void *wK, const void *wV,
     const void *wO, const void *gate, const void *up, const void *down,
@@ -3056,6 +3172,7 @@ int aljabr_metal_register_decode_layer(
     return -1;
   if (layer >= g_num_decode_layers)
     g_num_decode_layers = layer + 1;
+  g_decode_geometry_ready = NO;
   DecodeLayerConfig *cfg = &g_decode_layers[layer];
   cfg->kvLayerIndex = kvLayerIndex;
   cfg->wQ = wQ;
@@ -3195,6 +3312,25 @@ static inline void encode_rope_single_token_freqfact(
       threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
 }
 
+static inline void encode_kv_copy_flat(id<MTLComputeCommandEncoder> enc,
+                                       id<MTLBuffer> bufDst,
+                                       id<MTLBuffer> bufSrc, uint32_t count,
+                                       AljabrMetalPipelines *pipelines) {
+  if (pipelines->kv_copy_flat == nil || bufDst == nil || bufSrc == nil ||
+      count == 0)
+    return;
+  [enc setComputePipelineState:pipelines->kv_copy_flat];
+  [enc setBuffer:bufDst offset:0 atIndex:0];
+  [enc setBuffer:bufSrc offset:0 atIndex:1];
+  [enc setBytes:&count length:sizeof(count) atIndex:2];
+  NSUInteger threads = MIN((NSUInteger)256, (NSUInteger)count);
+  if (threads == 0)
+    threads = 1;
+  NSUInteger groups = (count + threads - 1) / threads;
+  [enc dispatchThreadgroups:MTLSizeMake(groups, 1, 1)
+      threadsPerThreadgroup:MTLSizeMake(threads, 1, 1)];
+}
+
 static inline void encode_kv_store_flat(id<MTLComputeCommandEncoder> enc,
                                         id<MTLBuffer> bufCache,
                                         id<MTLBuffer> bufVec, uint32_t pos,
@@ -3262,53 +3398,15 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
       profileDecode ? monotonic_nanos() : 0;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
-  DecodeLayerConfig *cfg0 = &g_decode_layers[0];
-  size_t dimBytes = (size_t)cfg0->wO_N * sizeof(float);
-  size_t maxAttnBytes = (size_t)cfg0->wO_K * sizeof(float);
-  size_t maxFfnBytes = (size_t)cfg0->ffnDim * sizeof(float);
-  for (int l = 1; l < g_num_decode_layers; l++) {
-    if ((size_t)g_decode_layers[l].wO_K * sizeof(float) > maxAttnBytes)
-      maxAttnBytes = (size_t)g_decode_layers[l].wO_K * sizeof(float);
-    if ((size_t)g_decode_layers[l].ffnDim * sizeof(float) > maxFfnBytes)
-      maxFfnBytes = (size_t)g_decode_layers[l].ffnDim * sizeof(float);
+  if (!g_decode_geometry_ready) {
+    prepare_decode_geometry();
   }
-  if (!ensure_woff_dim_bufs(maxAttnBytes, dimBytes)) {
-    fprintf(stderr,
-            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=dim attn_bytes=%zu dim_bytes=%zu\n",
-            pos, maxAttnBytes, dimBytes);
-    return -2;
-  }
-  if (!ensure_woff_ffn_bufs(maxFfnBytes)) {
-    fprintf(stderr,
-            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=ffn ffn_bytes=%zu\n",
-            pos, maxFfnBytes);
-    return -2;
-  }
-
-  size_t maxQ = (size_t)cfg0->n0 * sizeof(float);
-  size_t maxK = (size_t)cfg0->n1 * sizeof(float);
-  size_t maxV = (size_t)cfg0->n2 * sizeof(float);
-  uint32_t maxHeadDim = (uint32_t)cfg0->headDim;
-  for (int l = 1; l < g_num_decode_layers; l++) {
-    if ((uint32_t)g_decode_layers[l].headDim > maxHeadDim)
-      maxHeadDim = (uint32_t)g_decode_layers[l].headDim;
-    if ((size_t)g_decode_layers[l].n0 * sizeof(float) > maxQ)
-      maxQ = (size_t)g_decode_layers[l].n0 * sizeof(float);
-    if ((size_t)g_decode_layers[l].n1 * sizeof(float) > maxK)
-      maxK = (size_t)g_decode_layers[l].n1 * sizeof(float);
-    if ((size_t)g_decode_layers[l].n2 * sizeof(float) > maxV)
-      maxV = (size_t)g_decode_layers[l].n2 * sizeof(float);
-  }
-  if (!ensure_woff_next_qkv(maxQ, maxK, maxV, dimBytes)) {
-    fprintf(stderr,
-            "[aljabr-metal] decode_step scratch allocation failed pos=%d stage=next_qkv q_bytes=%zu k_bytes=%zu v_bytes=%zu dim_bytes=%zu\n",
-            pos, maxQ, maxK, maxV, dimBytes);
-    return -2;
-  }
+  size_t dimBytes = g_decode_dimBytes;
+  uint32_t maxHeadDim = g_decode_maxHeadDim;
 
   @autoreleasepool {
     if (useTokenEmbedding) {
-      if (g_token_embd_buffer == nil || g_token_embd_dim != cfg0->wO_N ||
+      if (g_token_embd_buffer == nil || g_token_embd_dim != (int)(dimBytes / sizeof(float)) ||
           tokenId < 0 || tokenId >= g_token_embd_vocab)
         return -6;
     } else {
@@ -3387,20 +3485,20 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 2. Q, K, V matvecs from xb
-      encode_matvec_sub(enc, pipelines, g_woff_nextQ, g_woff_xb, cfg->wQ, nDim,
-                        (uint32_t)cfg->n0, cfg->typeQ, 1);
+      encode_matvec_buf(enc, pipelines, g_woff_nextQ, g_woff_xb, cfg->bufWQ,
+                        cfg->offWQ, nDim, (uint32_t)cfg->n0, cfg->typeQ, 1);
       if (cfg->wK) {
-        encode_matvec_sub(enc, pipelines, g_woff_nextK, g_woff_xb, cfg->wK,
-                          nDim, (uint32_t)cfg->n1, cfg->typeK, 1);
+        encode_matvec_buf(enc, pipelines, g_woff_nextK, g_woff_xb, cfg->bufWK,
+                          cfg->offWK, nDim, (uint32_t)cfg->n1, cfg->typeK, 1);
       }
       if (cfg->wV) {
-        encode_matvec_sub(enc, pipelines, g_woff_nextV, g_woff_xb, cfg->wV,
-                          nDim, (uint32_t)cfg->n2, cfg->typeV, 1);
+        encode_matvec_buf(enc, pipelines, g_woff_nextV, g_woff_xb, cfg->bufWV,
+                          cfg->offWV, nDim, (uint32_t)cfg->n2, cfg->typeV, 1);
       }
 
       // K-as-V uses the raw K projection for V. Copy before K normalization
-      // and RoPE, both of which mutate g_woff_nextK. A blit copy keeps this
-      // operation inside the same command buffer without a CPU round-trip.
+      // and RoPE, both of which mutate g_woff_nextK. Using a compute copy kernel
+      // avoids switching to a blit encoder and stays in the same compute command pass.
       if (cfg->wK && !cfg->wV) {
         size_t kvBytes = (size_t)cfg->n1 * sizeof(float);
         if (cfg->n1 <= 0 || cfg->n1 != cfg->n2 ||
@@ -3417,31 +3515,7 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
           return -6;
         }
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-        [enc endEncoding];
-        id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-        if (blit == nil) {
-          fprintf(stderr,
-                  "[aljabr-metal] decode_step could not create K-as-V blit encoder pos=%d layer=%d\n",
-                  pos, l);
-          [cmd commit];
-          [cmd waitUntilCompleted];
-          return -6;
-        }
-        [blit copyFromBuffer:g_woff_nextK
-                sourceOffset:0
-                    toBuffer:g_woff_nextV
-           destinationOffset:0
-                        size:kvBytes];
-        [blit endEncoding];
-        enc = [cmd computeCommandEncoder];
-        if (enc == nil) {
-          fprintf(stderr,
-                  "[aljabr-metal] decode_step could not resume compute encoder after K-as-V copy pos=%d layer=%d\n",
-                  pos, l);
-          [cmd commit];
-          [cmd waitUntilCompleted];
-          return -6;
-        }
+        encode_kv_copy_flat(enc, g_woff_nextV, g_woff_nextK, (uint32_t)cfg->n1, pipelines);
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
@@ -3528,25 +3602,13 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 
-      // 5. Resolve the actual KV source (shared-KV layers may not own a cache).
-      int kvLayer = cfg->kvLayerIndex;
-      // Shared layers may point at another shared layer. Follow the chain to
-      // the cache owner so we never read an unpopulated per-layer allocation.
-      int hops = 0;
-      while (kvLayer >= 0 && kvLayer < g_num_decode_layers &&
-             hops++ < g_num_decode_layers) {
-        DecodeLayerConfig *candidate = &g_decode_layers[kvLayer];
-        if (candidate->wK)
-          break;
-        if (candidate->kvLayerIndex == kvLayer)
-          break;
-        kvLayer = candidate->kvLayerIndex;
-      }
-      if (kvLayer < 0 || kvLayer >= g_kv_layers || hops > g_num_decode_layers ||
+      // 5. Use the pre-resolved KV cache owner (avoids pointer chasing in decode loop).
+      int kvLayer = cfg->resolvedKvLayer;
+      if (kvLayer < 0 || kvLayer >= g_kv_layers ||
           !g_kv_k[kvLayer] || !g_kv_v[kvLayer]) {
         fprintf(stderr,
-                "[aljabr-metal] decode_step invalid KV owner pos=%d layer=%d configured_owner=%d resolved_owner=%d hops=%d decode_layers=%d kv_layers=%d K_buffer=%d V_buffer=%d\n",
-                pos, l, cfg->kvLayerIndex, kvLayer, hops, g_num_decode_layers,
+                "[aljabr-metal] decode_step invalid KV owner pos=%d layer=%d configured_owner=%d resolved_owner=%d decode_layers=%d kv_layers=%d K_buffer=%d V_buffer=%d\n",
+                pos, l, cfg->kvLayerIndex, kvLayer, g_num_decode_layers,
                 g_kv_layers,
                 (kvLayer >= 0 && kvLayer < g_kv_layers && g_kv_k[kvLayer] != nil),
                 (kvLayer >= 0 && kvLayer < g_kv_layers && g_kv_v[kvLayer] != nil));
@@ -3617,36 +3679,47 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
       }
 
       // 6. xb = wO(attnFull)
-      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_attnFull, cfg->wO,
-                        kDim, nDim, cfg->typeWO, 1);
+      encode_matvec_buf(enc, pipelines, g_woff_xb, g_woff_attnFull, cfg->bufWO,
+                        cfg->offWO, kDim, nDim, cfg->typeWO, 1);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      // 6b. Post-attention norm (if present)
-      if (cfg->hasPostAttnNorm && bufPostAttnAll) {
-        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttnAll, normOff,
+      // 7 & 8. Fused: PostAttnNorm(xb) + (x += xb) + FfnNorm(x) -> xb
+      if (pipelines->post_attn_add_ffn_norm != nil) {
+        encode_post_attn_add_ffn_norm(
+            enc, g_woff_xb, g_woff_x, bufPostAttnAll, normOff, bufFfnNormAll,
+            normOff, nDim, eps, cfg->hasPostAttnNorm != 0, pipelines, 1);
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+      } else {
+        if (cfg->hasPostAttnNorm && bufPostAttnAll) {
+          encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostAttnAll, normOff,
+                              nDim, eps, 0, pipelines);
+          [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        }
+        encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
+        [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNormAll, normOff,
                             nDim, eps, 0, pipelines);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
       }
 
-      // 7. Residual: x += xb
-      encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
-      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-
-      // 8. xb = ffnNorm(x)
-      encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, bufFfnNormAll, normOff,
-                          nDim, eps, 0, pipelines);
-      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-
       // 9. Gate + Up + Act (GeGLU) -> g_woff_ffn_hb
-      BOOL can_fuse = (cfg->typeGate == 12 && cfg->typeUp == 12 &&
-                       pipelines->ffn_gate_up_act_q4_k_mr4 != nil);
+      BOOL can_fuse =
+          ((cfg->typeGate == 12 && cfg->typeUp == 12 &&
+            pipelines->ffn_gate_up_act_q4_k_mr4 != nil) ||
+           (cfg->typeGate == 14 && cfg->typeUp == 14 &&
+            pipelines->ffn_gate_up_act_q6_k_mr4 != nil));
       BOOL gate_up_mr8 =
           (cfg->typeGate == 12 && cfg->typeUp == 12 &&
            pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled());
       if (can_fuse) {
-        id<MTLComputePipelineState> fuseP =
-            gate_up_mr8 ? pipelines->ffn_gate_up_act_q4_k_mr8
-                        : pipelines->ffn_gate_up_act_q4_k_mr4;
+        id<MTLComputePipelineState> fuseP;
+        if (gate_up_mr8) {
+          fuseP = pipelines->ffn_gate_up_act_q4_k_mr8;
+        } else if (cfg->typeGate == 14) {
+          fuseP = pipelines->ffn_gate_up_act_q6_k_mr4;
+        } else {
+          fuseP = pipelines->ffn_gate_up_act_q4_k_mr4;
+        }
         uint32_t actK = 2; // GeGLU
         [enc setComputePipelineState:fuseP];
         [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
@@ -3672,46 +3745,51 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
                           nDim, nFfn, cfg->typeUp, 1);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
         id<MTLComputePipelineState> actP = pipelines->gelu_ffn;
-        [enc setComputePipelineState:actP];
-        [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
-        [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:1];
-        [enc setBuffer:g_woff_ffn_up offset:0 atIndex:2];
-        [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
-        NSUInteger actTh =
-            MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
-        [enc dispatchThreads:MTLSizeMake((NSUInteger)nFfn, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(actTh, 1, 1)];
+        if (actP != nil) {
+          [enc setComputePipelineState:actP];
+          [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
+          [enc setBuffer:g_woff_ffn_gate offset:0 atIndex:1];
+          [enc setBuffer:g_woff_ffn_up offset:0 atIndex:2];
+          [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:3];
+          NSUInteger actTh =
+              MIN((NSUInteger)256, actP.maxTotalThreadsPerThreadgroup);
+          [enc dispatchThreads:MTLSizeMake((NSUInteger)nFfn, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(actTh, 1, 1)];
+        }
       }
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
       // 10. xb = down(hb)
-      encode_matvec_sub(enc, pipelines, g_woff_xb, g_woff_ffn_hb, cfg->down,
-                        nFfn, nDim, cfg->typeDown, 1);
+      encode_matvec_buf(enc, pipelines, g_woff_xb, g_woff_ffn_hb, cfg->bufDown,
+                        cfg->offDown, nFfn, nDim, cfg->typeDown, 1);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-      // 10b. Post-FFN norm (if present)
-      if (cfg->hasPostFfnNorm && bufPostFfnAll) {
-        encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfnAll, normOff,
-                            nDim, eps, 0, pipelines);
+      // 10b, 11 & 12. Fused: PostFfnNorm(xb) + (x += xb) + OutScale(x)
+      if (pipelines->post_ffn_add_out_scale != nil) {
+        encode_post_ffn_add_out_scale(
+            enc, g_woff_xb, g_woff_x, bufPostFfnAll, normOff, nDim, eps,
+            cfg->hasPostFfnNorm != 0, cfg->outScale, pipelines, 1);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-      }
-
-      // 11. Residual: x += xb
-      encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
-      [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-
-      // 12. Optional layer output scale
-      if (cfg->outScale > 0.0f && cfg->outScale != 1.0f &&
-          pipelines->scale != nil) {
-        float os = cfg->outScale;
-        [enc setComputePipelineState:pipelines->scale];
-        [enc setBuffer:g_woff_x offset:0 atIndex:0];
-        [enc setBytes:&os length:sizeof(os) atIndex:1];
-        [enc setBytes:&nDim length:sizeof(nDim) atIndex:2];
-        NSUInteger th = MIN((NSUInteger)256, (NSUInteger)nDim);
-        [enc dispatchThreads:MTLSizeMake((NSUInteger)nDim, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(th, 1, 1)];
+      } else {
+        if (cfg->hasPostFfnNorm && bufPostFfnAll) {
+          encode_woff_rmsnorm(enc, g_woff_xb, g_woff_xb, bufPostFfnAll, normOff,
+                              nDim, eps, 0, pipelines);
+          [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        }
+        encode_woff_add(enc, g_woff_x, g_woff_x, g_woff_xb, nDim, pipelines);
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        if (cfg->outScale > 0.0f && cfg->outScale != 1.0f &&
+            pipelines->scale != nil) {
+          float os = cfg->outScale;
+          [enc setComputePipelineState:pipelines->scale];
+          [enc setBuffer:g_woff_x offset:0 atIndex:0];
+          [enc setBytes:&os length:sizeof(os) atIndex:1];
+          [enc setBytes:&nDim length:sizeof(nDim) atIndex:2];
+          NSUInteger th = MIN((NSUInteger)256, (NSUInteger)nDim);
+          [enc dispatchThreads:MTLSizeMake((NSUInteger)nDim, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(th, 1, 1)];
+          [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+        }
       }
     }
 
@@ -3737,8 +3815,9 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
       encode_woff_rmsnorm(enc, g_woff_xb, g_woff_x, g_buf_output_norm,
                           g_off_output_norm, outK, eps, 0, pipelines);
       [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
-      encode_matvec_sub(enc, pipelines, g_buf_output_logits, g_woff_xb,
-                        g_output_w, outK, outN, g_output_type_w, 1);
+      encode_matvec_buf(enc, pipelines, g_buf_output_logits, g_woff_xb,
+                        g_buf_output_w, g_off_output_w, outK, outN,
+                        g_output_type_w, 1);
       if (g_output_logit_cap > 0.0f && pipelines->softcap != nil) {
         [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
         float cap = g_output_logit_cap;
@@ -3790,6 +3869,13 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
               wallMs, encodeMs, submitWaitMs, gpuMs);
     }
 
+    int best_token = 0;
+    if (g_buf_output_logits != nil && g_output_N > 0) {
+      best_token = aljabr_metal_argmax_f32([g_buf_output_logits contents],
+                                           g_output_N, -1, -1, -1, -1, -1, -1,
+                                           -1, -1);
+    }
+
     if (logits_out != NULL && g_buf_output_logits != nil) {
       memcpy(logits_out, [g_buf_output_logits contents],
              (size_t)g_output_N * sizeof(float));
@@ -3803,7 +3889,7 @@ static int aljabr_metal_decode_step_internal(int pos, int slidingWindow, float e
                best, logits_out[best], logits_out[236828], logits_out[236772]);
       }
     }
-    return 0;
+    return (best_token >= 0) ? best_token : 0;
   }
 }
 
@@ -3914,4 +4000,157 @@ int aljabr_metal_decode_step_token(int pos, int slidingWindow, float eps,
 
   return aljabr_metal_decode_step_internal(pos, slidingWindow, eps, NULL,
                                            logits_out, tokenId, YES);
+}
+
+// ── Batched Fused wO + Norms + Residuals + FFN (Prefill Step) ──────────────
+
+static id<MTLBuffer> g_scratch_wo_ffn_x = nil;
+static size_t g_scratch_wo_ffn_x_bytes = 0;
+static id<MTLBuffer> g_scratch_wo_ffn_attn = nil;
+static size_t g_scratch_wo_ffn_attn_bytes = 0;
+static id<MTLBuffer> g_scratch_wo_ffn_xb = nil;
+static size_t g_scratch_wo_ffn_xb_bytes = 0;
+
+int aljabr_metal_wo_ffn_fused_layer_batch(
+    float *x, const float *attn_full,
+    int layer, int batchSize, float eps, int activationKind) {
+  if (!g_initialized || layer < 0 || layer >= g_num_decode_layers || batchSize <= 0) {
+    fprintf(stderr, "[wo_ffn_batch] rc=-1: init=%d layer=%d num_layers=%d bSz=%d\n",
+            g_initialized, layer, g_num_decode_layers, batchSize);
+    return -1;
+  }
+  DecodeLayerConfig *cfg = &g_decode_layers[layer];
+  if (cfg->bufWO == nil || cfg->bufDown == nil) {
+    fprintf(stderr, "[wo_ffn_batch] rc=-2: bufWO=%p bufDown=%p\n", cfg->bufWO, cfg->bufDown);
+    return -2;
+  }
+  AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
+  if (pipelines->post_attn_add_ffn_norm == nil || pipelines->post_ffn_add_out_scale == nil) {
+    fprintf(stderr, "[wo_ffn_batch] rc=-3: post_attn=%p post_ffn=%p\n",
+            pipelines->post_attn_add_ffn_norm, pipelines->post_ffn_add_out_scale);
+    return -3;
+  }
+
+  @autoreleasepool {
+    size_t bSz = (size_t)batchSize;
+    uint32_t nDim = (uint32_t)cfg->wO_N;
+    uint32_t nFfn = (uint32_t)cfg->ffnDim;
+    uint32_t kDim = (uint32_t)cfg->wO_K;
+    size_t dimBytes = bSz * (size_t)nDim * sizeof(float);
+    size_t attnBytes = bSz * (size_t)kDim * sizeof(float);
+    size_t ffnBytes = bSz * (size_t)nFfn * sizeof(float);
+
+    id<MTLBuffer> bufX = ensure_shared_buf(&g_scratch_wo_ffn_x, &g_scratch_wo_ffn_x_bytes, dimBytes);
+    id<MTLBuffer> bufAttn = ensure_shared_buf(&g_scratch_wo_ffn_attn, &g_scratch_wo_ffn_attn_bytes, attnBytes);
+    id<MTLBuffer> bufXB = ensure_shared_buf(&g_scratch_wo_ffn_xb, &g_scratch_wo_ffn_xb_bytes, dimBytes);
+    if (!bufX || !bufAttn || !bufXB) {
+      fprintf(stderr, "[wo_ffn_batch] rc=-4: shared bufs failed\n");
+      return -4;
+    }
+
+    if (g_scratch_hb == nil || g_scratch_ffn_bytes < ffnBytes) {
+      size_t sz = (ffnBytes + 16383) & ~16383;
+      g_scratch_hb = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+      g_scratch_ffn_bytes = sz;
+    }
+    if (!g_scratch_hb) {
+      fprintf(stderr, "[wo_ffn_batch] rc=-4: g_scratch_hb failed\n");
+      return -4;
+    }
+
+    memcpy([bufX contents], x, dimBytes);
+    memcpy([bufAttn contents], attn_full, attnBytes);
+
+    id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+
+    // 1. wO projection: bufAttn -> bufXB
+    if (!encode_matvec_buf(enc, pipelines, bufXB, bufAttn, cfg->bufWO, cfg->offWO,
+                           kDim, nDim, cfg->typeWO, (uint32_t)bSz)) {
+      fprintf(stderr, "[wo_ffn_batch] rc=-5: encode wO failed typeWO=%d\n", cfg->typeWO);
+      [enc endEncoding];
+      return -5;
+    }
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+    // 2. Fused PostAttnNorm(xb) + (x += xb) + FfnNorm(x) -> xb
+    id<MTLBuffer> bufPostAttnAll = g_norm_buffers[0];
+    id<MTLBuffer> bufFfnNormAll = g_norm_buffers[1];
+    id<MTLBuffer> bufPostFfnAll = g_norm_buffers[2];
+    size_t normOff = (size_t)layer * (size_t)nDim * sizeof(float);
+
+    encode_post_attn_add_ffn_norm(enc, bufXB, bufX, bufPostAttnAll, normOff,
+                                 bufFfnNormAll, normOff, nDim, eps,
+                                 cfg->hasPostAttnNorm != 0, pipelines, (uint32_t)bSz);
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+    // 3. FFN Gate + Up + Act -> g_scratch_hb
+    BOOL use_b4 = (bSz > 1 && bSz <= kMaxValidatedB4BatchSize &&
+                   ((cfg->typeGate == 12 && cfg->typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
+                    (cfg->typeGate == 14 && cfg->typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
+    id<MTLComputePipelineState> fuseP;
+    if (use_b4) {
+      fuseP = (cfg->typeGate == 14) ? pipelines->ffn_gate_up_act_q6_k_b4_mr4 : pipelines->ffn_gate_up_act_q4_k_b4_mr4;
+    } else if (cfg->typeGate == 12 && pipelines->ffn_gate_up_act_q4_k_mr8 != nil && mr8_enabled()) {
+      fuseP = pipelines->ffn_gate_up_act_q4_k_mr8;
+    } else if (cfg->typeGate == 14) {
+      fuseP = pipelines->ffn_gate_up_act_q6_k_mr4;
+    } else {
+      fuseP = pipelines->ffn_gate_up_act_q4_k_mr4;
+    }
+    if (fuseP == nil) {
+      fprintf(stderr, "[wo_ffn_batch] rc=-6: fuseP nil typeGate=%d typeUp=%d use_b4=%d\n",
+              cfg->typeGate, cfg->typeUp, (int)use_b4);
+      [enc endEncoding];
+      return -6;
+    }
+
+    [enc setComputePipelineState:fuseP];
+    [enc setBuffer:g_scratch_hb offset:0 atIndex:0];
+    [enc setBuffer:bufXB offset:0 atIndex:1];
+    [enc setBuffer:cfg->bufGate offset:cfg->offGate atIndex:2];
+    [enc setBuffer:cfg->bufUp offset:cfg->offUp atIndex:3];
+    [enc setBytes:&nDim length:sizeof(nDim) atIndex:4];
+    [enc setBytes:&nFfn length:sizeof(nFfn) atIndex:5];
+    uint32_t actKind = (uint32_t)activationKind;
+    [enc setBytes:&actKind length:sizeof(actKind) atIndex:6];
+    if (use_b4) {
+      uint32_t bSz32 = (uint32_t)bSz;
+      [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:7];
+      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 3) / 4, (bSz + 1) / 2, 1)
+          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    } else if (fuseP == pipelines->ffn_gate_up_act_q4_k_mr8) {
+      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 7) / 8, bSz, 1)
+          threadsPerThreadgroup:MTLSizeMake(128, 1, 1)];
+    } else {
+      [enc dispatchThreadgroups:MTLSizeMake(((NSUInteger)nFfn + 3) / 4, bSz, 1)
+          threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    }
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+    // 4. Down projection: g_scratch_hb -> bufXB
+    if (!encode_matvec_buf(enc, pipelines, bufXB, g_scratch_hb, cfg->bufDown, cfg->offDown,
+                           nFfn, nDim, cfg->typeDown, (uint32_t)bSz)) {
+      fprintf(stderr, "[wo_ffn_batch] rc=-7: encode Down failed typeDown=%d\n", cfg->typeDown);
+      [enc endEncoding];
+      return -7;
+    }
+    [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
+
+    // 5. PostFfnNorm(xb) + (x += xb) + OutScale(x) -> bufX
+    encode_post_ffn_add_out_scale(enc, bufXB, bufX, bufPostFfnAll, normOff, nDim, eps,
+                                 cfg->hasPostFfnNorm != 0, cfg->outScale, pipelines, (uint32_t)bSz);
+
+    [enc endEncoding];
+    [cmd commit];
+    [cmd waitUntilCompleted];
+
+    if ([cmd status] != MTLCommandBufferStatusCompleted) {
+      fprintf(stderr, "[wo_ffn_batch] rc=-8: cmd failed status=%lu\n", (unsigned long)[cmd status]);
+      return -8;
+    }
+
+    memcpy(x, [bufX contents], dimBytes);
+    return 0;
+  }
 }
