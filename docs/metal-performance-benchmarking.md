@@ -29,3 +29,7 @@ The runner writes `build/metal-benchmark/runs.csv` and one combined output log p
 Include the exact commit SHA, JDK and AQLI/Aljabr versions, model file/revision and quantization, prompt and generated-token count, warm-up policy, number of measured runs, median and min/max, and the separate prefill/decode metrics if the runtime exposes them. If only end-to-end time is available, label it as such.
 
 For GPU token embedding or prefill changes, correctness is a hard gate: compare embedding outputs or next-token logits against the Java reference, verify greedy token IDs on fixed prompts, and test short and longer prompts. Keep eligibility guards for unsupported per-layer embeddings, partial RoPE, or KV layouts until their implementation and parity are proven.
+
+## Prefill GEMM algorithm and phase metrics
+
+See [GGUF Metal prefill and decode performance plan](performance/gguf-metal-prefill-gemm-plan.md) for the phase-throughput formulas, batched-GEMM algorithm, Metal implementation sequence, correctness gates, and interpretation of the proposed prefill latency target.
