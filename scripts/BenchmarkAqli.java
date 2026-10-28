@@ -17,8 +17,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class BenchmarkAqli {
+    // Match both older "tokens/s" diagnostics and the current AQLI "t/s" banner.
     private static final Pattern RATE = Pattern.compile(
-            "(?i)(?:tok(?:en)?s?/s|tokens per second)\\s*[:=]?\\s*([0-9]+(?:\\.[0-9]+)?)");
+            "(?i)(?:t/s|tok(?:en)?s?/s|tokens per second)\\s*[:=]?\\s*([0-9]+(?:\\.[0-9]+)?)");
 
     public static void main(String[] argv) throws Exception {
         Map<String, String> options = parseArgs(argv);
