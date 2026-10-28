@@ -1119,6 +1119,14 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
         pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
+    } else if (batchSize > kMaxCorrectnessValidatedQ4KB4BatchSize &&
+               pipelines->matvec_tb_q4_k_mr4 != nil) {
+      // For batches outside the B4-validated range, deliberately bypass MR8:
+      // the batch-16 regression persisted after the B4 cap was lowered, so
+      // keep this containment path deterministic and use the known single-row
+      // MR4 implementation until the failing native path is identified.
+      p = pipelines->matvec_tb_q4_k_mr4;
+      is_mr4 = YES;
     } else if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
       p = pipelines->matvec_tb_q4_k_mr8;
       is_mr8 = YES;
