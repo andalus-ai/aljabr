@@ -11,9 +11,9 @@ If you are familiar with the Python ecosystem, Aljabr is **inspired by the frame
 
 ## Where Aljabr fits
 
-- **Aljabr — engine/framework:** tensors, operators, memory, reusable model execution, format/tokenizer contracts and compute backends.
+- **Aljabr — engine/framework:** tensors, operators, memory, reusable model execution, autograd and optimizer primitives, format/tokenizer contracts and compute backends. Training primitives must be enabled and validated as described in the research-readiness audit.
 - **[AQLI](https://github.com/andalus-ai/aqli) — inference runtime:** request handling, generation policy, scheduling, streaming, serving APIs, deployment and runtime lifecycle.
-- **[Tafkir](https://github.com/andalus-ai/tafkir) — training/adaptation:** training loops, optimizers, fine-tuning and training-oriented workflows that use Aljabr.
+- **[Tafkir](https://github.com/andalus-ai/tafkir) — training/adaptation workflows:** dataset pipelines, higher-level training orchestration, fine-tuning and adaptation built on Aljabr's reusable computation and optimization primitives.
 - **[Andalus](https://github.com/andalus-ai/andalus) / [Wayang](https://github.com/bhangun/wayang) — application layer:** agent, tool, RAG and enterprise workflow orchestration.
 
 Aljabr must not depend on AQLI. Tafkir integration is optional and must not be required for foundational Aljabr development or ordinary AQLI inference.
@@ -75,7 +75,7 @@ flowchart TD
 | Model formats | Parsing, metadata/weight loading and validation for supported formats |
 | Native integration | FFM declarations, ABI/layout handling and native resource lifecycle |
 | Inference runtime | AQLI owns request scheduling, sampling/stopping policy, streaming and service operations |
-| Training | Tafkir owns training workflow orchestration and adaptation policy |
+| Training | Aljabr provides reusable autograd/optimizer primitives where implemented and validated; Tafkir owns workflow orchestration, dataset pipelines and adaptation policy |
 
 The architecture is being consolidated across repositories. Existing code is migrated only after behavior, API compatibility, resource lifecycle and tests establish parity. A loader existing in Aljabr does not automatically mean a full AQLI execution path can be removed.
 
@@ -161,6 +161,7 @@ Use `./gradlew projects` as the source of truth for the exact current Gradle mod
 
 ## Documentation
 
+- [Research and Training Readiness](docs/architecture/RESEARCH_TRAINING_READINESS.md) — audit of autograd build visibility, optimizer behavior, and the executable Java training milestone.
 - [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — target scope, module layers, tensor/model execution sequences and validation.
 - [AQLI System Architecture](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SYSTEM_ARCHITECTURE.md) — serving/framework boundary.
 - [AQLI Sequence Flows](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SEQUENCE_FLOWS.md) — request, generation and lifecycle flows.
