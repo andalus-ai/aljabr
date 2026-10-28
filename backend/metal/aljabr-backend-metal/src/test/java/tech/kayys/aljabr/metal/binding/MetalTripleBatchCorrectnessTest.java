@@ -28,9 +28,9 @@ class MetalTripleBatchCorrectnessTest {
     private static final int N2 = 2048;
     private static final int TYPE_Q4_K = 12;
     private static final int TYPE_Q6_K = 14;
-    private static final int MAX_BATCH = 27;
-    // 16 exercises the first batch above the B4 validation cap; 27 matches prompt prefill.
-    private static final int[] BATCH_SIZES = {4, 8, 15, 16, 27};
+    private static final int MAX_BATCH = 32;
+    // 16, 24, 27, 32 cover all real prefill batch sizes; 32 is the new validated cap.
+    private static final int[] BATCH_SIZES = {4, 8, 15, 16, 24, 27, 32};
     private static final float RELATIVE_TOLERANCE = 2.0e-3f;
 
     @Test
