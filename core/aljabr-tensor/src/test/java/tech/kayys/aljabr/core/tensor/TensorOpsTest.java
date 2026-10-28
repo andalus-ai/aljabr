@@ -60,7 +60,6 @@ class TensorOpsTest {
                     .hasMessageContaining("shape mismatch");
         } finally {
             a.release();
-            aVector.release();
             wrongShape.release();
         }
     }
