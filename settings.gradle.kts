@@ -117,6 +117,7 @@ includeOptionalProject("core:aljabr-safetensor-api",          "core/aljabr-safet
 includeOptionalProject("core:aljabr-safetensor-spi",          "core/aljabr-safetensor-spi")
 includeOptionalProject("core:aljabr-safetensor-core",         "core/aljabr-safetensor-core")
 includeOptionalProject("core:aljabr-safetensor-loader",       "core/aljabr-safetensor-loader")
+includeOptionalProject("core:aljabr-safetensor-bridge",       "core/aljabr-safetensor-bridge")
 // This adapter depends on Tafkir quantizer artifacts and is intentionally opt-in.
 // Core Aljabr builds do not need training/quantization modules.
 if (withTafkir) {

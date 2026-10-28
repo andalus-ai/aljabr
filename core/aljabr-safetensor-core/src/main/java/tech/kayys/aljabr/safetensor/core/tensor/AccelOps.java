@@ -18,7 +18,6 @@ package tech.kayys.aljabr.safetensor.core.tensor;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
-import tech.kayys.aljabr.safetensor.loader.SafetensorDType;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
