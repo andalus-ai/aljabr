@@ -620,6 +620,19 @@ final class GgufDecodeStep {
         float[] attnOutLocal = new float[maxHDim];
         float[][] Attn = new float[T][nH * maxHDim];
 
+        // Opt-in aggregate profiling: unlike the sampled layer logs above, this
+        // reports the whole prefill pass and distinguishes attention backend use.
+        boolean profilePrefill = Boolean.getBoolean("aljabr.metal.prefill.profile")
+                || "1".equals(System.getenv("ALJABR_METAL_PREFILL_PROFILE"));
+        long profileQkvNanos = 0L;
+        long profileAttentionNanos = 0L;
+        long profileWoNanos = 0L;
+        long profileFfnNanos = 0L;
+        long profileFusedLayerNanos = 0L;
+        int profileGpuAttentionLayers = 0;
+        int profileFusedLayers = 0;
+        long profileLayerLoopStart = System.nanoTime();
+
         for (int layer = 0; layer < layers; layer++) {
             int layerNKVH = cfg.nKVHeadsForLayer(layer);
             int layerHDim = cfg.headDimForLayer(layer);
@@ -660,6 +673,7 @@ final class GgufDecodeStep {
                 dispatchMatVecBatch(wQ[layer], allXb, allQ, T);
             }
             long tQkv = System.nanoTime() - tQkv0;
+            profileQkvNanos += tQkv;
 
             for (int t = 0; t < T; t++) {
                 System.arraycopy(allQ, t * qDim, qLocal, 0, qDim);
@@ -777,6 +791,10 @@ final class GgufDecodeStep {
                 }
             }
             long tAttn = System.nanoTime() - tAttn0;
+            profileAttentionNanos += tAttn;
+            if (gpuAttnDone) {
+                profileGpuAttentionLayers++;
+            }
 
             // ── 3c. Output projection + residual + FFN for all T tokens ──────
             long tWo0 = System.nanoTime();
@@ -858,6 +876,8 @@ final class GgufDecodeStep {
                     }
                 }
                 tFfn = System.nanoTime() - tFfn0;
+                profileWoNanos += tWo;
+                profileFfnNanos += tFfn;
 
                 // Per-layer embedding + Layer output scale
                 for (int t = 0; t < T; t++) {
@@ -883,6 +903,11 @@ final class GgufDecodeStep {
                 }
             }
 
+            if (fusedLayerDone) {
+                profileFusedLayers++;
+                profileFusedLayerNanos += System.nanoTime() - tWo0;
+            }
+
             if (isVerbose() && (layer == 0 || layer == 24 || layer == layers - 1)) {
                 if (fusedLayerDone) {
                     System.out.printf("[PREFILL LAYER %d] qkv=%.2fms attn=%.2fms wo_ffn_fused=%.2fms%n",
@@ -892,6 +917,18 @@ final class GgufDecodeStep {
                             layer, tQkv / 1e6, tAttn / 1e6, tWo / 1e6, tFfn / 1e6, fusedSuccess);
                 }
             }
+        }
+
+        if (profilePrefill) {
+            long layerLoopNanos = System.nanoTime() - profileLayerLoopStart;
+            System.out.printf(
+                    "[PREFILL PROFILE] tokens=%d layers=%d layer_loop=%.2fms qkv=%.2fms attention=%.2fms "
+                            + "attention_backend=metal_fa4:%d/java_or_fallback:%d wo=%.2fms ffn=%.2fms "
+                            + "wo_ffn_fused_layers=%d fused_layer_time=%.2fms%n",
+                    T, layers, layerLoopNanos / 1e6, profileQkvNanos / 1e6,
+                    profileAttentionNanos / 1e6, profileGpuAttentionLayers,
+                    layers - profileGpuAttentionLayers, profileWoNanos / 1e6,
+                    profileFfnNanos / 1e6, profileFusedLayers, profileFusedLayerNanos / 1e6);
         }
 
         // Advance KV cache past all prefill tokens
