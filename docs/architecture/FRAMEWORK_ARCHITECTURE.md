@@ -10,7 +10,7 @@ Aljabr is a reusable Java ML engine/framework for research, development, educati
 
 Aljabr is not required to be an HTTP server, CLI product or deployment control plane. It can execute tensor and model operations directly, including the model-forward operations needed by inference, without owning a serving product's request policy.
 
-**Core principle:** Aljabr owns reusable computation and model execution; AQLI owns inference serving and operational policy; Tafkir owns training workflow orchestration.
+**Core principle:** Aljabr owns reusable computation, model execution, autograd and optimizer primitives; AQLI owns inference serving and operational policy; Tafkir owns higher-level training workflow orchestration and adaptation.
 
 ## 2. Responsibility boundaries
 
@@ -30,10 +30,10 @@ Aljabr is not required to be an HTTP server, CLI product or deployment control p
 - Request admission, queueing, continuous batching policy, per-tenant quotas or service-level scheduling.
 - HTTP/OpenAI-compatible/gRPC endpoints, authentication filters, server health/admin endpoints or CLI lifecycle.
 - Serving-level token streaming, client disconnect policy, request cancellation policy and service metrics aggregation.
-- Training orchestration, dataset pipelines, optimizer loops and fine-tuning workflow policy owned by Tafkir.
+- Training orchestration, dataset pipelines, and fine-tuning/adaptation workflow policy owned by Tafkir. This does not transfer low-level autograd and optimizer algorithms out of Aljabr.
 - Agent orchestration, tools, enterprise workflow and application-level RAG coordination.
 
-AQLI may call Aljabr's model-execution APIs repeatedly to implement prefill and decode. This does not move serving policy into Aljabr. Tafkir may use Aljabr's tensor, autograd and backend APIs to implement training.
+AQLI may call Aljabr's model-execution APIs repeatedly to implement prefill and decode. This does not move serving policy into Aljabr. Tafkir may use Aljabr's tensor, autograd, optimizer and backend APIs to implement training. The current source tree has training-readiness gaps; see [Research and Training Readiness](RESEARCH_TRAINING_READINESS.md).
 
 ## 3. Layered architecture
 
