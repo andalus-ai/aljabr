@@ -3,6 +3,8 @@ plugins {
 }
 
 dependencies {
+    // Reusable tensor materialization belongs to the loader path, not the optional quantizer.
+    implementation(project(":core:aljabr-safetensor-core"))
     implementation(project(":core:aljabr-safetensor-spi"))
     implementation(project(":core:aljabr-spi-inference"))
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
