@@ -1109,7 +1109,13 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
-    if (batchSize > 1 && batchSize <= kMaxValidatedB4BatchSize &&
+    // The Q4_K B4 kernel currently disagrees with the single-row reference at
+    // batch=16 (last row). Keep the optimized path only within the range
+    // covered by the current correctness evidence; larger batches use MR4.
+    // Do not raise this limit until MetalTripleBatchCorrectnessTest passes on
+    // Apple Silicon for all tested batch sizes.
+    static const uint32_t kMaxCorrectnessValidatedQ4KB4BatchSize = 15;
+    if (batchSize > 1 && batchSize <= kMaxCorrectnessValidatedQ4KB4BatchSize &&
         pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
