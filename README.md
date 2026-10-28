@@ -162,6 +162,7 @@ Use `./gradlew projects` as the source of truth for the exact current Gradle mod
 ## Documentation
 
 - [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — target scope, module layers, tensor/model execution sequences and validation.
+- [Java Tensor Research Quickstart](docs/examples/TENSOR_RESEARCH_QUICKSTART.md) — current tensor API example, scope and research workflow milestones.
 - [AQLI System Architecture](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SYSTEM_ARCHITECTURE.md) — serving/framework boundary.
 - [AQLI Sequence Flows](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SEQUENCE_FLOWS.md) — request, generation and lifecycle flows.
 - [Aljabr–AQLI Consolidation Roadmap](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/ALJABR_AQLI_CONSOLIDATION_ROADMAP.md) — migration order and acceptance gates.
