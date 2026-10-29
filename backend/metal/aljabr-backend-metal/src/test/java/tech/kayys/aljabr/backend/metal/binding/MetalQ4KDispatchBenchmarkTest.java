@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Locale;
 
+import tech.kayys.aljabr.metal.binding.MetalBinding;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
