@@ -1109,21 +1109,21 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
-    // The Q4_K B4 kernel currently disagrees with the single-row reference at
-    // batch=16 (last row). Keep the optimized path only within the range
-    // covered by the current correctness evidence; larger batches use MR4.
-    // Do not raise this limit until MetalTripleBatchCorrectnessTest passes on
-    // Apple Silicon for all tested batch sizes.
+    // B4 remains restricted to batch sizes covered by current correctness
+    // evidence. The base Q4_K kernel is single-row only: dispatching it with a
+    // 2D grid leaves rows after row 0 unwritten. Use the batch-aware MR4 kernel
+    // for larger batches, and fail rather than silently returning zero rows if
+    // that kernel is unavailable.
     static const uint32_t kMaxCorrectnessValidatedQ4KB4BatchSize = 15;
     if (batchSize > 1 && batchSize <= kMaxCorrectnessValidatedQ4KB4BatchSize &&
         pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
     } else if (batchSize > kMaxCorrectnessValidatedQ4KB4BatchSize) {
-      // Keep larger batches on the simple one-output-per-threadgroup kernel
-      // until MR4 correctness is established for batched dispatch. The MR4
-      // row-pair mapping has produced a last-row mismatch at batch=16.
-      p = pipelines->matvec_tb_q4_k;
+      if (pipelines->matvec_tb_q4_k_mr4 == nil)
+        return NO;
+      p = pipelines->matvec_tb_q4_k_mr4;
+      is_mr4 = YES;
     } else if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
       p = pipelines->matvec_tb_q4_k_mr8;
       is_mr8 = YES;
@@ -1131,6 +1131,9 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
       p = pipelines->matvec_tb_q4_k_mr4;
       is_mr4 = YES;
     } else {
+      // The base kernel is safe only for a single input row.
+      if (batchSize > 1)
+        return NO;
       p = pipelines->matvec_tb_q4_k;
     }
   } else if (type == 14) { // Q6_K
