@@ -30,7 +30,7 @@ class MetalTripleBatchCorrectnessTest {
     private static final int TYPE_Q6_K = 14;
     private static final int MAX_BATCH = 32;
     // Include sizes around the Q4_K B4 cutoff and representative prefill batches.
-    // Batches above 15 must use the correctness fallback until B4 is fixed.
+    // Batches above 15 must use the batch-aware MR4 fallback until B4 is validated.
     private static final int[] BATCH_SIZES = {4, 8, 15, 16, 24, 27, 32};
     private static final float RELATIVE_TOLERANCE = 2.0e-3f;
 
