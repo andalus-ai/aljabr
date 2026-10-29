@@ -134,8 +134,10 @@ class MetalQ4KDispatchBenchmarkTest {
             setHalfBits(weights, offset, halfScale);
             setHalfBits(weights, offset + 2, halfMinScale);
             for (int i = 0; i < 12; i++) {
-                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i,
-                        (byte) (1 + ((block + i * 3) % 15)));
+                int low = 1 + (int) ((block + i * 3) % 15);
+                int packed = i < 4 ? low
+                        : low | ((1 + (int) ((block + i * 7) % 15)) << 4);
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i, (byte) packed);
             }
             for (int i = 16; i < blockBytes; i++) {
                 weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i,
