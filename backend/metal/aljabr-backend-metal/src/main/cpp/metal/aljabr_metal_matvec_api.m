@@ -1098,25 +1098,47 @@ static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
   return (size_t)N * K * sizeof(float);
 }
 
-static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
+typedef enum {
+  ALJABR_Q4K_DISPATCH_AUTO = 0,
+  ALJABR_Q4K_DISPATCH_B4 = 1,
+  ALJABR_Q4K_DISPATCH_MR4 = 2
+} AljabrQ4KDispatchMode;
+
+static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
                               AljabrMetalPipelines *pipelines,
                               id<MTLBuffer> bufC, id<MTLBuffer> bufA,
                               id<MTLBuffer> bufB, size_t bOff,
                               uint32_t kk, uint32_t nn, int type,
-                              uint32_t batchSize) {
+                              uint32_t batchSize,
+                              AljabrQ4KDispatchMode dispatchMode) {
+  if (dispatchMode < ALJABR_Q4K_DISPATCH_AUTO ||
+      dispatchMode > ALJABR_Q4K_DISPATCH_MR4)
+    return NO;
+  if (dispatchMode != ALJABR_Q4K_DISPATCH_AUTO && type != 12)
+    return NO;
   id<MTLComputePipelineState> p = nil;
   BOOL is_mr8 = NO;
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
-    // B4 remains restricted to batch sizes covered by current correctness
-    // evidence. The base Q4_K kernel is single-row only: dispatching it with a
-    // 2D grid leaves rows after row 0 unwritten. Use the batch-aware MR4 kernel
-    // for larger batches, and fail rather than silently returning zero rows if
-    // that kernel is unavailable.
+    // Forced paths are only for isolated opt-in benchmark tests. Keep the B4
+    // ceiling aligned with current correctness evidence.
     static const uint32_t kMaxCorrectnessValidatedQ4KB4BatchSize = 15;
-    if (batchSize > 1 && batchSize <= kMaxCorrectnessValidatedQ4KB4BatchSize &&
-        pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
+    if (dispatchMode == ALJABR_Q4K_DISPATCH_B4) {
+      if (batchSize <= 1 ||
+          batchSize > kMaxCorrectnessValidatedQ4KB4BatchSize ||
+          pipelines->matvec_tb_q4_k_b4_mr4 == nil)
+        return NO;
+      p = pipelines->matvec_tb_q4_k_b4_mr4;
+      is_b4 = YES;
+    } else if (dispatchMode == ALJABR_Q4K_DISPATCH_MR4) {
+      if (batchSize == 0 || pipelines->matvec_tb_q4_k_mr4 == nil)
+        return NO;
+      p = pipelines->matvec_tb_q4_k_mr4;
+      is_mr4 = YES;
+    } else if (batchSize > 1 &&
+               batchSize <= kMaxCorrectnessValidatedQ4KB4BatchSize &&
+               pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
     } else if (batchSize > kMaxCorrectnessValidatedQ4KB4BatchSize) {
@@ -1131,7 +1153,6 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
       p = pipelines->matvec_tb_q4_k_mr4;
       is_mr4 = YES;
     } else {
-      // The base kernel is safe only for a single input row.
       if (batchSize > 1)
         return NO;
       p = pipelines->matvec_tb_q4_k;
@@ -1201,18 +1222,40 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
   return YES;
 }
 
-static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
+static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
+                              AljabrMetalPipelines *pipelines,
+                              id<MTLBuffer> bufC, id<MTLBuffer> bufA,
+                              id<MTLBuffer> bufB, size_t bOff,
+                              uint32_t kk, uint32_t nn, int type,
+                              uint32_t batchSize) {
+  return encode_matvec_buf_with_mode(enc, pipelines, bufC, bufA, bufB, bOff,
+                                     kk, nn, type, batchSize,
+                                     ALJABR_Q4K_DISPATCH_AUTO);
+}
+
+static BOOL encode_matvec_sub_with_mode(id<MTLComputeCommandEncoder> enc,
                               AljabrMetalPipelines *pipelines,
                               id<MTLBuffer> bufC, id<MTLBuffer> bufA,
                               const void *B, uint32_t kk, uint32_t nn, int type,
-                              uint32_t batchSize) {
+                              uint32_t batchSize,
+                              AljabrQ4KDispatchMode dispatchMode) {
   size_t bBytes = calc_matvec_weight_bytes(type, nn, kk);
   if (bBytes == 0)
     return NO;
   size_t bOff = 0;
   id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, bBytes, &bOff);
-  return encode_matvec_buf(enc, pipelines, bufC, bufA, bufB, bOff, kk, nn, type,
-                           batchSize);
+  return encode_matvec_buf_with_mode(enc, pipelines, bufC, bufA, bufB, bOff,
+                                     kk, nn, type, batchSize, dispatchMode);
+}
+
+static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
+                              AljabrMetalPipelines *pipelines,
+                              id<MTLBuffer> bufC, id<MTLBuffer> bufA,
+                              const void *B, uint32_t kk, uint32_t nn, int type,
+                              uint32_t batchSize) {
+  return encode_matvec_sub_with_mode(enc, pipelines, bufC, bufA, B, kk, nn,
+                                     type, batchSize,
+                                     ALJABR_Q4K_DISPATCH_AUTO);
 }
 
 static id<MTLBuffer> g_scratch_single_A = nil;
@@ -1272,6 +1315,50 @@ int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B, int K,
       return -3;
     }
 
+    [enc endEncoding];
+    [cmd commit];
+    [cmd waitUntilCompleted];
+    if ([cmd status] == MTLCommandBufferStatusCompleted) {
+      memcpy(C, [bufC contents], cBytes);
+      return 0;
+    }
+    return -1;
+  }
+}
+
+
+/* Opt-in hook for isolated Q4_K correctness/performance tests; not inference API. */
+int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
+    void *C, const void *A, const void *B, int K, int N,
+    int batchSize, int mode) {
+  if (!g_initialized)
+    return -1;
+  if (K <= 0 || N <= 0 || batchSize <= 0 || batchSize > 32)
+    return -2;
+  if (mode != ALJABR_Q4K_DISPATCH_B4 &&
+      mode != ALJABR_Q4K_DISPATCH_MR4)
+    return -2;
+  if (mode == ALJABR_Q4K_DISPATCH_B4 && batchSize > 15)
+    return -2;
+  AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
+  @autoreleasepool {
+    size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
+    size_t cBytes = (size_t)batchSize * (size_t)N * sizeof(float);
+    id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_single_A,
+                                           &g_scratch_single_A_bytes, aBytes);
+    id<MTLBuffer> bufC = ensure_shared_buf(&g_scratch_single_C,
+                                           &g_scratch_single_C_bytes, cBytes);
+    if (bufA == nil || bufC == nil)
+      return -4;
+    memcpy([bufA contents], A, aBytes);
+    id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+    id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+    if (!encode_matvec_sub_with_mode(
+            enc, pipelines, bufC, bufA, B, (uint32_t)K, (uint32_t)N, 12,
+            (uint32_t)batchSize, (AljabrQ4KDispatchMode)mode)) {
+      [enc endEncoding];
+      return -3;
+    }
     [enc endEncoding];
     [cmd commit];
     [cmd waitUntilCompleted];
