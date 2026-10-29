@@ -48,7 +48,7 @@ class MetalQ4KDispatchBenchmarkTest {
             MemorySegment weights = arena.allocate(q4KBytes(N, K), 64);
             for (int i = 0; i < MAX_BATCH * K; i++)
                 input.setAtIndex(ValueLayout.JAVA_FLOAT, i, ((i % 31) - 15) / 31.0f);
-            weights.fill((byte) 0x55);
+            fillQ4KWeights(weights, N, K);
 
             for (int batch : B4_BATCH_SIZES) {
                 assertEquals(0, invoke(binding, b4Output, input, weights, batch, MODE_B4),
@@ -122,6 +122,31 @@ class MetalQ4KDispatchBenchmarkTest {
                                 + ", expected=" + expected + ", actual=" + actual + ", error=" + error);
             }
         }
+    }
+
+    private static void fillQ4KWeights(MemorySegment weights, int n, int k) {
+        final int blockBytes = 144;
+        final int halfScale = 0x211f;
+        final int halfMinScale = 0x1d1f;
+        long blocks = (long) n * k / 256;
+        for (long block = 0; block < blocks; block++) {
+            long offset = block * blockBytes;
+            setHalfBits(weights, offset, halfScale);
+            setHalfBits(weights, offset + 2, halfMinScale);
+            for (int i = 0; i < 12; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i,
+                        (byte) (1 + ((block + i * 3) % 15)));
+            }
+            for (int i = 16; i < blockBytes; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i,
+                        (byte) (0x11 * ((i + block) % 15)));
+            }
+        }
+    }
+
+    private static void setHalfBits(MemorySegment segment, long offset, int bits) {
+        segment.setAtIndex(ValueLayout.JAVA_BYTE, offset, (byte) bits);
+        segment.setAtIndex(ValueLayout.JAVA_BYTE, offset + 1, (byte) (bits >>> 8));
     }
 
     private static long q4KBytes(int n, int k) {
