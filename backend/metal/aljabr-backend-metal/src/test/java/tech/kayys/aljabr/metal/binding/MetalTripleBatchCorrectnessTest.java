@@ -173,11 +173,14 @@ class MetalTripleBatchCorrectnessTest {
             // GGML Q4_K: d, dmin, 12 packed scale/min bytes, then 128 q bytes.
             setHalfBits(weights, offset, halfScale);
             setHalfBits(weights, offset + 2, halfMinScale);
-            // Keep packed fields small and non-zero. With upper bits clear,
-            // decoded scale/minimum values remain in [1, 15], not random extremes.
+            // GGML packs the first four 6-bit scale/min fields directly and
+            // the remaining fields as 4-bit nibbles plus upper bits. Keep all
+            // fields deterministic, bounded, and non-zero where represented.
             for (int i = 0; i < 12; i++) {
-                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i,
-                        (byte) (1 + ((block + i * 3) % 15)));
+                int low = 1 + (int) ((block + i * 3) % 15);
+                int packed = i < 4 ? low
+                        : low | ((1 + (int) ((block + i * 7) % 15)) << 4);
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i, (byte) packed);
             }
             for (int i = 16; i < blockBytes; i++) {
                 weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i, (byte) random.nextInt(256));
