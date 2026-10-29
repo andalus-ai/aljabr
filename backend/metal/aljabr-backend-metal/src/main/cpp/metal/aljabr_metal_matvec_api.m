@@ -1167,6 +1167,18 @@ static BOOL encode_matvec_buf(id<MTLComputeCommandEncoder> enc,
   [enc setBytes:&kk length:sizeof(kk) atIndex:3];
   [enc setBytes:&nn length:sizeof(nn) atIndex:4];
   NSUInteger bSz = (batchSize > 0) ? (NSUInteger)batchSize : 1;
+  // Opt-in tracing to identify the exact Q4_K pipeline used by the failing
+  // batch-vs-single-row regression test. Keep disabled during normal inference.
+  if (type == 12 && env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH")) {
+    const char *pipelineLabel = p.label != nil ? [p.label UTF8String] : "(unlabelled)";
+    fprintf(stderr,
+            "[aljabr-metal][batch-dispatch] type=Q4_K K=%u N=%u batch=%u "
+            "pipeline=%s path=%s maxThreads=%lu mr4=%d mr8=%d b4=%d\n",
+            kk, nn, batchSize, pipelineLabel,
+            is_b4 ? "B4" : (is_mr8 ? "MR8" : (is_mr4 ? "MR4" : "base")),
+            (unsigned long)p.maxTotalThreadsPerThreadgroup,
+            (int)is_mr4, (int)is_mr8, (int)is_b4);
+  }
   if (is_b4) {
     uint32_t bSz32 = (uint32_t)bSz;
     [enc setBytes:&bSz32 length:sizeof(bSz32) atIndex:5];
