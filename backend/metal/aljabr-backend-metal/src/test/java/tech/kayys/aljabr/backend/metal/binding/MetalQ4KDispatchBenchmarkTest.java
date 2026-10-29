@@ -27,7 +27,7 @@ class MetalQ4KDispatchBenchmarkTest {
     private static final int WARMUP_ITERATIONS = 5;
     private static final int MEASURED_ITERATIONS = 20;
     private static final int[] B4_BATCH_SIZES = {2, 4, 8, 15, 16, 17, 20, 24, 27, 28, 31, 32};
-    private static final int[] MR4_BATCH_SIZES = {4, 8, 12, 15, 16, 17, 20, 24, 27, 28, 32};
+    private static final int[] MR4_BATCH_SIZES = {2, 4, 8, 12, 15, 16, 17, 20, 24, 27, 28, 31, 32};
     private static final float RELATIVE_TOLERANCE = 2.0e-3f;
 
     @Test
