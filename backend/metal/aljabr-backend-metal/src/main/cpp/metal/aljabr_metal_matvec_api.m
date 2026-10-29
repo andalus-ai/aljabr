@@ -1242,16 +1242,6 @@ static BOOL encode_matvec_sub_with_mode(id<MTLComputeCommandEncoder> enc,
                                      kk, nn, type, batchSize, dispatchMode);
 }
 
-static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
-                              AljabrMetalPipelines *pipelines,
-                              id<MTLBuffer> bufC, id<MTLBuffer> bufA,
-                              const void *B, uint32_t kk, uint32_t nn, int type,
-                              uint32_t batchSize) {
-  return encode_matvec_sub_with_mode(enc, pipelines, bufC, bufA, B, kk, nn,
-                                     type, batchSize,
-                                     ALJABR_Q4K_DISPATCH_AUTO);
-}
-
 static id<MTLBuffer> g_scratch_single_A = nil;
 static id<MTLBuffer> g_scratch_single_C = nil;
 static size_t g_scratch_single_A_bytes = 0;
