@@ -1343,7 +1343,10 @@ int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
   if (mode != ALJABR_Q4K_DISPATCH_B4 &&
       mode != ALJABR_Q4K_DISPATCH_MR4)
     return -2;
-  if (mode == ALJABR_Q4K_DISPATCH_B4 && batchSize > 15)
+  // This opt-in test hook deliberately permits forced B4 beyond the
+  // production cutoff so correctness can be measured before changing dispatch.
+  // The production auto-dispatch limit remains unchanged.
+  if (mode == ALJABR_Q4K_DISPATCH_B4 && batchSize > 32)
     return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
   @autoreleasepool {
