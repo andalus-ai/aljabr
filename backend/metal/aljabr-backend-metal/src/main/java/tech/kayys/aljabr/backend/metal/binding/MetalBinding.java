@@ -83,6 +83,8 @@ public class MetalBinding {
     private static final String FN_MATVEC_TB_PAIR = "aljabr_metal_matvec_tb_pair";
     private static final String FN_MATVEC_TB_TRIPLE = "aljabr_metal_matvec_tb_triple";
     private static final String FN_MATVEC_TB_BATCH = "aljabr_metal_matvec_tb_batch";
+    private static final String FN_MATVEC_TB_BATCH_Q4K_DISPATCH_BENCH =
+            "aljabr_metal_matvec_tb_batch_q4k_dispatch_bench";
     private static final String FN_MATVEC_TB_TRIPLE_BATCH = "aljabr_metal_matvec_tb_triple_batch";
     private static final String FN_FFN_GATED_FUSED = "aljabr_metal_ffn_gated_fused";
     private static final String FN_FFN_GATED_FUSED_BATCH = "aljabr_metal_ffn_gated_fused_batch";
@@ -879,6 +881,16 @@ public class MetalBinding {
         if (!handles.containsKey(FN_MATVEC_TB_BATCH))
             return -2;
         return (int) invoke(FN_MATVEC_TB_BATCH, C, A, B, K, N, type, batchSize);
+    }
+
+    int matvecQ4KBatchDispatchForBenchmark(MemorySegment C, MemorySegment A,
+            MemorySegment B, int K, int N, int batchSize, int mode) {
+        if (useCpuFallback())
+            throw new UnsupportedOperationException("Q4_K dispatch benchmark requires native Metal");
+        if (!handles.containsKey(FN_MATVEC_TB_BATCH_Q4K_DISPATCH_BENCH))
+            return -2;
+        return (int) invoke(FN_MATVEC_TB_BATCH_Q4K_DISPATCH_BENCH,
+                C, A, B, K, N, batchSize, mode);
     }
 
     public int matvecTransposedRightTripleBatch(MemorySegment C0, MemorySegment C1, MemorySegment C2,
@@ -1771,6 +1783,9 @@ public class MetalBinding {
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
         bind(FN_MATVEC_TB_BATCH, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
+        bind(FN_MATVEC_TB_BATCH_Q4K_DISPATCH_BENCH, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
         bind(FN_MATVEC_TB_TRIPLE_BATCH, FunctionDescriptor.of(ValueLayout.JAVA_INT,
