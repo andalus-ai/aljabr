@@ -1121,12 +1121,13 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
-    // Forced paths are only for isolated opt-in benchmark tests. Keep the B4
-    // ceiling aligned with current correctness evidence.
+    // The explicit B4 mode is restricted to the opt-in benchmark hook and
+    // may probe up to the hook's hard batch limit. Production AUTO dispatch
+    // remains capped at the independently correctness-validated size.
     static const uint32_t kMaxCorrectnessValidatedQ4KB4BatchSize = 15;
+    static const uint32_t kMaxForcedQ4KB4BatchSize = 32;
     if (dispatchMode == ALJABR_Q4K_DISPATCH_B4) {
-      if (batchSize <= 1 ||
-          batchSize > kMaxCorrectnessValidatedQ4KB4BatchSize ||
+      if (batchSize <= 1 || batchSize > kMaxForcedQ4KB4BatchSize ||
           pipelines->matvec_tb_q4_k_b4_mr4 == nil)
         return NO;
       p = pipelines->matvec_tb_q4_k_b4_mr4;
