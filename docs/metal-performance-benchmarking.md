@@ -61,3 +61,15 @@ ALJABR_METAL_PREFILL_PROFILE=1 aqli run --model hf:unsloth/gemma-4-12b-it-GGUF -
 or add `-Daljabr.metal.prefill.profile=true` to the Java process. The summary reports the prompt-token count, layer-loop time, accumulated QKV projection time, attention time, and how many layers used Metal FA4 attention versus Java/fallback attention. It also reports output-projection and FFN timings for non-fused layers, plus combined WO+FFN time for fused layers. These are inclusive phase totals across layers, not additive wall-clock buckets: host-side normalization, RoPE, KV writes, copies, and dispatch overhead can overlap the measured regions or remain outside them. Do not sum the fields to estimate total prefill time.
 
 Keep this profiler disabled for final performance comparisons. Use it to identify the dominant phase, then compare unprofiled repeated runs with the same model, prompt, token limit, and backend eligibility. The current output is deliberately aggregate-level; add finer per-kernel GPU timestamps only when the aggregate profile identifies a phase that needs further decomposition.
+
+## Q4_K batched matvec dispatch and correctness
+
+The Metal Q4_K batched matvec dispatch uses the following policy:
+
+- **Batch size 1:** prefer MR8 when its pipeline is available and MR8 is enabled; otherwise use MR4 when available, with the single-row base kernel as the final fallback.
+- **Batch sizes 2–15:** use the B4/MR4 kernel when its pipeline is available. This range is the current correctness-validated B4 range.
+- **Batch sizes greater than 15:** require the batch-aware MR4 kernel. If that pipeline is unavailable, dispatch fails rather than using the single-row base kernel, which cannot correctly write every row of a multi-row batch.
+
+`MetalTripleBatchCorrectnessTest` compares batched mixed-quantization results against repeated single-row calls. The current local test run passed both correctness test cases, including the representative-weight variant, with zero failures or errors. The wider Metal backend test run also reported zero failures and errors; one benchmark test was skipped.
+
+The batch-size boundary is a correctness-based dispatch guard, not a claim that MR4 is faster than B4 for every batch size. Revisit it only after correctness parity and repeatable performance measurements support a change.

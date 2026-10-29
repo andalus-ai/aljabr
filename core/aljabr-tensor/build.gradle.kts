@@ -1,3 +1,4 @@
+
 plugins {
     java
 }
@@ -7,4 +8,6 @@ dependencies {
     if (aljabrCoreProject != null) {
         testImplementation(aljabrCoreProject)
     }
+
+    testRuntimeOnly(project(":backend:cpu:aljabr-backend-cpu"))
 }
