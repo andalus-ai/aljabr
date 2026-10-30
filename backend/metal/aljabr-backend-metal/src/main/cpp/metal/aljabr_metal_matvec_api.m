@@ -1432,6 +1432,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
                                         const void *B1, const void *B2, int K,
                                         int N0, int N1, int N2, int type0,
                                         int type1, int type2, int batchSize) {
+  const BOOL traceTriple = env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH");
+  if (traceTriple)
+    fprintf(stderr,
+            "[aljabr-metal][triple-batch-enter] K=%d N=(%d,%d,%d) batch=%d "
+            "types=(%d,%d,%d) initialized=%d\\n",
+            K, N0, N1, N2, batchSize, type0, type1, type2, g_initialized);
   if (!g_initialized)
     return -1;
   if (K <= 0 || N0 <= 0 || N1 <= 0 || N2 <= 0 || batchSize <= 0)
@@ -1466,16 +1472,17 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
 
     BOOL encoded0 = encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk,
                                       (uint32_t)N0, type0, batch32);
-    BOOL encoded1 = encoded0 && encode_matvec_sub(enc, pipelines, bufC1, bufA, B1,
-                                                   kk, (uint32_t)N1, type1, batch32);
-    BOOL encoded2 = encoded1 && encode_matvec_sub(enc, pipelines, bufC2, bufA, B2,
-                                                   kk, (uint32_t)N2, type2, batch32);
+    BOOL encoded1 = encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk,
+                                      (uint32_t)N1, type1, batch32);
+    BOOL encoded2 = encode_matvec_sub(enc, pipelines, bufC2, bufA, B2, kk,
+                                      (uint32_t)N2, type2, batch32);
     if (!encoded0 || !encoded1 || !encoded2) {
-      if (env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH"))
+      if (traceTriple)
         fprintf(stderr,
-                "[aljabr-metal][triple-batch-reject] K=%d batch=%d types=(%d,%d,%d) "
-                "encoded=(%d,%d,%d)\\n",
-                K, batchSize, type0, type1, type2, encoded0, encoded1, encoded2);
+                "[aljabr-metal][triple-batch-reject] K=%d N=(%d,%d,%d) batch=%d "
+                "types=(%d,%d,%d) encoded=(%d,%d,%d)\\n",
+                K, N0, N1, N2, batchSize, type0, type1, type2,
+                encoded0, encoded1, encoded2);
       [enc endEncoding];
       return -3;
     }
