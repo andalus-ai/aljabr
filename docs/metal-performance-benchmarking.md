@@ -68,7 +68,7 @@ The Metal Q4_K batched matvec dispatch uses the following policy:
 
 - **Batch size 1:** prefer MR8 when its pipeline is available and MR8 is enabled; otherwise use MR4 when available, with the single-row base kernel as the final fallback.
 - **Batch sizes 2–15:** use the B4/MR4 kernel when its pipeline is available. This range is the current correctness-validated B4 range.
-- **Batch sizes greater than 15:** require the batch-aware MR4 kernel. If that pipeline is unavailable, dispatch fails rather than using the single-row base kernel, which cannot correctly write every row of a multi-row batch.
+- **Batch sizes greater than 15:** the current AUTO selector rejects this batched request; it does not silently fall back to the single-row kernel. MR4 is available through the explicit MR4 dispatch mode. Do not assume AUTO transparently selects MR4 for these batches.
 
 `MetalTripleBatchCorrectnessTest` compares batched mixed-quantization results against repeated single-row calls. The current local test run passed both correctness test cases, including the representative-weight variant, with zero failures or errors. The wider Metal backend test run also reported zero failures and errors; one benchmark test was skipped.
 
