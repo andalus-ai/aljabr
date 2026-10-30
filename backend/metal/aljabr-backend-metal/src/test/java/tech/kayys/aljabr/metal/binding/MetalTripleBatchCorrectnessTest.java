@@ -1,6 +1,5 @@
 package tech.kayys.aljabr.metal.binding;
 
-import tech.kayys.aljabr.backend.metal.binding.MetalBinding;
 
 import org.junit.jupiter.api.Test;
 
