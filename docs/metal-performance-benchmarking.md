@@ -118,4 +118,4 @@ Do not label register pressure as a measured root cause. The next optimization s
 
 ### Production AUTO-to-MR4 fallback
 
-The production Q4_K batch entry point now routes batch sizes above 15 to MR4 while retaining B4 for batches 2–15. A new `MetalQ4KProductionDispatchCorrectnessTest` exercises the public batch binding at K/N shapes 1024/1024 and 3840/2048, comparing each batched row with a repeated production batch-size-1 call across batches 2–32. This new test requires a fresh native Metal build and local Apple Silicon execution; it has not yet been run.
+The production Q4_K batch entry point now routes batch sizes above 15 to MR4 while retaining B4 for batches 2–15. A new `MetalQ4KProductionDispatchCorrectnessTest` exercises the public batch binding at K/N shapes 1024/1024 and 3840/2048, comparing each batched row with a repeated calls to the dedicated production single-row Q4_K API across batches 2–32. This new test requires a fresh native Metal build and local Apple Silicon execution; it has not yet been run.
