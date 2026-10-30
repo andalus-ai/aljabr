@@ -3,6 +3,9 @@ package tech.kayys.aljabr.metal.binding;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Random;
 
 import org.junit.jupiter.api.Test;
@@ -26,8 +29,10 @@ class MetalQ4KProductionDispatchCorrectnessTest {
 
     @Test
     void productionBatchDispatchMatchesRepeatedSingleRowCalls() {
-        assumeTrue(MetalBinding.initialize(),
-                "Could not load Aljabr Metal library; build the native Metal backend first");
+        Path dylib = findBuiltDylib();
+        assumeTrue(dylib != null, "Native Metal dylib is not built in this checkout");
+        assertTrue(MetalBinding.initialize(dylib),
+                "Could not load freshly built Aljabr Metal library: " + dylib);
         MetalBinding binding = MetalBinding.getInstance();
         assertEquals(0, binding.init(), "Metal runtime initialization returned an error");
         assumeTrue(binding.isRuntimeActive(),
@@ -35,6 +40,28 @@ class MetalQ4KProductionDispatchCorrectnessTest {
 
         verifyShape(binding, 1024, 1024, BATCH_SIZES);
         verifyShape(binding, 3840, 2048, BATCH_SIZES);
+    }
+
+
+    private static Path findBuiltDylib() {
+        List<Path> candidates = List.of(
+                Path.of("backend/metal/aljabr-backend-metal/target/native/darwin-aarch64/libaljabr_metal.dylib"),
+                Path.of("target/native/darwin-aarch64/libaljabr_metal.dylib"));
+        for (Path candidate : candidates) {
+            if (Files.isRegularFile(candidate)) {
+                try {
+                    System.out.println("[MetalQ4KProductionDispatchCorrectnessTest] Loading native Metal dylib: "
+                            + candidate.toAbsolutePath().normalize()
+                            + " (modified=" + Files.getLastModifiedTime(candidate) + ")");
+                } catch (java.io.IOException e) {
+                    System.out.println("[MetalQ4KProductionDispatchCorrectnessTest] Loading native Metal dylib: "
+                            + candidate.toAbsolutePath().normalize()
+                            + " (modification time unavailable: " + e.getMessage() + ")");
+                }
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static void verifyShape(MetalBinding binding, int k, int n, int[] batchSizes) {
