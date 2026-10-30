@@ -29,6 +29,7 @@ class MetalQ4KProductionDispatchCorrectnessTest {
 
     @Test
     void productionBatchDispatchMatchesRepeatedSingleRowCalls() {
+        MetalBinding.reset();
         Path dylib = findBuiltDylib();
         assumeTrue(dylib != null, "Native Metal dylib is not built in this checkout");
         assertTrue(MetalBinding.initialize(dylib),
