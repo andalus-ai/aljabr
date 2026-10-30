@@ -88,8 +88,8 @@ class MetalQ4KProductionDispatchCorrectnessTest {
 
                 for (int row = 0; row < batchSize; row++) {
                     MemorySegment inputRow = input.asSlice((long) row * inputRowBytes, inputRowBytes);
-                    int singleRc = binding.matvecTransposedRightBatch(
-                            single, inputRow, weights, k, n, TYPE_Q4_K, 1);
+                    int singleRc = binding.matvecTransposedRightQ4K(
+                            single, inputRow, weights, k, n);
                     assertEquals(0, singleRc,
                             "Production single-row reference failed: K=" + k + ", N=" + n
                                     + ", batch=" + batchSize + ", row=" + row);
