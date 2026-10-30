@@ -1074,15 +1074,10 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
 }
 
 /*
- * B4 Q4_K/Q6_K two-token batched kernels are validated up to batch size 32.
- *
- * Historical note: an earlier revision without output-write guards produced a
- * Q4_K mismatch at batch 27, row 15 (expected 0.0078125, got -0.0625) in CI.
- * That kernel had no `if (t_base + 1u < bSz)` guard. The current kernel has
- * correct bounds guards (`t_base >= bSz` early-return, `t_base+1 < bSz` write
- * guard, and `min(t_base+1, bSz-1)` read-clamping). Raising the cap to 32
- * enables B4 dispatch for all prefill batch sizes (16, 24, 27, 32), cutting
- * FFN memory-bandwidth by ~2× vs per-token MR8/MR4 dispatch.
+ * Q6_K B4 two-token batched dispatch has a separate validated range through
+ * batch 32. Q4_K deliberately keeps its narrower production B4 boundary at
+ * batch 15; larger Q4_K batches route through MR4 until broader B4 validation
+ * justifies widening that range.
  */
 static const uint32_t kMaxValidatedB4BatchSize = 32;
 
