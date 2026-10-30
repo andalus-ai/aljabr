@@ -44,6 +44,13 @@ val metalBenchmarkEnabled = System.getenv("ALJABR_METAL_BENCH")?.let {
     it == "1" || it.equals("true", ignoreCase = true)
 } ?: false
 
+// Native dispatch tracing writes to stdout/stderr. Surface those streams for
+// diagnostic runs too; otherwise the native triple-batch entry/reject markers
+// are captured by Gradle and disappear from the failure output.
+val metalDispatchTraceEnabled = System.getenv("ALJABR_METAL_TRACE_BATCH_DISPATCH")?.let {
+    it == "1" || it.equals("true", ignoreCase = true)
+} ?: false
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     testLogging {
@@ -55,7 +62,7 @@ tasks.withType<Test>().configureEach {
         showExceptions = true
         showCauses = true
         showStackTraces = true
-        showStandardStreams = metalBenchmarkEnabled
+        showStandardStreams = metalBenchmarkEnabled || metalDispatchTraceEnabled
     }
 }
 
