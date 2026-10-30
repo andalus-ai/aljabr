@@ -54,3 +54,9 @@ Interpretation: MR4 wins at every measured batch size for this one shape. These 
 ## Validation record
 
 The latest developer-provided local run passed the focused `MetalQ4KDispatchBenchmarkTest`; B4/MR4 parity assertions passed for its tested batches. The focused test requires a macOS Metal device and cannot be fully validated by generic CI runners. The benchmark fixture is deterministic synthetic Q4_K data; a separate validation against representative model-produced Q4_K blocks remains necessary.
+
+## Dispatch selector cleanup (2026-10-30)
+
+Removed an unreachable duplicate MR4 selection branch from the Q4_K AUTO selector. Explicit MR4 selection is handled before AUTO selection, so the duplicate branch could never execute. This is a control-flow cleanup only: AUTO behavior is intentionally unchanged, and batches above 15 remain rejected by AUTO pending production-path MR4 correctness validation.
+
+Validation required: rebuild the native Metal library and run the focused Q4_K dispatch benchmark/correctness tests on macOS. The source edit is not claimed as locally compiled or GPU-tested yet.
