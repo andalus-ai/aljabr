@@ -1170,8 +1170,17 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
   } else if (type == 30 || type == 16) { // BF16
     p = pipelines->matvec_bf16;
   }
-  if (p == nil || bufC == nil || bufB == nil)
+  if (p == nil || bufC == nil || bufB == nil) {
+    if (env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH")) {
+      fprintf(stderr,
+              "[aljabr-metal][batch-dispatch-reject] type=%d K=%u N=%u batch=%u "
+              "pipeline=%s bufC=%d bufB=%d mode=%d\\n",
+              type, kk, nn, batchSize,
+              p != nil && p.label != nil ? [p.label UTF8String] : "(missing)",
+              bufC != nil, bufB != nil, (int)dispatchMode);
+    }
     return NO;
+  }
 
   [enc setComputePipelineState:p];
   [enc setBuffer:bufC offset:0 atIndex:0];
@@ -1232,10 +1241,15 @@ static BOOL encode_matvec_sub_with_mode(id<MTLComputeCommandEncoder> enc,
                               uint32_t batchSize,
                               AljabrQ4KDispatchMode dispatchMode) {
   size_t bBytes = calc_matvec_weight_bytes(type, nn, kk);
-  if (bBytes == 0)
+  if (bBytes == 0) {
+    if (env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH"))
+      fprintf(stderr, "[aljabr-metal][batch-dispatch-reject] invalid weight size type=%d K=%u N=%u batch=%u\\n", type, kk, nn, batchSize);
     return NO;
+  }
   size_t bOff = 0;
   id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, bBytes, &bOff);
+  if (bufB == nil && env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH"))
+    fprintf(stderr, "[aljabr-metal][batch-dispatch-reject] weight wrap failed type=%d K=%u N=%u batch=%u bytes=%zu\\n", type, kk, nn, batchSize, bBytes);
   return encode_matvec_buf_with_mode(enc, pipelines, bufC, bufA, bufB, bOff,
                                      kk, nn, type, batchSize, dispatchMode);
 }
@@ -1450,12 +1464,18 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
     uint32_t kk = (uint32_t)K;
     uint32_t batch32 = (uint32_t)batchSize;
 
-    if (!encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk, (uint32_t)N0,
-                           type0, batch32) ||
-        !encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk, (uint32_t)N1,
-                           type1, batch32) ||
-        !encode_matvec_sub(enc, pipelines, bufC2, bufA, B2, kk, (uint32_t)N2,
-                           type2, batch32)) {
+    BOOL encoded0 = encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk,
+                                      (uint32_t)N0, type0, batch32);
+    BOOL encoded1 = encoded0 && encode_matvec_sub(enc, pipelines, bufC1, bufA, B1,
+                                                   kk, (uint32_t)N1, type1, batch32);
+    BOOL encoded2 = encoded1 && encode_matvec_sub(enc, pipelines, bufC2, bufA, B2,
+                                                   kk, (uint32_t)N2, type2, batch32);
+    if (!encoded0 || !encoded1 || !encoded2) {
+      if (env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH"))
+        fprintf(stderr,
+                "[aljabr-metal][triple-batch-reject] K=%d batch=%d types=(%d,%d,%d) "
+                "encoded=(%d,%d,%d)\\n",
+                K, batchSize, type0, type1, type2, encoded0, encoded1, encoded2);
       [enc endEncoding];
       return -3;
     }
