@@ -1142,12 +1142,16 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
                pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
-    } else {
-      // AUTO uses B4 only within its validated range. Larger batches are
-      // deliberately rejected until AUTO-to-MR4 correctness is validated
-      // through the production dispatch path.
-      if (batchSize > 1)
+    } else if (batchSize > 1) {
+      // Preserve the B4 correctness boundary: larger prefill batches use
+      // MR4 rather than widening B4 or rejecting an otherwise supported
+      // production batch. The production batch-vs-single-row test covers
+      // this AUTO fallback at and above the boundary.
+      if (pipelines->matvec_tb_q4_k_mr4 == nil)
         return NO;
+      p = pipelines->matvec_tb_q4_k_mr4;
+      is_mr4 = YES;
+    } else {
       p = pipelines->matvec_tb_q4_k;
     }
   } else if (type == 14) { // Q6_K
