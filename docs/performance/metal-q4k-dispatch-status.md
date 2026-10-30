@@ -65,7 +65,7 @@ Validation required: rebuild the native Metal library and run the focused Q4_K d
 ## Production-path MR4 fallback validation (2026-10-30)
 
 - Updated Q4_K AUTO dispatch to retain the validated B4 range (batch 2–15) and route batches above 15 through the MR4 pipeline.
-- Added `MetalQ4KProductionDispatchCorrectnessTest`, which calls the public production `matvecTransposedRightBatch` binding and compares every batched row against repeated production batch-size-1 calls.
+- Added `MetalQ4KProductionDispatchCorrectnessTest`, which calls the public production `matvecTransposedRightBatch` binding and compares every batched row against repeated calls to the dedicated production single-row Q4_K API.
 - The test covers K/N shapes 1024/1024 and 3840/2048 and batch sizes 2, 4, 8, 15, 16, 17, 24, 27, 28, 31, and 32. It checks finite outputs and a documented relative tolerance.
 - The test has been added but still requires a fresh native Metal build and execution on macOS/Apple Silicon. Do not consider the production MR4 fallback validated until that hardware test passes.
 - The 2026-10-30 isolated benchmark passed with B4/MR4 parity for its synthetic fixture. That result is performance evidence only and does not replace the new production-path comparison.
