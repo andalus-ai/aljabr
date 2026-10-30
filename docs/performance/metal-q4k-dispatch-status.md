@@ -40,8 +40,8 @@ Interpretation: MR4 wins at every measured batch size for this one shape. These 
 ## Dispatch policy
 
 - Keep MR4 as the performance baseline for the measured K=3840/N=4096 case.
-- Keep B4 available for controlled experiments, not as the default production path.
-- Keep the current automatic B4 correctness cap unchanged pending broader evidence.
+- Keep B4 available for controlled experiments; the current AUTO selector only selects it through batch 15.
+- AUTO currently rejects Q4_K batches above 15 rather than automatically switching to MR4; callers requiring larger batches must use the explicit MR4 mode. This behavior should be reviewed as a separate dispatch-policy task.
 - A forced benchmark mode is not production eligibility and must remain opt-in.
 
 ## Known limitations / next work
