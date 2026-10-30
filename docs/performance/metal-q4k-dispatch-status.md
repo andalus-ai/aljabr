@@ -18,22 +18,22 @@ This status tracks the Aljabr Metal Q4_K batched matrix-vector implementation an
 
 ## Latest measured result
 
-Developer-reported Apple Silicon run, K=3840, N=4096, Q4_K fixture, five warmups and twenty measured calls:
+Latest developer-reported Apple Silicon run (2026-10-30), K=3840, N=4096, deterministic Q4_K fixture, five warmups and twenty measured calls:
 
 | Batch | B4 mean | MR4 mean | MR4 faster |
 |---:|---:|---:|---:|
-| 2 | 0.684 ms | 0.380 ms | 1.80x |
-| 4 | 1.018 ms | 0.483 ms | 2.11x |
-| 8 | 1.915 ms | 0.801 ms | 2.39x |
-| 15 | 3.725 ms | 1.364 ms | 2.73x |
-| 16 | 3.769 ms | 1.495 ms | 2.52x |
-| 17 | 4.199 ms | 1.532 ms | 2.74x |
-| 20 | 4.664 ms | 1.771 ms | 2.63x |
-| 24 | 5.530 ms | 2.080 ms | 2.66x |
-| 27 | 6.469 ms | 2.309 ms | 2.80x |
-| 28 | 6.450 ms | 2.349 ms | 2.75x |
-| 31 | 7.384 ms | 2.633 ms | 2.80x |
-| 32 | 7.377 ms | 2.697 ms | 2.74x |
+| 2 | 0.700 ms | 0.336 ms | 2.08x |
+| 4 | 1.210 ms | 0.479 ms | 2.53x |
+| 8 | 2.083 ms | 0.784 ms | 2.66x |
+| 15 | 3.702 ms | 1.320 ms | 2.80x |
+| 16 | 3.786 ms | 1.457 ms | 2.60x |
+| 17 | 4.222 ms | 1.561 ms | 2.70x |
+| 20 | 4.631 ms | 1.721 ms | 2.69x |
+| 24 | 5.580 ms | 2.066 ms | 2.70x |
+| 27 | 6.478 ms | 2.241 ms | 2.89x |
+| 28 | 6.425 ms | 2.412 ms | 2.66x |
+| 31 | 7.340 ms | 2.660 ms | 2.76x |
+| 32 | 7.442 ms | 2.644 ms | 2.81x |
 
 Interpretation: MR4 wins at every measured batch size for this one shape. These are isolated native dispatch-call timings, not end-to-end inference throughput. Do not extrapolate them to all dimensions, models, or Apple GPUs.
 
@@ -41,7 +41,7 @@ Interpretation: MR4 wins at every measured batch size for this one shape. These 
 
 - Keep MR4 as the performance baseline for the measured K=3840/N=4096 case.
 - Keep B4 available for controlled experiments; the current AUTO selector only selects it through batch 15.
-- AUTO currently rejects Q4_K batches above 15 rather than automatically switching to MR4; callers requiring larger batches must use the explicit MR4 mode. This behavior should be reviewed as a separate dispatch-policy task.
+- AUTO selects the single-row kernel for batch 1, B4 for batches 2–15, and MR4 for batches above 15. The B4 threshold remains 15; larger batches use MR4 rather than widening B4 or rejecting a supported production batch.
 - A forced benchmark mode is not production eligibility and must remain opt-in.
 
 ## Known limitations / next work
@@ -60,3 +60,12 @@ The latest developer-provided local run passed the focused `MetalQ4KDispatchBenc
 Removed an unreachable duplicate MR4 selection branch from the Q4_K AUTO selector. Explicit MR4 selection is handled before AUTO selection, so the duplicate branch could never execute. This is a control-flow cleanup only: AUTO behavior is intentionally unchanged, and batches above 15 remain rejected by AUTO pending production-path MR4 correctness validation.
 
 Validation required: rebuild the native Metal library and run the focused Q4_K dispatch benchmark/correctness tests on macOS. The source edit is not claimed as locally compiled or GPU-tested yet.
+
+
+## Production-path MR4 fallback validation (2026-10-30)
+
+- Updated Q4_K AUTO dispatch to retain the validated B4 range (batch 2–15) and route batches above 15 through the MR4 pipeline.
+- Added `MetalQ4KProductionDispatchCorrectnessTest`, which calls the public production `matvecTransposedRightBatch` binding and compares every batched row against repeated production batch-size-1 calls.
+- The test covers K/N shapes 1024/1024 and 3840/2048 and batch sizes 2, 4, 8, 15, 16, 17, 24, 27, 28, 31, and 32. It checks finite outputs and a documented relative tolerance.
+- The test has been added but still requires a fresh native Metal build and execution on macOS/Apple Silicon. Do not consider the production MR4 fallback validated until that hardware test passes.
+- The 2026-10-30 isolated benchmark passed with B4/MR4 parity for its synthetic fixture. That result is performance evidence only and does not replace the new production-path comparison.
