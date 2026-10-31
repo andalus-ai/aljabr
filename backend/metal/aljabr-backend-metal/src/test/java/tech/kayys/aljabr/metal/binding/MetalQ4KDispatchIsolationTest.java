@@ -9,7 +9,6 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
-import tech.kayys.aljabr.backend.metal.binding.MetalBinding;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,7 +22,6 @@ class MetalQ4KDispatchIsolationTest {
     private static final int K = 3840;
     private static final int N = 4096;
     private static final int BATCH = 16;
-    private static final int Q4_K_TYPE = 12;
     private static final float TOLERANCE = 2.0e-3f;
 
     @Test
