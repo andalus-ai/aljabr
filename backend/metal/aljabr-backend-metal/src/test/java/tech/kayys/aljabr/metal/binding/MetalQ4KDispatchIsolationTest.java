@@ -60,8 +60,8 @@ class MetalQ4KDispatchIsolationTest {
                 assertEquals(0, binding.matvecTransposedRightQ4K(
                         reference, inputRow, weights, K, N),
                         "Single-row reference failed at row=" + row);
-                assertRowClose("B4", b4, row, reference);
                 assertRowClose("MR4", mr4, row, reference);
+                assertRowClose("B4", b4, row, reference);
             }
         }
     }
