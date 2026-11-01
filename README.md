@@ -20,7 +20,7 @@ Aljabr must not depend on AQLI. Tafkir integration is optional and must not be r
 
 ## Contents
 
-- [Design goals](#design-goals)
+- [Design goals](#design-goals)\n- [Computational framework scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md)
 - [Architecture](#architecture)
 - [Requirements](#requirements)
 - [Build from source](#build-from-source)
@@ -162,7 +162,11 @@ Use `./gradlew projects` as the source of truth for the exact current Gradle mod
 ## Documentation
 
 - [Research and Training Readiness](docs/architecture/RESEARCH_TRAINING_READINESS.md) — audit of autograd build visibility, optimizer behavior, and the executable Java training milestone.
-- [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — target scope, module layers, tensor/model execution sequences and validation.
+- [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — module layers, tensor/model execution sequences and validation.
+- [Computational Framework Scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md) — target mathematical, statistical, scientific-computing, ML and NLP capability map and ecosystem ownership boundaries.
+- [Computational Capability Inventory](docs/architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md) — source-level snapshot of existing modules, implementation evidence, gaps and recommended module boundaries.
+- [Aljabr Numerics](core/aljabr-numerics/README.md) — precision, tolerances, validation and reproducible random-source contracts.
+- [Aljabr Linear Algebra](core/aljabr-linear-algebra/README.md) — initial dense CPU matrix/vector and pivoted LU reference APIs.
 - [Java Tensor Research Quickstart](docs/examples/TENSOR_RESEARCH_QUICKSTART.md) — current tensor API example, scope and research workflow milestones.
 - [Metal Performance Benchmarking](docs/metal-performance-benchmarking.md) — repeatable profiling protocol, dispatch measurements and performance interpretation.
 - [Metal Q4_K Dispatch Status](docs/performance/metal-q4k-dispatch-status.md) — implemented kernels, measured B4/MR4 results, production policy and remaining validation.
