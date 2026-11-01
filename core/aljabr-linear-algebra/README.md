@@ -11,6 +11,7 @@ Dense double-precision CPU reference implementations for foundational linear alg
 - `CholeskyDecomposition`: factorization and solve for symmetric positive-definite matrices.
 - `SingularValueDecomposition`: one-sided Jacobi thin SVD for tall, square and wide matrices, numerical rank and pseudoinverse solve.
 - `SymmetricEigenDecomposition`: Jacobi eigendecomposition for real symmetric matrices.
+- `HessenbergReduction`: orthogonal Householder similarity reduction of general real square matrices to upper Hessenberg form.
 - `ConditionNumber`: spectral 2-norm condition number, reciprocal condition number and numerical-rank diagnostics derived from SVD.
 - `SingularMatrixException`: explicit failure for singular LU pivots.
 
@@ -23,8 +24,13 @@ Vector x = LUDecomposition.factor(a).solve(b);
 
 ConditionNumber diagnostics = ConditionNumber.of(a);
 double condition = diagnostics.twoNorm();
+
+HessenbergReduction reduction = HessenbergReduction.reduce(a);
+Matrix h = reduction.hessenberg();
 ```
+
+Hessenberg reduction returns orthogonal Q and H satisfying `H = Q^T * A * Q`; reconstruction is `A = Q * H * Q^T`. It is the preprocessing stage for general real Schur/eigenvalue algorithms, not itself a general eigensolver. For symmetric input, the result is tridiagonal up to round-off.
 
 Condition number is positive infinity when the matrix is numerically rank deficient under the supplied tolerance. Rectangular matrices are supported; full rank means rank equals `min(rows, columns)`.
 
-The module depends only on `:core:aljabr-numerics`. These are transparent CPU reference algorithms, not optimized BLAS/LAPACK replacements. General non-symmetric eigenvalue algorithms, sparse matrix storage/solvers, pivoted QR and iterative Krylov methods remain future milestones.
+The module depends only on `:core:aljabr-numerics`. These are transparent CPU reference algorithms, not optimized BLAS/LAPACK replacements. General real Schur iteration, sparse matrix storage/solvers, pivoted QR and iterative Krylov methods remain future milestones.
