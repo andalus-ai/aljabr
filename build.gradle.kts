@@ -109,7 +109,7 @@ subprojects {
 
     // Jandex indexing is an opt-in build feature. No in-repository consumer currently
     // requires a generated index, so ordinary module builds should not pay this cost.
-    if (providers.gradleProperty("aljabr.generateJandexIndex").map(String::toBoolean).getOrElse(false)) {
+    if (gradle.startParameter.projectProperties["aljabr.generateJandexIndex"]?.toBoolean() == true) {
         val sourceSets = extensions.getByType(SourceSetContainer::class.java)
         val mainSourceSet = sourceSets.named("main")
         val jandexOutputDir = layout.buildDirectory.dir("generated/jandex/main")
