@@ -17,11 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Opt-in Apple Silicon benchmark for the production native triple-matvec batch path.
+ * Opt-in Apple Silicon benchmark for the production native triple-matvec batch
+ * path.
  *
  * Run with:
  * ALJABR_METAL_BENCH=1 ./gradlew :backend:metal:aljabr-backend-metal:test \
- *   --tests tech.kayys.aljabr.metal.binding.MetalTripleBatchBenchmarkTest
+ * --tests tech.kayys.aljabr.metal.binding.MetalTripleBatchBenchmarkTest
  *
  * This is deliberately opt-in: regular CI should validate compilation without
  * requiring Apple GPU hardware or allocating benchmark buffers.
@@ -33,11 +34,13 @@ class MetalTripleBatchBenchmarkTest {
     private static final int N2 = 2048;
     private static final int TYPE_Q4_K = 12;
     private static final int TYPE_Q6_K = 14;
-    private static final int MAX_BATCH = 27;
-    private static final int WARMUP_ITERATIONS = 3;
-    private static final int MEASURED_ITERATIONS = 12;
-    // Include both sides of the native B4 cutoff and the 27-row prompt-prefill workload.
-    private static final int[] BATCH_SIZES = {1, 4, 8, 15, 16, 27};
+    private static final int MAX_BATCH = 32;
+    private static final int WARMUP_ITERATIONS = 5;
+    private static final int MEASURED_ITERATIONS = 20;
+    // Cover the B4/MR4 boundary and representative prefill batch sizes.
+    private static final int[] BATCH_SIZES = {
+            1, 4, 8, 12, 14, 15, 16, 17, 20, 24, 27, 28, 32
+    };
 
     @Test
     void reportsWarmTripleBatchLatencyAndThroughput() throws IOException {

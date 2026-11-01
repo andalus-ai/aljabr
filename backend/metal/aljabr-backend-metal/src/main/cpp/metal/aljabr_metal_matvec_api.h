@@ -93,6 +93,11 @@ int aljabr_metal_matvec_tb_triple(void *C0, void *C1, void *C2,
 int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B,
                                  int K, int N, int type, int batchSize);
 
+/* Opt-in test/benchmark hook: mode 1=B4 (batch 2..15), mode 2=MR4. */
+int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
+    void *C, const void *A, const void *B, int K, int N,
+    int batchSize, int mode);
+
 int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
                                         const void *A, const void *B0,
                                         const void *B1, const void *B2,

@@ -44,6 +44,8 @@ if (withLegacyAutograd) {
     include("core:autograd")
 }
 
+include("core:aljabr-numerics")
+include("core:aljabr-linear-algebra")
 include("core:aljabr-tensor")
 include("core:aljabr-core")
 include("core:aljabr-error-code")
