@@ -12,13 +12,11 @@ public final class LUDecomposition {
     private final double[][] lu;
     private final int[] pivot;
     private final int pivotSign;
-    private final double singularThreshold;
 
-    private LUDecomposition(double[][] lu, int[] pivot, int pivotSign, double singularThreshold) {
+    private LUDecomposition(double[][] lu, int[] pivot, int pivotSign) {
         this.lu = lu;
         this.pivot = pivot;
         this.pivotSign = pivotSign;
-        this.singularThreshold = singularThreshold;
     }
 
     public static LUDecomposition factor(Matrix matrix) {
@@ -58,7 +56,7 @@ public final class LUDecomposition {
                     lu[row][k] = Math.fma(-lu[row][column], lu[column][k], lu[row][k]);
             }
         }
-        return new LUDecomposition(lu, pivot, sign, threshold);
+        return new LUDecomposition(lu, pivot, sign);
     }
 
     public int size() { return pivot.length; }
