@@ -73,9 +73,22 @@ public final class RealSchurDecomposition {
             double[][] next = multiply(qr.r, qr.q);
             for (int i = 0; i < active; i++) next[i][i] += shift;
 
-            // Similarity update on the active leading principal block.
+            // Apply the embedded similarity diag(Q_step, I)^T * A * diag(Q_step, I).
+            // Updating the off-diagonal coupling is essential after deflation.
+            double[][] leftUpdated = new double[active][n];
             for (int i = 0; i < active; i++)
-                System.arraycopy(next[i], 0, a[i], 0, active);
+                for (int column = 0; column < n; column++)
+                    for (int k = 0; k < active; k++)
+                        leftUpdated[i][column] = Math.fma(qr.q[k][i], a[k][column], leftUpdated[i][column]);
+            for (int i = 0; i < active; i++)
+                System.arraycopy(leftUpdated[i], 0, a[i], 0, n);
+            for (int row = active; row < n; row++) {
+                double[] updated = new double[active];
+                for (int j = 0; j < active; j++)
+                    for (int k = 0; k < active; k++)
+                        updated[j] = Math.fma(a[row][k], qr.q[k][j], updated[j]);
+                System.arraycopy(updated, 0, a[row], 0, active);
+            }
             for (int i = 0; i < n; i++) {
                 double[] row = new double[active];
                 for (int j = 0; j < active; j++) {
