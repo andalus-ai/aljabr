@@ -1,8 +1,9 @@
 package tech.kayys.aljabr.linalg;
 
 import java.util.Objects;
+import tech.kayys.aljabr.numerics.NumericalChecks;
 
-/** Immutable dense row-major matrix with double-precision elements. */
+/** Immutable dense row-major matrix with finite double-precision elements. */
 public final class Matrix {
     private final int rows;
     private final int columns;
@@ -12,6 +13,9 @@ public final class Matrix {
         this.rows = rows;
         this.columns = columns;
         this.values = values;
+        for (int row = 0; row < rows; row++)
+            for (int column = 0; column < columns; column++)
+                NumericalChecks.requireFinite(values[row][column], "matrix[" + row + "][" + column + "]");
     }
 
     public static Matrix of(double[][] values) {
@@ -67,6 +71,7 @@ public final class Matrix {
     }
 
     public Matrix scale(double scalar) {
+        NumericalChecks.requireFinite(scalar, "scalar");
         double[][] result = new double[rows][columns];
         for (int row = 0; row < rows; row++)
             for (int column = 0; column < columns; column++) result[row][column] = values[row][column] * scalar;
@@ -110,7 +115,6 @@ public final class Matrix {
 
     private void requireSameShape(Matrix other) {
         Objects.requireNonNull(other, "other");
-        if (rows != other.rows || columns != other.columns)
-            throw new IllegalArgumentException("matrix shapes differ");
+        if (rows != other.rows || columns != other.columns) throw new IllegalArgumentException("matrix shapes differ");
     }
 }
