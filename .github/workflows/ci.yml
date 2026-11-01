@@ -73,7 +73,7 @@ jobs:
           GRADLE_OPTS: -Xmx3G
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace --info test -x :backend:metal:aljabr-backend-metal:test
+          ./gradlew --no-daemon --stacktrace --info --warning-mode all test -x :backend:metal:aljabr-backend-metal:test
 
       # Preserve JUnit XML and HTML reports when a test worker crashes or cannot
       # execute a test class; these are needed to diagnose failures beyond Gradle's summary.
