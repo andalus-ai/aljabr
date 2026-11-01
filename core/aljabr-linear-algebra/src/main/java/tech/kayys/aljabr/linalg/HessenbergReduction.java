@@ -39,7 +39,7 @@ public final class HessenbergReduction {
         for (int k = 0; k < n - 2; k++) {
             int start = k + 1;
             // An already-Hessenberg column needs no reflector. In particular,
-            // preserve its existing first-subdiagonal entry and sign.
+            // do not flip the sign of its sole subdiagonal entry.
             double tailNorm = 0.0;
             for (int i = start + 1; i < n; i++) tailNorm = Math.hypot(tailNorm, a[i][k]);
             if (tailNorm <= threshold) continue;
