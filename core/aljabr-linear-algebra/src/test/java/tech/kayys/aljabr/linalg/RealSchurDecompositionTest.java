@@ -36,6 +36,19 @@ class RealSchurDecompositionTest {
         assertQuasiTriangular(result.schurForm(), 1e-7);
     }
 
+    @Test void triangularizesIsolatedRealPairWithOrthogonalSimilarity() {
+        Matrix a = Matrix.of(new double[][]{
+                {4, 0, 0},
+                {0, 2, 1},
+                {0, 1, 3}
+        });
+        RealSchurDecomposition result = RealSchurDecomposition.factor(a);
+        assertClose(a, result.reconstruct(), 1e-9);
+        assertClose(Matrix.identity(3),
+                result.orthogonalQ().transpose().multiply(result.orthogonalQ()), 1e-9);
+        assertQuasiTriangular(result.schurForm(), 1e-9);
+    }
+
     @Test void preservesSeparatedComplexPairsInBlockDiagonalMatrix() {
         Matrix a = Matrix.of(new double[][]{
                 {0, -1, 0, 0},
