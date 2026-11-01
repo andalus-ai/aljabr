@@ -188,7 +188,6 @@ subprojects {
             safeSubstitute("tech.kayys.aljabr:aljabr-3d", ":core:aljabr-3d")
             safeSubstitute("tech.kayys.aljabr:aljabr-core", ":core:aljabr-core")
             safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:aljabr-tensor")
-            substitute(module("tech.kayys.aljabr:tafkir-ml-core")).using(module("tech.kayys.tafkir:tafkir-ml-core:0.1.0-SNAPSHOT"))
         }
         resolutionStrategy.eachDependency {
             if (requested.group == "io.quarkus" && requested.version.isNullOrBlank()) {
