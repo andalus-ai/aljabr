@@ -23,7 +23,9 @@ class MatrixTest {
         assertEquals(1.0, matrix.get(0, 0));
     }
 
-    @Test void rejectsRaggedAndNonconformingMatrices() {
+    @Test void rejectsRaggedNonFiniteAndNonconformingValues() {
+        assertThrows(IllegalArgumentException.class, () -> Matrix.of(new double[][]{{Double.NaN}}));
+        assertThrows(IllegalArgumentException.class, () -> Vector.of(Double.POSITIVE_INFINITY));
         assertThrows(IllegalArgumentException.class, () -> Matrix.of(new double[][]{{1}, {2, 3}}));
         assertThrows(IllegalArgumentException.class,
                 () -> Matrix.of(new double[][]{{1, 2}}).multiply(Matrix.of(new double[][]{{1, 2}})));
