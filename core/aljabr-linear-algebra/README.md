@@ -12,6 +12,8 @@ Dense double-precision CPU reference implementations for foundational linear alg
 - `SingularValueDecomposition`: one-sided Jacobi thin SVD for tall, square and wide matrices, numerical rank and pseudoinverse solve.
 - `SymmetricEigenDecomposition`: Jacobi eigendecomposition for real symmetric matrices.
 - `HessenbergReduction`: orthogonal Householder similarity reduction of general real square matrices to upper Hessenberg form.
+- `RealSchurDecomposition`: shifted-QR real Schur factorization with orthogonal Q and quasi-upper-triangular T.
+- `ComplexEigenvalue` and `SchurSpectrum`: real/complex eigenvalue extraction, spectral radius, spectral abscissa, trace and determinant diagnostics.
 - `ConditionNumber`: spectral 2-norm condition number, reciprocal condition number and numerical-rank diagnostics derived from SVD.
 - `SingularMatrixException`: explicit failure for singular LU pivots.
 
