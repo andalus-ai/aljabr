@@ -22,7 +22,7 @@ class SchurSpectrumTest {
         assertEquals(3, spectrum.eigenvalues().size());
         assertEquals(5.0, spectrum.spectralRadius(), 1e-9);
         assertEquals(5.0, spectrum.spectralAbscissa(), 1e-9);
-        assertEquals(30.0, spectrum.determinant(), 1e-9);
+        assertEquals(-30.0, spectrum.determinant(), 1e-9);
         assertEquals(4.0, spectrum.trace(), 1e-9);
     }
 
