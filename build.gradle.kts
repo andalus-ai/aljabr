@@ -10,7 +10,10 @@ buildscript {
         mavenLocal()
     }
     dependencies {
-        classpath("io.smallrye:jandex:3.5.3")
+        // Jandex is only needed when the optional index-generation task is requested.
+        if (gradle.startParameter.projectProperties["aljabr.generateJandexIndex"]?.toBoolean() == true) {
+            classpath("io.smallrye:jandex:3.5.3")
+        }
     }
 }
 
@@ -115,51 +118,55 @@ subprojects {
         }
     }
 
-    val sourceSets = extensions.getByType(SourceSetContainer::class.java)
-    val mainSourceSet = sourceSets.named("main")
-    val jandexOutputDir = layout.buildDirectory.dir("generated/jandex/main")
-
-    val generateJandexIndex = tasks.register("generateJandexIndex") {
-        dependsOn(tasks.named("compileJava"), tasks.named("processResources"))
-
-        val classesDirs = mainSourceSet.map { it.output.classesDirs }
-        val indexFile = jandexOutputDir.map { it.file("META-INF/jandex.idx") }
-
-        inputs.files(classesDirs)
-        outputs.file(indexFile)
-
-        doLast {
-            val indexer = org.jboss.jandex.Indexer()
-
-            classesDirs.get().files
-                .filter { it.exists() }
-                .forEach { classesDir ->
-                    classesDir.resolve("META-INF/jandex.idx").let { staleIndex ->
-                        if (staleIndex.exists()) {
-                            staleIndex.delete()
+    // Jandex indexing is an opt-in build feature. No in-repository consumer currently
+    // requires a generated index, so ordinary module builds should not pay this cost.
+    if (gradle.startParameter.projectProperties["aljabr.generateJandexIndex"]?.toBoolean() == true) {
+        val sourceSets = extensions.getByType(SourceSetContainer::class.java)
+        val mainSourceSet = sourceSets.named("main")
+        val jandexOutputDir = layout.buildDirectory.dir("generated/jandex/main")
+    
+        val generateJandexIndex = tasks.register("generateJandexIndex") {
+            dependsOn(tasks.named("compileJava"), tasks.named("processResources"))
+    
+            val classesDirs = mainSourceSet.map { it.output.classesDirs }
+            val indexFile = jandexOutputDir.map { it.file("META-INF/jandex.idx") }
+    
+            inputs.files(classesDirs)
+            outputs.file(indexFile)
+    
+            doLast {
+                val indexer = org.jboss.jandex.Indexer()
+    
+                classesDirs.get().files
+                    .filter { it.exists() }
+                    .forEach { classesDir ->
+                        classesDir.resolve("META-INF/jandex.idx").let { staleIndex ->
+                            if (staleIndex.exists()) {
+                                staleIndex.delete()
+                            }
                         }
+                        classesDir.walkTopDown()
+                            .filter { it.isFile && it.extension == "class" }
+                            .forEach { classFile ->
+                                classFile.inputStream().use(indexer::index)
+                            }
                     }
-                    classesDir.walkTopDown()
-                        .filter { it.isFile && it.extension == "class" }
-                        .forEach { classFile ->
-                            classFile.inputStream().use(indexer::index)
-                        }
+    
+                val indexOutput = indexFile.get().asFile
+                indexOutput.parentFile.mkdirs()
+                indexOutput.outputStream().use { output ->
+                    org.jboss.jandex.IndexWriter(output).write(indexer.complete())
                 }
-
-            val indexOutput = indexFile.get().asFile
-            indexOutput.parentFile.mkdirs()
-            indexOutput.outputStream().use { output ->
-                org.jboss.jandex.IndexWriter(output).write(indexer.complete())
             }
         }
-    }
-
-    mainSourceSet.configure {
-        output.dir(mapOf("builtBy" to generateJandexIndex), jandexOutputDir)
-    }
-
-    tasks.named("classes") {
-        dependsOn(generateJandexIndex)
+    
+        mainSourceSet.configure {
+            output.dir(mapOf("builtBy" to generateJandexIndex), jandexOutputDir)
+        }
+    
+        tasks.named("classes") {
+            dependsOn(generateJandexIndex)
+        }
     }
 
     configurations.configureEach {
