@@ -66,42 +66,50 @@ public final class RealSchurDecomposition {
             if (++iterations > limit)
                 throw new ArithmeticException("real Schur QR iteration did not converge within " + limit + " steps");
 
-            double shift = wilkinsonShift(a, active, iterations, scale);
-            double[][] block = leadingBlock(a, active);
-            for (int i = 0; i < active; i++) block[i][i] -= shift;
-            QR qr = qr(block);
-            double[][] next = multiply(qr.r, qr.q);
-            for (int i = 0; i < active; i++) next[i][i] += shift;
-
-            // Apply the embedded similarity diag(Q_step, I)^T * A * diag(Q_step, I).
-            // Updating the off-diagonal coupling is essential after deflation.
-            double[][] leftUpdated = new double[active][n];
-            for (int i = 0; i < active; i++)
-                for (int column = 0; column < n; column++)
-                    for (int k = 0; k < active; k++)
-                        leftUpdated[i][column] = Math.fma(qr.q[k][i], a[k][column], leftUpdated[i][column]);
-            for (int i = 0; i < active; i++) {
-                System.arraycopy(next[i], 0, leftUpdated[i], 0, active);
-                System.arraycopy(leftUpdated[i], 0, a[i], 0, n);
-            }
-            for (int row = active; row < n; row++) {
-                double[] updated = new double[active];
-                for (int j = 0; j < active; j++)
-                    for (int k = 0; k < active; k++)
-                        updated[j] = Math.fma(a[row][k], qr.q[k][j], updated[j]);
-                System.arraycopy(updated, 0, a[row], 0, active);
-            }
-            for (int i = 0; i < n; i++) {
-                double[] row = new double[active];
-                for (int j = 0; j < active; j++) {
-                    double sum = 0.0;
-                    for (int k = 0; k < active; k++) sum = Math.fma(q[i][k], qr.q[k][j], sum);
-                    row[j] = sum;
+            if (active >= 3) {
+                // Implicit Francis double-shift bulge chasing handles complex
+                // trailing pairs without introducing a complex arithmetic path.
+                FrancisDoubleShiftQr.sweep(a, q, active);
+            } else {
+                double shift = wilkinsonShift(a, active, iterations, scale);
+                double[][] block = leadingBlock(a, active);
+                for (int i = 0; i < active; i++) block[i][i] -= shift;
+                QR qr = qr(block);
+                double[][] next = multiply(qr.r, qr.q);
+                for (int i = 0; i < active; i++) next[i][i] += shift;
+    
+                // Apply the embedded similarity diag(Q_step, I)^T * A * diag(Q_step, I).
+                // Updating the off-diagonal coupling is essential after deflation.
+                double[][] leftUpdated = new double[active][n];
+                for (int i = 0; i < active; i++)
+                    for (int column = 0; column < n; column++)
+                        for (int k = 0; k < active; k++)
+                            leftUpdated[i][column] = Math.fma(qr.q[k][i], a[k][column], leftUpdated[i][column]);
+                for (int i = 0; i < active; i++) {
+                    System.arraycopy(next[i], 0, leftUpdated[i], 0, active);
+                    System.arraycopy(leftUpdated[i], 0, a[i], 0, n);
                 }
-                for (int j = 0; j < active; j++) q[i][j] = row[j];
+                for (int row = active; row < n; row++) {
+                    double[] updated = new double[active];
+                    for (int j = 0; j < active; j++)
+                        for (int k = 0; k < active; k++)
+                            updated[j] = Math.fma(a[row][k], qr.q[k][j], updated[j]);
+                    System.arraycopy(updated, 0, a[row], 0, active);
+                }
+                for (int i = 0; i < n; i++) {
+                    double[] row = new double[active];
+                    for (int j = 0; j < active; j++) {
+                        double sum = 0.0;
+                        for (int k = 0; k < active; k++) sum = Math.fma(q[i][k], qr.q[k][j], sum);
+                        row[j] = sum;
+                    }
+                    for (int j = 0; j < active; j++) q[i][j] = row[j];
+                }
+    
+    
             }
 
-            // The exact QR similarity preserves Hessenberg structure. Remove
+            // Orthogonal similarity preserves Hessenberg structure. Remove
             // only round-off fill below the first subdiagonal.
             for (int i = 0; i < active; i++)
                 for (int j = 0; j < i - 1; j++)
