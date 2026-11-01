@@ -66,12 +66,12 @@ public final class QRDecomposition {
         return Matrix.of(result);
     }
 
-    /** Materializes the full m-by-m orthogonal Q matrix. */
+    /** Materializes the thin m-by-n Q matrix with orthonormal columns. */
     public Matrix q() {
-        double[][] q = new double[rows][rows];
-        for (int i = 0; i < rows; i++) q[i][i] = 1.0;
+        double[][] q = new double[rows][columns];
+        for (int i = 0; i < columns; i++) q[i][i] = 1.0;
         for (int k = columns - 1; k >= 0; k--) {
-            for (int j = 0; j < rows; j++) {
+            for (int j = 0; j < columns; j++) {
                 double dot = q[k][j];
                 for (int i = k + 1; i < rows; i++) dot = Math.fma(qr[i][k], q[i][j], dot);
                 dot *= tau[k];
