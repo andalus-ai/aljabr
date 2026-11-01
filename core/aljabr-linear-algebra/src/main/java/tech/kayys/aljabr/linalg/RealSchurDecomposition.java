@@ -141,15 +141,18 @@ public final class RealSchurDecomposition {
                 a[start + i][column] = step.q[0][i] * first + step.q[1][i] * second;
             }
         }
+        // Right application: A <- A*Q_step. Snapshot both entries before
+        // writing either column; column j uses Q_step[k][j].
         for (int row = 0; row < a.length; row++) {
             double first = a[row][start], second = a[row][start + 1];
-            a[row][start] = first * step.q[0][0] + second * step.q[0][1];
-            a[row][start + 1] = first * step.q[1][0] + second * step.q[1][1];
+            a[row][start] = first * step.q[0][0] + second * step.q[1][0];
+            a[row][start + 1] = first * step.q[0][1] + second * step.q[1][1];
         }
+        // Accumulate the same right multiplication: Q_total <- Q_total*Q_step.
         for (int row = 0; row < q.length; row++) {
             double first = q[row][start], second = q[row][start + 1];
-            q[row][start] = first * step.q[0][0] + second * step.q[0][1];
-            q[row][start + 1] = first * step.q[1][0] + second * step.q[1][1];
+            q[row][start] = first * step.q[0][0] + second * step.q[1][0];
+            q[row][start + 1] = first * step.q[0][1] + second * step.q[1][1];
         }
     }
 
