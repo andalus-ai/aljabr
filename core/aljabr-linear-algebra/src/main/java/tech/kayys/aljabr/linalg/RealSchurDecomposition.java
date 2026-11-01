@@ -80,8 +80,10 @@ public final class RealSchurDecomposition {
                 for (int column = 0; column < n; column++)
                     for (int k = 0; k < active; k++)
                         leftUpdated[i][column] = Math.fma(qr.q[k][i], a[k][column], leftUpdated[i][column]);
-            for (int i = 0; i < active; i++)
+            for (int i = 0; i < active; i++) {
+                System.arraycopy(next[i], 0, leftUpdated[i], 0, active);
                 System.arraycopy(leftUpdated[i], 0, a[i], 0, n);
+            }
             for (int row = active; row < n; row++) {
                 double[] updated = new double[active];
                 for (int j = 0; j < active; j++)
