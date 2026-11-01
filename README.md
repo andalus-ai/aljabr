@@ -165,6 +165,8 @@ Use `./gradlew projects` as the source of truth for the exact current Gradle mod
 - [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — module layers, tensor/model execution sequences and validation.
 - [Computational Framework Scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md) — target mathematical, statistical, scientific-computing, ML and NLP capability map and ecosystem ownership boundaries.
 - [Computational Capability Inventory](docs/architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md) — source-level snapshot of existing modules, implementation evidence, gaps and recommended module boundaries.
+- [Aljabr Numerics](core/aljabr-numerics/README.md) — precision, tolerances, validation and reproducible random-source contracts.
+- [Aljabr Linear Algebra](core/aljabr-linear-algebra/README.md) — initial dense CPU matrix/vector and pivoted LU reference APIs.
 - [Java Tensor Research Quickstart](docs/examples/TENSOR_RESEARCH_QUICKSTART.md) — current tensor API example, scope and research workflow milestones.
 - [AQLI System Architecture](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SYSTEM_ARCHITECTURE.md) — serving/framework boundary.
 - [AQLI Sequence Flows](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SEQUENCE_FLOWS.md) — request, generation and lifecycle flows.
