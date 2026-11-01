@@ -49,6 +49,41 @@ class RealSchurDecompositionTest {
         assertTrue(result.isComplexPairBlock(2, NumericalPrecision.FLOAT64.defaultTolerance()));
     }
 
+    @Test void randomizedDenseMatricesPreserveSimilarityAndOrthogonality() {
+        java.util.Random random = new java.util.Random(0x5EEDC0DEL);
+        for (int order = 3; order <= 8; order++) {
+            for (int sample = 0; sample < 4; sample++) {
+                double[][] values = new double[order][order];
+                for (int row = 0; row < order; row++)
+                    for (int column = 0; column < order; column++)
+                        values[row][column] = random.nextDouble() * 2.0 - 1.0;
+                Matrix input = Matrix.of(values);
+                RealSchurDecomposition result = RealSchurDecomposition.factor(input);
+                assertCloseRelative(input, result.reconstruct(), 2e-7);
+                assertCloseRelative(Matrix.identity(order),
+                        result.orthogonalQ().transpose().multiply(result.orthogonalQ()), 2e-7);
+                assertQuasiTriangularRelative(result.schurForm(), 2e-7);
+            }
+        }
+    }
+
+    @Test void remainsStableAcrossSmallAndLargeUniformScales() {
+        Matrix base = Matrix.of(new double[][]{
+                {2, -1, 3, 0},
+                {4, 1, -2, 5},
+                {-3, 2, 0, 1},
+                {1, 4, 2, -1}
+        });
+        for (double scale : new double[]{1e-8, 1e-4, 1e4, 1e8}) {
+            Matrix input = base.scale(scale);
+            RealSchurDecomposition result = RealSchurDecomposition.factor(input);
+            assertCloseRelative(input, result.reconstruct(), 5e-7);
+            assertCloseRelative(Matrix.identity(4),
+                    result.orthogonalQ().transpose().multiply(result.orthogonalQ()), 5e-7);
+            assertQuasiTriangularRelative(result.schurForm(), 5e-7);
+        }
+    }
+
     @Test void rejectsNonsquareInput() {
         assertThrows(IllegalArgumentException.class, () ->
                 RealSchurDecomposition.factor(Matrix.of(new double[][]{{1, 2, 3}, {4, 5, 6}})));
@@ -58,6 +93,22 @@ class RealSchurDecompositionTest {
         for (int i = 0; i < a.rows(); i++)
             for (int j = 0; j < i - 1; j++)
                 assertEquals(0.0, a.get(i, j), tolerance);
+    }
+
+    private static void assertQuasiTriangularRelative(Matrix a, double tolerance) {
+        double scale = Math.max(Double.MIN_NORMAL, a.normInfinity());
+        for (int i = 0; i < a.rows(); i++)
+            for (int j = 0; j < i - 1; j++)
+                assertEquals(0.0, a.get(i, j), tolerance * scale);
+    }
+
+    private static void assertCloseRelative(Matrix expected, Matrix actual, double tolerance) {
+        assertEquals(expected.rows(), actual.rows());
+        assertEquals(expected.columns(), actual.columns());
+        double scale = Math.max(Double.MIN_NORMAL, expected.normInfinity());
+        for (int i = 0; i < expected.rows(); i++)
+            for (int j = 0; j < expected.columns(); j++)
+                assertEquals(expected.get(i, j), actual.get(i, j), tolerance * scale);
     }
 
     private static void assertClose(Matrix expected, Matrix actual, double tolerance) {
