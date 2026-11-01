@@ -10,8 +10,8 @@ class MatrixTest {
         Matrix product = a.multiply(b);
         assertEquals(58.0, product.get(0, 0), 1e-12);
         assertEquals(154.0, product.get(1, 1), 1e-12);
-        assertEquals(2, a.transpose().rows());
-        assertEquals(3, a.transpose().columns());
+        assertEquals(3, a.transpose().rows());
+        assertEquals(2, a.transpose().columns());
     }
 
     @Test void copiesInputAndOutputArrays() {

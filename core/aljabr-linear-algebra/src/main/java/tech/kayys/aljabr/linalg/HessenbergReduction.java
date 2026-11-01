@@ -38,9 +38,13 @@ public final class HessenbergReduction {
 
         for (int k = 0; k < n - 2; k++) {
             int start = k + 1;
+            // An already-Hessenberg column needs no reflector. In particular,
+            // preserve its existing first-subdiagonal entry and sign.
+            double tailNorm = 0.0;
+            for (int i = start + 1; i < n; i++) tailNorm = Math.hypot(tailNorm, a[i][k]);
+            if (tailNorm <= threshold) continue;
             double norm = 0.0;
             for (int i = start; i < n; i++) norm = Math.hypot(norm, a[i][k]);
-            if (norm <= threshold) continue;
 
             double alpha = -Math.copySign(norm, a[start][k]);
             double[] v = new double[n - start];
