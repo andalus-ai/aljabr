@@ -17,8 +17,14 @@ public record Tolerance(double absolute, double relative) {
     }
 
     public boolean isClose(double a, double b) {
+        if (Double.isNaN(a) || Double.isNaN(b)) {
+            return false;
+        }
+        if (a == b) {
+            return true;
+        }
         if (!Double.isFinite(a) || !Double.isFinite(b)) {
-            return Double.doubleToLongBits(a) == Double.doubleToLongBits(b);
+            return false;
         }
         double difference = Math.abs(a - b);
         double scale = Math.max(Math.abs(a), Math.abs(b));
