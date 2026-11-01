@@ -12,6 +12,8 @@ class QRDecompositionTest {
         for (int i = 0; i < a.rows(); i++)
             for (int j = 0; j < a.columns(); j++)
                 assertEquals(a.get(i, j), reconstructed.get(i, j), 1e-10);
+        assertEquals(a.rows(), q.rows());
+        assertEquals(a.columns(), q.columns());
         Matrix identity = q.transpose().multiply(q);
         for (int i = 0; i < identity.rows(); i++)
             for (int j = 0; j < identity.columns(); j++)
