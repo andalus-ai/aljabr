@@ -96,7 +96,7 @@ class RealSchurDecompositionTest {
     }
 
     private static void assertQuasiTriangularRelative(Matrix a, double tolerance) {
-        double scale = Math.max(1.0, a.normInfinity());
+        double scale = Math.max(Double.MIN_NORMAL, a.normInfinity());
         for (int i = 0; i < a.rows(); i++)
             for (int j = 0; j < i - 1; j++)
                 assertEquals(0.0, a.get(i, j), tolerance * scale);
@@ -105,7 +105,7 @@ class RealSchurDecompositionTest {
     private static void assertCloseRelative(Matrix expected, Matrix actual, double tolerance) {
         assertEquals(expected.rows(), actual.rows());
         assertEquals(expected.columns(), actual.columns());
-        double scale = Math.max(1.0, expected.normInfinity());
+        double scale = Math.max(Double.MIN_NORMAL, expected.normInfinity());
         for (int i = 0; i < expected.rows(); i++)
             for (int j = 0; j < expected.columns(); j++)
                 assertEquals(expected.get(i, j), actual.get(i, j), tolerance * scale);
