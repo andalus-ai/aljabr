@@ -52,6 +52,7 @@ class MetalQ4KTripleWrapperIsolationTest {
             MemorySegment tripleReference0 = arena.allocate((long) N0 * Float.BYTES, 64);
             MemorySegment tripleReference1 = arena.allocate((long) N1 * Float.BYTES, 64);
             MemorySegment tripleReference2 = arena.allocate((long) N2 * Float.BYTES, 64);
+            MemorySegment forcedMr4Single = arena.allocate((long) N0 * Float.BYTES, 64);
 
             for (int i = 0; i < BATCH * K; i++) {
                 input.setAtIndex(ValueLayout.JAVA_FLOAT, i, ((i % 31) - 15) / 31.0f);
@@ -78,6 +79,10 @@ class MetalQ4KTripleWrapperIsolationTest {
                         reference, inputRow, weights0, K, N0);
                 assertEquals(0, singleRc, "Single-row Q4_K reference failed at row=" + row);
 
+                int forcedMr4Rc = binding.matvecQ4KBatchDispatchForBenchmark(
+                        forcedMr4Single, inputRow, weights0, K, N0, 1, 2);
+                assertEquals(0, forcedMr4Rc, "Forced MR4 batch-1 Q4_K failed at row=" + row);
+
                 int tripleSingleRc = binding.matvecTransposedRightTriple(
                         tripleReference0, tripleReference1, tripleReference2,
                         inputRow, weights0, weights1, weights2,
@@ -88,6 +93,7 @@ class MetalQ4KTripleWrapperIsolationTest {
                 appendMismatch(mismatches, "standalone-batch-vs-Q4K-single", standalone, row, reference);
                 appendMismatch(mismatches, "triple-batch-vs-Q4K-single", triple0, row, reference);
                 appendMismatch(mismatches, "triple-single-vs-Q4K-single", tripleReference0, 0, reference);
+                appendMismatch(mismatches, "forced-MR4-batch1-vs-Q4K-single", forcedMr4Single, 0, reference);
                 appendMismatch(mismatches, "triple-batch-vs-triple-single", triple0, row, tripleReference0);
                 appendCrossMismatch(mismatches, standalone, triple0, row);
             }
