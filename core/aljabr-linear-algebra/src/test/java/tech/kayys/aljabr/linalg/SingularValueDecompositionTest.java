@@ -20,7 +20,7 @@ class SingularValueDecompositionTest {
         Matrix a = Matrix.of(new double[][]{{1, 2, 3}, {4, 5, 6}});
         SingularValueDecomposition svd = SingularValueDecomposition.factor(a);
         double[] s = svd.singularValues();
-        Matrix diagonal = Matrix.of(new double[][]{{s[0], 0}, {0, s[1]}, {0, 0}});
+        Matrix diagonal = Matrix.of(new double[][]{{s[0], 0}, {0, s[1]}});
         Matrix reconstructed = svd.u().multiply(diagonal).multiply(svd.v().transpose());
         assertMatrixClose(a, reconstructed, 1e-9);
         assertEquals(2, svd.u().rows());
