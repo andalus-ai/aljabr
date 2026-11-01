@@ -1074,15 +1074,10 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
 }
 
 /*
- * B4 Q4_K/Q6_K two-token batched kernels are validated up to batch size 32.
- *
- * Historical note: an earlier revision without output-write guards produced a
- * Q4_K mismatch at batch 27, row 15 (expected 0.0078125, got -0.0625) in CI.
- * That kernel had no `if (t_base + 1u < bSz)` guard. The current kernel has
- * correct bounds guards (`t_base >= bSz` early-return, `t_base+1 < bSz` write
- * guard, and `min(t_base+1, bSz-1)` read-clamping). Raising the cap to 32
- * enables B4 dispatch for all prefill batch sizes (16, 24, 27, 32), cutting
- * FFN memory-bandwidth by ~2× vs per-token MR8/MR4 dispatch.
+ * Q6_K B4 two-token batched dispatch has a separate validated range through
+ * batch 32. Q4_K deliberately keeps its narrower production B4 boundary at
+ * batch 15; larger Q4_K batches route through MR4 until broader B4 validation
+ * justifies widening that range.
  */
 static const uint32_t kMaxValidatedB4BatchSize = 32;
 
@@ -1121,12 +1116,13 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
-    // Forced paths are only for isolated opt-in benchmark tests. Keep the B4
-    // ceiling aligned with current correctness evidence.
+    // The explicit B4 mode is restricted to the opt-in benchmark hook and
+    // may probe up to the hook's hard batch limit. Production AUTO dispatch
+    // remains capped at the independently correctness-validated size.
     static const uint32_t kMaxCorrectnessValidatedQ4KB4BatchSize = 15;
+    static const uint32_t kMaxForcedQ4KB4BatchSize = 32;
     if (dispatchMode == ALJABR_Q4K_DISPATCH_B4) {
-      if (batchSize <= 1 ||
-          batchSize > kMaxCorrectnessValidatedQ4KB4BatchSize ||
+      if (batchSize <= 1 || batchSize > kMaxForcedQ4KB4BatchSize ||
           pipelines->matvec_tb_q4_k_b4_mr4 == nil)
         return NO;
       p = pipelines->matvec_tb_q4_k_b4_mr4;
@@ -1141,15 +1137,25 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
                pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
-    } else if (dispatchMode == ALJABR_Q4K_DISPATCH_MR4) {
+    } else if (batchSize > 1) {
+      // Preserve the B4 correctness boundary: larger prefill batches use
+      // MR4 rather than widening B4 or rejecting an otherwise supported
+      // production batch. The production batch-vs-single-row test covers
+      // this AUTO fallback at and above the boundary.
       if (pipelines->matvec_tb_q4_k_mr4 == nil)
         return NO;
       p = pipelines->matvec_tb_q4_k_mr4;
       is_mr4 = YES;
     } else {
-      if (batchSize > 1)
+      // The base single-row Q4_K pipeline disagrees with the standalone
+      // Q4_K reference for the triple-wrapper batchSize=1 path. MR4 has been
+      // validated at batchSize=1 through the forced-dispatch correctness
+      // hook, so use it rather than the base pipeline for AUTO single-row
+      // dispatch as well.
+      if (pipelines->matvec_tb_q4_k_mr4 == nil)
         return NO;
-      p = pipelines->matvec_tb_q4_k;
+      p = pipelines->matvec_tb_q4_k_mr4;
+      is_mr4 = YES;
     }
   } else if (type == 14) { // Q6_K
     if (batchSize > 1 && batchSize <= kMaxValidatedB4BatchSize &&
@@ -1172,8 +1178,17 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
   } else if (type == 30 || type == 16) { // BF16
     p = pipelines->matvec_bf16;
   }
-  if (p == nil || bufC == nil || bufB == nil)
+  if (p == nil || bufC == nil || bufB == nil) {
+    if (env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH")) {
+      fprintf(stderr,
+              "[aljabr-metal][batch-dispatch-reject] type=%d K=%u N=%u batch=%u "
+              "pipeline=%s bufC=%d bufB=%d mode=%d\\n",
+              type, kk, nn, batchSize,
+              p != nil && p.label != nil ? [p.label UTF8String] : "(missing)",
+              bufC != nil, bufB != nil, (int)dispatchMode);
+    }
     return NO;
+  }
 
   [enc setComputePipelineState:p];
   [enc setBuffer:bufC offset:0 atIndex:0];
@@ -1234,22 +1249,17 @@ static BOOL encode_matvec_sub_with_mode(id<MTLComputeCommandEncoder> enc,
                               uint32_t batchSize,
                               AljabrQ4KDispatchMode dispatchMode) {
   size_t bBytes = calc_matvec_weight_bytes(type, nn, kk);
-  if (bBytes == 0)
+  if (bBytes == 0) {
+    if (env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH"))
+      fprintf(stderr, "[aljabr-metal][batch-dispatch-reject] invalid weight size type=%d K=%u N=%u batch=%u\\n", type, kk, nn, batchSize);
     return NO;
+  }
   size_t bOff = 0;
   id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, bBytes, &bOff);
+  if (bufB == nil && env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH"))
+    fprintf(stderr, "[aljabr-metal][batch-dispatch-reject] weight wrap failed type=%d K=%u N=%u batch=%u bytes=%zu\\n", type, kk, nn, batchSize, bBytes);
   return encode_matvec_buf_with_mode(enc, pipelines, bufC, bufA, bufB, bOff,
                                      kk, nn, type, batchSize, dispatchMode);
-}
-
-static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
-                              AljabrMetalPipelines *pipelines,
-                              id<MTLBuffer> bufC, id<MTLBuffer> bufA,
-                              const void *B, uint32_t kk, uint32_t nn, int type,
-                              uint32_t batchSize) {
-  return encode_matvec_sub_with_mode(enc, pipelines, bufC, bufA, B, kk, nn,
-                                     type, batchSize,
-                                     ALJABR_Q4K_DISPATCH_AUTO);
 }
 
 static id<MTLBuffer> g_scratch_single_A = nil;
@@ -1343,8 +1353,9 @@ int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
   if (mode != ALJABR_Q4K_DISPATCH_B4 &&
       mode != ALJABR_Q4K_DISPATCH_MR4)
     return -2;
-  if (mode == ALJABR_Q4K_DISPATCH_B4 && batchSize > 15)
-    return -2;
+  // This opt-in test hook deliberately permits forced B4 beyond the
+  // production cutoff so correctness can be measured before changing dispatch.
+  // The production auto-dispatch limit remains unchanged.
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
   @autoreleasepool {
     size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
@@ -1429,6 +1440,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
                                         const void *B1, const void *B2, int K,
                                         int N0, int N1, int N2, int type0,
                                         int type1, int type2, int batchSize) {
+  const BOOL traceTriple = env_truthy("ALJABR_METAL_TRACE_BATCH_DISPATCH");
+  if (traceTriple)
+    fprintf(stderr,
+            "[aljabr-metal][triple-batch-enter] K=%d N=(%d,%d,%d) batch=%d "
+            "types=(%d,%d,%d) initialized=%d\\n",
+            K, N0, N1, N2, batchSize, type0, type1, type2, g_initialized);
   if (!g_initialized)
     return -1;
   if (K <= 0 || N0 <= 0 || N1 <= 0 || N2 <= 0 || batchSize <= 0)
@@ -1461,12 +1478,19 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
     uint32_t kk = (uint32_t)K;
     uint32_t batch32 = (uint32_t)batchSize;
 
-    if (!encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk, (uint32_t)N0,
-                           type0, batch32) ||
-        !encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk, (uint32_t)N1,
-                           type1, batch32) ||
-        !encode_matvec_sub(enc, pipelines, bufC2, bufA, B2, kk, (uint32_t)N2,
-                           type2, batch32)) {
+    BOOL encoded0 = encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk,
+                                      (uint32_t)N0, type0, batch32);
+    BOOL encoded1 = encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk,
+                                      (uint32_t)N1, type1, batch32);
+    BOOL encoded2 = encode_matvec_sub(enc, pipelines, bufC2, bufA, B2, kk,
+                                      (uint32_t)N2, type2, batch32);
+    if (!encoded0 || !encoded1 || !encoded2) {
+      if (traceTriple)
+        fprintf(stderr,
+                "[aljabr-metal][triple-batch-reject] K=%d N=(%d,%d,%d) batch=%d "
+                "types=(%d,%d,%d) encoded=(%d,%d,%d)\\n",
+                K, N0, N1, N2, batchSize, type0, type1, type2,
+                encoded0, encoded1, encoded2);
       [enc endEncoding];
       return -3;
     }

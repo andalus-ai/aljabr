@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.metal.binding;
 
+
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -31,7 +32,7 @@ class MetalTripleBatchCorrectnessTest {
     private static final int MAX_BATCH = 32;
     // Include sizes around the Q4_K B4 cutoff and representative prefill batches.
     // Batches above 15 must use the batch-aware MR4 fallback until B4 is validated.
-    private static final int[] BATCH_SIZES = {4, 8, 15, 16, 24, 27, 32};
+    private static final int[] BATCH_SIZES = {2, 4, 8, 15, 16, 24, 27, 28, 31, 32};
     private static final float RELATIVE_TOLERANCE = 2.0e-3f;
 
     @Test
@@ -170,12 +171,21 @@ class MetalTripleBatchCorrectnessTest {
 
         for (long block = 0; block < blocks; block++) {
             long offset = block * blockBytes;
-            for (int i = 0; i < blockBytes; i++) {
-                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i, (byte) random.nextInt(256));
-            }
-            // GGML Q4_K layout: d, dmin, 12 packed scale/min bytes, then 128 q bytes.
+            // GGML Q4_K: d, dmin, 12 packed scale/min bytes, then 128 q bytes.
             setHalfBits(weights, offset, halfScale);
             setHalfBits(weights, offset + 2, halfMinScale);
+            // GGML packs the first four 6-bit scale/min fields directly and
+            // the remaining fields as 4-bit nibbles plus upper bits. Keep all
+            // fields deterministic, bounded, and non-zero where represented.
+            for (int i = 0; i < 12; i++) {
+                int low = 1 + (int) ((block + i * 3) % 15);
+                int packed = i < 4 ? low
+                        : low | ((1 + (int) ((block + i * 7) % 15)) << 4);
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i, (byte) packed);
+            }
+            for (int i = 16; i < blockBytes; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i, (byte) random.nextInt(256));
+            }
         }
     }
 
