@@ -291,25 +291,25 @@ subprojects {
                     from(components["java"])
                     pom {
                         name.set(project.name)
-                        description.set("Aljabr ML Framework Module")
-                        url.set("https://github.com/wayang-platform/wayang-platform")
+                        description.set("Aljabr computational framework module")
+                        url.set("https://github.com/andalus-ai/aljabr")
                         licenses {
                             license {
-                                name.set("The Apache License, Version 2.0")
-                                url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                                name.set("The MIT License")
+                                url.set("https://opensource.org/license/mit")
                             }
                         }
                         developers {
                             developer {
-                                id.set("wayang")
-                                name.set("Wayang Platform")
-                                email.set("dev@wayang.tech")
+                                id.set("andalus-ai")
+                                name.set("Andalus AI")
+                                
                             }
                         }
                         scm {
-                            connection.set("scm:git:git://github.com/wayang-platform/wayang-platform.git")
-                            developerConnection.set("scm:git:ssh://github.com/wayang-platform/wayang-platform.git")
-                            url.set("https://github.com/wayang-platform/wayang-platform")
+                            connection.set("scm:git:git://github.com/andalus-ai/aljabr.git")
+                            developerConnection.set("scm:git:ssh://git@github.com/andalus-ai/aljabr.git")
+                            url.set("https://github.com/andalus-ai/aljabr")
                         }
                     }
                 }
