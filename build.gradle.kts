@@ -61,12 +61,17 @@ subprojects {
         withJavadocJar()
     }
 
+    // The incubator Vector API is used by the CPU backend, not by every module.
+    val usesVectorApi = path == ":backend:cpu:aljabr-backend-cpu"
+
     // Configure Javadoc task
     tasks.withType<Javadoc> {
         options {
             this as StandardJavadocDocletOptions
             addBooleanOption("Xdoclint:none", true)
-            addStringOption("-add-modules", "jdk.incubator.vector")
+            if (usesVectorApi) {
+                addStringOption("-add-modules", "jdk.incubator.vector")
+            }
         }
     }
 
@@ -83,25 +88,31 @@ subprojects {
         options.encoding = "UTF-8"
         // Enable preview features if needed for Java 21 FFM
         options.compilerArgs.add("--enable-preview")
-        options.compilerArgs.add("--add-modules=jdk.incubator.vector")
+        if (usesVectorApi) {
+            options.compilerArgs.add("--add-modules=jdk.incubator.vector")
+        }
     }
 
     tasks.withType<Test>().configureEach {
         dependsOn(tasks.named("jar"))
         jvmArgs(
             "--enable-preview",
-            "--add-modules=jdk.incubator.vector",
             "--enable-native-access=ALL-UNNAMED",
         )
+        if (usesVectorApi) {
+            jvmArgs("--add-modules=jdk.incubator.vector")
+        }
         useJUnitPlatform()
     }
 
     tasks.withType<JavaExec>().configureEach {
         jvmArgs(
             "--enable-preview",
-            "--add-modules=jdk.incubator.vector",
             "--enable-native-access=ALL-UNNAMED",
         )
+        if (usesVectorApi) {
+            jvmArgs("--add-modules=jdk.incubator.vector")
+        }
     }
 
     val sourceSets = extensions.getByType(SourceSetContainer::class.java)
