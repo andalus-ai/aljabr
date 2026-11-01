@@ -2,13 +2,15 @@ package tech.kayys.aljabr.linalg;
 
 import java.util.Arrays;
 import java.util.Objects;
+import tech.kayys.aljabr.numerics.NumericalChecks;
 
-/** Immutable dense vector backed by a defensive copy of double-precision values. */
+/** Immutable dense vector backed by a defensive copy of finite double-precision values. */
 public final class Vector {
     private final double[] values;
 
     private Vector(double[] values) {
         this.values = values;
+        for (int i = 0; i < values.length; i++) NumericalChecks.requireFinite(values[i], "vector[" + i + "]");
     }
 
     public static Vector of(double... values) {
@@ -17,9 +19,7 @@ public final class Vector {
     }
 
     public int size() { return values.length; }
-
     public double get(int index) { return values[index]; }
-
     public double[] toArray() { return values.clone(); }
 
     public Vector add(Vector other) {
@@ -37,6 +37,7 @@ public final class Vector {
     }
 
     public Vector scale(double scalar) {
+        NumericalChecks.requireFinite(scalar, "scalar");
         double[] result = new double[size()];
         for (int i = 0; i < size(); i++) result[i] = values[i] * scalar;
         return new Vector(result);
@@ -46,7 +47,7 @@ public final class Vector {
         requireSameSize(other);
         double sum = 0.0;
         for (int i = 0; i < size(); i++) sum = Math.fma(values[i], other.values[i], sum);
-        return sum;
+        return NumericalChecks.requireFinite(sum, "dot product");
     }
 
     public double norm2() {
