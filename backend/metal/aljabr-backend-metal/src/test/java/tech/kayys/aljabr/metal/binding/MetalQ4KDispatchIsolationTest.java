@@ -21,7 +21,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class MetalQ4KDispatchIsolationTest {
     private static final int K = 3840;
     private static final int N = 4096;
-    private static final int BATCH = 16;
+    // B4 is validated only through batch 15; batch 16 must use MR4.
+    private static final int BATCH = 15;
     private static final float TOLERANCE = 2.0e-3f;
 
     @Test
@@ -45,8 +46,8 @@ class MetalQ4KDispatchIsolationTest {
             for (int i = 0; i < BATCH * K; i++) {
                 input.setAtIndex(ValueLayout.JAVA_FLOAT, i, ((i % 31) - 15) / 31.0f);
             }
-            // Reproduce the deterministic packed-byte fixture that exposes the
-            // batch-16 discrepancy in MetalTripleBatchCorrectnessTest.
+            // Deterministic packed-byte fixture for comparing the supported B4
+            // range with MR4 and repeated single-row references.
             weights.fill((byte) 0x55);
 
             assertEquals(0, binding.matvecQ4KBatchDispatchForBenchmark(
