@@ -740,7 +740,7 @@ public class QuantizationEngine {
         if (tensor.quantType() == AccelTensor.QuantType.F32) {
             return tensor;
         }
-        // BF16 and F16 tensors are handled directly by BnBQuantizerAdapter via chunked
+        // BF16 and F16 tensors are handled directly by the optional BitsAndBytes provider via chunked
         // MemorySegment reads — avoid allocating a full F32 copy here, which would OOM
         // for large tensors like lm_head (~2.5GB for a 35B MoE model).
         if (tensor.quantType() == AccelTensor.QuantType.BF16
