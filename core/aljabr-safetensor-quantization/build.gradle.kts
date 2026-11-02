@@ -24,15 +24,6 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation("org.jboss.logging:jboss-logging:3.5.3.Final")
 
-    // Tafkir quantizer modules.
-    // When tafkir is included as a composite build (see settings.gradle.kts),
-    // Gradle substitutes these coordinates with the corresponding source projects.
-    // When running standalone (binary release), consumers must publish tafkir
-    // to a local/remote Maven repository first.
-    implementation("tech.kayys.tafkir:tafkir-quantizer-gptq:0.1.0-SNAPSHOT")
-    implementation("tech.kayys.tafkir:tafkir-quantizer-awq:0.1.0-SNAPSHOT")
-    implementation("tech.kayys.tafkir:tafkir-quantizer-autoround:0.1.0-SNAPSHOT")
-    implementation("tech.kayys.tafkir:tafkir-quantizer-turboquant:0.1.0-SNAPSHOT")
 
     testImplementation("org.awaitility:awaitility:4.2.1")
     testImplementation("io.quarkus:quarkus-junit5")
