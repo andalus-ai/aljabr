@@ -1979,6 +1979,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     return -1;
   }
   }
+}
 
 int aljabr_metal_ffn_gated_fused(void *outDown, const void *inA,
                                  const void *gateW, const void *upW,
@@ -4323,3 +4324,4 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     return 0;
   }
   }
+}
