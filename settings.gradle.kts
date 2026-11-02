@@ -96,11 +96,7 @@ include("core:aljabr-gguf-java")
 include("core:aljabr-rocksdb")
 include("core:aljabr-helixdb")
 
-// ── Modules with external dependencies (tafkir / SPI) ─────────────────────
-// These modules require tafkir quantizer artifacts (tech.kayys.tafkir:*) which
-// are resolved via composite build (../tafkir) when available, or from a local
-// Maven repository. Use includeOptionalProject so they are silently skipped on
-// checkouts where the module directories are absent.
+// ── Optional SafeTensors integration modules ────────────────────────────────
 includeOptionalProject("core:aljabr-safetensor-api",          "core/aljabr-safetensor-api")
 includeOptionalProject("core:aljabr-safetensor-spi",          "core/aljabr-safetensor-spi")
 includeOptionalProject("core:aljabr-safetensor-core",         "core/aljabr-safetensor-core")
