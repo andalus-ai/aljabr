@@ -157,6 +157,7 @@ final class JavaGgufBackend implements GgufBackend {
             int pos = 0;
             float[] logits = null;
             long t0 = System.currentTimeMillis();
+            long prefillMs = 0;
             if (isVerbose()) {
                 System.err.printf("[java-engine] Prefilling %d prompt tokens...%n", promptTokens.length);
             }
@@ -168,7 +169,7 @@ final class JavaGgufBackend implements GgufBackend {
                 }
                 logits = decodeStep.prefill(tokenIds, cache);
                 pos = promptTokens.length;
-                long prefillMs = Math.max(1, System.currentTimeMillis() - t0);
+                prefillMs = Math.max(1, System.currentTimeMillis() - t0);
                 if (isVerbose()) {
                     System.err.printf("[java-engine] Prompt prefill: %d tokens in %d ms (%.1f tok/s)%n",
                             promptTokens.length, prefillMs, (promptTokens.length * 1000.0) / prefillMs);
@@ -235,6 +236,17 @@ final class JavaGgufBackend implements GgufBackend {
             String text = tokenizer.decode(generatedTokens, decodeOptions);
             long durationMs = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
 
+            Map<String, Object> respMetadata = new LinkedHashMap<>();
+            respMetadata.put("backend", "java-native");
+            respMetadata.put("promptTokens", promptTokens.length);
+            respMetadata.put("prefillMs", prefillMs);
+            respMetadata.put("generatedTokens", generated.size());
+            respMetadata.put("decodedTokens", generated.size());
+            respMetadata.put("decodeMs", genElapsed);
+            respMetadata.put("nativeMetrics", String.format(Locale.ROOT,
+                    "backend=java-native (Metal),promptTokens=%d,prefill=%.2f,decodedTokens=%d,decode=%.2f,generatedTokens=%d",
+                    promptTokens.length, (double) prefillMs, generated.size(), (double) genElapsed, generated.size()));
+
             return new InferenceResponse(
                     request != null && request.getRequestId() != null ? request.getRequestId() : java.util.UUID.randomUUID().toString(),
                     text,
@@ -244,7 +256,7 @@ final class JavaGgufBackend implements GgufBackend {
                     generated.size(),
                     durationMs,
                     null, // timestamp: constructor defaults to Instant.now()
-                    Map.of("backend", "java"),
+                    respMetadata,
                     null, // toolCalls: Java engine doesn't support tool calls; constructor defaults to empty list
                     finishReason,
                     request != null && request.getSessionId().isPresent() ? request.getSessionId().get() : null);

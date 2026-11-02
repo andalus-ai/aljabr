@@ -1141,7 +1141,7 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
                pipelines->matvec_tb_q4_k_b4_mr4 != nil) {
       p = pipelines->matvec_tb_q4_k_b4_mr4;
       is_b4 = YES;
-    } else if (dispatchMode == ALJABR_Q4K_DISPATCH_MR4) {
+    } else if (batchSize > kMaxCorrectnessValidatedQ4KB4BatchSize) {
       if (pipelines->matvec_tb_q4_k_mr4 == nil)
         return NO;
       p = pipelines->matvec_tb_q4_k_mr4;
@@ -1252,6 +1252,8 @@ static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
                                      ALJABR_Q4K_DISPATCH_AUTO);
 }
 
+
+
 static id<MTLBuffer> g_scratch_single_A = nil;
 static id<MTLBuffer> g_scratch_single_C = nil;
 static size_t g_scratch_single_A_bytes = 0;
@@ -1278,15 +1280,7 @@ static inline id<MTLBuffer> ensure_shared_buf(id<MTLBuffer> __strong *slot,
 }
 
 
-static BOOL encode_matvec_sub(id<MTLComputeCommandEncoder> enc,
-                              AljabrMetalPipelines *pipelines,
-                              id<MTLBuffer> bufC, id<MTLBuffer> bufA,
-                              const void *B, uint32_t kk, uint32_t nn, int type,
-                              uint32_t batchSize) {
-  return encode_matvec_sub_with_mode(enc, pipelines, bufC, bufA, B, kk, nn,
-                                     type, batchSize,
-                                     ALJABR_Q4K_DISPATCH_AUTO);
-}
+
 
 int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B, int K,
                                  int N, int type, int batchSize) {
