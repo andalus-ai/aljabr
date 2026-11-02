@@ -2,16 +2,6 @@ plugins {
     java
 }
 
-// Detect whether tafkir is available as a composite build (../tafkir).
-// When it is, Gradle automatically substitutes the Maven coordinates below
-// with source-project dependencies — no SNAPSHOT binary resolution needed.
-// When it is not (e.g., binary-only downstream consumers), the coordinates
-// are resolved normally from whatever repositories the consumer configures.
-val tafkirAvailable = file("../../../tafkir").let {
-    it.isDirectory &&
-    (it.resolve("settings.gradle.kts").isFile || it.resolve("settings.gradle").isFile)
-}
-
 dependencies {
     implementation(project(":core:aljabr-safetensor-api"))
     implementation(project(":core:aljabr-safetensor-core"))
