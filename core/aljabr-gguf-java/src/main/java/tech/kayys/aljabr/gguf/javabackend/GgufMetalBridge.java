@@ -318,7 +318,9 @@ public final class GgufMetalBridge {
 
                             // FlashAttention-4 GPU SDPA lookup
                             try {
-                                Class<?> faClass = Class.forName("tech.kayys.aljabr.backend.metal.binding.MetalFlashAttentionBinding");
+                                Class<?> faClass = Class.forName("tech.kayys.aljabr.metal.binding.MetalFlashAttentionBinding");
+                                MethodHandle faInit = lookup.findStatic(faClass, "initialize", MethodType.methodType(boolean.class));
+                                faInit.invoke();
                                 MethodHandle faGetInstance = lookup.findStatic(faClass, "getInstance", MethodType.methodType(faClass));
                                 Object faInstance = faGetInstance.invoke();
                                 fa4Handle = lookup.findVirtual(faClass, "fa4Attention",
