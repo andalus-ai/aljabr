@@ -345,3 +345,6 @@ subprojects {
     }
 }
 
+
+// Keep the foundational dependency direction enforceable in every verification run.
+apply(from = rootProject.file("gradle/verify-tafkir-dependency-boundary.gradle.kts"))
