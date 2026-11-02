@@ -1569,6 +1569,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     return -2;
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
+  @synchronized(matvec_scratch_lock()) {
   @autoreleasepool {
     uint64_t t0 = monotonic_nanos();
     size_t bSz = (size_t)batchSize;
@@ -1977,7 +1978,7 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     }
     return -1;
   }
-}
+  }
 
 int aljabr_metal_ffn_gated_fused(void *outDown, const void *inA,
                                  const void *gateW, const void *upW,
@@ -4198,6 +4199,7 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     return -3;
   }
 
+  @synchronized(matvec_scratch_lock()) {
   @autoreleasepool {
     size_t bSz = (size_t)batchSize;
     uint32_t nDim = (uint32_t)cfg->wO_N;
@@ -4320,4 +4322,4 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     memcpy(x, [bufX contents], dimBytes);
     return 0;
   }
-}
+  }
