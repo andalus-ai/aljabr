@@ -31,6 +31,7 @@
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
+#import <time.h>
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -230,6 +231,10 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
   if (!g_initialized)
     return -1;
 
+  const bool profilePhases = getenv("ALJABR_METAL_FA4_PROFILE_PHASES") != NULL;
+  struct timespec phaseStart = {0}, phaseGraphBuilt = {0}, phaseEncoded = {0}, phaseCompleted = {0};
+  if (profilePhases) clock_gettime(CLOCK_MONOTONIC, &phaseStart);
+
   MPSDataType dtype = MPSDataTypeFloat32;
   size_t elemBytes = sizeof(float);
 
@@ -300,6 +305,7 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
                                               dimension:1
                                           withDimension:2
                                                    name:@"O_t"];
+      if (profilePhases) clock_gettime(CLOCK_MONOTONIC, &phaseGraphBuilt);
 
       // Feed data
       MPSGraphTensorData *qData =
@@ -358,8 +364,20 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
                   targetOperations:nil
                  resultsDictionary:results
                executionDescriptor:nil];
+      if (profilePhases) clock_gettime(CLOCK_MONOTONIC, &phaseEncoded);
       [cmdBuf commit];
       [cmdBuf waitUntilCompleted];
+      if (profilePhases) {
+        clock_gettime(CLOCK_MONOTONIC, &phaseCompleted);
+        double graphMs = (phaseGraphBuilt.tv_sec - phaseStart.tv_sec) * 1000.0 +
+            (phaseGraphBuilt.tv_nsec - phaseStart.tv_nsec) / 1.0e6;
+        double encodeMs = (phaseEncoded.tv_sec - phaseGraphBuilt.tv_sec) * 1000.0 +
+            (phaseEncoded.tv_nsec - phaseGraphBuilt.tv_nsec) / 1.0e6;
+        double submitWaitMs = (phaseCompleted.tv_sec - phaseEncoded.tv_sec) * 1000.0 +
+            (phaseCompleted.tv_nsec - phaseEncoded.tv_nsec) / 1.0e6;
+        NSLog(@"[AljabrMetal FA4 PROFILE] B=%d T=%d S=%d H=%d D=%d graph=%.3fms encode=%.3fms commit_wait=%.3fms total=%.3fms",
+              B, T, S, H, D, graphMs, encodeMs, submitWaitMs, graphMs + encodeMs + submitWaitMs);
+      }
 
       if ([cmdBuf status] == MTLCommandBufferStatusError) {
         NSLog(@"[AljabrMetal FA4] SDPA error: %@", [cmdBuf error]);
