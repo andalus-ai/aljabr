@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
+#import <dispatch/dispatch.h>
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
@@ -1262,6 +1263,18 @@ static BOOL encode_matvec_sub_with_mode(id<MTLComputeCommandEncoder> enc,
                                      kk, nn, type, batchSize, dispatchMode);
 }
 
+/* Shared scratch buffers are reused until each command buffer completes.
+ * Serialize the complete host/GPU lifecycle so concurrent API calls cannot
+ * overwrite an in-flight call's input or output buffers. */
+static NSObject *matvec_scratch_lock(void) {
+  static NSObject *lock = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    lock = [[NSObject alloc] init];
+  });
+  return lock;
+}
+
 static id<MTLBuffer> g_scratch_single_A = nil;
 static id<MTLBuffer> g_scratch_single_C = nil;
 static size_t g_scratch_single_A_bytes = 0;
@@ -1304,6 +1317,7 @@ int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B, int K,
     return -1;
   if (K <= 0 || N <= 0 || batchSize <= 0)
     return -2;
+  @synchronized(matvec_scratch_lock()) {
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
@@ -1339,6 +1353,7 @@ int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B, int K,
     }
     return -1;
   }
+  }
 }
 
 
@@ -1356,6 +1371,7 @@ int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
   // This opt-in test hook deliberately permits forced B4 beyond the
   // production cutoff so correctness can be measured before changing dispatch.
   // The production auto-dispatch limit remains unchanged.
+  @synchronized(matvec_scratch_lock()) {
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
   @autoreleasepool {
     size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
@@ -1384,6 +1400,7 @@ int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
     }
     return -1;
   }
+  }
 }
 
 int aljabr_metal_matvec_tb_pair(void *C0, void *C1, const void *A,
@@ -1393,6 +1410,7 @@ int aljabr_metal_matvec_tb_pair(void *C0, void *C1, const void *A,
     return -1;
   if (K <= 0 || N0 <= 0 || N1 <= 0)
     return -2;
+  @synchronized(matvec_scratch_lock()) {
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
@@ -1433,6 +1451,7 @@ int aljabr_metal_matvec_tb_pair(void *C0, void *C1, const void *A,
     }
     return -1;
   }
+  }
 }
 
 int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
@@ -1450,6 +1469,7 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
     return -1;
   if (K <= 0 || N0 <= 0 || N1 <= 0 || N2 <= 0 || batchSize <= 0)
     return -2;
+  @synchronized(matvec_scratch_lock()) {
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
@@ -1518,6 +1538,7 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
       return 0;
     }
     return -1;
+  }
   }
 }
 
