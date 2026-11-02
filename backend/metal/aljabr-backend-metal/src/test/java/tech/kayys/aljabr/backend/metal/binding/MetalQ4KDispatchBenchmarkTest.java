@@ -26,8 +26,8 @@ class MetalQ4KDispatchBenchmarkTest {
     private static final int MAX_BATCH = 32;
     private static final int WARMUP_ITERATIONS = 5;
     private static final int MEASURED_ITERATIONS = 20;
-    private static final int[] B4_BATCH_SIZES = {4, 8, 12, 15};
-    private static final int[] MR4_BATCH_SIZES = {4, 8, 12, 15, 16, 17, 20, 24, 27, 28, 32};
+    private static final int[] B4_BATCH_SIZES = {2, 4, 8, 15, 16, 17, 20, 24, 27, 28, 31, 32};
+    private static final int[] MR4_BATCH_SIZES = {2, 4, 8, 12, 15, 16, 17, 20, 24, 27, 28, 31, 32};
     private static final float RELATIVE_TOLERANCE = 2.0e-3f;
 
     @Test
@@ -48,7 +48,7 @@ class MetalQ4KDispatchBenchmarkTest {
             MemorySegment weights = arena.allocate(q4KBytes(N, K), 64);
             for (int i = 0; i < MAX_BATCH * K; i++)
                 input.setAtIndex(ValueLayout.JAVA_FLOAT, i, ((i % 31) - 15) / 31.0f);
-            weights.fill((byte) 0x55);
+            fillQ4KWeights(weights, N, K);
 
             for (int batch : B4_BATCH_SIZES) {
                 assertEquals(0, invoke(binding, b4Output, input, weights, batch, MODE_B4),
@@ -122,6 +122,33 @@ class MetalQ4KDispatchBenchmarkTest {
                                 + ", expected=" + expected + ", actual=" + actual + ", error=" + error);
             }
         }
+    }
+
+    private static void fillQ4KWeights(MemorySegment weights, int n, int k) {
+        final int blockBytes = 144;
+        final int halfScale = 0x211f;
+        final int halfMinScale = 0x1d1f;
+        long blocks = (long) n * k / 256;
+        for (long block = 0; block < blocks; block++) {
+            long offset = block * blockBytes;
+            setHalfBits(weights, offset, halfScale);
+            setHalfBits(weights, offset + 2, halfMinScale);
+            for (int i = 0; i < 12; i++) {
+                int low = 1 + (int) ((block + i * 3) % 15);
+                int packed = i < 4 ? low
+                        : low | ((1 + (int) ((block + i * 7) % 15)) << 4);
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i, (byte) packed);
+            }
+            for (int i = 16; i < blockBytes; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i,
+                        (byte) (0x11 * ((i + block) % 15)));
+            }
+        }
+    }
+
+    private static void setHalfBits(MemorySegment segment, long offset, int bits) {
+        segment.setAtIndex(ValueLayout.JAVA_BYTE, offset, (byte) bits);
+        segment.setAtIndex(ValueLayout.JAVA_BYTE, offset + 1, (byte) (bits >>> 8));
     }
 
     private static long q4KBytes(int n, int k) {

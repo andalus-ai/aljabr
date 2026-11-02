@@ -10,7 +10,10 @@ buildscript {
         mavenLocal()
     }
     dependencies {
-        classpath("io.smallrye:jandex:3.5.3")
+        // Jandex is only needed when the optional index-generation task is requested.
+        if (gradle.startParameter.projectProperties["aljabr.generateJandexIndex"]?.toBoolean() == true) {
+            classpath("io.smallrye:jandex:3.5.3")
+        }
     }
 }
 
@@ -61,12 +64,20 @@ subprojects {
         withJavadocJar()
     }
 
+    // The incubator Vector API is used by the CPU backend and gguf-core runtime layer.
+    val usesVectorApi = path in setOf(
+        ":backend:cpu:aljabr-backend-cpu",
+        ":core:aljabr-gguf-core"
+    )
+
     // Configure Javadoc task
     tasks.withType<Javadoc> {
         options {
             this as StandardJavadocDocletOptions
             addBooleanOption("Xdoclint:none", true)
-            addStringOption("-add-modules", "jdk.incubator.vector")
+            if (usesVectorApi) {
+                addStringOption("-add-modules", "jdk.incubator.vector")
+            }
         }
     }
 
@@ -83,72 +94,82 @@ subprojects {
         options.encoding = "UTF-8"
         // Enable preview features if needed for Java 21 FFM
         options.compilerArgs.add("--enable-preview")
-        options.compilerArgs.add("--add-modules=jdk.incubator.vector")
+        if (usesVectorApi) {
+            options.compilerArgs.add("--add-modules=jdk.incubator.vector")
+        }
     }
 
     tasks.withType<Test>().configureEach {
         dependsOn(tasks.named("jar"))
         jvmArgs(
             "--enable-preview",
-            "--add-modules=jdk.incubator.vector",
             "--enable-native-access=ALL-UNNAMED",
         )
+        if (usesVectorApi) {
+            jvmArgs("--add-modules=jdk.incubator.vector")
+        }
         useJUnitPlatform()
     }
 
     tasks.withType<JavaExec>().configureEach {
         jvmArgs(
             "--enable-preview",
-            "--add-modules=jdk.incubator.vector",
             "--enable-native-access=ALL-UNNAMED",
         )
-    }
-
-    val sourceSets = extensions.getByType(SourceSetContainer::class.java)
-    val mainSourceSet = sourceSets.named("main")
-    val jandexOutputDir = layout.buildDirectory.dir("generated/jandex/main")
-
-    val generateJandexIndex = tasks.register("generateJandexIndex") {
-        dependsOn(tasks.named("compileJava"), tasks.named("processResources"))
-
-        val classesDirs = mainSourceSet.map { it.output.classesDirs }
-        val indexFile = jandexOutputDir.map { it.file("META-INF/jandex.idx") }
-
-        inputs.files(classesDirs)
-        outputs.file(indexFile)
-
-        doLast {
-            val indexer = org.jboss.jandex.Indexer()
-
-            classesDirs.get().files
-                .filter { it.exists() }
-                .forEach { classesDir ->
-                    classesDir.resolve("META-INF/jandex.idx").let { staleIndex ->
-                        if (staleIndex.exists()) {
-                            staleIndex.delete()
-                        }
-                    }
-                    classesDir.walkTopDown()
-                        .filter { it.isFile && it.extension == "class" }
-                        .forEach { classFile ->
-                            classFile.inputStream().use(indexer::index)
-                        }
-                }
-
-            val indexOutput = indexFile.get().asFile
-            indexOutput.parentFile.mkdirs()
-            indexOutput.outputStream().use { output ->
-                org.jboss.jandex.IndexWriter(output).write(indexer.complete())
-            }
+        if (usesVectorApi) {
+            jvmArgs("--add-modules=jdk.incubator.vector")
         }
     }
 
-    mainSourceSet.configure {
-        output.dir(mapOf("builtBy" to generateJandexIndex), jandexOutputDir)
-    }
-
-    tasks.named("classes") {
-        dependsOn(generateJandexIndex)
+    // Jandex indexing is an opt-in build feature. No in-repository consumer currently
+    // requires a generated index, so ordinary module builds should not pay this cost.
+    if (gradle.startParameter.projectProperties["aljabr.generateJandexIndex"]?.toBoolean() == true) {
+        val sourceSets = extensions.getByType(SourceSetContainer::class.java)
+        val mainSourceSet = sourceSets.named("main")
+        val jandexOutputDir = layout.buildDirectory.dir("generated/jandex/main")
+    
+        val generateJandexIndex = tasks.register("generateJandexIndex") {
+            dependsOn(tasks.named("compileJava"), tasks.named("processResources"))
+    
+            val classesDirs = mainSourceSet.map { it.output.classesDirs }
+            val indexFile = jandexOutputDir.map { it.file("META-INF/jandex.idx") }
+    
+            inputs.files(classesDirs)
+            outputs.file(indexFile)
+    
+            doLast {
+                val indexer = org.jboss.jandex.Indexer()
+    
+                classesDirs.get().files
+                    .filter { it.exists() }
+                    .forEach { classesDir ->
+                        classesDir.resolve("META-INF/jandex.idx").let { staleIndex ->
+                            if (staleIndex.exists()) {
+                                staleIndex.delete()
+                            }
+                        }
+                        classesDir.walkTopDown()
+                            .filter { it.isFile && it.extension == "class" }
+                            .forEach { classFile ->
+                                classFile.inputStream().use(indexer::index)
+                            }
+                    }
+    
+                val indexOutput = indexFile.get().asFile
+                indexOutput.parentFile.mkdirs()
+                indexOutput.outputStream().use { output ->
+                    org.jboss.jandex.IndexWriter(output).write(indexer.complete())
+                }
+            }
+        }
+    
+        mainSourceSet.configure {
+            output.dir(mapOf("builtBy" to generateJandexIndex), jandexOutputDir)
+        }
+    
+        tasks.named("classes") {
+            dependsOn(generateJandexIndex)
+        }
     }
 
     configurations.configureEach {
@@ -170,7 +191,6 @@ subprojects {
             safeSubstitute("tech.kayys.aljabr:aljabr-3d", ":core:aljabr-3d")
             safeSubstitute("tech.kayys.aljabr:aljabr-core", ":core:aljabr-core")
             safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:aljabr-tensor")
-            substitute(module("tech.kayys.aljabr:tafkir-ml-core")).using(module("tech.kayys.tafkir:tafkir-ml-core:0.1.0-SNAPSHOT"))
         }
         resolutionStrategy.eachDependency {
             if (requested.group == "io.quarkus" && requested.version.isNullOrBlank()) {
@@ -291,25 +311,25 @@ subprojects {
                     from(components["java"])
                     pom {
                         name.set(project.name)
-                        description.set("Aljabr ML Framework Module")
-                        url.set("https://github.com/wayang-platform/wayang-platform")
+                        description.set("Aljabr computational framework module")
+                        url.set("https://github.com/andalus-ai/aljabr")
                         licenses {
                             license {
-                                name.set("The Apache License, Version 2.0")
-                                url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
+                                name.set("The MIT License")
+                                url.set("https://opensource.org/license/mit")
                             }
                         }
                         developers {
                             developer {
-                                id.set("wayang")
-                                name.set("Wayang Platform")
-                                email.set("dev@wayang.tech")
+                                id.set("andalus-ai")
+                                name.set("Andalus AI")
+                                
                             }
                         }
                         scm {
-                            connection.set("scm:git:git://github.com/wayang-platform/wayang-platform.git")
-                            developerConnection.set("scm:git:ssh://github.com/wayang-platform/wayang-platform.git")
-                            url.set("https://github.com/wayang-platform/wayang-platform")
+                            connection.set("scm:git:git://github.com/andalus-ai/aljabr.git")
+                            developerConnection.set("scm:git:ssh://git@github.com/andalus-ai/aljabr.git")
+                            url.set("https://github.com/andalus-ai/aljabr")
                         }
                     }
                 }

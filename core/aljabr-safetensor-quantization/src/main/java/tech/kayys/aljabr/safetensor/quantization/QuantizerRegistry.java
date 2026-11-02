@@ -4,165 +4,125 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * QuantizerRegistry.java
- * ──────────────────────
- * Central registry for all quantizer implementations.
- * Provides unified access to GPTQ, AWQ, AutoRound, and TurboQuant.
+ * Central registry for built-in and optional quantizer implementations.
  */
 package tech.kayys.aljabr.safetensor.quantization;
 
-import tech.kayys.aljabr.safetensor.quantization.quantizer.GPTQQuantizerAdapter;
+import tech.kayys.aljabr.safetensor.quantization.quantizer.FP8Quantizer;
+import tech.kayys.aljabr.safetensor.quantization.quantizer.GPTQQuantizer;
+import tech.kayys.aljabr.safetensor.quantization.quantizer.INT8Quantizer;
 import tech.kayys.aljabr.safetensor.quantization.quantizer.Quantizer;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
- * Registry of all available quantizer implementations.
- * <p>
- * Provides a central access point for quantizers, supporting:
- * <ul>
- * <li>Discovery of available quantization methods</li>
- * <li>Automatic quantizer selection based on config</li>
- * <li>Registration of custom quantizers</li>
- * </ul>
- *
- * <h3>Supported Quantizers</h3>
- * <ul>
- * <li><b>GPTQ</b> - Hessian-based per-layer quantization</li>
- * <li><b>AWQ</b> - Activation-aware weight quantization</li>
- * <li><b>AutoRound</b> - Optimization-based rounding + scaling</li>
- * <li><b>TurboQuant</b> - Online vector quantization with random rotation</li>
- * </ul>
- *
- * <h3>Example</h3>
- * <pre>{@code
- * // Get all available quantizers
- * Map<String, Quantizer> quantizers = QuantizerRegistry.getAll();
- *
- * // Get specific quantizer by name
- * Quantizer gptq = QuantizerRegistry.get("GPTQ");
- *
- * // Get best quantizer for config
- * Quantizer best = QuantizerRegistry.selectBest(config);
- * }</pre>
- * @author bhangun
+ * Registry of Aljabr built-in quantizers and optional providers discovered through
+ * Java's {@link ServiceLoader}. Optional extensions can implement the Aljabr-owned
+ * {@link Quantizer} SPI without introducing a dependency from Aljabr to the extension.
  */
 public final class QuantizerRegistry {
 
+    private static final Logger LOG = Logger.getLogger(QuantizerRegistry.class.getName());
     private static final Map<String, Quantizer> QUANTIZERS = new ConcurrentHashMap<>();
 
     static {
-        // Register built-in quantizers
-        register("GPTQ", new GPTQQuantizerAdapter());
-        // TODO: Add AWQ, AutoRound, TurboQuant adapters when tensor-level APIs are ready
+        register("GPTQQuantizer", new GPTQQuantizer());
+        register("INT8Quantizer", new INT8Quantizer());
+        register("FP8Quantizer", new FP8Quantizer());
+        discoverProviders();
     }
 
     private QuantizerRegistry() {
-        // Utility class
     }
 
-    /**
-     * Register a quantizer implementation.
-     *
-     * @param name      unique quantizer name
-     * @param quantizer quantizer instance
-     */
-    public static void register(String name, Quantizer quantizer) {
-        Objects.requireNonNull(name, "Quantizer name must not be null");
-        Objects.requireNonNull(quantizer, "Quantizer instance must not be null");
-        QUANTIZERS.put(name.toLowerCase(), quantizer);
-    }
+    private static void discoverProviders() {
+        Iterator<Quantizer> providers = ServiceLoader.load(Quantizer.class).iterator();
+        while (true) {
+            final Quantizer provider;
+            try {
+                if (!providers.hasNext()) {
+                    return;
+                }
+                provider = providers.next();
+            } catch (ServiceConfigurationError error) {
+                // ServiceLoader may repeatedly encounter a malformed descriptor.
+                // Stop discovery rather than risking an infinite loop during startup.
+                LOG.log(Level.WARNING, "Stopping optional quantizer discovery after a provider configuration error", error);
+                return;
+            }
 
-    /**
-     * Get a quantizer by name.
-     *
-     * @param name quantizer name (case-insensitive)
-     * @return quantizer instance, or null if not found
-     */
-    public static Quantizer get(String name) {
-        return QUANTIZERS.get(name.toLowerCase());
-    }
-
-    /**
-     * Get all registered quantizers.
-     *
-     * @return unmodifiable map of name → quantizer
-     */
-    public static Map<String, Quantizer> getAll() {
-        return Collections.unmodifiableMap(QUANTIZERS);
-    }
-
-    /**
-     * Get all registered quantizer names.
-     *
-     * @return set of quantizer names
-     */
-    public static Set<String> getNames() {
-        return Collections.unmodifiableSet(QUANTIZERS.keySet());
-    }
-
-    /**
-     * Check if a quantizer is registered.
-     *
-     * @param name quantizer name
-     * @return true if registered
-     */
-    public static boolean has(String name) {
-        return QUANTIZERS.containsKey(name.toLowerCase());
-    }
-
-    /**
-     * Select the best quantizer for the given configuration.
-     * <p>
-     * Selection criteria:
-     * <ol>
-     * <li>Quantizers that explicitly support the config</li>
-     * <li>Prefer quantizers with higher compression ratios</li>
-     * <li>Fall back to first available quantizer</li>
-     * </ol>
-     *
-     * @param config quantization configuration
-     * @return best quantizer, or null if none available
-     */
-    public static Quantizer selectBest(QuantConfig config) {
-        List<Quantizer> candidates = new ArrayList<>();
-
-        for (Quantizer q : QUANTIZERS.values()) {
-            if (q.supports(config)) {
-                candidates.add(q);
+            try {
+                String name = normalize(provider.getName());
+                Quantizer previous = QUANTIZERS.putIfAbsent(name, provider);
+                if (previous != null) {
+                    LOG.warning(() -> "Ignoring duplicate quantizer provider '" + name
+                            + "' from " + provider.getClass().getName()
+                            + "; already registered by " + previous.getClass().getName());
+                } else {
+                    LOG.info(() -> "Discovered optional quantizer provider: " + provider.getName());
+                }
+            } catch (RuntimeException error) {
+                LOG.log(Level.WARNING, "Optional quantizer provider failed during registration", error);
             }
         }
-
-        if (candidates.isEmpty()) {
-            return null;
-        }
-
-        // Return first matching quantizer for now
-        // TODO: Implement smarter selection based on compression ratio, speed, etc.
-        return candidates.get(0);
     }
 
-    /**
-     * Clear all registered quantizers.
-     * <p>
-     * Useful for testing or reinitialization.
-     */
+    private static String normalize(String name) {
+        Objects.requireNonNull(name, "Quantizer name must not be null");
+        String normalized = name.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("Quantizer name must not be blank");
+        }
+        return normalized;
+    }
+
+    /** Register or replace a quantizer by name. */
+    public static void register(String name, Quantizer quantizer) {
+        QUANTIZERS.put(normalize(name), Objects.requireNonNull(quantizer, "Quantizer instance must not be null"));
+    }
+
+    /** Return a registered quantizer, or null when it is unavailable. */
+    public static Quantizer get(String name) {
+        return QUANTIZERS.get(normalize(name));
+    }
+
+    /** Return an immutable snapshot of registered quantizers. */
+    public static Map<String, Quantizer> getAll() {
+        return Collections.unmodifiableMap(new TreeMap<>(QUANTIZERS));
+    }
+
+    public static Set<String> getNames() {
+        return Collections.unmodifiableSet(new TreeSet<>(QUANTIZERS.keySet()));
+    }
+
+    public static boolean has(String name) {
+        return QUANTIZERS.containsKey(normalize(name));
+    }
+
+    /** Select the first supporting quantizer in stable name order. */
+    public static Quantizer selectBest(QuantConfig config) {
+        Objects.requireNonNull(config, "Quantization config must not be null");
+        for (Quantizer quantizer : getAll().values()) {
+            if (quantizer.supports(config)) {
+                return quantizer;
+            }
+        }
+        return null;
+    }
+
+    /** Clear registry state. Intended for isolated tests and explicit reinitialization. */
     public static void clear() {
         QUANTIZERS.clear();
     }
 
-    /**
-     * Get quantizer statistics.
-     *
-     * @return map of quantizer name to metadata
-     */
     public static Map<String, String> getStats() {
         Map<String, String> stats = new LinkedHashMap<>();
-        for (var entry : QUANTIZERS.entrySet()) {
-            Quantizer q = entry.getValue();
-            stats.put(entry.getKey(), String.format("%s (supports=%s)",
-                    q.getName(), q.supports(QuantConfig.int4Gptq())));
-        }
+        getAll().forEach((name, quantizer) -> stats.put(name,
+                String.format("%s (supports=%s)", quantizer.getName(),
+                        quantizer.supports(QuantConfig.int4Gptq()))));
         return stats;
     }
 }

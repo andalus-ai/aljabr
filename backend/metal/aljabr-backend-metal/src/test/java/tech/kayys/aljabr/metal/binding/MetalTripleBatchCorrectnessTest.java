@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.metal.binding;
 
+
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -9,6 +10,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,7 +37,7 @@ class MetalTripleBatchCorrectnessTest {
     private static final int MAX_BATCH = 32;
     // Include sizes around the Q4_K B4 cutoff and representative prefill batches.
     // Batches above 15 must use the batch-aware MR4 fallback until B4 is validated.
-    private static final int[] BATCH_SIZES = {4, 8, 15, 16, 24, 27, 32};
+    private static final int[] BATCH_SIZES = {2, 4, 8, 15, 16, 24, 27, 28, 31, 32};
     private static final float RELATIVE_TOLERANCE = 2.0e-3f;
 
     @Test
@@ -161,6 +167,107 @@ class MetalTripleBatchCorrectnessTest {
         }
     }
 
+    @Test
+    void concurrentTripleBatchCallsPreserveIndependentResults() throws Exception {
+        Path dylib = findBuiltDylib();
+        assumeTrue(dylib != null, "Native Metal dylib is not built in this checkout");
+
+        MetalBinding.reset();
+        assertTrue(MetalBinding.initialize(dylib));
+        MetalBinding binding = MetalBinding.getInstance();
+        assertEquals(0, binding.init());
+        assumeTrue(binding.isRuntimeActive(), "Native Metal runtime is not active");
+
+        final int workers = 4;
+        final int batchSize = 4;
+        final int iterations = 3;
+        try (Arena arena = Arena.ofShared()) {
+            MemorySegment weights0 = arena.allocate(q4KBytes(N0, K), 64);
+            MemorySegment weights1 = arena.allocate(q4KBytes(N1, K), 64);
+            MemorySegment weights2 = arena.allocate(q6KBytes(N2, K), 64);
+            fillQ4KWeights(weights0, N0, K, 0x4A401L);
+            fillQ4KWeights(weights1, N1, K, 0x4A402L);
+            fillQ6KWeights(weights2, N2, K, 0x6A403L);
+
+            MemorySegment[] inputs = new MemorySegment[workers];
+            MemorySegment[] outputs0 = new MemorySegment[workers];
+            MemorySegment[] outputs1 = new MemorySegment[workers];
+            MemorySegment[] outputs2 = new MemorySegment[workers];
+            MemorySegment[] expected0 = new MemorySegment[workers];
+            MemorySegment[] expected1 = new MemorySegment[workers];
+            MemorySegment[] expected2 = new MemorySegment[workers];
+
+            for (int worker = 0; worker < workers; worker++) {
+                inputs[worker] = arena.allocate((long) batchSize * K * Float.BYTES, 64);
+                outputs0[worker] = arena.allocate((long) batchSize * N0 * Float.BYTES, 64);
+                outputs1[worker] = arena.allocate((long) batchSize * N1 * Float.BYTES, 64);
+                outputs2[worker] = arena.allocate((long) batchSize * N2 * Float.BYTES, 64);
+                expected0[worker] = arena.allocate((long) batchSize * N0 * Float.BYTES, 64);
+                expected1[worker] = arena.allocate((long) batchSize * N1 * Float.BYTES, 64);
+                expected2[worker] = arena.allocate((long) batchSize * N2 * Float.BYTES, 64);
+
+                for (int i = 0; i < batchSize * K; i++) {
+                    float value = (float) Math.sin((worker + 1) * 0.17 + i * 0.013);
+                    inputs[worker].setAtIndex(ValueLayout.JAVA_FLOAT, i, value);
+                }
+                for (int row = 0; row < batchSize; row++) {
+                    MemorySegment inputRow = inputs[worker].asSlice(
+                            (long) row * K * Float.BYTES, (long) K * Float.BYTES);
+                    int rc = binding.matvecTransposedRightTriple(
+                            expected0[worker].asSlice((long) row * N0 * Float.BYTES, (long) N0 * Float.BYTES),
+                            expected1[worker].asSlice((long) row * N1 * Float.BYTES, (long) N1 * Float.BYTES),
+                            expected2[worker].asSlice((long) row * N2 * Float.BYTES, (long) N2 * Float.BYTES),
+                            inputRow, weights0, weights1, weights2,
+                            K, N0, N1, N2, TYPE_Q4_K, TYPE_Q4_K, TYPE_Q6_K);
+                    assertEquals(0, rc, "Reference triple matvec failed for worker=" + worker + ", row=" + row);
+                }
+            }
+
+            CyclicBarrier start = new CyclicBarrier(workers);
+            ExecutorService executor = Executors.newFixedThreadPool(workers);
+            try {
+                @SuppressWarnings("unchecked")
+                Future<Void>[] futures = new Future[workers];
+                for (int worker = 0; worker < workers; worker++) {
+                    final int workerId = worker;
+                    futures[worker] = executor.submit(() -> {
+                        start.await(30, TimeUnit.SECONDS);
+                        for (int iteration = 0; iteration < iterations; iteration++) {
+                            int rc = binding.matvecTransposedRightTripleBatch(
+                                    outputs0[workerId], outputs1[workerId], outputs2[workerId],
+                                    inputs[workerId], weights0, weights1, weights2,
+                                    K, N0, N1, N2, TYPE_Q4_K, TYPE_Q4_K, TYPE_Q6_K, batchSize);
+                            assertEquals(0, rc, "Concurrent triple batch failed worker="
+                                    + workerId + ", iteration=" + iteration);
+                        }
+                        for (int row = 0; row < batchSize; row++) {
+                            assertRowClose("concurrent Q4_K output 0", outputs0[workerId],
+                                    (long) row * N0, expected0[workerId].asSlice(
+                                            (long) row * N0 * Float.BYTES, (long) N0 * Float.BYTES),
+                                    N0, batchSize, row);
+                            assertRowClose("concurrent Q4_K output 1", outputs1[workerId],
+                                    (long) row * N1, expected1[workerId].asSlice(
+                                            (long) row * N1 * Float.BYTES, (long) N1 * Float.BYTES),
+                                    N1, batchSize, row);
+                            assertRowClose("concurrent Q6_K output 2", outputs2[workerId],
+                                    (long) row * N2, expected2[workerId].asSlice(
+                                            (long) row * N2 * Float.BYTES, (long) N2 * Float.BYTES),
+                                    N2, batchSize, row);
+                        }
+                        return null;
+                    });
+                }
+                for (Future<Void> future : futures) {
+                    future.get(5, TimeUnit.MINUTES);
+                }
+            } finally {
+                executor.shutdownNow();
+                assertTrue(executor.awaitTermination(30, TimeUnit.SECONDS),
+                        "Concurrent Metal test workers did not terminate");
+            }
+        }
+    }
+
     private static void fillQ4KWeights(MemorySegment weights, int n, int k, long seed) {
         final int blockBytes = 144;
         final int halfScale = 0x211f; // approximately 0.01 in IEEE-754 binary16
@@ -170,12 +277,21 @@ class MetalTripleBatchCorrectnessTest {
 
         for (long block = 0; block < blocks; block++) {
             long offset = block * blockBytes;
-            for (int i = 0; i < blockBytes; i++) {
-                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i, (byte) random.nextInt(256));
-            }
-            // GGML Q4_K layout: d, dmin, 12 packed scale/min bytes, then 128 q bytes.
+            // GGML Q4_K: d, dmin, 12 packed scale/min bytes, then 128 q bytes.
             setHalfBits(weights, offset, halfScale);
             setHalfBits(weights, offset + 2, halfMinScale);
+            // GGML packs the first four 6-bit scale/min fields directly and
+            // the remaining fields as 4-bit nibbles plus upper bits. Keep all
+            // fields deterministic, bounded, and non-zero where represented.
+            for (int i = 0; i < 12; i++) {
+                int low = 1 + (int) ((block + i * 3) % 15);
+                int packed = i < 4 ? low
+                        : low | ((1 + (int) ((block + i * 7) % 15)) << 4);
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + 4 + i, (byte) packed);
+            }
+            for (int i = 16; i < blockBytes; i++) {
+                weights.setAtIndex(ValueLayout.JAVA_BYTE, offset + i, (byte) random.nextInt(256));
+            }
         }
     }
 

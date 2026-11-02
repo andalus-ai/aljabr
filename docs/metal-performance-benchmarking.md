@@ -68,8 +68,54 @@ The Metal Q4_K batched matvec dispatch uses the following policy:
 
 - **Batch size 1:** prefer MR8 when its pipeline is available and MR8 is enabled; otherwise use MR4 when available, with the single-row base kernel as the final fallback.
 - **Batch sizes 2–15:** use the B4/MR4 kernel when its pipeline is available. This range is the current correctness-validated B4 range.
-- **Batch sizes greater than 15:** require the batch-aware MR4 kernel. If that pipeline is unavailable, dispatch fails rather than using the single-row base kernel, which cannot correctly write every row of a multi-row batch.
+- **Batch sizes greater than 15:** AUTO selects MR4. It does not widen the B4 range or fall back to a per-row dispatch loop.
 
 `MetalTripleBatchCorrectnessTest` compares batched mixed-quantization results against repeated single-row calls. The current local test run passed both correctness test cases, including the representative-weight variant, with zero failures or errors. The wider Metal backend test run also reported zero failures and errors; one benchmark test was skipped.
 
 The batch-size boundary is a correctness-based dispatch guard, not a claim that MR4 is faster than B4 for every batch size. Revisit it only after correctness parity and repeatable performance measurements support a change.
+
+
+## Q4_K B4 versus MR4 measured status (Apple Silicon, 2026-10-30)
+
+The opt-in isolated dispatch benchmark was run on the developer's Apple Silicon Mac with the following fixed shape and protocol:
+
+- Matrix shape: K=3840, N=4096; Q4_K weights.
+- Batch sizes: 2, 4, 8, 15, 16, 17, 20, 24, 27, 28, 31 and 32.
+- Five warm-up calls and 20 measured calls per path/batch.
+- Forced B4 and MR4 outputs were compared before timing; all tested batches passed the benchmark's B4-versus-MR4 parity assertion.
+- Timings below are host-observed call latency in milliseconds, including the native dispatch call and command completion wait. They are not full model decode tokens/s.
+
+| Batch | B4 mean ms | MR4 mean ms | MR4 speedup |
+|---:|---:|---:|---:|
+| 2 | 0.700 | 0.336 | 2.08x |
+| 4 | 1.210 | 0.479 | 2.53x |
+| 8 | 2.083 | 0.784 | 2.66x |
+| 15 | 3.702 | 1.320 | 2.80x |
+| 16 | 3.786 | 1.457 | 2.60x |
+| 17 | 4.222 | 1.561 | 2.70x |
+| 20 | 4.631 | 1.721 | 2.69x |
+| 24 | 5.580 | 2.066 | 2.70x |
+| 27 | 6.478 | 2.241 | 2.89x |
+| 28 | 6.425 | 2.412 | 2.66x |
+| 31 | 7.340 | 2.660 | 2.76x |
+| 32 | 7.442 | 2.644 | 2.81x |
+
+At this shape, MR4 is consistently faster; at batch 32 it measures 2.644 ms versus 7.442 ms for B4 (2.81x). The result does not justify widening the production B4 range. Keep the automatic dispatch policy conservative and MR4 as the measured performance baseline for this shape.
+
+### Kernel implementation notes and next investigation
+
+The source-level comparison shows that the B4 kernel processes two input tokens per threadgroup tile while retaining four independent accumulators (two output rows for each of two tokens). It constructs separate input-vector fragments and dot-product accumulations for both tokens, while decoding the same Q4_K weight tile. The MR4 path processes one token and reuses decoded weight fragments across two output rows. This makes B4's extra live values and duplicated per-token arithmetic a plausible explanation for its poorer result, but register pressure or occupancy has not yet been confirmed by a Metal GPU capture or compiler resource report.
+
+Do not label register pressure as a measured root cause. The next optimization step is to collect shape-diverse measurements and, where available, Metal pipeline resource/occupancy evidence before changing the shader. Preserve the production B4 boundary at 15; batches above it use MR4. Revisit that boundary only after broader correctness and shape-diverse performance evidence.
+
+### Current capability status
+
+- **Implemented:** Q4_K single-row matvec, MR4 batched matvec, MR8 path where enabled, B4 two-token experimental path, opt-in forced-dispatch benchmark hook, and benchmark-side output parity checks.
+- **Validated in the reported local run:** B4/MR4 parity for the deterministic benchmark fixture at the tested batch sizes; measured latency comparison for K=3840/N=4096.
+- **Experimental:** B4 dispatch beyond batch 15 and any claim that B4 is a generally faster multi-token strategy.
+- **Not yet established:** performance across a representative matrix-shape/model suite, real GGUF Q4_K weight corpus parity for this benchmark path, and the precise hardware bottleneck responsible for the B4 slowdown.
+
+
+### Production AUTO-to-MR4 fallback
+
+The production Q4_K batch entry point now routes batch sizes above 15 to MR4 while retaining B4 for batches 2–15. A new `MetalQ4KProductionDispatchCorrectnessTest` exercises the public batch binding at K/N shapes 1024/1024 and 3840/2048, comparing each batched row with a repeated calls to the dedicated production single-row Q4_K API across batches 2–32. This new test requires a fresh native Metal build and local Apple Silicon execution; it has not yet been run.
