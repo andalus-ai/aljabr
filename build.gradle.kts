@@ -65,7 +65,7 @@ subprojects {
     }
 
     // The incubator Vector API is used by the CPU backend, not by every module.
-    val usesVectorApi = path == ":backend:cpu:aljabr-backend-cpu"
+    val usesVectorApi = path == ":backend:cpu:aljabr-backend-cpu" || path == ":core:aljabr-gguf-core"
 
     // Configure Javadoc task
     tasks.withType<Javadoc> {
