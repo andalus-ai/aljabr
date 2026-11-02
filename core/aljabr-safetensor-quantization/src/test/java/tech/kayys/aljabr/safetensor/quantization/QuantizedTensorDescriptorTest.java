@@ -65,7 +65,7 @@ class QuantizedTensorDescriptorTest {
     void rejectsPayloadShorterThanPackedLogicalTensor() {
         assertThrows(IllegalArgumentException.class, () -> QuantizedTensorDescriptor.builder()
                 .formatId("x").logicalShape(3, 5).logicalDtype("F16")
-                .storageDtype("U4").bitWidth(4).payloadLengthBytes(9).build());
+                .storageDtype("U4").bitWidth(4).payloadLengthBytes(7).build());
     }
 
     @Test
