@@ -1,8 +1,8 @@
-package tech.kayys.tafkir.models.llama;
+package tech.kayys.aljabr.models.llama;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import tech.kayys.tafkir.models.LLaMA3Family;
-import tech.kayys.tafkir.models.LlamaFamily;
+import tech.kayys.aljabr.models.llama.LLaMA3Family;
+import tech.kayys.aljabr.models.llama.LlamaFamily;
 import tech.kayys.aljabr.spi.model.ModelArchitecture;
 import tech.kayys.aljabr.spi.model.ModelFamilyCapability;
 import tech.kayys.aljabr.spi.model.ModelFamilyDescriptor;
