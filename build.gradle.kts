@@ -64,12 +64,17 @@ subprojects {
         withJavadocJar()
     }
 
+<<<<<<< HEAD
     // The incubator Vector API is used by the CPU backend and gguf/safetensor core modules.
     val usesVectorApi = path in setOf(
         ":backend:cpu:aljabr-backend-cpu",
         ":core:aljabr-gguf-core",
         ":core:aljabr-safetensor-core"
     )
+=======
+    // The incubator Vector API is used by the CPU backend, not by every module.
+    val usesVectorApi = path == ":backend:cpu:aljabr-backend-cpu" || path == ":core:aljabr-gguf-core"
+>>>>>>> e2620f810daef467d223061c63bea77bf81c7612
 
     // Configure Javadoc task
     tasks.withType<Javadoc> {
@@ -349,3 +354,6 @@ subprojects {
     }
 }
 
+
+// Keep the foundational dependency direction enforceable in every verification run.
+apply(from = rootProject.file("gradle/verify-tafkir-dependency-boundary.gradle.kts"))
