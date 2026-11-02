@@ -10,7 +10,9 @@
  */
 package tech.kayys.aljabr.safetensor.quantization;
 
-import tech.kayys.aljabr.safetensor.quantization.quantizer.GPTQQuantizerAdapter;
+import tech.kayys.aljabr.safetensor.quantization.quantizer.FP8Quantizer;
+import tech.kayys.aljabr.safetensor.quantization.quantizer.GPTQQuantizer;
+import tech.kayys.aljabr.safetensor.quantization.quantizer.INT8Quantizer;
 import tech.kayys.aljabr.safetensor.quantization.quantizer.Quantizer;
 
 import org.junit.jupiter.api.*;
@@ -25,12 +27,12 @@ class QuantizerIntegrationTest {
 
     @Test
     @Order(1)
-    @DisplayName("GPTQ quantizer adapter is registered")
+    @DisplayName("Aljabr GPTQ quantizer is registered")
     void testGptqAdapterRegistered() {
-        assertTrue(QuantizerRegistry.has("GPTQ"), "GPTQ quantizer should be registered");
-        Quantizer gptq = QuantizerRegistry.get("GPTQ");
+        assertTrue(QuantizerRegistry.has("GPTQQuantizer"), "Aljabr GPTQ quantizer should be registered");
+        Quantizer gptq = QuantizerRegistry.get("GPTQQuantizer");
         assertNotNull(gptq, "GPTQ quantizer should not be null");
-        assertInstanceOf(GPTQQuantizerAdapter.class, gptq, "GPTQ should be adapter instance");
+        assertInstanceOf(GPTQQuantizer.class, gptq, "GPTQ should use Aljabr's native implementation");
     }
 
     @Test
@@ -39,7 +41,7 @@ class QuantizerIntegrationTest {
     void testRegistryReturnsAll() {
         var quantizers = QuantizerRegistry.getAll();
         assertFalse(quantizers.isEmpty(), "Registry should have at least one quantizer");
-        assertTrue(quantizers.containsKey("gptq"), "Registry should contain GPTQ");
+        assertTrue(quantizers.containsKey("gptqquantizer"), "Registry should contain Aljabr GPTQ");
     }
 
     @Test
@@ -49,7 +51,7 @@ class QuantizerIntegrationTest {
         QuantConfig int4Config = QuantConfig.int4Gptq();
         Quantizer selected = QuantizerRegistry.selectBest(int4Config);
         assertNotNull(selected, "Should select a quantizer for INT4 config");
-        assertEquals("GPTQ", selected.getName(), "Should select GPTQ for INT4");
+        assertEquals("GPTQQuantizer", selected.getName(), "Should select Aljabr GPTQ for INT4");
     }
 
     @Test
@@ -58,7 +60,7 @@ class QuantizerIntegrationTest {
     void testQuantizerStats() {
         var stats = QuantizerRegistry.getStats();
         assertFalse(stats.isEmpty(), "Stats should not be empty");
-        assertTrue(stats.containsKey("gptq"), "Stats should contain GPTQ entry");
+        assertTrue(stats.containsKey("gptqquantizer"), "Stats should contain Aljabr GPTQ entry");
     }
 
     @Test
@@ -85,12 +87,12 @@ class QuantizerIntegrationTest {
 
     @Test
     @Order(7)
-    @DisplayName("GPTQ adapter supports INT4 strategy")
+    @DisplayName("Aljabr GPTQ supports INT4 strategy")
     void testGptqSupportsInt4() {
-        GPTQQuantizerAdapter adapter = new GPTQQuantizerAdapter();
+        GPTQQuantizer adapter = new GPTQQuantizer();
         QuantConfig int4Config = QuantConfig.int4Gptq();
         assertTrue(adapter.supports(int4Config), "GPTQ should support INT4 config");
-        assertEquals("GPTQ", adapter.getName());
+        assertEquals("GPTQQuantizer", adapter.getName());
     }
 
     @Test
@@ -104,7 +106,9 @@ class QuantizerIntegrationTest {
         assertEquals(0, QuantizerRegistry.getAll().size(), "Registry should be empty after clear");
 
         // Re-register for other tests
-        QuantizerRegistry.register("GPTQ", new GPTQQuantizerAdapter());
+        QuantizerRegistry.register("GPTQQuantizer", new GPTQQuantizer());
+        QuantizerRegistry.register("INT8Quantizer", new INT8Quantizer());
+        QuantizerRegistry.register("FP8Quantizer", new FP8Quantizer());
     }
 
     @Test
@@ -138,23 +142,12 @@ class QuantizerIntegrationTest {
 
     @Test
     @Order(10)
-    @DisplayName("All quantizer modules are on classpath")
-    void testQuantizerModulesOnClasspath() {
-        // Verify GPTQ module
-        assertDoesNotThrow(() -> Class.forName("tech.kayys.tafkir.quantizer.gptq.GPTQQuantizerService"),
-                "GPTQ module should be on classpath");
-
-        // Verify AWQ module
-        assertDoesNotThrow(() -> Class.forName("tech.kayys.tafkir.quantizer.awq.AWQDequantizer"),
-                "AWQ module should be on classpath");
-
-        // Verify AutoRound module
-        assertDoesNotThrow(() -> Class.forName("tech.kayys.tafkir.quantizer.autoround.AutoRoundDequantizer"),
-                "AutoRound module should be on classpath");
-
-        // Verify TurboQuant module
-        assertDoesNotThrow(() -> Class.forName("tech.kayys.tafkir.quantizer.turboquant.TurboQuantEngine"),
-                "TurboQuant module should be on classpath");
+    @DisplayName("Aljabr built-in quantizers work without optional Tafkir providers")
+    void testBuiltInQuantizersDoNotRequireOptionalProviders() {
+        assertNotNull(QuantizerRegistry.get("GPTQQuantizer"));
+        assertNotNull(QuantizerRegistry.get("INT8Quantizer"));
+        assertNotNull(QuantizerRegistry.get("FP8Quantizer"));
+        assertNotNull(new QuantizationEngine());
     }
 
     @Test

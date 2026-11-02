@@ -21,10 +21,6 @@ import tech.kayys.aljabr.safetensor.quantization.bridge.AccelSafetensorWriter;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader.SafetensorShardSession;
 import tech.kayys.aljabr.safetensor.quantization.quantizer.*;
-import tech.kayys.aljabr.safetensor.quantization.quantizer.TurboQuantAdapter;
-import tech.kayys.aljabr.safetensor.quantization.quantizer.BnBQuantizerAdapter;
-import tech.kayys.aljabr.safetensor.quantization.quantizer.AWQQuantizerAdapter;
-import tech.kayys.aljabr.safetensor.quantization.quantizer.GPTQQuantizerAdapter;
 
 import java.io.IOException;
 import java.io.BufferedInputStream;
@@ -110,18 +106,36 @@ public class QuantizationEngine {
      * Initialize quantization engine with default quantizers.
      */
     public QuantizationEngine() {
-        // Register legacy/generic placeholders
-        registerQuantizer(QuantStrategy.INT4, new GPTQQuantizerAdapter());
-        registerQuantizer(QuantStrategy.INT8, new BnBQuantizerAdapter()); // INT8 fallback
-        
-        // Register high-performance adapters from core/quantizer
-        registerQuantizer(QuantStrategy.TURBO, new TurboQuantAdapter());
-        registerQuantizer(QuantStrategy.AWQ, new AWQQuantizerAdapter());
-        registerQuantizer(QuantStrategy.BNB, new BnBQuantizerAdapter());
-        registerQuantizer(QuantStrategy.INT4, new GPTQQuantizerAdapter());
-        registerQuantizer(QuantStrategy.INT4, new AutoRoundQuantizerAdapter());
-        
-        log.info("QuantizationEngine initialized with TurboQuant, AWQ, GPTQ, AutoRound, and BnB adapters.");
+        Quantizer nativeGptq = QuantizerRegistry.get("GPTQQuantizer");
+        Quantizer nativeInt8 = QuantizerRegistry.get("INT8Quantizer");
+        Quantizer nativeFp8 = QuantizerRegistry.get("FP8Quantizer");
+
+        Quantizer gptq = firstAvailable(QuantizerRegistry.get("GPTQ"), nativeGptq);
+        Quantizer autoRound = QuantizerRegistry.get("AutoRound");
+        Quantizer bitsAndBytes = QuantizerRegistry.get("BitsAndBytes");
+
+        // Preserve the historical strategy choices when the optional Tafkir extension
+        // is present, while keeping Aljabr's built-ins usable without that extension.
+        registerIfAvailable(QuantStrategy.INT4, firstAvailable(autoRound, gptq));
+        registerIfAvailable(QuantStrategy.INT8, firstAvailable(bitsAndBytes, nativeInt8));
+        registerIfAvailable(QuantStrategy.FP8, nativeFp8);
+        registerIfAvailable(QuantStrategy.GPTQ, gptq);
+        registerIfAvailable(QuantStrategy.AWQ, QuantizerRegistry.get("AWQ"));
+        registerIfAvailable(QuantStrategy.TURBO, QuantizerRegistry.get("TurboQuant"));
+        registerIfAvailable(QuantStrategy.BNB, bitsAndBytes);
+
+        log.infof("QuantizationEngine initialized with available quantizers: %s",
+                QuantizerRegistry.getNames());
+    }
+
+    private Quantizer firstAvailable(Quantizer preferred, Quantizer fallback) {
+        return preferred != null ? preferred : fallback;
+    }
+
+    private void registerIfAvailable(QuantStrategy strategy, Quantizer quantizer) {
+        if (quantizer != null) {
+            registerQuantizer(strategy, quantizer);
+        }
     }
 
     /**
@@ -726,7 +740,7 @@ public class QuantizationEngine {
         if (tensor.quantType() == AccelTensor.QuantType.F32) {
             return tensor;
         }
-        // BF16 and F16 tensors are handled directly by BnBQuantizerAdapter via chunked
+        // BF16 and F16 tensors are handled directly by the optional BitsAndBytes provider via chunked
         // MemorySegment reads — avoid allocating a full F32 copy here, which would OOM
         // for large tensors like lm_head (~2.5GB for a 35B MoE model).
         if (tensor.quantType() == AccelTensor.QuantType.BF16
@@ -803,7 +817,11 @@ public class QuantizationEngine {
             case INT4 -> QuantConfig.int4Gptq();
             case INT8 -> QuantConfig.int8();
             case FP8 -> QuantConfig.fp8();
-            default -> new QuantConfig();
+            case TURBO -> QuantConfig.turbo();
+            case AWQ -> QuantConfig.awq(4, 128);
+            case GPTQ -> QuantConfig.builder().strategy(QuantStrategy.GPTQ).build();
+            case BNB -> QuantConfig.bnb();
+            case NONE -> new QuantConfig();
         };
     }
 
