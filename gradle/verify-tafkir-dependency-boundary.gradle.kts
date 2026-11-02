@@ -11,10 +11,10 @@ val verifyNoTafkirDependency = tasks.register("verifyNoTafkirDependency") {
     doLast {
         val root = rootProject.projectDir
         val ignoredDirectories = setOf(".git", ".gradle", "build", "out")
-        val productionSource = Regex(""".*/src/main/.*\\.(java|kt|kts)$""")
-        val gradleConfiguration = Regex(""".*/(build|settings)\\.gradle(\\.kts)?$""")
+        val productionSource = Regex(""".*/src/main/.*\.(java|kt|kts)$""")
+        val gradleConfiguration = Regex(""".*/(build|settings)\.gradle(\.kts)?$""")
         val forbidden = Regex(
-            """tech\\.kayys\\.tafkir|tafkir-quantizer-(gptq|awq|autoround|turboquant)|withTafkir"""
+            """tech\.kayys\.tafkir|tafkir-quantizer-(gptq|awq|autoround|turboquant)|withTafkir"""
         )
         val violations = mutableListOf<String>()
 
