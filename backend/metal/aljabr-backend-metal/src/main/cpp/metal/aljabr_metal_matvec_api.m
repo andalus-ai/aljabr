@@ -1144,15 +1144,15 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
       p = pipelines->matvec_tb_q4_k_mr4;
       is_mr4 = YES;
     } else {
-      // The base single-row Q4_K pipeline disagrees with the standalone
-      // Q4_K reference for the triple-wrapper batchSize=1 path. MR4 has been
-      // validated at batchSize=1 through the forced-dispatch correctness
-      // hook, so use it rather than the base pipeline for AUTO single-row
-      // dispatch as well.
-      if (pipelines->matvec_tb_q4_k_mr4 == nil)
-        return NO;
-      p = pipelines->matvec_tb_q4_k_mr4;
-      is_mr4 = YES;
+      if (pipelines->matvec_tb_q4_k_mr8 != nil && mr8_enabled()) {
+        p = pipelines->matvec_tb_q4_k_mr8;
+        is_mr8 = YES;
+      } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
+        p = pipelines->matvec_tb_q4_k_mr4;
+        is_mr4 = YES;
+      } else {
+        p = pipelines->matvec_tb_q4_k;
+      }
     }
   } else if (type == 14) { // Q6_K
     if (batchSize > 1 && batchSize <= kMaxValidatedB4BatchSize &&
