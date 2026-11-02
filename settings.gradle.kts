@@ -1,24 +1,5 @@
 rootProject.name = "aljabr-engine"
 
-// ── Optional composite build: Tafkir (training/quantizer integration) ─────────
-// Aljabr's foundational compute modules must remain buildable without Tafkir.
-// Opt in to source-level quantizer integration with -PwithTafkir=true. This keeps
-// an unrelated Tafkir configuration failure from breaking core Aljabr builds.
-val withTafkir = providers.gradleProperty("withTafkir")
-    .map { it.toBoolean() }
-    .getOrElse(false)
-val tafkirDir = file("../tafkir")
-val tafkirSettingsExists = tafkirDir.exists() &&
-    (tafkirDir.resolve("settings.gradle.kts").isFile ||
-     tafkirDir.resolve("settings.gradle").isFile)
-if (withTafkir && !tafkirSettingsExists) {
-    throw GradleException("withTafkir=true requires a sibling ../tafkir checkout with Gradle settings")
-}
-if (withTafkir) {
-    includeBuild("../tafkir")
-}
-// ─────────────────────────────────────────────────────────────────────────────
-
 fun includeOptionalProject(projectPath: String, vararg candidatePaths: String) {
     val projectDir = candidatePaths
         .map { file(it) }
@@ -125,11 +106,7 @@ includeOptionalProject("core:aljabr-safetensor-spi",          "core/aljabr-safet
 includeOptionalProject("core:aljabr-safetensor-core",         "core/aljabr-safetensor-core")
 includeOptionalProject("core:aljabr-safetensor-loader",       "core/aljabr-safetensor-loader")
 includeOptionalProject("core:aljabr-safetensor-bridge",       "core/aljabr-safetensor-bridge")
-// This adapter depends on Tafkir quantizer artifacts and is intentionally opt-in.
-// Core Aljabr builds do not need training/quantization modules.
-if (withTafkir) {
-    includeOptionalProject("core:aljabr-safetensor-quantization", "core/aljabr-safetensor-quantization")
-}
+includeOptionalProject("core:aljabr-safetensor-quantization", "core/aljabr-safetensor-quantization")
 includeOptionalProject("core:aljabr-gguf-bridge",             "core/aljabr-gguf-bridge")
 includeOptionalProject("core:aljabr-gguf-fast-bridge",        "core/aljabr-gguf-fast-bridge")
 includeOptionalProject("core:aljabr-gguf-converter",          "core/aljabr-gguf-converter")
