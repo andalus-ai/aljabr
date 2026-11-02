@@ -64,10 +64,11 @@ subprojects {
         withJavadocJar()
     }
 
-    // The incubator Vector API is used by the CPU backend and gguf-core runtime layer.
+    // The incubator Vector API is used by the CPU backend and gguf/safetensor core modules.
     val usesVectorApi = path in setOf(
         ":backend:cpu:aljabr-backend-cpu",
-        ":core:aljabr-gguf-core"
+        ":core:aljabr-gguf-core",
+        ":core:aljabr-safetensor-core"
     )
 
     // Configure Javadoc task
