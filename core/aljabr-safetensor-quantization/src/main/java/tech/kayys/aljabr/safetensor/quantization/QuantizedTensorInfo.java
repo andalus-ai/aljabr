@@ -19,15 +19,26 @@ package tech.kayys.aljabr.safetensor.quantization;
  * @version 1.0.0
  */
 public class QuantizedTensorInfo {
+
+    /** AccelTensor name. */
     private final String name;
+    /** AccelTensor shape. */
     private final int[] shape;
+    /** Original data type (before quantization). */
     private final String originalDtype;
+    /** Quantized data type. */
     private final String quantizedDtype;
+    /** Quantization strategy used. */
     private final QuantizationEngine.QuantStrategy strategy;
+    /** Scale factors for dequantization. */
     private final float[] scales;
+    /** Zero points for dequantization. */
     private final float[] zeros;
+    /** Group size used for quantization. */
     private final int groupSize;
+    /** Axis for per-channel quantization. */
     private final int channelAxis;
+    /** Additional metadata. */
     private final byte[] metadata;
 
     private QuantizedTensorInfo(Builder builder) {
@@ -55,20 +66,54 @@ public class QuantizedTensorInfo {
         return value == null ? null : value.clone();
     }
 
+    /**
+     * Create builder for QuantizedTensorInfo.
+     *
+     * @return new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
-    public String getName() { return name; }
-    public int[] getShape() { return copy(shape); }
-    public String getOriginalDtype() { return originalDtype; }
-    public String getQuantizedDtype() { return quantizedDtype; }
-    public QuantizationEngine.QuantStrategy getStrategy() { return strategy; }
-    public float[] getScales() { return copy(scales); }
-    public float[] getZeros() { return copy(zeros); }
-    public int getGroupSize() { return groupSize; }
-    public int getChannelAxis() { return channelAxis; }
-    public byte[] getMetadata() { return copy(metadata); }
+    public String getName() {
+        return name;
+    }
+
+    public int[] getShape() {
+        return copy(shape);
+    }
+
+    public String getOriginalDtype() {
+        return originalDtype;
+    }
+
+    public String getQuantizedDtype() {
+        return quantizedDtype;
+    }
+
+    public QuantizationEngine.QuantStrategy getStrategy() {
+        return strategy;
+    }
+
+    public float[] getScales() {
+        return copy(scales);
+    }
+
+    public float[] getZeros() {
+        return copy(zeros);
+    }
+
+    public int getGroupSize() {
+        return groupSize;
+    }
+
+    public int getChannelAxis() {
+        return channelAxis;
+    }
+
+    public byte[] getMetadata() {
+        return copy(metadata);
+    }
 
     /** Builder for QuantizedTensorInfo. */
     public static class Builder {
@@ -83,16 +128,58 @@ public class QuantizedTensorInfo {
         private int channelAxis = 0;
         private byte[] metadata = new byte[0];
 
-        public Builder name(String name) { this.name = name; return this; }
-        public Builder shape(int[] shape) { this.shape = copy(shape); return this; }
-        public Builder originalDtype(String originalDtype) { this.originalDtype = originalDtype; return this; }
-        public Builder quantizedDtype(String quantizedDtype) { this.quantizedDtype = quantizedDtype; return this; }
-        public Builder strategy(QuantizationEngine.QuantStrategy strategy) { this.strategy = strategy; return this; }
-        public Builder scales(float[] scales) { this.scales = copy(scales); return this; }
-        public Builder zeros(float[] zeros) { this.zeros = copy(zeros); return this; }
-        public Builder groupSize(int groupSize) { this.groupSize = groupSize; return this; }
-        public Builder channelAxis(int channelAxis) { this.channelAxis = channelAxis; return this; }
-        public Builder metadata(byte[] metadata) { this.metadata = copy(metadata); return this; }
-        public QuantizedTensorInfo build() { return new QuantizedTensorInfo(this); }
+        public Builder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        public Builder shape(int[] shape) {
+            this.shape = copy(shape);
+            return this;
+        }
+
+        public Builder originalDtype(String originalDtype) {
+            this.originalDtype = originalDtype;
+            return this;
+        }
+
+        public Builder quantizedDtype(String quantizedDtype) {
+            this.quantizedDtype = quantizedDtype;
+            return this;
+        }
+
+        public Builder strategy(QuantizationEngine.QuantStrategy strategy) {
+            this.strategy = strategy;
+            return this;
+        }
+
+        public Builder scales(float[] scales) {
+            this.scales = copy(scales);
+            return this;
+        }
+
+        public Builder zeros(float[] zeros) {
+            this.zeros = copy(zeros);
+            return this;
+        }
+
+        public Builder groupSize(int groupSize) {
+            this.groupSize = groupSize;
+            return this;
+        }
+
+        public Builder channelAxis(int channelAxis) {
+            this.channelAxis = channelAxis;
+            return this;
+        }
+
+        public Builder metadata(byte[] metadata) {
+            this.metadata = copy(metadata);
+            return this;
+        }
+
+        public QuantizedTensorInfo build() {
+            return new QuantizedTensorInfo(this);
+        }
     }
 }
