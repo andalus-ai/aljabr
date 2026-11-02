@@ -48,8 +48,10 @@ public final class QuantizerRegistry {
                 }
                 provider = providers.next();
             } catch (ServiceConfigurationError error) {
-                LOG.log(Level.WARNING, "Unable to load an optional quantizer provider", error);
-                continue;
+                // ServiceLoader may repeatedly encounter a malformed descriptor.
+                // Stop discovery rather than risking an infinite loop during startup.
+                LOG.log(Level.WARNING, "Stopping optional quantizer discovery after a provider configuration error", error);
+                return;
             }
 
             try {
