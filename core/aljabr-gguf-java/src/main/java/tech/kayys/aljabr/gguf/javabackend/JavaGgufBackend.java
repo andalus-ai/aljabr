@@ -334,7 +334,7 @@ final class JavaGgufBackend implements GgufBackend {
     }
 
     static boolean canUseMetalGreedy(boolean isGreedy, float repeatPenalty, boolean metalDecodeAvailable) {
-        return isGreedy && repeatPenalty == 1.0f && metalDecodeAvailable;
+        return isGreedy && (repeatPenalty <= 1.0001f || Float.isNaN(repeatPenalty)) && metalDecodeAvailable;
     }
 
     private record SamplingParams(float temperature, int topK, float topP, float repeatPenalty, int maxTokens) {
@@ -342,11 +342,18 @@ final class JavaGgufBackend implements GgufBackend {
             if (req == null) {
                 return new SamplingParams(0.2f, 40, 0.9f, 1.1f, 256);
             }
+            float temp = (float) req.getTemperature();
+            float rep = (float) req.getRepeatPenalty();
+            if (temp <= 0.0f && req.getParameters() != null
+                    && !req.getParameters().containsKey("repeat_penalty")
+                    && !req.getParameters().containsKey("repetition_penalty")) {
+                rep = 1.0f;
+            }
             return new SamplingParams(
-                    (float) req.getTemperature(),
+                    temp,
                     req.getTopK(),
                     (float) req.getTopP(),
-                    (float) req.getRepeatPenalty(),
+                    rep,
                     req.getMaxTokens());
         }
     }

@@ -163,6 +163,13 @@ public class MetalBinding {
     private volatile boolean runtimeInitialized;
     private volatile boolean runtimeCpuFallback;
 
+    // Fast unboxed downcall handles for hot-path inference operations
+    private MethodHandle mhDecodeStep;
+    private MethodHandle mhDecodeStepToken;
+    private MethodHandle mhMatvecTransposedRightTripleBatch;
+    private MethodHandle mhWoFfnFusedLayerBatch;
+    private MethodHandle mhMatvecTransposedRightBatch;
+
     private MetalBinding(SymbolLookup lookup) {
         this.lookup = lookup;
         this.nativeAvailable = (lookup != null);
@@ -878,9 +885,13 @@ public class MetalBinding {
             int K, int N, int type, int batchSize) {
         if (useCpuFallback())
             throw new UnsupportedOperationException("Metal matvec batch not available in CPU fallback");
-        if (!handles.containsKey(FN_MATVEC_TB_BATCH))
+        if (mhMatvecTransposedRightBatch == null)
             return -2;
-        return (int) invoke(FN_MATVEC_TB_BATCH, C, A, B, K, N, type, batchSize);
+        try {
+            return (int) mhMatvecTransposedRightBatch.invokeExact(C, A, B, K, N, type, batchSize);
+        } catch (Throwable t) {
+            throw new RuntimeException("MetalBinding.matvecTransposedRightBatch failed", t);
+        }
     }
 
     int matvecQ4KBatchDispatchForBenchmark(MemorySegment C, MemorySegment A,
@@ -898,10 +909,14 @@ public class MetalBinding {
             int K, int N0, int N1, int N2, int type0, int type1, int type2, int batchSize) {
         if (useCpuFallback())
             throw new UnsupportedOperationException("Metal matvec triple batch not available in CPU fallback");
-        if (!handles.containsKey(FN_MATVEC_TB_TRIPLE_BATCH))
+        if (mhMatvecTransposedRightTripleBatch == null)
             return -2;
-        return (int) invoke(FN_MATVEC_TB_TRIPLE_BATCH, C0, C1, C2, A, B0, B1, B2,
-                K, N0, N1, N2, type0, type1, type2, batchSize);
+        try {
+            return (int) mhMatvecTransposedRightTripleBatch.invokeExact(C0, C1, C2, A, B0, B1, B2,
+                    K, N0, N1, N2, type0, type1, type2, batchSize);
+        } catch (Throwable t) {
+            throw new RuntimeException("MetalBinding.matvecTransposedRightTripleBatch failed", t);
+        }
     }
 
     public int ffnGatedFused(MemorySegment outDown, MemorySegment inA,
@@ -953,9 +968,13 @@ public class MetalBinding {
             int layer, int batchSize, float eps, int activationKind) {
         if (useCpuFallback())
             throw new UnsupportedOperationException("Metal woFfnFusedLayerBatch not available in CPU fallback");
-        if (!handles.containsKey(FN_WO_FFN_FUSED_LAYER_BATCH))
+        if (mhWoFfnFusedLayerBatch == null)
             return -2;
-        return (int) invoke(FN_WO_FFN_FUSED_LAYER_BATCH, x, attnFull, layer, batchSize, eps, activationKind);
+        try {
+            return (int) mhWoFfnFusedLayerBatch.invokeExact(x, attnFull, layer, batchSize, eps, activationKind);
+        } catch (Throwable t) {
+            throw new RuntimeException("MetalBinding.woFfnFusedLayerBatch failed", t);
+        }
     }
 
     public int woFfnNextQkvFused(
@@ -1115,15 +1134,23 @@ public class MetalBinding {
     }
 
     public int decodeStep(int pos, int slidingWindow, float eps, MemorySegment xIn, MemorySegment logitsOut) {
-        if (!handles.containsKey(FN_DECODE_STEP))
+        if (mhDecodeStep == null)
             return -2;
-        return (int) invoke(FN_DECODE_STEP, pos, slidingWindow, eps, xIn, logitsOut);
+        try {
+            return (int) mhDecodeStep.invokeExact(pos, slidingWindow, eps, xIn, logitsOut);
+        } catch (Throwable t) {
+            throw new RuntimeException("MetalBinding.decodeStep failed", t);
+        }
     }
 
     public int decodeStepToken(int pos, int slidingWindow, float eps, int tokenId, MemorySegment logitsOut) {
-        if (!handles.containsKey(FN_DECODE_STEP_TOKEN))
+        if (mhDecodeStepToken == null)
             return -2;
-        return (int) invoke(FN_DECODE_STEP_TOKEN, pos, slidingWindow, eps, tokenId, logitsOut);
+        try {
+            return (int) mhDecodeStepToken.invokeExact(pos, slidingWindow, eps, tokenId, logitsOut);
+        } catch (Throwable t) {
+            throw new RuntimeException("MetalBinding.decodeStepToken failed", t);
+        }
     }
 
     public int matvecTransposedRightNf4(MemorySegment C,
@@ -2067,7 +2094,15 @@ public class MetalBinding {
     private void bind(String name, FunctionDescriptor descriptor) {
         Optional<MemorySegment> sym = lookup.find(name);
         if (sym.isPresent()) {
-            handles.put(name, Linker.nativeLinker().downcallHandle(sym.get(), descriptor));
+            MethodHandle h = Linker.nativeLinker().downcallHandle(sym.get(), descriptor);
+            handles.put(name, h);
+            switch (name) {
+                case FN_DECODE_STEP -> mhDecodeStep = h;
+                case FN_DECODE_STEP_TOKEN -> mhDecodeStepToken = h;
+                case FN_MATVEC_TB_TRIPLE_BATCH -> mhMatvecTransposedRightTripleBatch = h;
+                case FN_WO_FFN_FUSED_LAYER_BATCH -> mhWoFfnFusedLayerBatch = h;
+                case FN_MATVEC_TB_BATCH -> mhMatvecTransposedRightBatch = h;
+            }
             LOG.debugf("MetalBinding: bound %s", name);
         } else {
             LOG.debugf("MetalBinding: symbol not found — %s", name);
