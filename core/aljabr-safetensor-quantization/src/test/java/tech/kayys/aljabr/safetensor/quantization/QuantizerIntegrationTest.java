@@ -10,7 +10,9 @@
  */
 package tech.kayys.aljabr.safetensor.quantization;
 
+import tech.kayys.aljabr.safetensor.quantization.quantizer.FP8Quantizer;
 import tech.kayys.aljabr.safetensor.quantization.quantizer.GPTQQuantizer;
+import tech.kayys.aljabr.safetensor.quantization.quantizer.INT8Quantizer;
 import tech.kayys.aljabr.safetensor.quantization.quantizer.Quantizer;
 
 import org.junit.jupiter.api.*;
@@ -105,6 +107,8 @@ class QuantizerIntegrationTest {
 
         // Re-register for other tests
         QuantizerRegistry.register("GPTQQuantizer", new GPTQQuantizer());
+        QuantizerRegistry.register("INT8Quantizer", new INT8Quantizer());
+        QuantizerRegistry.register("FP8Quantizer", new FP8Quantizer());
     }
 
     @Test
