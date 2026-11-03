@@ -36,7 +36,7 @@ public final class RealSchurDecomposition {
         double[][] a = reduction.hessenberg().toArray();
         double[][] q = reduction.orthogonalQ().toArray();
         int n = a.length;
-        double scale = Math.max(1.0, matrix.normInfinity());
+        double scale = matrix.normInfinity();
         double threshold = tolerance.absolute() + tolerance.relative() * scale;
         int active = n;
         int iterations = 0;
@@ -163,8 +163,8 @@ public final class RealSchurDecomposition {
         double z = a[start + 1][start], w = a[start + 1][start + 1];
         double halfDifference = 0.5 * (x - w);
         double discriminant = halfDifference * halfDifference + y * z;
-        double scale = Math.max(1.0, Math.max(Math.abs(x), Math.max(Math.abs(y),
-                Math.max(Math.abs(z), Math.abs(w)))));
+        double scale = Math.max(Math.abs(x), Math.max(Math.abs(y),
+                Math.max(Math.abs(z), Math.abs(w))));
         return discriminant < -tolerance * scale;
     }
 
@@ -181,7 +181,9 @@ public final class RealSchurDecomposition {
         }
         // Real single-shift QR cannot split a complex pair by a real shift.
         // An alternating exceptional shift prevents a stationary trace/2 step.
-        double perturbation = 0.01 * (1.0 + Math.abs(z)) * (iteration % 2 == 0 ? 1.0 : -1.0);
+        double localScale = Math.max(Math.abs(x), Math.max(Math.abs(y),
+                Math.max(Math.abs(z), Math.abs(w))));
+        double perturbation = 0.01 * localScale * (iteration % 2 == 0 ? 1.0 : -1.0);
         return 0.5 * (x + w) + perturbation + Math.ulp(scale);
     }
 
@@ -249,7 +251,7 @@ public final class RealSchurDecomposition {
         Objects.requireNonNull(tolerance, "tolerance");
         if (index < 0 || index + 1 >= t.rows()) throw new IndexOutOfBoundsException("block index");
         double sub = Math.abs(t.get(index + 1, index));
-        double threshold = tolerance.absolute() + tolerance.relative() * Math.max(1.0, t.normInfinity());
+        double threshold = tolerance.absolute() + tolerance.relative() * t.normInfinity();
         return sub > threshold && hasComplexPair(t.toArray(), index, threshold);
     }
 

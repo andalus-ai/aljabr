@@ -67,6 +67,9 @@ subprojects {
     // The incubator Vector API is used by the CPU backend and gguf/safetensor core modules.
     val usesVectorApi = path in setOf(
         ":backend:cpu:aljabr-backend-cpu",
+        // Tensor tests load the CPU backend reflectively at runtime; that backend
+        // uses the incubating Vector API even though tensor main sources do not.
+        ":core:aljabr-tensor",
         ":core:aljabr-gguf-core",
         ":core:aljabr-safetensor-core"
     )
