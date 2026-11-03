@@ -71,7 +71,9 @@ subprojects {
         // uses the incubating Vector API even though tensor main sources do not.
         ":core:aljabr-tensor",
         ":core:aljabr-gguf-core",
-        ":core:aljabr-safetensor-core"
+        ":core:aljabr-safetensor-core",
+        // Model-common tests execute Whisper through the CPU backend, which uses Vector API.
+        ":models:aljabr-model-common"
     )
 
     // Configure Javadoc task
