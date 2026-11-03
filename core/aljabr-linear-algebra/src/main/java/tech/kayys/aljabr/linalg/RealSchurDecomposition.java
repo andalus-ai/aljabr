@@ -32,12 +32,16 @@ public final class RealSchurDecomposition {
         if (matrix.rows() != matrix.columns())
             throw new IllegalArgumentException("real Schur decomposition requires a square matrix");
 
-        HessenbergReduction reduction = HessenbergReduction.reduce(matrix, tolerance);
+        // Absolute comparison tolerances are useful for value comparisons, but
+        // an absolute floor is not scale-invariant for a similarity
+        // decomposition. Deflation and structural decisions must scale with A.
+        Tolerance algorithmTolerance = new Tolerance(0.0, tolerance.relative());
+        HessenbergReduction reduction = HessenbergReduction.reduce(matrix, algorithmTolerance);
         double[][] a = reduction.hessenberg().toArray();
         double[][] q = reduction.orthogonalQ().toArray();
         int n = a.length;
         double scale = matrix.normInfinity();
-        double threshold = tolerance.absolute() + tolerance.relative() * scale;
+        double threshold = algorithmTolerance.relative() * scale;
         int active = n;
         int iterations = 0;
         int limit = Math.max(1, MAX_ITERATIONS_PER_ORDER * n);
@@ -251,7 +255,7 @@ public final class RealSchurDecomposition {
         Objects.requireNonNull(tolerance, "tolerance");
         if (index < 0 || index + 1 >= t.rows()) throw new IndexOutOfBoundsException("block index");
         double sub = Math.abs(t.get(index + 1, index));
-        double threshold = tolerance.absolute() + tolerance.relative() * t.normInfinity();
+        double threshold = tolerance.relative() * t.normInfinity();
         return sub > threshold && hasComplexPair(t.toArray(), index, threshold);
     }
 
