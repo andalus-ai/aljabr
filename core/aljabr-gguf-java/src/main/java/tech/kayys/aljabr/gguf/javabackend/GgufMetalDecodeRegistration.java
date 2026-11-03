@@ -16,7 +16,7 @@ final class GgufMetalDecodeRegistration {
 
     static Result register(
             GGUFModel model, GgufModelConfig cfg, GgufLayerWeights layerWeights,
-            GGUFTensorInfo tokenEmbed, float[] outputNorm, GGUFTensorInfo outputWeight,
+            GGUFTensorInfo tokenEmbed, GGUFTensorInfo perLayerTokEmbd, float[] outputNorm, GGUFTensorInfo outputWeight,
             int dim, int ffnDim, int nH, int layers, int nEmbdPerLayer) {
                 boolean decodeDisabled = Boolean.getBoolean("aljabr.metal.decode.disable");
                 boolean nativeDecodeAvailable = !decodeDisabled && GgufMetalBridge.isDecodeStepAvailable();
