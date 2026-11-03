@@ -635,11 +635,15 @@ public final class GgufTensorOps {
     }
 
     public static void dequantizeRow(GGUFModel model, GGUFTensorInfo tensor, long row, float[] dst) {
-        GgufTensorShape.MatrixLayout layout = checkedLayout(tensor, dst.length);
+        dequantizeRow(model, tensor, row, dst, 0);
+    }
+
+    public static void dequantizeRow(GGUFModel model, GGUFTensorInfo tensor, long row, float[] dst, int dstOff) {
+        GgufTensorShape.MatrixLayout layout = checkedLayout(tensor, dst.length - dstOff);
         checkLayoutRow(layout, row);
         MemorySegment data = tensorData(model, tensor);
         long rowOffset = row * layout.rowBytes();
-        GgufRowDequantizer.dequantizeRow(data, rowOffset, tensor.typeId(), layout.columns(), dst, 0);
+        GgufRowDequantizer.dequantizeRow(data, rowOffset, tensor.typeId(), layout.columns(), dst, dstOff);
     }
 
     public static float dotRow(GGUFModel model, GGUFTensorInfo tensor, long row, float[] vector) {

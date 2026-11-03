@@ -115,6 +115,17 @@ public final class GGUFVectorOps {
         for (; i < len; i++) a[i] += b[i];
     }
 
+    /** {@code a[aOff + i] += b[bOff + i]} in-place. */
+    public static void addInPlace(float[] a, int aOff, float[] b, int bOff, int len) {
+        int i = 0, bound = S.loopBound(len);
+        for (; i < bound; i += S.length()) {
+            FloatVector.fromArray(S, a, aOff + i)
+                       .add(FloatVector.fromArray(S, b, bOff + i))
+                       .intoArray(a, aOff + i);
+        }
+        for (; i < len; i++) a[aOff + i] += b[bOff + i];
+    }
+
     /** {@code dst[i] = a[i] * b[i]}. */
     public static void mulInto(float[] a, float[] b, float[] dst, int len) {
         int i = 0, bound = S.loopBound(len);
@@ -170,6 +181,16 @@ public final class GGUFVectorOps {
             FloatVector.fromArray(S, a, i).mul(vs).intoArray(a, i);
         }
         for (; i < len; i++) a[i] *= s;
+    }
+
+    /** Scale elements with offset: {@code a[aOff + i] *= s}. */
+    public static void scale(float[] a, int aOff, float s, int len) {
+        var vs = FloatVector.broadcast(S, s);
+        int i = 0, bound = S.loopBound(len);
+        for (; i < bound; i += S.length()) {
+            FloatVector.fromArray(S, a, aOff + i).mul(vs).intoArray(a, aOff + i);
+        }
+        for (; i < len; i++) a[aOff + i] *= s;
     }
 
     /** Copy {@code src} into {@code dst}. */
@@ -353,15 +374,24 @@ public final class GGUFVectorOps {
     public static void rope(
             float[] x, int nHeads, int headDim, int rotaryDim, int pos,
             float freqBase, float[] freqFactors) {
+        rope(x, 0, nHeads, headDim, rotaryDim, pos, freqBase, freqFactors);
+    }
+
+    /**
+     * Apply Rotary Position Embedding (RoPE) in-place with an explicit offset into {@code x}.
+     */
+    public static void rope(
+            float[] x, int xOff, int nHeads, int headDim, int rotaryDim, int pos,
+            float freqBase, float[] freqFactors) {
         if (headDim <= 0 || nHeads <= 0 || rotaryDim < 2 || rotaryDim > headDim
                 || (rotaryDim & 1) != 0) {
             throw new IllegalArgumentException(
                     "invalid RoPE dimensions: heads=" + nHeads
                             + ", headDim=" + headDim + ", rotaryDim=" + rotaryDim);
         }
-        if (x.length < (long) nHeads * headDim) {
+        if (x.length < (long) xOff + (long) nHeads * headDim) {
             throw new IllegalArgumentException(
-                    "input vector is shorter than nHeads * headDim");
+                    "input vector is shorter than xOff + nHeads * headDim");
         }
 
         int half = rotaryDim / 2;
@@ -378,7 +408,7 @@ public final class GGUFVectorOps {
             table[half + i] = (float) Math.sin(theta);
         }
         for (int h = 0; h < nHeads; h++) {
-            int base = h * headDim;
+            int base = xOff + h * headDim;
             for (int i = 0; i < half; i++) {
                 float cos = table[i];
                 float sin = table[half + i];
