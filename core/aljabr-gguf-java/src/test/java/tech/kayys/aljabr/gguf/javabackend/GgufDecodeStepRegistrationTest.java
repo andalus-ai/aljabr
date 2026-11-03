@@ -9,14 +9,14 @@ class GgufDecodeStepRegistrationTest {
 
     @Test
     void failedLayerRegistrationDisablesFullMetalDecode() {
-        assertFalse(GgufDecodeStep.decodeLayerRegistrationComplete(false, null, false));
+        assertFalse(GgufMetalDecodeRegistration.decodeLayerRegistrationComplete(false, null, false));
     }
 
     @Test
     void missingRequiredRopeBufferDisablesFullMetalDecode() {
         float[] proportionalRopeFreqs = {1.0f, 0.5f};
 
-        assertFalse(GgufDecodeStep.decodeLayerRegistrationComplete(
+        assertFalse(GgufMetalDecodeRegistration.decodeLayerRegistrationComplete(
                 true, proportionalRopeFreqs, false));
     }
 
@@ -24,12 +24,12 @@ class GgufDecodeStepRegistrationTest {
     void successfullyRegisteredRopeBufferAllowsFullMetalDecode() {
         float[] proportionalRopeFreqs = {1.0f, 0.5f};
 
-        assertTrue(GgufDecodeStep.decodeLayerRegistrationComplete(
+        assertTrue(GgufMetalDecodeRegistration.decodeLayerRegistrationComplete(
                 true, proportionalRopeFreqs, true));
     }
 
     @Test
     void absentRopeBufferDoesNotRequireRopeRegistration() {
-        assertTrue(GgufDecodeStep.decodeLayerRegistrationComplete(true, null, false));
+        assertTrue(GgufMetalDecodeRegistration.decodeLayerRegistrationComplete(true, null, false));
     }
 }
