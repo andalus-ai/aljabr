@@ -15,7 +15,7 @@ class QuantizedTensorDescriptorAdapterTest {
                 "U4",
                 4,
                 QuantizedTensorDescriptor.PackingOrder.LOW_BITS_FIRST,
-                4,
+                16,
                 1,
                 32);
     }
@@ -43,7 +43,7 @@ class QuantizedTensorDescriptorAdapterTest {
         assertEquals(4, descriptor.getBitWidth());
         assertEquals(QuantizedTensorDescriptor.PackingOrder.LOW_BITS_FIRST,
                 descriptor.getPackingOrder());
-        assertEquals(4, descriptor.getPayloadLengthBytes());
+        assertEquals(16, descriptor.getPayloadLengthBytes());
         assertEquals(1, descriptor.getQuantizationAxis());
         assertEquals(32, descriptor.getGroupSize());
         assertEquals(2, descriptor.getScaleCount());
