@@ -1,4 +1,4 @@
-package tech.kayys.tafkir.models;
+package tech.kayys.aljabr.models;
 
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.spi.model.FFNActivationType;
