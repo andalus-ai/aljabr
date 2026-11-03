@@ -97,9 +97,7 @@ final class GgufDecodeStep {
      * value input, but the layer still owns its KV cache. Do not misclassify
      * such layers as cross-layer KV-sharing layers during prefill.
      */
-    static boolean hasOwnKvCache(boolean hasKeyProjection) {
-        return hasKeyProjection;
-    }
+
 
     /**
      * Explains why the native full-GPU decode path cannot be used before any
@@ -116,54 +114,9 @@ final class GgufDecodeStep {
      * absent uses the preceding one layer for global attention or two layers
      * back for SWA, matching the current registration convention.</p>
      */
-    static boolean hasUnsupportedNativeKvLayout(
-            boolean[] hasKeyProjection,
-            boolean[] hasValueProjection,
-            boolean[] swaLayers,
-            int[] headDims,
-            int[] kvHeads) {
-        if (hasKeyProjection == null || hasValueProjection == null || swaLayers == null
-                || headDims == null || kvHeads == null) {
-            throw new IllegalArgumentException("native KV layout arrays must not be null");
-        }
-        int layers = hasKeyProjection.length;
-        if (hasValueProjection.length != layers || swaLayers.length != layers
-                || headDims.length != layers || kvHeads.length != layers) {
-            throw new IllegalArgumentException("native KV layout arrays must have equal lengths");
-        }
 
-        for (int layer = 0; layer < layers; layer++) {
-            boolean hasKey = hasKeyProjection[layer];
-            boolean hasValue = hasValueProjection[layer];
 
-            // A V-only layer is unsupported. K-as-V is supported: the native
-            // path copies the raw K projection into V before K normalization
-            // and RoPE, and this layer owns its own KV cache.
-            if (!hasKey && hasValue) {
-                return true;
-            }
 
-            // If both projections are absent, this is a shared-KV layer.
-            // The native decoder cannot safely use an owner with a different
-            // head dimension or number of KV heads.
-            if (!hasKey) {
-                int ownerLayer = Math.max(0, layer - (swaLayers[layer] ? 2 : 1));
-                if (headDims[layer] != headDims[ownerLayer]
-                        || kvHeads[layer] != kvHeads[ownerLayer]) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    static String fullGpuDecodeEligibilityFailure(
-            boolean decodeDisabled,
-            boolean nativeDecodeAvailable,
-            boolean usesPerLayerTokenEmbeddings) {
-        return fullGpuDecodeEligibilityFailure(
-                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings, false, false);
-    }
 
     static String fullGpuDecodeEligibilityFailure(
             boolean decodeDisabled,
@@ -204,29 +157,14 @@ final class GgufDecodeStep {
      * the native path has successfully advanced any generated-token KV entries,
      * because the host KV cache is not populated by successful native steps.
      */
-    static String fullGpuDecodeRuntimeFailureReason(
-            boolean nativeStepSucceeded, boolean nativeStepPreviouslyCommitted) {
-        if (nativeStepSucceeded) {
-            return null;
-        }
-        if (nativeStepPreviouslyCommitted) {
-            return "native Metal decode-step failed after prior native tokens; the host KV cache is incomplete";
-        }
-        return "native Metal decode-step failed before any native token was committed; per-op fallback is safe";
-    }
+
 
     /**
      * Prompt KV synchronization happens before generation and before the native
      * decoder has committed any token. If any layer fails to sync, the populated
      * host cache remains the safe source of truth for per-op decoding.
      */
-    static String fullGpuDecodeKvCacheSyncFailureReason(int failedLayer) {
-        if (failedLayer < 0) {
-            return null;
-        }
-        return "Metal KV-cache sync failed at layer " + failedLayer
-                + " before generation; host KV cache is intact and per-op fallback is safe";
-    }
+
 
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
         this.model = model;
