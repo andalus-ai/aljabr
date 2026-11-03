@@ -118,39 +118,9 @@ final class GgufDecodeStep {
 
 
 
-    static String fullGpuDecodeEligibilityFailure(
-            boolean decodeDisabled,
-            boolean nativeDecodeAvailable,
-            boolean usesPerLayerTokenEmbeddings,
-            boolean usesPartialRotaryDimensions) {
-        return fullGpuDecodeEligibilityFailure(
-                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings,
-                usesPartialRotaryDimensions, false);
-    }
 
-    static String fullGpuDecodeEligibilityFailure(
-            boolean decodeDisabled,
-            boolean nativeDecodeAvailable,
-            boolean usesPerLayerTokenEmbeddings,
-            boolean usesPartialRotaryDimensions,
-            boolean usesUnsupportedNativeKvLayout) {
-        if (decodeDisabled) {
-            return "disabled by -Daljabr.metal.decode.disable=true";
-        }
-        if (!nativeDecodeAvailable) {
-            return "native Metal decode-step entry point is unavailable";
-        }
-        if (usesPerLayerTokenEmbeddings) {
-            return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
-        }
-        if (usesUnsupportedNativeKvLayout) {
-            return "model uses V-only projections or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely";
-        }
-        if (usesPartialRotaryDimensions) {
-            return "model uses per-layer partial RoPE, which the native full-GPU decode step does not implement";
-        }
-        return null;
-    }
+
+
 
     /**
      * Classifies a failed native decode call. Falling back is safe only before
@@ -354,9 +324,9 @@ final class GgufDecodeStep {
             layerHeadDims[layer] = cfg.headDimForLayer(layer);
             layerKvHeads[layer] = cfg.nKVHeadsForLayer(layer);
         }
-        boolean usesUnsupportedNativeKvLayout = hasUnsupportedNativeKvLayout(
+        boolean usesUnsupportedNativeKvLayout = GgufDecodeEligibility.hasUnsupportedNativeKvLayout(
                 hasKeyProjection, hasValueProjection, swaLayers, layerHeadDims, layerKvHeads);
-        String metalDecodeSkipReason = fullGpuDecodeEligibilityFailure(
+        String metalDecodeSkipReason = GgufDecodeEligibility.fullGpuDecodeEligibilityFailure(
                 decodeDisabled,
                 nativeDecodeAvailable,
                 usesPerLayerTokenEmbeddings,
@@ -581,7 +551,7 @@ final class GgufDecodeStep {
 
             int qDim = nH * layerHDim;
             int kvDim = layerNKVH * layerHDim;
-            boolean hasOwnKv = hasOwnKvCache(wK[layer] != null);
+            boolean hasOwnKv = GgufDecodeEligibility.hasOwnKvCache(wK[layer] != null);
             int kvLayerToUse = hasOwnKv ? layer
                     : Math.max(0, layer - (isSwa ? 2 : 1));
             int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
@@ -863,7 +833,7 @@ final class GgufDecodeStep {
                     synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(src), cache.vLayer(src));
                 }
                 if (!synced) {
-                    String reason = fullGpuDecodeKvCacheSyncFailureReason(l);
+                    String reason = GgufDecodeEligibility.fullGpuDecodeKvCacheSyncFailureReason(l);
                     disableMetalDecodeAfterRuntimeFallback(T, reason);
                     break;
                 }
@@ -1015,7 +985,7 @@ final class GgufDecodeStep {
             return bestToken;
         }
 
-        String fallbackReason = fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
+        String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
         if (metalDecodeStepHasCommitted) {
             metalDecodeRuntimeDisabled = true;
             metalDecodeRequiresRestart = true;
@@ -1070,7 +1040,7 @@ final class GgufDecodeStep {
                 return this.logits;
             }
 
-            String fallbackReason = fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
+            String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
             if (metalDecodeStepHasCommitted) {
                 metalDecodeRuntimeDisabled = true;
                 metalDecodeRequiresRestart = true;
