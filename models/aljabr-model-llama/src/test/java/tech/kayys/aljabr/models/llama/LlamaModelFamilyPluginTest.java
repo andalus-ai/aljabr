@@ -1,8 +1,6 @@
 package tech.kayys.aljabr.models.llama;
 
 import org.junit.jupiter.api.Test;
-import tech.kayys.tafkir.models.LLaMA3Family;
-import tech.kayys.tafkir.models.LlamaFamily;
 import tech.kayys.aljabr.spi.model.ModelArchitecture;
 import tech.kayys.aljabr.spi.model.ModelFamilyContractValidator;
 import tech.kayys.aljabr.spi.model.ModelFamilyContractViolation;
