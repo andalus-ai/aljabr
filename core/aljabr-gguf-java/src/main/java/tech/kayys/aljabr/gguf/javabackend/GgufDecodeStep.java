@@ -46,6 +46,7 @@ final class GgufDecodeStep {
     private final GGUFModel model;
     private final GgufModelConfig cfg;
 
+    private final GgufLayerWeights layerWeights;
     private final GGUFTensorInfo tokenEmbed;
     private final float[] outputNorm;
     private final GGUFTensorInfo outputWeight;
@@ -54,22 +55,8 @@ final class GgufDecodeStep {
     private final GGUFTensorInfo perLayerTokEmbd;
     private final GGUFTensorInfo perLayerModelProj;
     private final float[] perLayerProjNorm;
-    private final GGUFTensorInfo[] perLayerInpGate;
-    private final GGUFTensorInfo[] perLayerProj;
-    private final float[][] perLayerPostNorm;
 
-    private final float[][] attnNorm;
-    private final float[][] attnQNorm;
-    private final float[][] attnKNorm;
-    private final float[][] attnVNorm;
-    private final float[][] postAttnNorm;
-    private final float[][] ropeFreqs;
-    private final float[] outScale;
-    private final GGUFTensorInfo[] wQ, wK, wV, wO;
 
-    private final float[][] ffnNorm;
-    private final float[][] postFfnNorm;
-    private final GGUFTensorInfo[] ffnGate, ffnUp, ffnDown;
 
     // Scratch buffers sized to worst-case (maximum) across layers
     private final float[] x, xb, q, k, v, attnFull, attnOut, gate, up, hb, scores, logits, ffnOutBuf;
@@ -146,6 +133,7 @@ final class GgufDecodeStep {
         int hDim = cfg.headDim();
         int layers = cfg.nLayers();
         int nEmbdPerLayer = cfg.nEmbdPerLayer();
+        this.layerWeights = new GgufLayerWeights(layers);
 
         // Compute true max KV heads across all layers (ignore nKVHeads which may be
         // wrong)
@@ -169,36 +157,36 @@ final class GgufDecodeStep {
                 .map(t -> dequantizeVector(t, nEmbdPerLayer > 0 ? nEmbdPerLayer : 1))
                 .orElse(null);
 
-        this.perLayerInpGate = new GGUFTensorInfo[layers];
-        this.perLayerProj = new GGUFTensorInfo[layers];
-        this.perLayerPostNorm = new float[layers][];
+        
+        
+        
 
-        this.attnNorm = new float[layers][];
-        this.attnQNorm = new float[layers][];
-        this.attnKNorm = new float[layers][];
-        this.attnVNorm = new float[layers][];
-        this.postAttnNorm = new float[layers][];
-        this.ropeFreqs = new float[layers][];
-        this.outScale = new float[layers];
-        this.wQ = new GGUFTensorInfo[layers];
-        this.wK = new GGUFTensorInfo[layers];
-        this.wV = new GGUFTensorInfo[layers];
-        this.wO = new GGUFTensorInfo[layers];
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
 
-        this.ffnNorm = new float[layers][];
-        this.postFfnNorm = new float[layers][];
-        this.ffnGate = new GGUFTensorInfo[layers];
-        this.ffnUp = new GGUFTensorInfo[layers];
-        this.ffnDown = new GGUFTensorInfo[layers];
+        
+        
+        
+        
+        
 
         for (int i = 0; i < layers; i++) {
             String p = "blk." + i + ".";
             int layerHDim = cfg.headDimForLayer(i);
-            attnNorm[i] = dequantizeVector(requireTensor(p + "attn_norm.weight"), dim);
-            attnQNorm[i] = findTensor(p + "attn_q_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
-            attnKNorm[i] = findTensor(p + "attn_k_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
-            attnVNorm[i] = findTensor(p + "attn_v_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
-            postAttnNorm[i] = findTensor(p + "post_attention_norm.weight").map(t -> dequantizeVector(t, dim))
+            layerWeights.attnNorm[i] = dequantizeVector(requireTensor(p + "attn_norm.weight"), dim);
+            layerWeights.attnQNorm[i] = findTensor(p + "attn_q_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
+            layerWeights.attnKNorm[i] = findTensor(p + "attn_k_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
+            layerWeights.attnVNorm[i] = findTensor(p + "attn_v_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
+            layerWeights.postAttnNorm[i] = findTensor(p + "post_attention_norm.weight").map(t -> dequantizeVector(t, dim))
                     .orElse(null);
 
             // Proportional RoPE factors: blk.N.rope_freqs.weight or global
@@ -207,38 +195,38 @@ final class GgufDecodeStep {
             // / 2)
             GGUFTensorInfo layerRope = findTensor(p + "rope_freqs.weight").orElse(null);
             if (layerRope != null) {
-                ropeFreqs[i] = dequantizeVector(layerRope, layerHDim / 2);
+                layerWeights.ropeFreqs[i] = dequantizeVector(layerRope, layerHDim / 2);
             } else {
-                ropeFreqs[i] = findTensor("rope_freqs.weight")
+                layerWeights.ropeFreqs[i] = findTensor("rope_freqs.weight")
                         .filter(t -> t.shape().length > 0 && t.shape()[0] == layerHDim / 2)
                         .map(t -> dequantizeVector(t, layerHDim / 2))
                         .orElse(null);
             }
 
             // Optional layer output scale
-            outScale[i] = findTensor(p + "layer_output_scale.weight")
+            layerWeights.outScale[i] = findTensor(p + "layer_output_scale.weight")
                     .map(t -> {
                         float[] s = dequantizeVector(t, 1);
                         return s.length > 0 ? s[0] : 1.0f;
                     })
                     .orElse(1.0f);
 
-            wQ[i] = requireTensor(p + "attn_q.weight");
-            wK[i] = findTensor(p + "attn_k.weight").orElse(null);
-            wV[i] = findTensor(p + "attn_v.weight").orElse(null);
-            wO[i] = requireTensor(p + "attn_output.weight");
+            layerWeights.wQ[i] = requireTensor(p + "attn_q.weight");
+            layerWeights.wK[i] = findTensor(p + "attn_k.weight").orElse(null);
+            layerWeights.wV[i] = findTensor(p + "attn_v.weight").orElse(null);
+            layerWeights.wO[i] = requireTensor(p + "attn_output.weight");
 
-            ffnNorm[i] = dequantizeVector(requireTensor(p + "ffn_norm.weight"), dim);
-            postFfnNorm[i] = findTensor(p + "post_ffw_norm.weight").map(t -> dequantizeVector(t, dim)).orElse(null);
-            ffnGate[i] = findTensor(p + "ffn_gate.weight").orElse(null);
-            ffnUp[i] = requireTensor(p + "ffn_up.weight");
-            ffnDown[i] = requireTensor(p + "ffn_down.weight");
+            layerWeights.ffnNorm[i] = dequantizeVector(requireTensor(p + "ffn_norm.weight"), dim);
+            layerWeights.postFfnNorm[i] = findTensor(p + "post_ffw_norm.weight").map(t -> dequantizeVector(t, dim)).orElse(null);
+            layerWeights.ffnGate[i] = findTensor(p + "ffn_gate.weight").orElse(null);
+            layerWeights.ffnUp[i] = requireTensor(p + "ffn_up.weight");
+            layerWeights.ffnDown[i] = requireTensor(p + "ffn_down.weight");
 
             // Per-layer embedding blocks
             if (perLayerTokEmbd != null) {
-                perLayerInpGate[i] = findTensor(p + "inp_gate.weight").orElse(null);
-                perLayerProj[i] = findTensor(p + "proj.weight").orElse(null);
-                perLayerPostNorm[i] = findTensor(p + "post_norm.weight")
+                layerWeights.perLayerInpGate[i] = findTensor(p + "inp_gate.weight").orElse(null);
+                layerWeights.perLayerProj[i] = findTensor(p + "proj.weight").orElse(null);
+                layerWeights.perLayerPostNorm[i] = findTensor(p + "post_norm.weight")
                         .map(t -> dequantizeVector(t, dim))
                         .orElse(null);
             }
@@ -260,7 +248,7 @@ final class GgufDecodeStep {
                             "[JAVA ROPE CONFIG] layer=%d attention=%s head_dim=%d rotary_dim=%d rope_base=%.1f freq_factors=%d%n",
                             layer, swa ? "swa" : "global", layerHeadDim, rotaryDim,
                             cfg.ropeFreqBaseForLayer(layer),
-                            ropeFreqs[layer] == null ? 0 : ropeFreqs[layer].length);
+                            layerWeights.ropeFreqs[layer] == null ? 0 : layerWeights.ropeFreqs[layer].length);
                 }
                 previousHeadDim = layerHeadDim;
                 previousRotaryDim = rotaryDim;
@@ -271,8 +259,8 @@ final class GgufDecodeStep {
         // Register static layer norms on GPU bridge once to enable zero-copy decode
         // slices
         if (GgufMetalBridge.isAvailable()) {
-            GgufMetalBridge.registerLayerNorms(layers, dim, hDim, postAttnNorm, ffnNorm, postFfnNorm, attnNorm,
-                    attnQNorm, attnKNorm);
+            GgufMetalBridge.registerLayerNorms(layers, dim, hDim, layerWeights.postAttnNorm, layerWeights.ffnNorm, layerWeights.postFfnNorm, layerWeights.attnNorm,
+                    layerWeights.attnQNorm, layerWeights.attnKNorm);
         }
 
         this.x = new float[dim];
@@ -318,8 +306,8 @@ final class GgufDecodeStep {
             if (cfg.rotaryDimForLayer(layer) < cfg.headDimForLayer(layer)) {
                 usesPartialRotaryDimensions = true;
             }
-            hasKeyProjection[layer] = wK[layer] != null;
-            hasValueProjection[layer] = wV[layer] != null;
+            hasKeyProjection[layer] = layerWeights.wK[layer] != null;
+            hasValueProjection[layer] = layerWeights.wV[layer] != null;
             swaLayers[layer] = cfg.isSwaLayer(layer);
             layerHeadDims[layer] = cfg.headDimForLayer(layer);
             layerKvHeads[layer] = cfg.nKVHeadsForLayer(layer);
@@ -334,7 +322,7 @@ final class GgufDecodeStep {
                 usesUnsupportedNativeKvLayout);
 
         for (int l = 0; l < layers && metalDecodeSkipReason == null; l++) {
-            if (wQ[l] == null || wO[l] == null || ffnUp[l] == null || ffnDown[l] == null) {
+            if (layerWeights.wQ[l] == null || layerWeights.wO[l] == null || layerWeights.ffnUp[l] == null || layerWeights.ffnDown[l] == null) {
                 metalDecodeSkipReason = "layer " + l + " is missing a required Q/O/FFN weight";
             }
         }
@@ -365,33 +353,33 @@ final class GgufDecodeStep {
 
                     float attnScale = cfg.attentionScale();
                     if (attnScale <= 0f) {
-                        attnScale = (attnQNorm[l] != null || attnKNorm[l] != null) ? 1.0f
+                        attnScale = (layerWeights.attnQNorm[l] != null || layerWeights.attnKNorm[l] != null) ? 1.0f
                                 : (1.0f / (float) Math.sqrt(layerHDim));
                     }
 
                     // A key projection owns the KV cache, including K-as-V layers.
-                    int kvLayerIndex = wK[l] != null
+                    int kvLayerIndex = layerWeights.wK[l] != null
                             ? l
                             : Math.max(0, l - (isSwa ? 2 : 1));
                     boolean reg = GgufMetalBridge.registerDecodeLayer(
                             l, kvLayerIndex, model,
-                            wQ[l], wK[l], wV[l], wO[l],
-                            ffnGate[l], ffnUp[l], ffnDown[l],
+                            layerWeights.wQ[l], layerWeights.wK[l], layerWeights.wV[l], layerWeights.wO[l],
+                            layerWeights.ffnGate[l], layerWeights.ffnUp[l], layerWeights.ffnDown[l],
                             n0, n1, n2, wO_K, wO_N, ffnIntermediate,
                             nH, layerNKVH, layerHDim, stride,
                             layerRopeFreq, isSwa ? 1 : 0,
-                            outScale[l], attnScale,
-                            postAttnNorm[l] != null ? 1 : 0,
-                            postFfnNorm[l] != null ? 1 : 0,
-                            attnQNorm[l] != null ? 1 : 0,
-                            attnKNorm[l] != null ? 1 : 0,
-                            (cfg.hasUnitVNorm() || attnVNorm[l] != null) ? 1 : 0);
-                    boolean ropeFreqsRegistered = ropeFreqs[l] == null;
-                    if (reg && ropeFreqs[l] != null) {
-                        ropeFreqsRegistered = GgufMetalBridge.registerRopeFreqs(l, ropeFreqs[l]);
+                            layerWeights.outScale[l], attnScale,
+                            layerWeights.postAttnNorm[l] != null ? 1 : 0,
+                            layerWeights.postFfnNorm[l] != null ? 1 : 0,
+                            layerWeights.attnQNorm[l] != null ? 1 : 0,
+                            layerWeights.attnKNorm[l] != null ? 1 : 0,
+                            (cfg.hasUnitVNorm() || layerWeights.attnVNorm[l] != null) ? 1 : 0);
+                    boolean ropeFreqsRegistered = layerWeights.ropeFreqs[l] == null;
+                    if (reg && layerWeights.ropeFreqs[l] != null) {
+                        ropeFreqsRegistered = GgufMetalBridge.registerRopeFreqs(l, layerWeights.ropeFreqs[l]);
                     }
-                    if (!decodeLayerRegistrationComplete(reg, ropeFreqs[l], ropeFreqsRegistered)) {
-                        if (reg && ropeFreqs[l] != null && !ropeFreqsRegistered) {
+                    if (!decodeLayerRegistrationComplete(reg, layerWeights.ropeFreqs[l], ropeFreqsRegistered)) {
+                        if (reg && layerWeights.ropeFreqs[l] != null && !ropeFreqsRegistered) {
                             System.err.println("[GgufDecodeStep] Failed to register proportional RoPE frequencies for layer "
                                     + l + "; disabling Metal decode to preserve correctness.");
                         }
@@ -537,13 +525,13 @@ final class GgufDecodeStep {
             int layerNKVH = cfg.nKVHeadsForLayer(layer);
             int layerHDim = cfg.headDimForLayer(layer);
             float layerRopeFreq = cfg.ropeFreqBaseForLayer(layer);
-            float[] layerRopeFreqs = ropeFreqs[layer];
+            float[] layerRopeFreqs = layerWeights.ropeFreqs[layer];
             boolean isSwa = cfg.isSwaLayer(layer);
 
             float scale;
             if (cfg.attentionScale() > 0f) {
                 scale = cfg.attentionScale();
-            } else if (attnQNorm[layer] != null || attnKNorm[layer] != null) {
+            } else if (layerWeights.attnQNorm[layer] != null || layerWeights.attnKNorm[layer] != null) {
                 scale = 1.0f;
             } else {
                 scale = (float) (1.0 / Math.sqrt(layerHDim));
@@ -551,7 +539,7 @@ final class GgufDecodeStep {
 
             int qDim = nH * layerHDim;
             int kvDim = layerNKVH * layerHDim;
-            boolean hasOwnKv = GgufDecodeEligibility.hasOwnKvCache(wK[layer] != null);
+            boolean hasOwnKv = GgufDecodeEligibility.hasOwnKvCache(layerWeights.wK[layer] != null);
             int kvLayerToUse = hasOwnKv ? layer
                     : Math.max(0, layer - (isSwa ? 2 : 1));
             int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
@@ -559,45 +547,45 @@ final class GgufDecodeStep {
 
             // ── 3a. QKV projections for all T tokens ─────────────────────────
             for (int t = 0; t < T; t++) {
-                GGUFVectorOps.rmsNorm(X, t * dim, attnNorm[layer], allXb, t * dim, dim, eps);
+                GGUFVectorOps.rmsNorm(X, t * dim, layerWeights.attnNorm[layer], allXb, t * dim, dim, eps);
             }
 
             long tQkv0 = System.nanoTime();
-            if (wK[layer] != null && wV[layer] != null) {
-                dispatchMatVecTripleBatch(wQ[layer], allQ, wK[layer], allK, wV[layer], allV, allXb, T);
-            } else if (wK[layer] != null) {
-                dispatchMatVecBatch(wQ[layer], allXb, allQ, T);
-                dispatchMatVecBatch(wK[layer], allXb, allK, T);
+            if (layerWeights.wK[layer] != null && layerWeights.wV[layer] != null) {
+                dispatchMatVecTripleBatch(layerWeights.wQ[layer], allQ, layerWeights.wK[layer], allK, layerWeights.wV[layer], allV, allXb, T);
+            } else if (layerWeights.wK[layer] != null) {
+                dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
+                dispatchMatVecBatch(layerWeights.wK[layer], allXb, allK, T);
                 System.arraycopy(allK, 0, allV, 0, T * kvDim);
             } else {
-                dispatchMatVecBatch(wQ[layer], allXb, allQ, T);
+                dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
             }
             long tQkv = System.nanoTime() - tQkv0;
             if (profilePrefill) profileQkvNanos += tQkv;
 
             for (int t = 0; t < T; t++) {
-                if (attnQNorm[layer] != null) {
-                    int qNormLen = attnQNorm[layer].length;
+                if (layerWeights.attnQNorm[layer] != null) {
+                    int qNormLen = layerWeights.attnQNorm[layer].length;
                     for (int h = 0; h < nH; h++) {
                         int off = t * qDim + h * layerHDim;
-                        GGUFVectorOps.rmsNorm(allQ, off, attnQNorm[layer], allQ, off, qNormLen, eps);
+                        GGUFVectorOps.rmsNorm(allQ, off, layerWeights.attnQNorm[layer], allQ, off, qNormLen, eps);
                     }
                 }
                 GGUFVectorOps.rope(allQ, t * qDim, nH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq, layerRopeFreqs);
 
                 if (hasOwnKv) {
-                    if (attnKNorm[layer] != null) {
-                        int kNormLen = attnKNorm[layer].length;
+                    if (layerWeights.attnKNorm[layer] != null) {
+                        int kNormLen = layerWeights.attnKNorm[layer].length;
                         for (int kvH = 0; kvH < layerNKVH; kvH++) {
                             int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNorm(allK, off, attnKNorm[layer], allK, off, kNormLen, eps);
+                            GGUFVectorOps.rmsNorm(allK, off, layerWeights.attnKNorm[layer], allK, off, kNormLen, eps);
                         }
                     }
-                    if (attnVNorm[layer] != null) {
-                        int vNormLen = attnVNorm[layer].length;
+                    if (layerWeights.attnVNorm[layer] != null) {
+                        int vNormLen = layerWeights.attnVNorm[layer].length;
                         for (int kvH = 0; kvH < layerNKVH; kvH++) {
                             int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNorm(allV, off, attnVNorm[layer], allV, off, vNormLen, eps);
+                            GGUFVectorOps.rmsNorm(allV, off, layerWeights.attnVNorm[layer], allV, off, vNormLen, eps);
                         }
                     } else if (cfg.hasUnitVNorm()) {
                         for (int kvH = 0; kvH < layerNKVH; kvH++) {
@@ -700,12 +688,12 @@ final class GgufDecodeStep {
             }
 
             if (!fusedLayerDone) {
-                dispatchMatVecBatch(wO[layer], allAttn, allWoOut, T);
+                dispatchMatVecBatch(layerWeights.wO[layer], allAttn, allWoOut, T);
 
                 for (int t = 0; t < T; t++) {
                     System.arraycopy(allWoOut, t * dim, xbL, 0, dim);
-                    if (postAttnNorm[layer] != null) {
-                        GGUFVectorOps.rmsNorm(xbL, postAttnNorm[layer], xbL, dim, eps);
+                    if (layerWeights.postAttnNorm[layer] != null) {
+                        GGUFVectorOps.rmsNorm(xbL, layerWeights.postAttnNorm[layer], xbL, dim, eps);
                     }
                     GGUFVectorOps.addInPlace(X, t * dim, xbL, 0, dim);
                 }
@@ -714,40 +702,40 @@ final class GgufDecodeStep {
                 // FFN
                 long tFfn0 = System.nanoTime();
                 for (int t = 0; t < T; t++) {
-                    GGUFVectorOps.rmsNorm(X, t * dim, ffnNorm[layer], allFfnIn, t * dim, dim, eps);
+                    GGUFVectorOps.rmsNorm(X, t * dim, layerWeights.ffnNorm[layer], allFfnIn, t * dim, dim, eps);
                 }
 
-                if (ffnGate[layer] != null) {
-                    fusedSuccess = dispatchFfnFusedBatch(ffnGate[layer], ffnUp[layer], ffnDown[layer], allFfnIn, allFfnOut,
+                if (layerWeights.ffnGate[layer] != null) {
+                    fusedSuccess = dispatchFfnFusedBatch(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], allFfnIn, allFfnOut,
                             cfg.isGeGLU(), T);
                 }
 
                 if (fusedSuccess) {
                     for (int t = 0; t < T; t++) {
                         System.arraycopy(allFfnOut, t * dim, xbL, 0, dim);
-                        if (postFfnNorm[layer] != null) {
-                            GGUFVectorOps.rmsNorm(xbL, postFfnNorm[layer], xbL, dim, eps);
+                        if (layerWeights.postFfnNorm[layer] != null) {
+                            GGUFVectorOps.rmsNorm(xbL, layerWeights.postFfnNorm[layer], xbL, dim, eps);
                         }
                         GGUFVectorOps.addInPlace(X, t * dim, xbL, 0, dim);
                     }
                 } else {
                     for (int t = 0; t < T; t++) {
                         System.arraycopy(allFfnIn, t * dim, xbL, 0, dim);
-                        if (ffnGate[layer] != null) {
-                            dispatchMatVecPair(ffnGate[layer], gateL, ffnUp[layer], upL, xbL);
+                        if (layerWeights.ffnGate[layer] != null) {
+                            dispatchMatVecPair(layerWeights.ffnGate[layer], gateL, layerWeights.ffnUp[layer], upL, xbL);
                             if (cfg.isGeGLU()) {
                                 GGUFVectorOps.geGLU(gateL, upL, hbL, ffnDim);
                             } else {
                                 GGUFVectorOps.swiGLU(gateL, upL, hbL, ffnDim);
                             }
                         } else {
-                            dispatchMatVec(ffnUp[layer], xbL, upL);
+                            dispatchMatVec(layerWeights.ffnUp[layer], xbL, upL);
                             GGUFVectorOps.siluInPlace(upL, ffnDim);
                             System.arraycopy(upL, 0, hbL, 0, ffnDim);
                         }
-                        dispatchMatVec(ffnDown[layer], hbL, xbL);
-                        if (postFfnNorm[layer] != null) {
-                            GGUFVectorOps.rmsNorm(xbL, postFfnNorm[layer], xbL, dim, eps);
+                        dispatchMatVec(layerWeights.ffnDown[layer], hbL, xbL);
+                        if (layerWeights.postFfnNorm[layer] != null) {
+                            GGUFVectorOps.rmsNorm(xbL, layerWeights.postFfnNorm[layer], xbL, dim, eps);
                         }
                         GGUFVectorOps.addInPlace(X, t * dim, xbL, 0, dim);
                     }
@@ -760,10 +748,10 @@ final class GgufDecodeStep {
 
                 // Per-layer embedding + Layer output scale
                 for (int t = 0; t < T; t++) {
-                    if (hasPerLayer && perLayerInpGate[layer] != null && perLayerProj[layer] != null) {
+                    if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null && layerWeights.perLayerProj[layer] != null) {
                         float[] xSlice = new float[dim];
                         System.arraycopy(X, t * dim, xSlice, 0, dim);
-                        dispatchMatVec(perLayerInpGate[layer], xSlice, peGate);
+                        dispatchMatVec(layerWeights.perLayerInpGate[layer], xSlice, peGate);
                         float kGelu = 0.7978845608f;
                         int peSliceOffset = layer * nEmbdPL;
                         for (int j = 0; j < nEmbdPL; j++) {
@@ -771,15 +759,15 @@ final class GgufDecodeStep {
                             float gelu = 0.5f * g * (1.0f + (float) Math.tanh(kGelu * (g + 0.044715f * g * g * g)));
                             peGate[j] = gelu * perLayerInputsT[t][peSliceOffset + j];
                         }
-                        dispatchMatVec(perLayerProj[layer], peGate, peOut);
-                        if (perLayerPostNorm[layer] != null) {
-                            GGUFVectorOps.rmsNorm(peOut, perLayerPostNorm[layer], peOut, dim, eps);
+                        dispatchMatVec(layerWeights.perLayerProj[layer], peGate, peOut);
+                        if (layerWeights.perLayerPostNorm[layer] != null) {
+                            GGUFVectorOps.rmsNorm(peOut, layerWeights.perLayerPostNorm[layer], peOut, dim, eps);
                         }
                         GGUFVectorOps.addInPlace(X, t * dim, peOut, 0, dim);
                     }
 
-                    if (outScale[layer] != 1.0f) {
-                        GGUFVectorOps.scale(X, t * dim, outScale[layer], dim);
+                    if (layerWeights.outScale[layer] != 1.0f) {
+                        GGUFVectorOps.scale(X, t * dim, layerWeights.outScale[layer], dim);
                     }
                 }
             }
@@ -816,7 +804,7 @@ final class GgufDecodeStep {
         cache.advance(T);
 
         // If Metal decode step is active, sync prompt KV cache to GPU.
-        // For layers without own wK weights (wK[l]==null), their Metal KV buffer must
+        // For layers without own layerWeights.wK weights (layerWeights.wK[l]==null), their Metal KV buffer must
         // contain
         // the same data as the source layer they share (kvLayerIndex). Sync that source
         // data
@@ -824,7 +812,7 @@ final class GgufDecodeStep {
         if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
             for (int l = 0; l < layers; l++) {
                 boolean synced;
-                if (wK[l] != null) {
+                if (layerWeights.wK[l] != null) {
                     // Layer has its own KV; sync directly.
                     synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
                 } else {
@@ -1101,20 +1089,20 @@ final class GgufDecodeStep {
             int layerNKVH = cfg.nKVHeadsForLayer(layer);
             int layerHDim = cfg.headDimForLayer(layer);
             float layerRopeFreq = cfg.ropeFreqBaseForLayer(layer);
-            float[] layerRopeFreqs = ropeFreqs[layer];
+            float[] layerRopeFreqs = layerWeights.ropeFreqs[layer];
 
             long t0 = System.nanoTime();
             if (!nextQkvReady) {
-                GGUFVectorOps.rmsNorm(x, attnNorm[layer], xb, dim, eps);
+                GGUFVectorOps.rmsNorm(x, layerWeights.attnNorm[layer], xb, dim, eps);
 
                 // Q / K / V
-                if (wK[layer] != null && wV[layer] != null) {
-                    dispatchMatVecTriple(wQ[layer], q, wK[layer], k, wV[layer], v, xb);
-                } else if (wK[layer] != null) {
-                    dispatchMatVecPair(wQ[layer], q, wK[layer], k, xb);
+                if (layerWeights.wK[layer] != null && layerWeights.wV[layer] != null) {
+                    dispatchMatVecTriple(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, layerWeights.wV[layer], v, xb);
+                } else if (layerWeights.wK[layer] != null) {
+                    dispatchMatVecPair(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, xb);
                     System.arraycopy(k, 0, v, 0, layerNKVH * layerHDim);
                 } else {
-                    dispatchMatVec(wQ[layer], xb, q);
+                    dispatchMatVec(layerWeights.wQ[layer], xb, q);
                 }
             }
             nextQkvReady = false;
@@ -1123,10 +1111,10 @@ final class GgufDecodeStep {
 
             long tRope0 = System.nanoTime();
             // Q head norms before RoPE
-            if (attnQNorm[layer] != null) {
-                int qNormLen = attnQNorm[layer].length;
+            if (layerWeights.attnQNorm[layer] != null) {
+                int qNormLen = layerWeights.attnQNorm[layer].length;
                 for (int h = 0; h < nH; h++) {
-                    GGUFVectorOps.rmsNorm(q, h * layerHDim, attnQNorm[layer], q, h * layerHDim, qNormLen, eps);
+                    GGUFVectorOps.rmsNorm(q, h * layerHDim, layerWeights.attnQNorm[layer], q, h * layerHDim, qNormLen, eps);
                 }
             }
 
@@ -1134,19 +1122,19 @@ final class GgufDecodeStep {
             GGUFVectorOps.rope(q, nH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
             int kvLayerToUse = layer;
-            if (wK[layer] != null) {
+            if (layerWeights.wK[layer] != null) {
 
-                if (attnKNorm[layer] != null) {
-                    int kNormLen = attnKNorm[layer].length;
+                if (layerWeights.attnKNorm[layer] != null) {
+                    int kNormLen = layerWeights.attnKNorm[layer].length;
                     for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                        GGUFVectorOps.rmsNorm(k, kvH * layerHDim, attnKNorm[layer], k, kvH * layerHDim, kNormLen, eps);
+                        GGUFVectorOps.rmsNorm(k, kvH * layerHDim, layerWeights.attnKNorm[layer], k, kvH * layerHDim, kNormLen, eps);
                     }
                 }
 
-                if (attnVNorm[layer] != null) {
-                    int vNormLen = attnVNorm[layer].length;
+                if (layerWeights.attnVNorm[layer] != null) {
+                    int vNormLen = layerWeights.attnVNorm[layer].length;
                     for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                        GGUFVectorOps.rmsNorm(v, kvH * layerHDim, attnVNorm[layer], v, kvH * layerHDim, vNormLen, eps);
+                        GGUFVectorOps.rmsNorm(v, kvH * layerHDim, layerWeights.attnVNorm[layer], v, kvH * layerHDim, vNormLen, eps);
                     }
                 } else if (cfg.hasUnitVNorm()) {
                     for (int kvH = 0; kvH < layerNKVH; kvH++) {
@@ -1166,7 +1154,7 @@ final class GgufDecodeStep {
             float scale;
             if (cfg.attentionScale() > 0f) {
                 scale = cfg.attentionScale();
-            } else if (attnQNorm[layer] != null || attnKNorm[layer] != null) {
+            } else if (layerWeights.attnQNorm[layer] != null || layerWeights.attnKNorm[layer] != null) {
                 scale = 1.0f; // Q/K norms already control the scale
             } else {
                 scale = (float) (1.0 / Math.sqrt(layerHDim));
@@ -1231,21 +1219,21 @@ final class GgufDecodeStep {
             // no per-layer embedding, and is not the last layer.
             boolean canFuseNext = !hasPerLayer
                     && layer + 1 < layers
-                    && wQ[layer + 1] != null
-                    && wK[layer + 1] != null
-                    && wV[layer + 1] != null
-                    && attnNorm[layer + 1] != null
+                    && layerWeights.wQ[layer + 1] != null
+                    && layerWeights.wK[layer + 1] != null
+                    && layerWeights.wV[layer + 1] != null
+                    && layerWeights.attnNorm[layer + 1] != null
                     && GgufMetalBridge.isAvailable();
 
-            if (ffnGate[layer] != null && !hasPerLayer) {
+            if (layerWeights.ffnGate[layer] != null && !hasPerLayer) {
                 if (layer == layers - 1 && computeLogits && outputWeight != null && outputNorm != null
                         && GgufMetalBridge.isAvailable()) {
                     float cap = cfg.finalLogitSoftcap();
                     woFfnDone = GgufMetalBridge.woFfnLogitsFused(
-                            model, layer, x, attnFull, wO[layer],
-                            postAttnNorm[layer], ffnNorm[layer], postFfnNorm[layer],
-                            eps, outScale[layer],
-                            ffnGate[layer], ffnUp[layer], ffnDown[layer],
+                            model, layer, x, attnFull, layerWeights.wO[layer],
+                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer], layerWeights.postFfnNorm[layer],
+                            eps, layerWeights.outScale[layer],
+                            layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer],
                             cfg.isGeGLU(),
                             outputNorm, outputWeight,
                             this.logits, cap);
@@ -1255,23 +1243,23 @@ final class GgufDecodeStep {
                 }
                 if (!woFfnDone && canFuseNext) {
                     woFfnDone = GgufMetalBridge.woFfnNextQkvFused(
-                            model, layer, x, attnFull, wO[layer],
-                            postAttnNorm[layer], ffnNorm[layer], postFfnNorm[layer],
-                            eps, outScale[layer],
-                            ffnGate[layer], ffnUp[layer], ffnDown[layer],
+                            model, layer, x, attnFull, layerWeights.wO[layer],
+                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer], layerWeights.postFfnNorm[layer],
+                            eps, layerWeights.outScale[layer],
+                            layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer],
                             cfg.isGeGLU(),
-                            true, attnNorm[layer + 1],
+                            true, layerWeights.attnNorm[layer + 1],
                             q, k, v,
-                            wQ[layer + 1], wK[layer + 1], wV[layer + 1]);
+                            layerWeights.wQ[layer + 1], layerWeights.wK[layer + 1], layerWeights.wV[layer + 1]);
                     if (woFfnDone) {
                         nextQkvReady = true;
                     }
                 }
                 if (!woFfnDone) {
                     woFfnDone = GgufMetalBridge.woFfnFused(
-                            model, layer, x, attnFull, wO[layer],
-                            postAttnNorm[layer], ffnNorm[layer], postFfnNorm[layer],
-                            eps, ffnGate[layer], ffnUp[layer], ffnDown[layer],
+                            model, layer, x, attnFull, layerWeights.wO[layer],
+                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer], layerWeights.postFfnNorm[layer],
+                            eps, layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer],
                             cfg.isGeGLU());
                 }
             }
@@ -1288,48 +1276,48 @@ final class GgufDecodeStep {
                     tFfn += elapsed / 2;
                 }
             } else {
-                dispatchMatVec(wO[layer], attnFull, xb);
+                dispatchMatVec(layerWeights.wO[layer], attnFull, xb);
 
                 // Post-attention norm (if present in model)
-                if (postAttnNorm[layer] != null) {
-                    GGUFVectorOps.rmsNorm(xb, postAttnNorm[layer], xb, dim, eps);
+                if (layerWeights.postAttnNorm[layer] != null) {
+                    GGUFVectorOps.rmsNorm(xb, layerWeights.postAttnNorm[layer], xb, dim, eps);
                 }
                 GGUFVectorOps.addInPlace(x, xb, dim);
                 tWo += (System.nanoTime() - tWo0);
 
                 long tFfn0 = System.nanoTime();
-                GGUFVectorOps.rmsNorm(x, ffnNorm[layer], xb, dim, eps);
-                if (ffnGate[layer] != null
-                        && dispatchFfnFused(ffnGate[layer], ffnUp[layer], ffnDown[layer], xb, xb, cfg.isGeGLU())) {
+                GGUFVectorOps.rmsNorm(x, layerWeights.ffnNorm[layer], xb, dim, eps);
+                if (layerWeights.ffnGate[layer] != null
+                        && dispatchFfnFused(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], xb, xb, cfg.isGeGLU())) {
                     // Done directly in xb
                 } else {
-                    if (ffnGate[layer] != null) {
-                        dispatchMatVecPair(ffnGate[layer], gate, ffnUp[layer], up, xb);
+                    if (layerWeights.ffnGate[layer] != null) {
+                        dispatchMatVecPair(layerWeights.ffnGate[layer], gate, layerWeights.ffnUp[layer], up, xb);
                         if (cfg.isGeGLU()) {
                             GGUFVectorOps.geGLU(gate, up, hb, ffnDim);
                         } else {
                             GGUFVectorOps.swiGLU(gate, up, hb, ffnDim);
                         }
                     } else {
-                        dispatchMatVec(ffnUp[layer], xb, up);
+                        dispatchMatVec(layerWeights.ffnUp[layer], xb, up);
                         GGUFVectorOps.siluInPlace(up, ffnDim);
                         System.arraycopy(up, 0, hb, 0, ffnDim);
                     }
-                    dispatchMatVec(ffnDown[layer], hb, xb);
+                    dispatchMatVec(layerWeights.ffnDown[layer], hb, xb);
                 }
 
                 // Post-FFN norm (if present in model)
-                if (postFfnNorm[layer] != null) {
-                    GGUFVectorOps.rmsNorm(xb, postFfnNorm[layer], xb, dim, eps);
+                if (layerWeights.postFfnNorm[layer] != null) {
+                    GGUFVectorOps.rmsNorm(xb, layerWeights.postFfnNorm[layer], xb, dim, eps);
                 }
                 GGUFVectorOps.addInPlace(x, xb, dim);
                 tFfn += (System.nanoTime() - tFfn0);
             }
 
             // Per-layer embedding residual
-            if (hasPerLayer && perLayerInpGate[layer] != null && perLayerProj[layer] != null) {
+            if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null && layerWeights.perLayerProj[layer] != null) {
                 // peGate = gelu(inp_gate(x))
-                dispatchMatVec(perLayerInpGate[layer], x, peGate);
+                dispatchMatVec(layerWeights.perLayerInpGate[layer], x, peGate);
                 float kGelu = 0.7978845608f;
                 int peSliceOffset = layer * nEmbdPerLayer;
                 for (int j = 0; j < nEmbdPerLayer; j++) {
@@ -1339,9 +1327,9 @@ final class GgufDecodeStep {
                     peGate[j] = gelu * perLayerInputs[peSliceOffset + j];
                 }
                 // peOut = post_norm(proj(peGate))
-                dispatchMatVec(perLayerProj[layer], peGate, peOut);
-                if (perLayerPostNorm[layer] != null) {
-                    GGUFVectorOps.rmsNorm(peOut, perLayerPostNorm[layer], peOut, dim, eps);
+                dispatchMatVec(layerWeights.perLayerProj[layer], peGate, peOut);
+                if (layerWeights.perLayerPostNorm[layer] != null) {
+                    GGUFVectorOps.rmsNorm(peOut, layerWeights.perLayerPostNorm[layer], peOut, dim, eps);
                 }
                 GGUFVectorOps.addInPlace(x, peOut, dim);
             }
@@ -1349,10 +1337,10 @@ final class GgufDecodeStep {
             // Layer output scale (layer_scalar): applied ONCE to the full layer output x,
             // after all residuals (attention + FFN + per-layer embedding), before next
             // layer.
-            // If nextQkvReady is true, outScale was already applied on GPU in
+            // If nextQkvReady is true, layerWeights.outScale was already applied on GPU in
             // woFfnNextQkvFused.
-            if (!nextQkvReady && !logitsComputed && outScale[layer] != 1.0f) {
-                GGUFVectorOps.scale(x, outScale[layer], dim);
+            if (!nextQkvReady && !logitsComputed && layerWeights.outScale[layer] != 1.0f) {
+                GGUFVectorOps.scale(x, layerWeights.outScale[layer], dim);
             }
             if (System.getenv("ALJABR_DEBUG_LAYERS") != null && pos == 27) {
                 float sumSq = 0f;
