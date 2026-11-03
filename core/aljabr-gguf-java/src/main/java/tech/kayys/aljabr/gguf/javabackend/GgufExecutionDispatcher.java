@@ -21,7 +21,7 @@ final class GgufExecutionDispatcher {
     private static long countMetal = 0;
     private static long countCpu = 0;
 
-    private void dispatchMatVec(GGUFTensorInfo tensor, float[] input, float[] output) {
+    void dispatchMatVec(GGUFTensorInfo tensor, float[] input, float[] output) {
         if (GgufMetalBridge.matVec(model, tensor, input, output)) {
             countMetal++;
         } else {
@@ -34,7 +34,7 @@ final class GgufExecutionDispatcher {
         }
     }
 
-    private void dispatchMatVecPair(GGUFTensorInfo t0, float[] out0, GGUFTensorInfo t1, float[] out1, float[] input) {
+    void dispatchMatVecPair(GGUFTensorInfo t0, float[] out0, GGUFTensorInfo t1, float[] out1, float[] input) {
         if (GgufMetalBridge.matVecPair(model, t0, out0, t1, out1, input)) {
             countMetal += 2;
         } else {
@@ -43,7 +43,7 @@ final class GgufExecutionDispatcher {
         }
     }
 
-    private void dispatchMatVecTriple(GGUFTensorInfo t0, float[] out0, GGUFTensorInfo t1, float[] out1,
+    void dispatchMatVecTriple(GGUFTensorInfo t0, float[] out0, GGUFTensorInfo t1, float[] out1,
             GGUFTensorInfo t2, float[] out2, float[] input) {
         if (GgufMetalBridge.matVecTriple(model, t0, out0, t1, out1, t2, out2, input)) {
             countMetal += 3;
@@ -54,7 +54,7 @@ final class GgufExecutionDispatcher {
         }
     }
 
-    private void dispatchMatVecBatch(GGUFTensorInfo tensor, float[] inputBatch, float[] outputBatch, int batchSize) {
+    void dispatchMatVecBatch(GGUFTensorInfo tensor, float[] inputBatch, float[] outputBatch, int batchSize) {
         if (GgufMetalBridge.matVecBatch(model, tensor, inputBatch, outputBatch, batchSize)) {
             countMetal += batchSize;
         } else {
@@ -70,7 +70,7 @@ final class GgufExecutionDispatcher {
         }
     }
 
-    private void dispatchMatVecTripleBatch(GGUFTensorInfo t0, float[] out0,
+    void dispatchMatVecTripleBatch(GGUFTensorInfo t0, float[] out0,
             GGUFTensorInfo t1, float[] out1,
             GGUFTensorInfo t2, float[] out2,
             float[] inputBatch, int batchSize) {
@@ -95,7 +95,7 @@ final class GgufExecutionDispatcher {
         }
     }
 
-    private boolean dispatchFfnFused(GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
+    boolean dispatchFfnFused(GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
             float[] inA, float[] outDown, boolean isGeGLU) {
         if (GgufMetalBridge.ffnGatedFused(model, gate, up, down, inA, outDown, isGeGLU)) {
             countMetal += 3;
@@ -104,7 +104,7 @@ final class GgufExecutionDispatcher {
         return false;
     }
 
-    private boolean dispatchFfnFusedBatch(GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
+    boolean dispatchFfnFusedBatch(GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
             float[] inABatch, float[] outDownBatch, boolean isGeGLU, int batchSize) {
         if (GgufMetalBridge.ffnGatedFusedBatch(model, gate, up, down, inABatch, outDownBatch, isGeGLU, batchSize)) {
             countMetal += 3L * batchSize;
