@@ -129,7 +129,7 @@ final class GgufMetalDecodeRegistration {
                 if (metalDecodeActive && tokenEmbed != null && !usesPerLayerTokenEmbeddings) {
                     tokenEmbdRegistered = GgufMetalBridge.registerTokenEmbd(
                             model, tokenEmbed, dim, cfg.embeddingScale());
-                    if (tokenEmbdRegistered && isVerbose()) {
+                    if (tokenEmbdRegistered && GgufDecodeStep.isVerbose()) {
                         System.out.println("[GgufDecodeStep] GPU-resident token embedding registered.");
                     }
                 }
