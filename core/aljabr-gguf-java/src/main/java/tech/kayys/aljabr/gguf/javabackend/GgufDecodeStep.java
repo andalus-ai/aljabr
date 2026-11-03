@@ -7,7 +7,6 @@ import tech.kayys.aljabr.gguf.loader.tensor.GGUFVectorOps;
 import tech.kayys.aljabr.gguf.runtime.GgufTensorOps;
 
 import java.util.Locale;
-import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -47,6 +46,7 @@ final class GgufDecodeStep {
     private final GgufModelConfig cfg;
 
     private final GgufLayerWeights layerWeights;
+    private final GgufTensorResolver tensorResolver;
     private final GGUFTensorInfo tokenEmbed;
     private final float[] outputNorm;
     private final GGUFTensorInfo outputWeight;
@@ -126,6 +126,7 @@ final class GgufDecodeStep {
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
         this.model = model;
         this.cfg = cfg;
+        this.tensorResolver = new GgufTensorResolver(model, cfg.architecture());
 
         int dim = cfg.embeddingDim();
         int ffnDim = cfg.ffnDim();
@@ -146,15 +147,15 @@ final class GgufDecodeStep {
         }
         this.maxKVHeads = maxKVH;
 
-        this.tokenEmbed = requireTensor("token_embd.weight");
-        this.outputNorm = dequantizeVector(requireTensor("output_norm.weight"), dim);
-        this.outputWeight = findTensor("output.weight").orElse(tokenEmbed); // tied embeddings
+        this.tokenEmbed = tensorResolver.requireTensor("token_embd.weight");
+        this.outputNorm = tensorResolver.dequantizeVector(tensorResolver.requireTensor("output_norm.weight"), dim);
+        this.outputWeight = tensorResolver.findTensor("output.weight").orElse(tokenEmbed); // tied embeddings
 
         // Per-layer token embedding tensors
-        this.perLayerTokEmbd = findTensor("per_layer_token_embd.weight").orElse(null);
-        this.perLayerModelProj = findTensor("per_layer_model_proj.weight").orElse(null);
-        this.perLayerProjNorm = findTensor("per_layer_proj_norm.weight")
-                .map(t -> dequantizeVector(t, nEmbdPerLayer > 0 ? nEmbdPerLayer : 1))
+        this.perLayerTokEmbd = tensorResolver.findTensor("per_layer_token_embd.weight").orElse(null);
+        this.perLayerModelProj = tensorResolver.findTensor("per_layer_model_proj.weight").orElse(null);
+        this.perLayerProjNorm = tensorResolver.findTensor("per_layer_proj_norm.weight")
+                .map(t -> tensorResolver.dequantizeVector(t, nEmbdPerLayer > 0 ? nEmbdPerLayer : 1))
                 .orElse(null);
 
         
@@ -182,52 +183,52 @@ final class GgufDecodeStep {
         for (int i = 0; i < layers; i++) {
             String p = "blk." + i + ".";
             int layerHDim = cfg.headDimForLayer(i);
-            layerWeights.attnNorm[i] = dequantizeVector(requireTensor(p + "attn_norm.weight"), dim);
-            layerWeights.attnQNorm[i] = findTensor(p + "attn_q_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
-            layerWeights.attnKNorm[i] = findTensor(p + "attn_k_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
-            layerWeights.attnVNorm[i] = findTensor(p + "attn_v_norm.weight").map(t -> dequantizeVector(t, layerHDim)).orElse(null);
-            layerWeights.postAttnNorm[i] = findTensor(p + "post_attention_norm.weight").map(t -> dequantizeVector(t, dim))
+            layerWeights.attnNorm[i] = tensorResolver.dequantizeVector(tensorResolver.requireTensor(p + "attn_norm.weight"), dim);
+            layerWeights.attnQNorm[i] = tensorResolver.findTensor(p + "attn_q_norm.weight").map(t -> tensorResolver.dequantizeVector(t, layerHDim)).orElse(null);
+            layerWeights.attnKNorm[i] = tensorResolver.findTensor(p + "attn_k_norm.weight").map(t -> tensorResolver.dequantizeVector(t, layerHDim)).orElse(null);
+            layerWeights.attnVNorm[i] = tensorResolver.findTensor(p + "attn_v_norm.weight").map(t -> tensorResolver.dequantizeVector(t, layerHDim)).orElse(null);
+            layerWeights.postAttnNorm[i] = tensorResolver.findTensor(p + "post_attention_norm.weight").map(t -> tensorResolver.dequantizeVector(t, dim))
                     .orElse(null);
 
             // Proportional RoPE factors: blk.N.rope_freqs.weight or global
             // rope_freqs.weight
             // Only apply when tensor dimension matches the rotary half-dimension (layerHDim
             // / 2)
-            GGUFTensorInfo layerRope = findTensor(p + "rope_freqs.weight").orElse(null);
+            GGUFTensorInfo layerRope = tensorResolver.findTensor(p + "rope_freqs.weight").orElse(null);
             if (layerRope != null) {
-                layerWeights.ropeFreqs[i] = dequantizeVector(layerRope, layerHDim / 2);
+                layerWeights.ropeFreqs[i] = tensorResolver.dequantizeVector(layerRope, layerHDim / 2);
             } else {
-                layerWeights.ropeFreqs[i] = findTensor("rope_freqs.weight")
+                layerWeights.ropeFreqs[i] = tensorResolver.findTensor("rope_freqs.weight")
                         .filter(t -> t.shape().length > 0 && t.shape()[0] == layerHDim / 2)
-                        .map(t -> dequantizeVector(t, layerHDim / 2))
+                        .map(t -> tensorResolver.dequantizeVector(t, layerHDim / 2))
                         .orElse(null);
             }
 
             // Optional layer output scale
-            layerWeights.outScale[i] = findTensor(p + "layer_output_scale.weight")
+            layerWeights.outScale[i] = tensorResolver.findTensor(p + "layer_output_scale.weight")
                     .map(t -> {
-                        float[] s = dequantizeVector(t, 1);
+                        float[] s = tensorResolver.dequantizeVector(t, 1);
                         return s.length > 0 ? s[0] : 1.0f;
                     })
                     .orElse(1.0f);
 
-            layerWeights.wQ[i] = requireTensor(p + "attn_q.weight");
-            layerWeights.wK[i] = findTensor(p + "attn_k.weight").orElse(null);
-            layerWeights.wV[i] = findTensor(p + "attn_v.weight").orElse(null);
-            layerWeights.wO[i] = requireTensor(p + "attn_output.weight");
+            layerWeights.wQ[i] = tensorResolver.requireTensor(p + "attn_q.weight");
+            layerWeights.wK[i] = tensorResolver.findTensor(p + "attn_k.weight").orElse(null);
+            layerWeights.wV[i] = tensorResolver.findTensor(p + "attn_v.weight").orElse(null);
+            layerWeights.wO[i] = tensorResolver.requireTensor(p + "attn_output.weight");
 
-            layerWeights.ffnNorm[i] = dequantizeVector(requireTensor(p + "ffn_norm.weight"), dim);
-            layerWeights.postFfnNorm[i] = findTensor(p + "post_ffw_norm.weight").map(t -> dequantizeVector(t, dim)).orElse(null);
-            layerWeights.ffnGate[i] = findTensor(p + "ffn_gate.weight").orElse(null);
-            layerWeights.ffnUp[i] = requireTensor(p + "ffn_up.weight");
-            layerWeights.ffnDown[i] = requireTensor(p + "ffn_down.weight");
+            layerWeights.ffnNorm[i] = tensorResolver.dequantizeVector(tensorResolver.requireTensor(p + "ffn_norm.weight"), dim);
+            layerWeights.postFfnNorm[i] = tensorResolver.findTensor(p + "post_ffw_norm.weight").map(t -> tensorResolver.dequantizeVector(t, dim)).orElse(null);
+            layerWeights.ffnGate[i] = tensorResolver.findTensor(p + "ffn_gate.weight").orElse(null);
+            layerWeights.ffnUp[i] = tensorResolver.requireTensor(p + "ffn_up.weight");
+            layerWeights.ffnDown[i] = tensorResolver.requireTensor(p + "ffn_down.weight");
 
             // Per-layer embedding blocks
             if (perLayerTokEmbd != null) {
-                layerWeights.perLayerInpGate[i] = findTensor(p + "inp_gate.weight").orElse(null);
-                layerWeights.perLayerProj[i] = findTensor(p + "proj.weight").orElse(null);
-                layerWeights.perLayerPostNorm[i] = findTensor(p + "post_norm.weight")
-                        .map(t -> dequantizeVector(t, dim))
+                layerWeights.perLayerInpGate[i] = tensorResolver.findTensor(p + "inp_gate.weight").orElse(null);
+                layerWeights.perLayerProj[i] = tensorResolver.findTensor(p + "proj.weight").orElse(null);
+                layerWeights.perLayerPostNorm[i] = tensorResolver.findTensor(p + "post_norm.weight")
+                        .map(t -> tensorResolver.dequantizeVector(t, dim))
                         .orElse(null);
             }
         }
@@ -1512,29 +1513,6 @@ final class GgufDecodeStep {
         return false;
     }
 
-    private GGUFTensorInfo requireTensor(String name) {
-        return findTensor(name)
-                .orElseThrow(() -> new IllegalStateException(
-                        "GGUF model is missing required tensor '" + name + "' for architecture '"
-                                + cfg.architecture() + "'"));
-    }
-
-    private Optional<GGUFTensorInfo> findTensor(String name) {
-        try {
-            return Optional.ofNullable(GgufTensorOps.findTensor(model, name));
-        } catch (IllegalArgumentException e) {
-            return Optional.empty();
-        }
-    }
-
-    private float[] dequantizeVector(GGUFTensorInfo tensor, int fallbackDim) {
-        int dim = (tensor.shape() != null && tensor.shape().length > 0 && tensor.shape()[0] > 0)
-                ? (int) tensor.shape()[0]
-                : fallbackDim;
-        float[] out = new float[dim];
-        GgufTensorOps.dequantizeRow(model, tensor, 0L, out);
-        return out;
-    }
     /**
      * A layer is eligible for full-Metal decode only when its layer metadata and
      * every required optional RoPE buffer were registered successfully.
