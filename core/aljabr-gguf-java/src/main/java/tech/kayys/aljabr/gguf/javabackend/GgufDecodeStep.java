@@ -1241,39 +1241,15 @@ final class GgufDecodeStep {
         cache.advance();
 
         if (computeLogits && !logitsComputed) {
-            long tLogits0 = System.nanoTime();
-            GGUFVectorOps.rmsNorm(x, outputNorm, xb, dim, eps);
-            long tNormEnd = System.nanoTime();
-
             float cap = cfg.finalLogitSoftcap();
-            long tMatVecEnd;
-            long tTanhEnd;
-            if (cap > 0.0f && GgufMetalBridge.matVecSoftcap(model, outputWeight, xb, this.logits, cap)) {
-                tMatVecEnd = System.nanoTime();
-                tTanhEnd = tMatVecEnd;
-            } else {
-                execution.dispatchMatVec(outputWeight, xb, this.logits);
-                tMatVecEnd = System.nanoTime();
-                if (cap > 0.0f) {
-                    // GPU path: aljabr_softcap_kernel (262144 * tanh on GPU ≈ 0.5 ms vs 6-14 ms
-                    // CPU)
-                    boolean gpuDone = GgufMetalBridge.softcapLogits(this.logits, cap);
-                    if (!gpuDone) {
-                        // CPU fallback — identical numerical result (precise::tanh matches Math.tanh)
-                        float invCap = 1.0f / cap;
-                        for (int i = 0; i < logits.length; i++) {
-                            logits[i] = cap * (float) Math.tanh(logits[i] * invCap);
-                        }
-                    }
-                }
-                tTanhEnd = System.nanoTime();
-            }
-            tLogits = tTanhEnd - tLogits0;
+            GgufLogitsProcessor.Timing timing = GgufLogitsProcessor.compute(
+                    model, outputWeight, outputNorm, x, xb, this.logits, dim, eps, cap, execution);
+            tLogits = timing.totalNanos();
             if (isVerbose() && (pos <= 2 || pos == 24 || pos == 25)) {
                 System.out.printf(
                         "[LOGITS DETAIL pos=%d] norm=%.2fms, matvec=%.2fms, tanh(cap=%.1f)=%.2fms, total=%.2fms%n",
-                        pos, (tNormEnd - tLogits0) / 1e6, (tMatVecEnd - tNormEnd) / 1e6, cap,
-                        (tTanhEnd - tMatVecEnd) / 1e6, tLogits / 1e6);
+                        pos, timing.normalizationNanos() / 1e6, timing.projectionNanos() / 1e6, cap,
+                        timing.softcapNanos() / 1e6, tLogits / 1e6);
             }
         }
 
