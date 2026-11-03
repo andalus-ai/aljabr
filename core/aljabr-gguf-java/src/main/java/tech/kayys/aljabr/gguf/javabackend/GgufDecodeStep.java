@@ -294,7 +294,7 @@ final class GgufDecodeStep {
         }
 
         GgufMetalDecodeRegistration.Result metalRegistration =
-                GgufMetalDecodeRegistration.register(model, cfg, layerWeights, tokenEmbed,
+                GgufMetalDecodeRegistration.register(model, cfg, layerWeights, tokenEmbed, perLayerTokEmbd,
                         outputNorm, outputWeight, dim, ffnDim, nH, layers, nEmbdPerLayer);
         this.canUseMetalDecodeStep = metalRegistration.decodeActive();
         this.canUseMetalTokenEmbd = metalRegistration.tokenEmbeddingRegistered();
