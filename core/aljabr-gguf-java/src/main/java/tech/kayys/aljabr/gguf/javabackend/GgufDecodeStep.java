@@ -43,6 +43,7 @@ final class GgufDecodeStep {
     }
 
     private final GGUFModel model;
+    private final GgufExecutionDispatcher execution;
     private final GgufModelConfig cfg;
 
     private final GgufLayerWeights layerWeights;
@@ -125,6 +126,7 @@ final class GgufDecodeStep {
 
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
         this.model = model;
+        this.execution = new GgufExecutionDispatcher(model);
         this.cfg = cfg;
         this.tensorResolver = new GgufTensorResolver(model, cfg.architecture());
 
@@ -477,7 +479,7 @@ final class GgufDecodeStep {
                 GgufTensorOps.dequantizeRow(model, perLayerTokEmbd, tokenIds[t], rawTok);
                 GGUFVectorOps.scale(rawTok, tokEmbdScale, nEmbdPL * layers);
                 System.arraycopy(X, t * dim, xSlice, 0, dim);
-                dispatchMatVec(perLayerModelProj, xSlice, projOut);
+                execution.dispatchMatVec(perLayerModelProj, xSlice, projOut);
                 GGUFVectorOps.scale(projOut, projScale, nEmbdPL * layers);
                 if (perLayerProjNorm != null) {
                     for (int l = 0; l < layers; l++) {
@@ -553,13 +555,13 @@ final class GgufDecodeStep {
 
             long tQkv0 = System.nanoTime();
             if (layerWeights.wK[layer] != null && layerWeights.wV[layer] != null) {
-                dispatchMatVecTripleBatch(layerWeights.wQ[layer], allQ, layerWeights.wK[layer], allK, layerWeights.wV[layer], allV, allXb, T);
+                execution.dispatchMatVecTripleBatch(layerWeights.wQ[layer], allQ, layerWeights.wK[layer], allK, layerWeights.wV[layer], allV, allXb, T);
             } else if (layerWeights.wK[layer] != null) {
-                dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
-                dispatchMatVecBatch(layerWeights.wK[layer], allXb, allK, T);
+                execution.dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
+                execution.dispatchMatVecBatch(layerWeights.wK[layer], allXb, allK, T);
                 System.arraycopy(allK, 0, allV, 0, T * kvDim);
             } else {
-                dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
+                execution.dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
             }
             long tQkv = System.nanoTime() - tQkv0;
             if (profilePrefill) profileQkvNanos += tQkv;
@@ -689,7 +691,7 @@ final class GgufDecodeStep {
             }
 
             if (!fusedLayerDone) {
-                dispatchMatVecBatch(layerWeights.wO[layer], allAttn, allWoOut, T);
+                execution.dispatchMatVecBatch(layerWeights.wO[layer], allAttn, allWoOut, T);
 
                 for (int t = 0; t < T; t++) {
                     System.arraycopy(allWoOut, t * dim, xbL, 0, dim);
@@ -707,7 +709,7 @@ final class GgufDecodeStep {
                 }
 
                 if (layerWeights.ffnGate[layer] != null) {
-                    fusedSuccess = dispatchFfnFusedBatch(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], allFfnIn, allFfnOut,
+                    fusedSuccess = execution.dispatchFfnFusedBatch(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], allFfnIn, allFfnOut,
                             cfg.isGeGLU(), T);
                 }
 
@@ -723,18 +725,18 @@ final class GgufDecodeStep {
                     for (int t = 0; t < T; t++) {
                         System.arraycopy(allFfnIn, t * dim, xbL, 0, dim);
                         if (layerWeights.ffnGate[layer] != null) {
-                            dispatchMatVecPair(layerWeights.ffnGate[layer], gateL, layerWeights.ffnUp[layer], upL, xbL);
+                            execution.dispatchMatVecPair(layerWeights.ffnGate[layer], gateL, layerWeights.ffnUp[layer], upL, xbL);
                             if (cfg.isGeGLU()) {
                                 GGUFVectorOps.geGLU(gateL, upL, hbL, ffnDim);
                             } else {
                                 GGUFVectorOps.swiGLU(gateL, upL, hbL, ffnDim);
                             }
                         } else {
-                            dispatchMatVec(layerWeights.ffnUp[layer], xbL, upL);
+                            execution.dispatchMatVec(layerWeights.ffnUp[layer], xbL, upL);
                             GGUFVectorOps.siluInPlace(upL, ffnDim);
                             System.arraycopy(upL, 0, hbL, 0, ffnDim);
                         }
-                        dispatchMatVec(layerWeights.ffnDown[layer], hbL, xbL);
+                        execution.dispatchMatVec(layerWeights.ffnDown[layer], hbL, xbL);
                         if (layerWeights.postFfnNorm[layer] != null) {
                             GGUFVectorOps.rmsNorm(xbL, layerWeights.postFfnNorm[layer], xbL, dim, eps);
                         }
@@ -752,7 +754,7 @@ final class GgufDecodeStep {
                     if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null && layerWeights.perLayerProj[layer] != null) {
                         float[] xSlice = new float[dim];
                         System.arraycopy(X, t * dim, xSlice, 0, dim);
-                        dispatchMatVec(layerWeights.perLayerInpGate[layer], xSlice, peGate);
+                        execution.dispatchMatVec(layerWeights.perLayerInpGate[layer], xSlice, peGate);
                         float kGelu = 0.7978845608f;
                         int peSliceOffset = layer * nEmbdPL;
                         for (int j = 0; j < nEmbdPL; j++) {
@@ -760,7 +762,7 @@ final class GgufDecodeStep {
                             float gelu = 0.5f * g * (1.0f + (float) Math.tanh(kGelu * (g + 0.044715f * g * g * g)));
                             peGate[j] = gelu * perLayerInputsT[t][peSliceOffset + j];
                         }
-                        dispatchMatVec(layerWeights.perLayerProj[layer], peGate, peOut);
+                        execution.dispatchMatVec(layerWeights.perLayerProj[layer], peGate, peOut);
                         if (layerWeights.perLayerPostNorm[layer] != null) {
                             GGUFVectorOps.rmsNorm(peOut, layerWeights.perLayerPostNorm[layer], peOut, dim, eps);
                         }
@@ -834,7 +836,7 @@ final class GgufDecodeStep {
         GGUFVectorOps.rmsNorm(X, (T - 1) * dim, outputNorm, xbFinal, 0, dim, cfg.rmsNormEps());
 
         float[] logits = new float[cfg.vocabSize()];
-        dispatchMatVec(outputWeight, xbFinal, logits);
+        execution.dispatchMatVec(outputWeight, xbFinal, logits);
 
         float cap = cfg.finalLogitSoftcap();
         if (cap > 0.0f) {
@@ -1062,7 +1064,7 @@ final class GgufDecodeStep {
             GGUFVectorOps.scale(perLayerRawTok, tokEmbdScale, nEmbdPerLayer * layers);
 
             // 2. per_layer_model_proj matvec from inpL (x before layers)
-            dispatchMatVec(perLayerModelProj, x, perLayerModelProjOut);
+            execution.dispatchMatVec(perLayerModelProj, x, perLayerModelProjOut);
             float projScale = 1.0f / (float) Math.sqrt(dim);
             GGUFVectorOps.scale(perLayerModelProjOut, projScale, nEmbdPerLayer * layers);
 
@@ -1098,12 +1100,12 @@ final class GgufDecodeStep {
 
                 // Q / K / V
                 if (layerWeights.wK[layer] != null && layerWeights.wV[layer] != null) {
-                    dispatchMatVecTriple(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, layerWeights.wV[layer], v, xb);
+                    execution.dispatchMatVecTriple(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, layerWeights.wV[layer], v, xb);
                 } else if (layerWeights.wK[layer] != null) {
-                    dispatchMatVecPair(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, xb);
+                    execution.dispatchMatVecPair(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, xb);
                     System.arraycopy(k, 0, v, 0, layerNKVH * layerHDim);
                 } else {
-                    dispatchMatVec(layerWeights.wQ[layer], xb, q);
+                    execution.dispatchMatVec(layerWeights.wQ[layer], xb, q);
                 }
             }
             nextQkvReady = false;
@@ -1277,7 +1279,7 @@ final class GgufDecodeStep {
                     tFfn += elapsed / 2;
                 }
             } else {
-                dispatchMatVec(layerWeights.wO[layer], attnFull, xb);
+                execution.dispatchMatVec(layerWeights.wO[layer], attnFull, xb);
 
                 // Post-attention norm (if present in model)
                 if (layerWeights.postAttnNorm[layer] != null) {
@@ -1289,22 +1291,22 @@ final class GgufDecodeStep {
                 long tFfn0 = System.nanoTime();
                 GGUFVectorOps.rmsNorm(x, layerWeights.ffnNorm[layer], xb, dim, eps);
                 if (layerWeights.ffnGate[layer] != null
-                        && dispatchFfnFused(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], xb, xb, cfg.isGeGLU())) {
+                        && execution.dispatchFfnFused(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], xb, xb, cfg.isGeGLU())) {
                     // Done directly in xb
                 } else {
                     if (layerWeights.ffnGate[layer] != null) {
-                        dispatchMatVecPair(layerWeights.ffnGate[layer], gate, layerWeights.ffnUp[layer], up, xb);
+                        execution.dispatchMatVecPair(layerWeights.ffnGate[layer], gate, layerWeights.ffnUp[layer], up, xb);
                         if (cfg.isGeGLU()) {
                             GGUFVectorOps.geGLU(gate, up, hb, ffnDim);
                         } else {
                             GGUFVectorOps.swiGLU(gate, up, hb, ffnDim);
                         }
                     } else {
-                        dispatchMatVec(layerWeights.ffnUp[layer], xb, up);
+                        execution.dispatchMatVec(layerWeights.ffnUp[layer], xb, up);
                         GGUFVectorOps.siluInPlace(up, ffnDim);
                         System.arraycopy(up, 0, hb, 0, ffnDim);
                     }
-                    dispatchMatVec(layerWeights.ffnDown[layer], hb, xb);
+                    execution.dispatchMatVec(layerWeights.ffnDown[layer], hb, xb);
                 }
 
                 // Post-FFN norm (if present in model)
@@ -1318,7 +1320,7 @@ final class GgufDecodeStep {
             // Per-layer embedding residual
             if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null && layerWeights.perLayerProj[layer] != null) {
                 // peGate = gelu(inp_gate(x))
-                dispatchMatVec(layerWeights.perLayerInpGate[layer], x, peGate);
+                execution.dispatchMatVec(layerWeights.perLayerInpGate[layer], x, peGate);
                 float kGelu = 0.7978845608f;
                 int peSliceOffset = layer * nEmbdPerLayer;
                 for (int j = 0; j < nEmbdPerLayer; j++) {
@@ -1328,7 +1330,7 @@ final class GgufDecodeStep {
                     peGate[j] = gelu * perLayerInputs[peSliceOffset + j];
                 }
                 // peOut = post_norm(proj(peGate))
-                dispatchMatVec(layerWeights.perLayerProj[layer], peGate, peOut);
+                execution.dispatchMatVec(layerWeights.perLayerProj[layer], peGate, peOut);
                 if (layerWeights.perLayerPostNorm[layer] != null) {
                     GGUFVectorOps.rmsNorm(peOut, layerWeights.perLayerPostNorm[layer], peOut, dim, eps);
                 }
@@ -1369,7 +1371,7 @@ final class GgufDecodeStep {
                 tMatVecEnd = System.nanoTime();
                 tTanhEnd = tMatVecEnd;
             } else {
-                dispatchMatVec(outputWeight, xb, this.logits);
+                execution.dispatchMatVec(outputWeight, xb, this.logits);
                 tMatVecEnd = System.nanoTime();
                 if (cap > 0.0f) {
                     // GPU path: aljabr_softcap_kernel (262144 * tanh on GPU ≈ 0.5 ms vs 6-14 ms
@@ -1416,101 +1418,6 @@ final class GgufDecodeStep {
     /** Overload for backward compatibility computing logits by default. */
     float[] forward(int tokenId, int pos, KVCache cache) {
         return forward(tokenId, pos, cache, true);
-    }
-
-    private static long countMetal = 0;
-    private static long countCpu = 0;
-
-    private void dispatchMatVec(GGUFTensorInfo tensor, float[] input, float[] output) {
-        if (GgufMetalBridge.matVec(model, tensor, input, output)) {
-            countMetal++;
-        } else {
-            countCpu++;
-            if (countCpu <= 15) {
-                System.err.println("[FALLBACK] tensor " + tensor.name() + " (typeId=" + tensor.typeId() + ", shape="
-                        + java.util.Arrays.toString(tensor.shape()) + ") fell back to CPU!");
-            }
-            GgufTensorOps.matVecParallel(model, tensor, input, output);
-        }
-    }
-
-    private void dispatchMatVecPair(GGUFTensorInfo t0, float[] out0, GGUFTensorInfo t1, float[] out1, float[] input) {
-        if (GgufMetalBridge.matVecPair(model, t0, out0, t1, out1, input)) {
-            countMetal += 2;
-        } else {
-            dispatchMatVec(t0, input, out0);
-            dispatchMatVec(t1, input, out1);
-        }
-    }
-
-    private void dispatchMatVecTriple(GGUFTensorInfo t0, float[] out0, GGUFTensorInfo t1, float[] out1,
-            GGUFTensorInfo t2, float[] out2, float[] input) {
-        if (GgufMetalBridge.matVecTriple(model, t0, out0, t1, out1, t2, out2, input)) {
-            countMetal += 3;
-        } else {
-            dispatchMatVec(t0, input, out0);
-            dispatchMatVec(t1, input, out1);
-            dispatchMatVec(t2, input, out2);
-        }
-    }
-
-    private void dispatchMatVecBatch(GGUFTensorInfo tensor, float[] inputBatch, float[] outputBatch, int batchSize) {
-        if (GgufMetalBridge.matVecBatch(model, tensor, inputBatch, outputBatch, batchSize)) {
-            countMetal += batchSize;
-        } else {
-            int K = (int) GgufTensorOps.matrixColumns(tensor);
-            int N = (int) GgufTensorOps.matrixRows(tensor);
-            float[] inSlice = new float[K];
-            float[] outSlice = new float[N];
-            for (int t = 0; t < batchSize; t++) {
-                System.arraycopy(inputBatch, t * K, inSlice, 0, K);
-                dispatchMatVec(tensor, inSlice, outSlice);
-                System.arraycopy(outSlice, 0, outputBatch, t * N, N);
-            }
-        }
-    }
-
-    private void dispatchMatVecTripleBatch(GGUFTensorInfo t0, float[] out0,
-            GGUFTensorInfo t1, float[] out1,
-            GGUFTensorInfo t2, float[] out2,
-            float[] inputBatch, int batchSize) {
-        if (GgufMetalBridge.matVecTripleBatch(model, t0, out0, t1, out1, t2, out2, inputBatch, batchSize)) {
-            countMetal += 3L * batchSize;
-        } else {
-            int K = (int) GgufTensorOps.matrixColumns(t0);
-            int N0 = (int) GgufTensorOps.matrixRows(t0);
-            int N1 = (int) GgufTensorOps.matrixRows(t1);
-            int N2 = (int) GgufTensorOps.matrixRows(t2);
-            float[] inSlice = new float[K];
-            float[] s0 = new float[N0];
-            float[] s1 = new float[N1];
-            float[] s2 = new float[N2];
-            for (int t = 0; t < batchSize; t++) {
-                System.arraycopy(inputBatch, t * K, inSlice, 0, K);
-                dispatchMatVecTriple(t0, s0, t1, s1, t2, s2, inSlice);
-                System.arraycopy(s0, 0, out0, t * N0, N0);
-                System.arraycopy(s1, 0, out1, t * N1, N1);
-                System.arraycopy(s2, 0, out2, t * N2, N2);
-            }
-        }
-    }
-
-    private boolean dispatchFfnFused(GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
-            float[] inA, float[] outDown, boolean isGeGLU) {
-        if (GgufMetalBridge.ffnGatedFused(model, gate, up, down, inA, outDown, isGeGLU)) {
-            countMetal += 3;
-            return true;
-        }
-        return false;
-    }
-
-    private boolean dispatchFfnFusedBatch(GGUFTensorInfo gate, GGUFTensorInfo up, GGUFTensorInfo down,
-            float[] inABatch, float[] outDownBatch, boolean isGeGLU, int batchSize) {
-        if (GgufMetalBridge.ffnGatedFusedBatch(model, gate, up, down, inABatch, outDownBatch, isGeGLU, batchSize)) {
-            countMetal += 3L * batchSize;
-            return true;
-        }
-        return false;
     }
 
     /**
