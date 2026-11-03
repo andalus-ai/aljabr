@@ -1,4 +1,4 @@
-package tech.kayys.tafkir.ml.registry;
+package tech.kayys.aljabr.ml.registry;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.nn.NNModule;

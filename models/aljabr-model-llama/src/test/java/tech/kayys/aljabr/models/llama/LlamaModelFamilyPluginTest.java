@@ -1,4 +1,4 @@
-package tech.kayys.tafkir.models.llama;
+package tech.kayys.aljabr.models.llama;
 
 import org.junit.jupiter.api.Test;
 import tech.kayys.tafkir.models.LLaMA3Family;

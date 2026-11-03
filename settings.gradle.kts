@@ -32,6 +32,8 @@ include("core:aljabr-core")
 include("core:aljabr-error-code")
 include("core:aljabr-nn")
 
+include("core:aljabr-spi-core")
+include("core:aljabr-spi-testkit")
 include("core:aljabr-spi-model")
 // New SPI modules — formalises Aljabr as the inference/serving framework layer
 // These will host contracts elevated from Aqli (Phase 2 source migration)

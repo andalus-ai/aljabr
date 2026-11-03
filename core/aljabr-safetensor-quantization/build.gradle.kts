@@ -20,6 +20,17 @@ dependencies {
     testImplementation("io.rest-assured:rest-assured:5.4.0")
 }
 
+sourceSets {
+    test {
+        java {
+            // TurboQuant, AWQ, AutoRound, and BnB adapters moved to Tafkir integration
+            exclude("tech/kayys/aljabr/safetensor/quantization/QuantizationRoundTripTest.java")
+            // Quarkus REST integration test requires Quarkus application runtime
+            exclude("tech/kayys/aljabr/safetensor/quantization/rest/QuantizationResourceTest.java")
+        }
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
 }

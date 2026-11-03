@@ -1,4 +1,4 @@
-package tech.kayys.tafkir.ml.serving;
+package tech.kayys.aljabr.ml.serving;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.nn.NNModule;
