@@ -79,4 +79,38 @@ final class GgufDecodeEligibility {
         return "Metal KV-cache sync failed at layer " + failedLayer
                 + " before generation; host KV cache is intact and per-op fallback is safe";
     }
+
+    static String fullGpuDecodeEligibilityFailure(
+            boolean decodeDisabled,
+            boolean nativeDecodeAvailable,
+            boolean usesPerLayerTokenEmbeddings,
+            boolean usesPartialRotaryDimensions) {
+        return fullGpuDecodeEligibilityFailure(
+                decodeDisabled, nativeDecodeAvailable, usesPerLayerTokenEmbeddings,
+                usesPartialRotaryDimensions, false);
+    }
+
+    static String fullGpuDecodeEligibilityFailure(
+            boolean decodeDisabled,
+            boolean nativeDecodeAvailable,
+            boolean usesPerLayerTokenEmbeddings,
+            boolean usesPartialRotaryDimensions,
+            boolean usesUnsupportedNativeKvLayout) {
+        if (decodeDisabled) {
+            return "disabled by -Daljabr.metal.decode.disable=true";
+        }
+        if (!nativeDecodeAvailable) {
+            return "native Metal decode-step entry point is unavailable";
+        }
+        if (usesPerLayerTokenEmbeddings) {
+            return "model uses per-layer token embeddings, which the native full-GPU decode step does not implement";
+        }
+        if (usesUnsupportedNativeKvLayout) {
+            return "model uses V-only projections or incompatible shared-KV geometry, which the native full-GPU decode step does not implement safely";
+        }
+        if (usesPartialRotaryDimensions) {
+            return "model uses per-layer partial RoPE, which the native full-GPU decode step does not implement";
+        }
+        return null;
+    }
 }
