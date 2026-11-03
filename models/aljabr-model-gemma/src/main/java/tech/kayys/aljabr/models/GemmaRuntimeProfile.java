@@ -1,4 +1,4 @@
-package tech.kayys.tafkir.models;
+package tech.kayys.aljabr.models;
 
 import tech.kayys.aljabr.spi.model.ModelAttentionTraitsPolicy;
 import tech.kayys.aljabr.spi.model.ModelConfig;

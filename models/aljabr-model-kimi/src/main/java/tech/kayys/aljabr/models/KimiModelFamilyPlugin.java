@@ -1,4 +1,4 @@
-package tech.kayys.tafkir.models;
+package tech.kayys.aljabr.models;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import tech.kayys.aljabr.spi.model.ModelFamilyCapability;

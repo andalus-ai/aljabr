@@ -94,8 +94,28 @@ public final class KVCache {
         System.arraycopy(vVec, 0, v[layer], base, len);
     }
 
+    /**
+     * Store contiguous K and V vector sequences for a batch of tokens starting at an explicit position.
+     *
+     * @param layer     layer index
+     * @param startPos  explicit target starting position (0-based)
+     * @param kBatch    K vector batch buffer
+     * @param kOff      offset into {@code kBatch}
+     * @param vBatch    V vector batch buffer
+     * @param vOff      offset into {@code vBatch}
+     * @param count     number of floats to copy (e.g. {@code batchSize * layerStride[layer]})
+     */
+    public void storeBatch(int layer, int startPos, float[] kBatch, int kOff, float[] vBatch, int vOff, int count) {
+        int base = startPos * layerStride[layer];
+        System.arraycopy(kBatch, kOff, k[layer], base, count);
+        System.arraycopy(vBatch, vOff, v[layer], base, count);
+    }
+
     /** Advance the sequence pointer by one position (call after all layers are stored). */
     public void advance() { seqLen++; }
+
+    /** Advance the sequence pointer by multiple positions. */
+    public void advance(int n) { seqLen += n; }
 
     /**
      * Copy one KV-head's K vector at sequence position {@code pos} into {@code dst}.
