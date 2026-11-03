@@ -4233,9 +4233,15 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
+    // 3. FFN Gate + Up + Act -> g_scratch_hb
+    BOOL use_b4 = (bSz > 1 && bSz <= kMaxValidatedB4BatchSize &&
+                   ((cfg->typeGate == 12 && cfg->typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
+                    (cfg->typeGate == 14 && cfg->typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
+    AljabrQ4KDispatchMode q4kMode = use_b4 ? ALJABR_Q4K_DISPATCH_B4 : ALJABR_Q4K_DISPATCH_AUTO;
+
     // 1. wO projection: bufAttn -> bufXB
-    if (!encode_matvec_buf(enc, pipelines, bufXB, bufAttn, cfg->bufWO, cfg->offWO,
-                           kDim, nDim, cfg->typeWO, (uint32_t)bSz)) {
+    if (!encode_matvec_buf_with_mode(enc, pipelines, bufXB, bufAttn, cfg->bufWO, cfg->offWO,
+                                    kDim, nDim, cfg->typeWO, (uint32_t)bSz, q4kMode)) {
       ALJABR_METAL_LOG("[wo_ffn_batch] rc=-5: encode wO failed typeWO=%d\n", cfg->typeWO);
       [enc endEncoding];
       return -5;
@@ -4253,10 +4259,7 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
                                  cfg->hasPostAttnNorm != 0, pipelines, (uint32_t)bSz);
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
-    // 3. FFN Gate + Up + Act -> g_scratch_hb
-    BOOL use_b4 = (bSz > 1 && bSz <= kMaxValidatedB4BatchSize &&
-                   ((cfg->typeGate == 12 && cfg->typeUp == 12 && pipelines->ffn_gate_up_act_q4_k_b4_mr4 != nil) ||
-                    (cfg->typeGate == 14 && cfg->typeUp == 14 && pipelines->ffn_gate_up_act_q6_k_b4_mr4 != nil)));
+    // 3. FFN Gate + Up + Act execution
     id<MTLComputePipelineState> fuseP;
     if (use_b4) {
       fuseP = (cfg->typeGate == 14) ? pipelines->ffn_gate_up_act_q6_k_b4_mr4 : pipelines->ffn_gate_up_act_q4_k_b4_mr4;
@@ -4298,8 +4301,8 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     [enc memoryBarrierWithScope:MTLBarrierScopeBuffers];
 
     // 4. Down projection: g_scratch_hb -> bufXB
-    if (!encode_matvec_buf(enc, pipelines, bufXB, g_scratch_hb, cfg->bufDown, cfg->offDown,
-                           nFfn, nDim, cfg->typeDown, (uint32_t)bSz)) {
+    if (!encode_matvec_buf_with_mode(enc, pipelines, bufXB, g_scratch_hb, cfg->bufDown, cfg->offDown,
+                           nFfn, nDim, cfg->typeDown, (uint32_t)bSz, q4kMode)) {
       ALJABR_METAL_LOG("[wo_ffn_batch] rc=-7: encode Down failed typeDown=%d\n", cfg->typeDown);
       [enc endEncoding];
       return -7;
