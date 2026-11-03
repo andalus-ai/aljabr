@@ -1,4 +1,4 @@
-package tech.kayys.tafkir.ml.profiler;
+package tech.kayys.aljabr.ml.profiler;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.nn.NNModule;

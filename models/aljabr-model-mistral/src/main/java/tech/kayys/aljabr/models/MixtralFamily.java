@@ -16,7 +16,7 @@
  * because MoeForwardPass handles expert weight lookup directly.
  * DirectForwardPass checks config.isMoeLayer() and routes appropriately.
  */
-package tech.kayys.tafkir.models;
+package tech.kayys.aljabr.models;
 
 import tech.kayys.aljabr.spi.model.ModelArchitecture;
 import java.util.List;
