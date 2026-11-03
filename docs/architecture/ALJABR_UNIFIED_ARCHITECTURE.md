@@ -200,3 +200,38 @@ This document consolidates direction; the following documents remain the detaile
 - [Quantized Tensor Interoperability](QUANTIZED_TENSOR_INTEROPERABILITY.md) — quantized tensor interoperability.
 
 The README remains the entry point for users; this document is the architectural decision and roadmap reference. Detailed audit documents should retain their snapshot dates and evidence limitations until explicitly refreshed.
+
+
+## External Extension and Plugin Architecture
+
+Aljabr owns the public programming model and extension contracts. Implementations may live in this repository or in independently versioned external repositories. A consumer opts into an extension by adding its artifact and configuring or discovering its provider; installing Aljabr alone must not pull every extension or provider into the runtime.
+
+### Extension layers
+
+1. **Core contracts** — minimal Java-native identifiers, semantic versions, capability descriptors, provider interfaces, compatibility metadata, diagnostics, and lifecycle contracts. This layer must not require inference-serving APIs, CDI, Mutiny, a logging implementation, native SDKs, or domain-specific model catalogues.
+2. **Capability SPIs** — focused contracts owned by Aljabr for cohesive extension points such as linear algebra, statistics, optimization, tensor execution, random generation, or scientific computing. Each SPI depends only on the smallest Aljabr API surface it needs.
+3. **Provider implementations** — optional artifacts that implement one or more Aljabr SPIs. These may live in Aljabr's repository or in third-party repositories and may depend internally on EJML, Commons Math, BLAS/LAPACK, CUDA, Metal, or other implementation libraries. Such dependencies and types must not leak through public Aljabr signatures.
+4. **Discovery and runtime integration** — explicit provider registration/discovery, capability negotiation, selection policy, lifecycle management, and diagnostics. Discovery must be separable from execution so applications can use explicit wiring in restricted environments.
+
+### Required contract properties
+
+- Stable, namespaced provider IDs; semantic versions; declared Aljabr API compatibility range; and machine-readable capability descriptors.
+- Explicit distinction between a capability being declared, implemented, installed, available on the current host, validated, stable, and optimized.
+- Deterministic provider selection with explainable reasons. No silent fallback that changes numerical semantics or hides provider failures.
+- Aljabr-owned value types, configuration contracts, errors, diagnostics, and lifecycle semantics. Translate provider-specific failures at the adapter boundary.
+- Resource ownership and lifecycle rules for initialization, execution, cancellation, shutdown, native handles, threads, and memory.
+- Thread-safety, concurrency, determinism, precision/tolerance, device constraints, and supported-shape guarantees documented per capability.
+- Compatibility and conformance tests that external providers can run independently against a published Aljabr SPI test kit.
+- No arbitrary class loading or automatic downloading of executable plugins. Applications explicitly choose dependencies and trust boundaries; isolated processes are required for untrusted extensions.
+
+### Discovery model
+
+Use Java `ServiceLoader` as the lightweight default discovery mechanism for classpath/module-path providers, with explicit programmatic registration as a first-class alternative. Do not require a heavyweight plugin framework or CDI in the core contract. If a deployment needs dynamic loading, hot reload, isolation, or remote providers, provide those as optional integration modules with their own security and lifecycle guarantees.
+
+### Existing repository assessment
+
+The repository already contains several extension patterns: `aljabr-spi-plugin` defines a general plugin lifecycle, `aljabr-spi-model` defines model-family plugins and a registry, and backend artifacts register `ComputeBackend` implementations through `META-INF/services`. This is useful prior art, but it is not yet one coherent general computational-provider architecture.
+
+In particular, the current `AljabrPlugin` contract imports Mutiny and its module exposes inference/model SPIs plus CDI and logging dependencies. It is therefore inference-oriented and heavier than the minimal extension contract described above. The model-family registry is domain-specific and should remain so; it is not a universal provider registry. The CUDA plugin artifact's service descriptor for `ComputeBackend` demonstrates externalizable provider discovery, while its implementation dependencies remain provider-specific.
+
+The next implementation step is not to replace all existing plugin systems at once. First define a small, stable computational provider contract and conformance kit; then adapt one existing provider (preferably the pure Java CPU/reference provider) and one optional accelerated provider. Migrate model-family and inference plugins only if a concrete benefit justifies it, preserving compatibility during any transition.
