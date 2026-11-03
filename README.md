@@ -163,6 +163,7 @@ Use `./gradlew projects` as the source of truth for the exact current Gradle mod
 
 - [Research and Training Readiness](docs/architecture/RESEARCH_TRAINING_READINESS.md) — audit of autograd build visibility, optimizer behavior, and the executable Java training milestone.
 - [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — module layers, tensor/model execution sequences and validation.
+- [Unified Computational Architecture](docs/architecture/ALJABR_UNIFIED_ARCHITECTURE.md) — authoritative mission, ecosystem boundaries, modularity constraints, public API principles and delivery roadmap.
 - [Computational Framework Scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md) — target mathematical, statistical, scientific-computing, ML and NLP capability map and ecosystem ownership boundaries.
 - [Computational Capability Inventory](docs/architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md) — source-level snapshot of existing modules, implementation evidence, gaps and recommended module boundaries.
 - [Modular Distribution Architecture](docs/architecture/MODULAR_DISTRIBUTION.md) — artifact selection, BOM semantics, provider boundaries, runtime packaging and consumer profiles.
