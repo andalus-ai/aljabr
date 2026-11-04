@@ -96,7 +96,7 @@ class ProviderDiscoveryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/healthy");
+            return ProviderDiscoveryTest.descriptor("test/healthy");
         }
 
         @Override
@@ -111,7 +111,7 @@ class ProviderDiscoveryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/other");
+            return ProviderDiscoveryTest.descriptor("test/other");
         }
     }
 
@@ -122,7 +122,7 @@ class ProviderDiscoveryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/broken");
+            return ProviderDiscoveryTest.descriptor("test/broken");
         }
     }
 
@@ -132,7 +132,7 @@ class ProviderDiscoveryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/duplicate");
+            return ProviderDiscoveryTest.descriptor("test/duplicate");
         }
     }
 
@@ -142,7 +142,7 @@ class ProviderDiscoveryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/duplicate");
+            return ProviderDiscoveryTest.descriptor("test/duplicate");
         }
     }
 
