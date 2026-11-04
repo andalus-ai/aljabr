@@ -396,7 +396,7 @@ final class GgufDecodeStep {
             }
 
             if (hasOwnKv) {
-                cache.storeBatch(layer, 0, allK, 0, allV, 0, T * kvDim);
+                GgufKvCacheWriteExecution.storeBatch(cache, layer, 0, allK, 0, allV, 0, T * kvDim);
             } else {
                 float[] sourceK = cache.kLayer(kvLayerToUse);
                 float[] sourceV = cache.vLayer(kvLayerToUse);
@@ -865,7 +865,7 @@ final class GgufDecodeStep {
 
                 GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
-                cache.store(layer, k, v);
+                GgufKvCacheWriteExecution.storeToken(cache, layer, k, v);
             }
             tRope += (System.nanoTime() - tRope0);
 
