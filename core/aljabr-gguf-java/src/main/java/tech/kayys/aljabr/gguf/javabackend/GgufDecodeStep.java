@@ -330,13 +330,8 @@ final class GgufDecodeStep {
         float embScale = cfg.embeddingScale();
 
         // ── 1. Token embeddings: X[T * dim] flat continuous buffer ────────────
-        float[] X = new float[T * dim];
-        for (int t = 0; t < T; t++) {
-            GgufTensorOps.dequantizeRow(model, tokenEmbed, tokenIds[t], X, t * dim);
-            if (embScale > 0f && embScale != 1.0f) {
-                GGUFVectorOps.scale(X, t * dim, embScale, dim);
-            }
-        }
+        float[] X = GgufPrefillEmbeddingPreparation.prepareTokenEmbeddings(
+                model, tokenEmbed, tokenIds, dim, embScale);
 
         // ── 2. Per-layer token embedding projection (Gemma 4 n_embd_per_layer) ─
         // Currently n_embd_per_layer_input = 0 in the 12B GGUF, so this block
