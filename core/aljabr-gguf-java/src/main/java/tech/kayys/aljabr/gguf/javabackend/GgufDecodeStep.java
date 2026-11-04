@@ -551,7 +551,7 @@ final class GgufDecodeStep {
         }
 
         // Advance KV cache past all prefill tokens
-        cache.advance(T);
+        GgufKvCacheSequenceLifecycle.completePrefill(cache, T);
 
         // Prompt KV synchronization is a one-time handoff from the populated host cache.
         if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
@@ -687,7 +687,7 @@ final class GgufDecodeStep {
             bestToken = GgufMetalBridge.decodeStepGreedy(pos, cfg.slidingWindow(), eps, x);
         }
         if (bestToken >= 0) {
-            cache.advance();
+            GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
             metalDecodeState.recordSuccessfulDecode();
             long tElapsed = System.nanoTime() - t0;
             if (isVerbose() && (pos % 10 == 0 || pos < 5)) {
@@ -740,7 +740,7 @@ final class GgufDecodeStep {
                 ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
             }
             if (ok) {
-                cache.advance();
+                GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
                 metalDecodeState.recordSuccessfulDecode();
                 long tElapsed = System.nanoTime() - t0;
                 if (isVerbose() && computeLogits && (pos % 10 == 0 || pos < 5)) {
@@ -1053,7 +1053,7 @@ final class GgufDecodeStep {
             }
         }
 
-        cache.advance();
+        GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
 
         if (computeLogits && !logitsComputed) {
             float cap = cfg.finalLogitSoftcap();
