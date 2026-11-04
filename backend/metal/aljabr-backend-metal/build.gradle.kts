@@ -24,8 +24,8 @@ sourceSets {
             include("tech/kayys/aljabr/backend/metal/MetalComputeProvider.java")
         }
         resources {
-            srcDir("src/main/resources")
-            srcDir("src/main/cpp/resources")
+            // src/main/resources is already the Java plugin default; list each root once.
+            setSrcDirs(listOf("src/main/resources", "src/main/cpp/resources"))
         }
     }
 }
