@@ -24,8 +24,10 @@ sourceSets {
             include("tech/kayys/aljabr/backend/metal/MetalComputeProvider.java")
         }
         resources {
-            // src/main/resources is already the Java plugin default; list each root once.
-            setSrcDirs(listOf("src/main/resources", "src/main/cpp/resources"))
+            // src/main/resources is already part of Gradle's default source set.
+            // Add only the generated/native resource directory to avoid copying
+            // META-INF/services entries twice.
+            srcDir("src/main/cpp/resources")
         }
     }
 }
