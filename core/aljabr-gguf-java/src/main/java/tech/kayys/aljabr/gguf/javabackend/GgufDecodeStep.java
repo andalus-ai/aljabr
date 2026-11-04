@@ -333,36 +333,11 @@ final class GgufDecodeStep {
         float[] X = GgufPrefillEmbeddingPreparation.prepareTokenEmbeddings(
                 model, tokenEmbed, tokenIds, dim, embScale);
 
-        // ── 2. Per-layer token embedding projection (Gemma 4 n_embd_per_layer) ─
-        // Currently n_embd_per_layer_input = 0 in the 12B GGUF, so this block
-        // is skipped. Left in as a placeholder for future models.
-        boolean hasPerLayer = perLayerTokEmbd != null && nEmbdPL > 0;
-        float[][] perLayerInputsT = null; // [T][nEmbdPL * layers]
-        if (hasPerLayer) {
-            perLayerInputsT = new float[T][nEmbdPL * layers];
-            float tokEmbdScale = (float) Math.sqrt(nEmbdPL);
-            float projScale = 1.0f / (float) Math.sqrt(dim);
-            float inputScale = 1.0f / (float) Math.sqrt(2.0);
-            float[] rawTok = new float[nEmbdPL * layers];
-            float[] projOut = new float[nEmbdPL * layers];
-            float[] xSlice = new float[dim];
-            for (int t = 0; t < T; t++) {
-                GgufTensorOps.dequantizeRow(model, perLayerTokEmbd, tokenIds[t], rawTok);
-                GGUFVectorOps.scale(rawTok, tokEmbdScale, nEmbdPL * layers);
-                System.arraycopy(X, t * dim, xSlice, 0, dim);
-                execution.dispatchMatVec(perLayerModelProj, xSlice, projOut);
-                GGUFVectorOps.scale(projOut, projScale, nEmbdPL * layers);
-                if (perLayerProjNorm != null) {
-                    for (int l = 0; l < layers; l++) {
-                        int off = l * nEmbdPL;
-                        GGUFVectorOps.rmsNorm(projOut, off, perLayerProjNorm, projOut, off, nEmbdPL, eps);
-                    }
-                }
-                for (int j = 0; j < nEmbdPL * layers; j++) {
-                    perLayerInputsT[t][j] = (projOut[j] + rawTok[j]) * inputScale;
-                }
-            }
-        }
+        // ── 2. Per-layer token embedding projection (architecture optional) ──
+        float[][] perLayerInputsT = GgufPrefillPerLayerEmbeddingPreparation.prepare(
+                model, perLayerTokEmbd, perLayerModelProj, perLayerProjNorm,
+                tokenIds, X, dim, nEmbdPL, layers, eps, execution);
+        boolean hasPerLayer = perLayerInputsT != null;
 
         // ── 3. Layer loop ─────────────────────────────────────────────────────
         int maxHDim = cfg.headDim();
