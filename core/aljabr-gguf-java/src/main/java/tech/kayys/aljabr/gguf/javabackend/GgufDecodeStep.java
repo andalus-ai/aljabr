@@ -386,47 +386,10 @@ final class GgufDecodeStep {
                 tWo = System.nanoTime() - tWo0;
 
                 // FFN
-                long tFfn0 = System.nanoTime();
-                for (int t = 0; t < T; t++) {
-                    GGUFVectorOps.rmsNorm(X, t * dim, layerWeights.ffnNorm[layer], allFfnIn, t * dim, dim, eps);
-                }
-
-                if (layerWeights.ffnGate[layer] != null) {
-                    fusedSuccess = execution.dispatchFfnFusedBatch(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], allFfnIn, allFfnOut,
-                            cfg.isGeGLU(), T);
-                }
-
-                if (fusedSuccess) {
-                    for (int t = 0; t < T; t++) {
-                        System.arraycopy(allFfnOut, t * dim, xbL, 0, dim);
-                        if (layerWeights.postFfnNorm[layer] != null) {
-                            GGUFVectorOps.rmsNorm(xbL, layerWeights.postFfnNorm[layer], xbL, dim, eps);
-                        }
-                        GGUFVectorOps.addInPlace(X, t * dim, xbL, 0, dim);
-                    }
-                } else {
-                    for (int t = 0; t < T; t++) {
-                        System.arraycopy(allFfnIn, t * dim, xbL, 0, dim);
-                        if (layerWeights.ffnGate[layer] != null) {
-                            execution.dispatchMatVecPair(layerWeights.ffnGate[layer], gateL, layerWeights.ffnUp[layer], upL, xbL);
-                            if (cfg.isGeGLU()) {
-                                GGUFVectorOps.geGLU(gateL, upL, hbL, ffnDim);
-                            } else {
-                                GGUFVectorOps.swiGLU(gateL, upL, hbL, ffnDim);
-                            }
-                        } else {
-                            execution.dispatchMatVec(layerWeights.ffnUp[layer], xbL, upL);
-                            GGUFVectorOps.siluInPlace(upL, ffnDim);
-                            System.arraycopy(upL, 0, hbL, 0, ffnDim);
-                        }
-                        execution.dispatchMatVec(layerWeights.ffnDown[layer], hbL, xbL);
-                        if (layerWeights.postFfnNorm[layer] != null) {
-                            GGUFVectorOps.rmsNorm(xbL, layerWeights.postFfnNorm[layer], xbL, dim, eps);
-                        }
-                        GGUFVectorOps.addInPlace(X, t * dim, xbL, 0, dim);
-                    }
-                }
-                tFfn = System.nanoTime() - tFfn0;
+                GgufPrefillFfnExecution.Result ffnResult = GgufPrefillFfnExecution.execute(
+                        X, allFfnIn, allFfnOut, xbL, gateL, upL, hbL, T, layer, layerWeights, cfg, execution);
+                fusedSuccess = ffnResult.fused();
+                tFfn = ffnResult.elapsedNanos();
                 if (profilePrefill) {
                     profileWoNanos += tWo;
                     profileFfnNanos += tFfn;
