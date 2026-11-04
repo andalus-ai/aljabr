@@ -10,12 +10,12 @@ class GgufKvCacheReadExecutionTest {
     @Test
     void copiesContiguousSharedLayerWhenStridesMatch() {
         KVCache cache = new KVCache(1, 3, 2, 2);
-        float[] keys = {1f, 2f, 3f, 4f};
-        float[] values = {10f, 20f, 30f, 40f};
+        float[] keys = {1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f};
+        float[] values = {10f, 20f, 30f, 40f, 50f, 60f, 70f, 80f};
         cache.storeBatch(0, 0, keys, 0, values, 0, keys.length);
 
-        float[] targetKeys = new float[4];
-        float[] targetValues = new float[4];
+        float[] targetKeys = new float[8];
+        float[] targetValues = new float[8];
         GgufKvCacheReadExecution.copyLayerToBatch(cache, 0, targetKeys, targetValues, 2, 4);
 
         assertArrayEquals(keys, targetKeys);
