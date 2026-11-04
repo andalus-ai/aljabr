@@ -466,58 +466,11 @@ final class GgufDecodeStep {
             }
 
             // ── 3b. Attention for all T tokens ───────────────────────────────
-            long tAttn0 = System.nanoTime();
             int swWin = cfg.slidingWindow();
-            boolean gpuAttnDone = false;
-            // Use Metal FlashAttention-4 (MPSGraph SDPA) when prompt fits within sliding
-            // window (or non-SWA)
-            if ((!isSwa || swWin <= 0 || T <= swWin) && GgufMetalBridge.isAvailable()) {
-                gpuAttnDone = GgufMetalBridge.fa4Attention(allAttn, allQ, allK, allV, 1, T, T, nH, attentionKVHeads,
-                        layerHDim, scale, true);
-            }
-
-            if (!gpuAttnDone) {
-                int kvStride = hasOwnKv ? kvDim : attentionKvDim;
-                for (int t = 0; t < T; t++) {
-                    int tStart;
-                    int tEnd;
-                    if (isSwa && swWin > 0) {
-                        tStart = Math.max(0, t - swWin + 1);
-                        tEnd = t;
-                    } else {
-                        tStart = 0;
-                        tEnd = t;
-                    }
-                    int activeLen = tEnd - tStart + 1;
-
-                    for (int h = 0; h < nH; h++) {
-                        int kvH = h / (nH / attentionKVHeads);
-                        int qOff = t * qDim + h * layerHDim;
-
-                        // Compute attention scores
-                        for (int j = tStart; j <= tEnd; j++) {
-                            float dot = 0f;
-                            int kvOff = j * kvStride + kvH * layerHDim;
-                            for (int d = 0; d < layerHDim; d++) {
-                                dot += allQ[qOff + d] * allK[kvOff + d];
-                            }
-                            attnScores[j - tStart] = dot * scale;
-                        }
-                        GGUFVectorOps.softmax(attnScores, activeLen);
-
-                        // Weighted sum of V
-                        int outOff = t * qDim + h * layerHDim;
-                        java.util.Arrays.fill(allAttn, outOff, outOff + layerHDim, 0f);
-                        for (int j = tStart; j <= tEnd; j++) {
-                            float w = attnScores[j - tStart];
-                            int kvOff = j * kvStride + kvH * layerHDim;
-                            for (int d = 0; d < layerHDim; d++) {
-                                allAttn[outOff + d] += w * allV[kvOff + d];
-                            }
-                        }
-                    }
-                }
-            }
+            long tAttn0 = System.nanoTime();
+            boolean gpuAttnDone = GgufPrefillAttentionExecution.execute(
+                    allAttn, allQ, allK, allV, attnScores, T, nH, attentionKVHeads,
+                    layerHDim, scale, isSwa, swWin, hasOwnKv, kvDim, attentionKvDim);
             long tAttn = System.nanoTime() - tAttn0;
             if (profilePrefill) profileAttentionNanos += tAttn;
             if (profilePrefill && gpuAttnDone) {
