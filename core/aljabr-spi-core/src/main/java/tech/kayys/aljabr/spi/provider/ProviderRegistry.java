@@ -2,6 +2,7 @@ package tech.kayys.aljabr.spi.provider;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,7 +22,7 @@ public final class ProviderRegistry {
     private final Map<String, AljabrProvider> providers;
 
     private ProviderRegistry(Map<String, AljabrProvider> providers) {
-        this.providers = Map.copyOf(providers);
+        this.providers = Collections.unmodifiableMap(new LinkedHashMap<>(providers));
     }
 
     /** Discovers providers visible to the supplied classloader without initializing them. */
