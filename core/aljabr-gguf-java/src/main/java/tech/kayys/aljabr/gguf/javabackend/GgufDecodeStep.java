@@ -682,28 +682,13 @@ final class GgufDecodeStep {
         // Advance KV cache past all prefill tokens
         cache.advance(T);
 
-        // If Metal decode step is active, sync prompt KV cache to GPU.
-        // For layers without own layerWeights.wK weights (layerWeights.wK[l]==null), their Metal KV buffer must
-        // contain
-        // the same data as the source layer they share (kvLayerIndex). Sync that source
-        // data
-        // into Metal buffer l so the decode step SDPA reads correct prefill KV.
+        // Prompt KV synchronization is a one-time handoff from the populated host cache.
         if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
-            for (int l = 0; l < layers; l++) {
-                boolean synced;
-                if (layerWeights.wK[l] != null) {
-                    // Layer has its own KV; sync directly.
-                    synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(l), cache.vLayer(l));
-                } else {
-                    // KV-sharing layer: sync source layer's data into Metal buffer l.
-                    int src = Math.max(0, l - (cfg.isSwaLayer(l) ? 2 : 1));
-                    synced = GgufMetalBridge.syncKVCache(l, T, cache.kLayer(src), cache.vLayer(src));
-                }
-                if (!synced) {
-                    String reason = GgufDecodeEligibility.fullGpuDecodeKvCacheSyncFailureReason(l);
-                    disableMetalDecodeAfterRuntimeFallback(T, reason);
-                    break;
-                }
+            int failedLayer = GgufPrefillMetalCacheSync.sync(
+                    T, layerWeights.wK, cfg, cache, layers);
+            if (failedLayer >= 0) {
+                String reason = GgufDecodeEligibility.fullGpuDecodeKvCacheSyncFailureReason(failedLayer);
+                disableMetalDecodeAfterRuntimeFallback(T, reason);
             }
         }
 
