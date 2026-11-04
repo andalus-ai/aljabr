@@ -131,7 +131,6 @@ final class GgufDecodeStep {
         int hDim = cfg.headDim();
         int layers = cfg.nLayers();
         int nEmbdPerLayer = cfg.nEmbdPerLayer();
-        this.layerWeights = new GgufLayerWeights(layers);
 
         // Compute true max KV heads across all layers (ignore nKVHeads which may be
         // wrong)
@@ -177,58 +176,8 @@ final class GgufDecodeStep {
         
         
 
-        for (int i = 0; i < layers; i++) {
-            String p = "blk." + i + ".";
-            int layerHDim = cfg.headDimForLayer(i);
-            layerWeights.attnNorm[i] = tensorResolver.dequantizeVector(tensorResolver.requireTensor(p + "attn_norm.weight"), dim);
-            layerWeights.attnQNorm[i] = tensorResolver.findTensor(p + "attn_q_norm.weight").map(t -> tensorResolver.dequantizeVector(t, layerHDim)).orElse(null);
-            layerWeights.attnKNorm[i] = tensorResolver.findTensor(p + "attn_k_norm.weight").map(t -> tensorResolver.dequantizeVector(t, layerHDim)).orElse(null);
-            layerWeights.attnVNorm[i] = tensorResolver.findTensor(p + "attn_v_norm.weight").map(t -> tensorResolver.dequantizeVector(t, layerHDim)).orElse(null);
-            layerWeights.postAttnNorm[i] = tensorResolver.findTensor(p + "post_attention_norm.weight").map(t -> tensorResolver.dequantizeVector(t, dim))
-                    .orElse(null);
-
-            // Proportional RoPE factors: blk.N.rope_freqs.weight or global
-            // rope_freqs.weight
-            // Only apply when tensor dimension matches the rotary half-dimension (layerHDim
-            // / 2)
-            GGUFTensorInfo layerRope = tensorResolver.findTensor(p + "rope_freqs.weight").orElse(null);
-            if (layerRope != null) {
-                layerWeights.ropeFreqs[i] = tensorResolver.dequantizeVector(layerRope, layerHDim / 2);
-            } else {
-                layerWeights.ropeFreqs[i] = tensorResolver.findTensor("rope_freqs.weight")
-                        .filter(t -> t.shape().length > 0 && t.shape()[0] == layerHDim / 2)
-                        .map(t -> tensorResolver.dequantizeVector(t, layerHDim / 2))
-                        .orElse(null);
-            }
-
-            // Optional layer output scale
-            layerWeights.outScale[i] = tensorResolver.findTensor(p + "layer_output_scale.weight")
-                    .map(t -> {
-                        float[] s = tensorResolver.dequantizeVector(t, 1);
-                        return s.length > 0 ? s[0] : 1.0f;
-                    })
-                    .orElse(1.0f);
-
-            layerWeights.wQ[i] = tensorResolver.requireTensor(p + "attn_q.weight");
-            layerWeights.wK[i] = tensorResolver.findTensor(p + "attn_k.weight").orElse(null);
-            layerWeights.wV[i] = tensorResolver.findTensor(p + "attn_v.weight").orElse(null);
-            layerWeights.wO[i] = tensorResolver.requireTensor(p + "attn_output.weight");
-
-            layerWeights.ffnNorm[i] = tensorResolver.dequantizeVector(tensorResolver.requireTensor(p + "ffn_norm.weight"), dim);
-            layerWeights.postFfnNorm[i] = tensorResolver.findTensor(p + "post_ffw_norm.weight").map(t -> tensorResolver.dequantizeVector(t, dim)).orElse(null);
-            layerWeights.ffnGate[i] = tensorResolver.findTensor(p + "ffn_gate.weight").orElse(null);
-            layerWeights.ffnUp[i] = tensorResolver.requireTensor(p + "ffn_up.weight");
-            layerWeights.ffnDown[i] = tensorResolver.requireTensor(p + "ffn_down.weight");
-
-            // Per-layer embedding blocks
-            if (perLayerTokEmbd != null) {
-                layerWeights.perLayerInpGate[i] = tensorResolver.findTensor(p + "inp_gate.weight").orElse(null);
-                layerWeights.perLayerProj[i] = tensorResolver.findTensor(p + "proj.weight").orElse(null);
-                layerWeights.perLayerPostNorm[i] = tensorResolver.findTensor(p + "post_norm.weight")
-                        .map(t -> tensorResolver.dequantizeVector(t, dim))
-                        .orElse(null);
-            }
-        }
+        this.layerWeights = GgufLayerWeightResolver.resolve(
+                tensorResolver, cfg, dim, nEmbdPerLayer, perLayerTokEmbd);
 
         // Opt-in layer-shape diagnostics verify architecture-specific RoPE dimensions
         // on the actual loaded GGUF, especially for Gemma 4's local/global attention mix.
