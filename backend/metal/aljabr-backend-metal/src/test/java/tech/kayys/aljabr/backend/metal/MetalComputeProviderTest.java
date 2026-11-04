@@ -78,6 +78,32 @@ class MetalComputeProviderTest {
         assertThrows(ProviderException.class, () -> provider.openSession(device));
     }
 
+
+    @Test
+    void providerCloseInvalidatesOutstandingSessionsAndIsIdempotent() throws Exception {
+        ComputeBackend backend = inertBackend();
+        MetalComputeProvider provider = new MetalComputeProvider(() -> true, () -> backend);
+        provider.initialize(new ProviderContext("test", Map.of()));
+        ProviderSession session = provider.openSession(provider.devices().get(0));
+
+        provider.close();
+        provider.close();
+
+        assertEquals("metal:0", session.device().deviceId());
+        assertThrows(IllegalStateException.class, session::computeBackends);
+        session.close();
+        assertThrows(ProviderException.class, () -> provider.openSession(provider.devices().get(0)));
+    }
+
+    @Test
+    void providerInitializationIsSingleUse() throws Exception {
+        MetalComputeProvider provider = new MetalComputeProvider(() -> true, MetalComputeProviderTest::inertBackend);
+        ProviderContext context = new ProviderContext("test", Map.of());
+        provider.initialize(context);
+        assertThrows(ProviderException.class, () -> provider.initialize(context));
+        provider.close();
+    }
+
     private static ComputeBackend inertBackend() {
         return (ComputeBackend) Proxy.newProxyInstance(ComputeBackend.class.getClassLoader(),
                 new Class<?>[] { ComputeBackend.class }, (proxy, method, args) -> {
