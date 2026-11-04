@@ -109,21 +109,11 @@ final class GgufPrefillQkvProjection {
 
         // 4. Store to KV cache if own KV, or load from earlier layer if shared KV
         if (hasOwnKv) {
-            cache.storeBatch(layer, 0, keys, 0, values, 0, tokenCount * kvDimension);
+            GgufKvCacheWriteExecution.storeBatch(cache, layer, 0, keys, 0, values, 0,
+                    tokenCount * kvDimension);
         } else {
-            float[] sourceK = cache.kLayer(kvLayerToUse);
-            float[] sourceV = cache.vLayer(kvLayerToUse);
-            int sourceStride = cache.headStride(kvLayerToUse);
-            if (sourceStride == attentionKvDimension) {
-                System.arraycopy(sourceK, 0, keys, 0, tokenCount * attentionKvDimension);
-                System.arraycopy(sourceV, 0, values, 0, tokenCount * attentionKvDimension);
-            } else {
-                for (int token = 0; token < tokenCount; token++) {
-                    int sourceOffset = token * sourceStride;
-                    System.arraycopy(sourceK, sourceOffset, keys, token * attentionKvDimension, attentionKvDimension);
-                    System.arraycopy(sourceV, sourceOffset, values, token * attentionKvDimension, attentionKvDimension);
-                }
-            }
+            GgufKvCacheReadExecution.copyLayerToBatch(cache, kvLayerToUse, keys, values,
+                    tokenCount, attentionKvDimension);
         }
 
         return dispatchNanos;

@@ -321,50 +321,6 @@ final class GgufDecodeStep {
             if (profilePrefill)
                 profileQkvNanos += tQkv;
 
-            for (int t = 0; t < T; t++) {
-                if (layerWeights.attnQNorm[layer] != null) {
-                    int qNormLen = layerWeights.attnQNorm[layer].length;
-                    for (int h = 0; h < nH; h++) {
-                        int off = t * qDim + h * layerHDim;
-                        GGUFVectorOps.rmsNorm(allQ, off, layerWeights.attnQNorm[layer], allQ, off, qNormLen, eps);
-                    }
-                }
-                GGUFVectorOps.rope(allQ, t * qDim, nH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq,
-                        layerRopeFreqs);
-
-                if (hasOwnKv) {
-                    if (layerWeights.attnKNorm[layer] != null) {
-                        int kNormLen = layerWeights.attnKNorm[layer].length;
-                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                            int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNorm(allK, off, layerWeights.attnKNorm[layer], allK, off, kNormLen, eps);
-                        }
-                    }
-                    if (layerWeights.attnVNorm[layer] != null) {
-                        int vNormLen = layerWeights.attnVNorm[layer].length;
-                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                            int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNorm(allV, off, layerWeights.attnVNorm[layer], allV, off, vNormLen, eps);
-                        }
-                    } else if (cfg.hasUnitVNorm()) {
-                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                            int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNormUnit(allV, off, allV, off, layerHDim, eps);
-                        }
-                    }
-
-                    GGUFVectorOps.rope(allK, t * kvDim, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), t,
-                            layerRopeFreq, layerRopeFreqs);
-                }
-            }
-
-            if (hasOwnKv) {
-                GgufKvCacheWriteExecution.storeBatch(cache, layer, 0, allK, 0, allV, 0, T * kvDim);
-            } else {
-                GgufKvCacheReadExecution.copyLayerToBatch(
-                        cache, kvLayerToUse, allK, allV, T, attentionKvDim);
-            }
-
             // ── 3b. Attention for all T tokens ───────────────────────────────
             int swWin = cfg.slidingWindow();
             long tAttn0 = System.nanoTime();
