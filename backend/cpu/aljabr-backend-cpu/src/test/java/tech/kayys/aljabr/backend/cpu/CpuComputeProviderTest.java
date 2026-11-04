@@ -13,6 +13,8 @@ import tech.kayys.aljabr.spi.compute.ProviderSession;
 import tech.kayys.aljabr.spi.provider.AljabrProvider;
 import tech.kayys.aljabr.spi.provider.ProviderContext;
 import tech.kayys.aljabr.spi.provider.ProviderException;
+import tech.kayys.aljabr.spi.testkit.ProviderConformance;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CpuComputeProviderTest {
     @Test
@@ -36,6 +38,16 @@ class CpuComputeProviderTest {
         }
         provider.close();
         assertThrows(ProviderException.class, provider::devices);
+    }
+
+    @Test
+    void cpuProviderPassesSharedLifecycleConformance() {
+        var result = ProviderConformance.verify(
+                CpuComputeProvider::new,
+                new ProviderContext("test", java.util.Map.of()));
+
+        assertTrue(result.isConformant(), result.violations().toString());
+        assertEquals("andalus/cpu", result.providerId());
     }
 
     @Test
