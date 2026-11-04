@@ -9,7 +9,6 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,6 +16,16 @@ import org.junit.jupiter.api.io.TempDir;
 class ProviderDiscoveryTest {
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void returnsAnEmptySnapshotWhenNoProvidersAreRegistered() throws Exception {
+        try (URLClassLoader loader = loaderWith()) {
+            ProviderDiscoveryResult result = ProviderDiscovery.discover(loader);
+
+            assertTrue(result.providers().isEmpty());
+            assertTrue(result.failures().isEmpty());
+        }
+    }
 
     @Test
     void discoversWithExplicitClassLoaderWithoutInitializingProviders() throws Exception {
