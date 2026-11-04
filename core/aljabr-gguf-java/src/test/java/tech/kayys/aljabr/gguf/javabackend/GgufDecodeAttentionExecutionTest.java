@@ -18,7 +18,8 @@ class GgufDecodeAttentionExecutionTest {
                 query, output, scores, keys, values,
                 2, 2, 4, 1, 2, 0, 1f);
 
-        assertArrayEquals(new float[] { 15f, 150f, 15f, 150f }, output, 1.0e-6f);
+        // Query heads 0-1 share KV head 0; query heads 2-3 share KV head 1.
+        assertArrayEquals(new float[] { 15f, 15f, 150f, 150f }, output, 1.0e-6f);
     }
 
     @Test
