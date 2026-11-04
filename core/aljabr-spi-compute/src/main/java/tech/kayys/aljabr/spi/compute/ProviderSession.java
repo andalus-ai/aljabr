@@ -1,9 +1,12 @@
 package tech.kayys.aljabr.spi.compute;
 
 import java.util.Map;
+import java.util.Objects;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.spi.provider.DeviceDescriptor;
+import tech.kayys.aljabr.spi.provider.OperationSupport;
+import tech.kayys.aljabr.spi.provider.OperationSupportDescriptor;
 import tech.kayys.aljabr.spi.provider.ProviderException;
 
 /**
@@ -31,6 +34,27 @@ public interface ProviderSession extends AutoCloseable {
      * by the caller. Throws {@link IllegalStateException} after this session closes.
      */
     Map<String, ComputeBackend> computeBackends();
+
+    /**
+     * Reports how this session can execute an operation under caller-supplied constraints.
+     *
+     * <p>Operation identifiers and constraint keys are provider-neutral strings.
+     * Constraints describe requirements (for example dtype, layout, or shape class);
+     * they are not runtime-selection policy. Implementations may override this
+     * method when they can make a reliable claim. The default is deliberately
+     * {@link OperationSupport#UNKNOWN}; the presence of a method on
+     * {@link ComputeBackend} alone is not evidence of support.</p>
+     *
+     * @param operationId stable, provider-neutral operation identifier
+     * @param constraints immutable-by-convention constraint values supplied by the caller
+     * @return a non-null support description for the requested operation
+     */
+    default OperationSupportDescriptor operationSupport(
+            String operationId,
+            Map<String, String> constraints) {
+        Objects.requireNonNull(constraints, "constraints");
+        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+    }
 
     /** Releases resources owned by this session; repeated calls must be harmless. */
     @Override
