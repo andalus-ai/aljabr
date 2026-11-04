@@ -78,13 +78,14 @@ class ProviderDiscoveryTest {
     }
 
     private URLClassLoader loaderWith(Class<?>... providerTypes) throws IOException {
-        Path services = temporaryDirectory.resolve("META-INF/services");
+        Path loaderDirectory = Files.createTempDirectory(temporaryDirectory, "provider-loader-");
+        Path services = loaderDirectory.resolve("META-INF/services");
         Files.createDirectories(services);
         Path descriptor = services.resolve(AljabrProvider.class.getName());
         String content = String.join("\n", java.util.Arrays.stream(providerTypes)
                 .map(Class::getName).toList()) + "\n";
         Files.writeString(descriptor, content);
-        URL url = temporaryDirectory.toUri().toURL();
+        URL url = loaderDirectory.toUri().toURL();
         return new URLClassLoader(new URL[]{url}, AljabrProvider.class.getClassLoader());
     }
 
