@@ -54,6 +54,35 @@ final class GgufLogitsProcessor {
                 softcapEnd - projectionEnd);
     }
 
+
+    /**
+     * Computes prefill logits from a row in a batched hidden-state buffer.
+     * This path intentionally retains the prefill backend behavior: Java
+     * projection followed by Java softcapping.
+     */
+    static void computePrefillSlice(
+            GGUFModel model,
+            GGUFTensorInfo outputWeight,
+            float[] outputNorm,
+            float[] hiddenStates,
+            int hiddenOffset,
+            float[] normalizedState,
+            float[] logits,
+            int dimension,
+            float epsilon,
+            float softcap,
+            GgufExecutionDispatcher execution) {
+        GGUFVectorOps.rmsNorm(hiddenStates, hiddenOffset, outputNorm,
+                normalizedState, 0, dimension, epsilon);
+        execution.dispatchMatVec(outputWeight, normalizedState, logits);
+        if (softcap > 0.0f) {
+            float inverseSoftcap = 1.0f / softcap;
+            for (int i = 0; i < logits.length; i++) {
+                logits[i] = softcap * (float) Math.tanh(logits[i] * inverseSoftcap);
+            }
+        }
+    }
+
     record Timing(long normalizationNanos, long projectionNanos, long softcapNanos) {
         long totalNanos() {
             return normalizationNanos + projectionNanos + softcapNanos;
