@@ -1,9 +1,11 @@
 package tech.kayys.aljabr.backend.metal;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -37,6 +39,8 @@ public final class MetalComputeProvider implements ComputeProvider {
             PROVIDER_ID, "metal:0", "Apple Metal GPU", DeviceKind.GPU,
             null, null, "Apple", System.getProperty("os.arch", "unknown"), null, null);
 
+    private final Set<MetalProviderSession> sessions = ConcurrentHashMap.newKeySet();
+
     private boolean initialized;
     private boolean closed;
 
@@ -62,6 +66,9 @@ public final class MetalComputeProvider implements ComputeProvider {
         Objects.requireNonNull(context, "context");
         if (closed) {
             throw new ProviderException("Metal provider is closed");
+        }
+        if (initialized) {
+            throw new ProviderException("Metal provider is already initialized");
         }
         // Native loading is deliberately deferred until openSession().
         initialized = true;
@@ -93,16 +100,27 @@ public final class MetalComputeProvider implements ComputeProvider {
 
         try {
             ComputeBackend backend = Objects.requireNonNull(backendFactory.get(), "backendFactory result");
-            return new MetalProviderSession(device, backend);
+            MetalProviderSession session = new MetalProviderSession(this, device, backend);
+            sessions.add(session);
+            return session;
         } catch (RuntimeException e) {
             throw new ProviderException("Unable to open a native Metal compute session", e);
         }
     }
 
     @Override
-    public synchronized void close() {
-        closed = true;
-        initialized = false;
+    public void close() {
+        List<MetalProviderSession> openSessions;
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            initialized = false;
+            openSessions = new ArrayList<>(sessions);
+            sessions.clear();
+        }
+        openSessions.forEach(MetalProviderSession::close);
     }
 
     private static boolean isMacOs() {
@@ -122,11 +140,13 @@ public final class MetalComputeProvider implements ComputeProvider {
     }
 
     private static final class MetalProviderSession implements ProviderSession {
+        private final MetalComputeProvider owner;
         private final DeviceDescriptor device;
         private final Map<String, ComputeBackend> backends;
         private boolean closed;
 
-        private MetalProviderSession(DeviceDescriptor device, ComputeBackend backend) {
+        private MetalProviderSession(MetalComputeProvider owner, DeviceDescriptor device, ComputeBackend backend) {
+            this.owner = owner;
             this.device = device;
             this.backends = Map.of(BACKEND_ID, backend);
         }
@@ -146,9 +166,13 @@ public final class MetalComputeProvider implements ComputeProvider {
 
         @Override
         public synchronized void close() {
+            if (closed) {
+                return;
+            }
             // MetalBinding is currently a process-scoped singleton; the legacy
             // backend exposes no per-session native release operation.
             closed = true;
+            owner.sessions.remove(this);
         }
     }
 }
