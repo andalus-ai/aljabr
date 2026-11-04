@@ -72,12 +72,7 @@ final class GgufDecodeStep {
     private final boolean canUseMetalDecodeStep;
     private final boolean canUseMetalTokenEmbd;
 
-    // A failed native step can leave device KV state partially updated.
-    private boolean metalDecodeRuntimeDisabled;
-    // The host KV cache is not populated for tokens successfully decoded by the native full-GPU path.
-    private boolean metalDecodeStepHasCommitted;
-    // After a native failure following successful native tokens, the host cache cannot safely resume.
-    private boolean metalDecodeRequiresRestart;
+    private final GgufMetalDecodeState metalDecodeState = new GgufMetalDecodeState();
 
     /**
      * A key projection means this layer owns its KV entries. Gemma 4 can omit
@@ -566,7 +561,7 @@ final class GgufDecodeStep {
             long tFfn = 0;
             boolean fusedSuccess = false;
 
-            if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled && !hasPerLayer) {
+            if (canUseMetalDecodeStep && !metalDecodeState.disabled() && !hasPerLayer) {
                 fusedLayerDone = GgufMetalBridge.woFfnFusedLayerBatch(
                         model, layer, X, allAttn, dim, qDim, T, eps, cfg.isGeGLU());
             }
@@ -693,7 +688,7 @@ final class GgufDecodeStep {
         // the same data as the source layer they share (kvLayerIndex). Sync that source
         // data
         // into Metal buffer l so the decode step SDPA reads correct prefill KV.
-        if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
+        if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
             for (int l = 0; l < layers; l++) {
                 boolean synced;
                 if (layerWeights.wK[l] != null) {
@@ -802,10 +797,10 @@ final class GgufDecodeStep {
     }
 
     private void disableMetalDecodeAfterRuntimeFallback(int pos, String reason) {
-        if (metalDecodeRuntimeDisabled) {
+        if (metalDecodeState.disabled()) {
             return;
         }
-        metalDecodeRuntimeDisabled = true;
+        metalDecodeState.disableBeforeCommit();
         System.err.printf(
                 "[GgufDecodeStep] Full-GPU decode disabled after position %d: %s; "
                         + "falling back to per-op decode for this and subsequent tokens.%n",
@@ -813,7 +808,7 @@ final class GgufDecodeStep {
     }
 
     public boolean canUseMetalGreedy() {
-        return canUseMetalDecodeStep && !metalDecodeRuntimeDisabled && !metalDecodeRequiresRestart;
+        return metalDecodeState.canUse(canUseMetalDecodeStep);
     }
 
     /**
@@ -822,10 +817,10 @@ final class GgufDecodeStep {
      * and returns the best token without copying vocabulary logits to host memory.
      */
     int forwardGreedy(int tokenId, int pos, KVCache cache) {
-        if (!canUseMetalDecodeStep || metalDecodeRuntimeDisabled) {
+        if (!metalDecodeState.canUse(canUseMetalDecodeStep)) {
             return -1;
         }
-        if (metalDecodeRequiresRestart) {
+        if (metalDecodeState.requiresRestart()) {
             throw new IllegalStateException(
                     "Full-GPU Metal decode failed after advancing the native KV cache. "
                             + "Recreate the decoder and prefill the full context before retrying.");
@@ -848,7 +843,7 @@ final class GgufDecodeStep {
         }
         if (bestToken >= 0) {
             cache.advance();
-            metalDecodeStepHasCommitted = true;
+            metalDecodeState.recordSuccessfulDecode();
             long tElapsed = System.nanoTime() - t0;
             if (isVerbose() && (pos % 10 == 0 || pos < 5)) {
                 System.out.printf("[METAL DECODE GREEDY %d] single cmd buffer step: %.2f ms%n", pos,
@@ -857,10 +852,8 @@ final class GgufDecodeStep {
             return bestToken;
         }
 
-        String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
-        if (metalDecodeStepHasCommitted) {
-            metalDecodeRuntimeDisabled = true;
-            metalDecodeRequiresRestart = true;
+        String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeState.hasCommitted());
+        if (metalDecodeState.recordRuntimeFailure() == GgufMetalDecodeState.RuntimeFailure.CONTEXT_RESTART_REQUIRED) {
             String message = "[GgufDecodeStep] " + fallbackReason
                     + "; cannot safely continue with the incomplete host KV cache. "
                     + "Recreate the decoder and prefill the full context.";
@@ -881,13 +874,13 @@ final class GgufDecodeStep {
         int nEmbdPerLayer = cfg.nEmbdPerLayer();
         float eps = cfg.rmsNormEps();
 
-        if (metalDecodeRequiresRestart) {
+        if (metalDecodeState.requiresRestart()) {
             throw new IllegalStateException(
                     "Full-GPU Metal decode failed after advancing the native KV cache. "
                             + "Recreate the decoder and prefill the full context before retrying.");
         }
 
-        if (canUseMetalDecodeStep && !metalDecodeRuntimeDisabled) {
+        if (canUseMetalDecodeStep && !metalDecodeState.disabled()) {
             long t0 = System.nanoTime();
             boolean ok = false;
             if (canUseMetalTokenEmbd) {
@@ -903,7 +896,7 @@ final class GgufDecodeStep {
             }
             if (ok) {
                 cache.advance();
-                metalDecodeStepHasCommitted = true;
+                metalDecodeState.recordSuccessfulDecode();
                 long tElapsed = System.nanoTime() - t0;
                 if (isVerbose() && computeLogits && (pos % 10 == 0 || pos < 5)) {
                     System.out.printf("[METAL DECODE %d] single cmd buffer step: %.2f ms%n", pos,
@@ -912,10 +905,8 @@ final class GgufDecodeStep {
                 return this.logits;
             }
 
-            String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeStepHasCommitted);
-            if (metalDecodeStepHasCommitted) {
-                metalDecodeRuntimeDisabled = true;
-                metalDecodeRequiresRestart = true;
+            String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeState.hasCommitted());
+            if (metalDecodeState.recordRuntimeFailure() == GgufMetalDecodeState.RuntimeFailure.CONTEXT_RESTART_REQUIRED) {
                 String message = "[GgufDecodeStep] " + fallbackReason
                         + "; cannot safely continue with the incomplete host KV cache. "
                         + "Recreate the decoder and prefill the full context.";
