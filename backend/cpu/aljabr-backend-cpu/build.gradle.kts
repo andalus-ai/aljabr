@@ -1,9 +1,8 @@
 plugins {
-    java
+    `java-library`
 }
 
 dependencies {
     implementation(project(":core:aljabr-tensor"))
-    //implementation(project(":core:aljabr-ir"))
-    //implementation(project(":runtime:aljabr-runtime"))
+    api(project(":core:aljabr-spi-compute"))
 }
