@@ -395,75 +395,10 @@ final class GgufDecodeStep {
             int attentionKvDim = attentionKVHeads * layerHDim;
 
             // ── 3a. QKV projections for all T tokens ─────────────────────────
-            for (int t = 0; t < T; t++) {
-                GGUFVectorOps.rmsNorm(X, t * dim, layerWeights.attnNorm[layer], allXb, t * dim, dim, eps);
-            }
-
-            long tQkv0 = System.nanoTime();
-            if (layerWeights.wK[layer] != null && layerWeights.wV[layer] != null) {
-                execution.dispatchMatVecTripleBatch(layerWeights.wQ[layer], allQ, layerWeights.wK[layer], allK, layerWeights.wV[layer], allV, allXb, T);
-            } else if (layerWeights.wK[layer] != null) {
-                execution.dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
-                execution.dispatchMatVecBatch(layerWeights.wK[layer], allXb, allK, T);
-                System.arraycopy(allK, 0, allV, 0, T * kvDim);
-            } else {
-                execution.dispatchMatVecBatch(layerWeights.wQ[layer], allXb, allQ, T);
-            }
-            long tQkv = System.nanoTime() - tQkv0;
+            long tQkv = GgufPrefillQkvProjection.project(
+                    X, allXb, allQ, allK, allV, T, layer, layerWeights, cfg, execution,
+                    cache, hasOwnKv, kvLayerToUse, attentionKvDim);
             if (profilePrefill) profileQkvNanos += tQkv;
-
-            for (int t = 0; t < T; t++) {
-                if (layerWeights.attnQNorm[layer] != null) {
-                    int qNormLen = layerWeights.attnQNorm[layer].length;
-                    for (int h = 0; h < nH; h++) {
-                        int off = t * qDim + h * layerHDim;
-                        GGUFVectorOps.rmsNorm(allQ, off, layerWeights.attnQNorm[layer], allQ, off, qNormLen, eps);
-                    }
-                }
-                GGUFVectorOps.rope(allQ, t * qDim, nH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq, layerRopeFreqs);
-
-                if (hasOwnKv) {
-                    if (layerWeights.attnKNorm[layer] != null) {
-                        int kNormLen = layerWeights.attnKNorm[layer].length;
-                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                            int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNorm(allK, off, layerWeights.attnKNorm[layer], allK, off, kNormLen, eps);
-                        }
-                    }
-                    if (layerWeights.attnVNorm[layer] != null) {
-                        int vNormLen = layerWeights.attnVNorm[layer].length;
-                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                            int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNorm(allV, off, layerWeights.attnVNorm[layer], allV, off, vNormLen, eps);
-                        }
-                    } else if (cfg.hasUnitVNorm()) {
-                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                            int off = t * kvDim + kvH * layerHDim;
-                            GGUFVectorOps.rmsNormUnit(allV, off, allV, off, layerHDim, eps);
-                        }
-                    }
-
-                    GGUFVectorOps.rope(allK, t * kvDim, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq, layerRopeFreqs);
-                }
-            }
-
-            if (hasOwnKv) {
-                cache.storeBatch(layer, 0, allK, 0, allV, 0, T * kvDim);
-            } else {
-                float[] sourceK = cache.kLayer(kvLayerToUse);
-                float[] sourceV = cache.vLayer(kvLayerToUse);
-                int sourceStride = cache.headStride(kvLayerToUse);
-                if (sourceStride == attentionKvDim) {
-                    System.arraycopy(sourceK, 0, allK, 0, T * attentionKvDim);
-                    System.arraycopy(sourceV, 0, allV, 0, T * attentionKvDim);
-                } else {
-                    for (int t = 0; t < T; t++) {
-                        int sourceOffset = t * sourceStride;
-                        System.arraycopy(sourceK, sourceOffset, allK, t * attentionKvDim, attentionKvDim);
-                        System.arraycopy(sourceV, sourceOffset, allV, t * attentionKvDim, attentionKvDim);
-                    }
-                }
-            }
 
             // ── 3b. Attention for all T tokens ───────────────────────────────
             int swWin = cfg.slidingWindow();
