@@ -1,7 +1,7 @@
 package tech.kayys.aljabr.spi.provider;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -38,7 +38,7 @@ public final class ProviderDiscovery {
         Objects.requireNonNull(classLoader, "classLoader");
 
         List<ProviderDiscoveryFailure> failures = new ArrayList<>();
-        Map<String, AljabrProvider> providersById = new HashMap<>();
+        Map<String, AljabrProvider> providersById = new LinkedHashMap<>();
         Set<String> duplicateIds = new HashSet<>();
 
         ServiceLoader<AljabrProvider> serviceLoader =
