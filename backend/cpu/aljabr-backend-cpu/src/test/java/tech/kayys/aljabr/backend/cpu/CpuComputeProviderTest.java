@@ -3,6 +3,7 @@ package tech.kayys.aljabr.backend.cpu;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ServiceLoader;
 
@@ -11,10 +12,11 @@ import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.spi.compute.ComputeProvider;
 import tech.kayys.aljabr.spi.compute.ProviderSession;
 import tech.kayys.aljabr.spi.provider.AljabrProvider;
+import tech.kayys.aljabr.spi.provider.DeviceDescriptor;
+import tech.kayys.aljabr.spi.provider.DeviceKind;
 import tech.kayys.aljabr.spi.provider.ProviderContext;
 import tech.kayys.aljabr.spi.provider.ProviderException;
 import tech.kayys.aljabr.spi.testkit.ProviderConformance;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CpuComputeProviderTest {
     @Test
@@ -41,6 +43,48 @@ class CpuComputeProviderTest {
     }
 
     @Test
+    void initializationIsSingleUseAndCloseIsIdempotent() throws Exception {
+        CpuComputeProvider provider = new CpuComputeProvider();
+        ProviderContext context = new ProviderContext("test", java.util.Map.of());
+        provider.initialize(context);
+
+        assertThrows(ProviderException.class, () -> provider.initialize(context));
+        provider.close();
+        provider.close();
+        assertThrows(ProviderException.class, () -> provider.initialize(context));
+    }
+
+    @Test
+    void providerCloseClosesOutstandingSessions() throws Exception {
+        CpuComputeProvider provider = new CpuComputeProvider();
+        provider.initialize(new ProviderContext("test", java.util.Map.of()));
+        ProviderSession session = provider.openSession(provider.devices().get(0));
+
+        provider.close();
+
+        assertEquals("cpu:0", session.device().deviceId());
+        assertThrows(IllegalStateException.class, session::computeBackends);
+        session.close();
+        assertThrows(ProviderException.class, () -> provider.openSession(provider.devices().get(0)));
+    }
+
+    @Test
+    void providerRejectsForeignAndUnknownDevices() throws Exception {
+        CpuComputeProvider provider = new CpuComputeProvider();
+        provider.initialize(new ProviderContext("test", java.util.Map.of()));
+        DeviceDescriptor foreign = new DeviceDescriptor(
+                "other/provider", "cpu:0", "Foreign CPU", DeviceKind.CPU,
+                null, null, null, null, null, null);
+        DeviceDescriptor unknown = new DeviceDescriptor(
+                CpuComputeProvider.PROVIDER_ID, "cpu:99", "Unknown CPU", DeviceKind.CPU,
+                null, null, null, null, null, null);
+
+        assertThrows(ProviderException.class, () -> provider.openSession(foreign));
+        assertThrows(ProviderException.class, () -> provider.openSession(unknown));
+        provider.close();
+    }
+
+    @Test
     void cpuProviderPassesSharedLifecycleConformance() {
         var result = ProviderConformance.verify(
                 CpuComputeProvider::new,
@@ -48,15 +92,5 @@ class CpuComputeProviderTest {
 
         assertTrue(result.isConformant(), result.violations().toString());
         assertEquals("andalus/cpu", result.providerId());
-    }
-
-    @Test
-    void providerRejectsForeignDevice() throws Exception {
-        CpuComputeProvider provider = new CpuComputeProvider();
-        provider.initialize(new ProviderContext("test", java.util.Map.of()));
-        var foreign = new tech.kayys.aljabr.spi.provider.DeviceDescriptor(
-                "other/provider", "cpu:0", "Foreign CPU",
-                tech.kayys.aljabr.spi.provider.DeviceKind.CPU, null, null, null, null, null, null);
-        assertThrows(ProviderException.class, () -> provider.openSession(foreign));
     }
 }
