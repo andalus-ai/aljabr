@@ -466,6 +466,7 @@ final class GgufDecodeStep {
             }
 
             // ── 3b. Attention for all T tokens ───────────────────────────────
+            int swWin = cfg.slidingWindow();
             long tAttn0 = System.nanoTime();
             boolean gpuAttnDone = GgufPrefillAttentionExecution.execute(
                     allAttn, allQ, allK, allV, attnScores, T, nH, attentionKVHeads,
