@@ -561,7 +561,7 @@ final class GgufDecodeStep {
             long tFfn = 0;
             boolean fusedSuccess = false;
 
-            if (canUseMetalDecodeStep && !metalDecodeState.disabled() && !hasPerLayer) {
+            if (metalDecodeState.canUse(canUseMetalDecodeStep) && !hasPerLayer) {
                 fusedLayerDone = GgufMetalBridge.woFfnFusedLayerBatch(
                         model, layer, X, allAttn, dim, qDim, T, eps, cfg.isGeGLU());
             }
@@ -797,9 +797,6 @@ final class GgufDecodeStep {
     }
 
     private void disableMetalDecodeAfterRuntimeFallback(int pos, String reason) {
-        if (metalDecodeState.disabled()) {
-            return;
-        }
         metalDecodeState.disableBeforeCommit();
         System.err.printf(
                 "[GgufDecodeStep] Full-GPU decode disabled after position %d: %s; "
@@ -880,7 +877,7 @@ final class GgufDecodeStep {
                             + "Recreate the decoder and prefill the full context before retrying.");
         }
 
-        if (canUseMetalDecodeStep && !metalDecodeState.disabled()) {
+        if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
             long t0 = System.nanoTime();
             boolean ok = false;
             if (canUseMetalTokenEmbd) {
