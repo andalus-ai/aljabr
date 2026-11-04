@@ -398,19 +398,8 @@ final class GgufDecodeStep {
             if (hasOwnKv) {
                 GgufKvCacheWriteExecution.storeBatch(cache, layer, 0, allK, 0, allV, 0, T * kvDim);
             } else {
-                float[] sourceK = cache.kLayer(kvLayerToUse);
-                float[] sourceV = cache.vLayer(kvLayerToUse);
-                int sourceStride = cache.headStride(kvLayerToUse);
-                if (sourceStride == attentionKvDim) {
-                    System.arraycopy(sourceK, 0, allK, 0, T * attentionKvDim);
-                    System.arraycopy(sourceV, 0, allV, 0, T * attentionKvDim);
-                } else {
-                    for (int t = 0; t < T; t++) {
-                        int sourceOffset = t * sourceStride;
-                        System.arraycopy(sourceK, sourceOffset, allK, t * attentionKvDim, attentionKvDim);
-                        System.arraycopy(sourceV, sourceOffset, allV, t * attentionKvDim, attentionKvDim);
-                    }
-                }
+                GgufKvCacheReadExecution.copyLayerToBatch(
+                        cache, kvLayerToUse, allK, allV, T, attentionKvDim);
             }
 
             // ── 3b. Attention for all T tokens ───────────────────────────────
