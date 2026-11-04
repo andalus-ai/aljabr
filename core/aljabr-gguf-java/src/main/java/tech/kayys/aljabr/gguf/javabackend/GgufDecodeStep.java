@@ -338,8 +338,7 @@ final class GgufDecodeStep {
             int qDim = nH * layerHDim;
             int kvDim = layerNKVH * layerHDim;
             boolean hasOwnKv = GgufDecodeEligibility.hasOwnKvCache(layerWeights.wK[layer] != null);
-            int kvLayerToUse = hasOwnKv ? layer
-                    : Math.max(0, layer - (isSwa ? 2 : 1));
+            int kvLayerToUse = GgufKvCacheRouting.resolveCacheLayer(layer, hasOwnKv, isSwa);
             int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
             int attentionKvDim = attentionKVHeads * layerHDim;
 
@@ -842,7 +841,8 @@ final class GgufDecodeStep {
             // RoPE on Q
             GGUFVectorOps.rope(q, nH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
-            int kvLayerToUse = layer;
+            int kvLayerToUse = GgufKvCacheRouting.resolveCacheLayer(
+                    layer, layerWeights.wK[layer] != null, cfg.isSwaLayer(layer));
             if (layerWeights.wK[layer] != null) {
 
                 if (layerWeights.attnKNorm[layer] != null) {
@@ -866,8 +866,6 @@ final class GgufDecodeStep {
                 GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
                 cache.store(layer, k, v);
-            } else {
-                kvLayerToUse = Math.max(0, layer - (cfg.isSwaLayer(layer) ? 2 : 1));
             }
             tRope += (System.nanoTime() - tRope0);
 
