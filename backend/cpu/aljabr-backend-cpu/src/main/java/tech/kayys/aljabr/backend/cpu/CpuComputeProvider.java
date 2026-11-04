@@ -1,9 +1,11 @@
 package tech.kayys.aljabr.backend.cpu;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import tech.kayys.aljabr.spi.compute.ComputeProvider;
 import tech.kayys.aljabr.spi.compute.ProviderSession;
@@ -28,6 +30,7 @@ public final class CpuComputeProvider implements ComputeProvider {
             PROVIDER_ID, "cpu:0", "Host CPU", DeviceKind.CPU, null, null,
             "generic", System.getProperty("os.arch", "unknown"), null,
             System.getProperty("java.vm.name", "unknown"));
+    private final Set<CpuProviderSession> sessions = ConcurrentHashMap.newKeySet();
 
     private boolean initialized;
     private boolean closed;
@@ -41,6 +44,7 @@ public final class CpuComputeProvider implements ComputeProvider {
     public synchronized void initialize(ProviderContext context) throws ProviderException {
         Objects.requireNonNull(context, "context");
         if (closed) throw new ProviderException("CPU provider is closed");
+        if (initialized) throw new ProviderException("CPU provider is already initialized");
         initialized = true;
     }
 
@@ -59,21 +63,35 @@ public final class CpuComputeProvider implements ComputeProvider {
         if (!device.equals(Objects.requireNonNull(requested, "device"))) {
             throw new ProviderException("Device does not belong to provider " + PROVIDER_ID + ": " + requested.deviceId());
         }
-        return new CpuProviderSession(device, new CpuBackend());
+        CpuProviderSession session = new CpuProviderSession(this, device, new CpuBackend());
+        sessions.add(session);
+        return session;
     }
 
     @Override
-    public synchronized void close() {
-        closed = true;
-        initialized = false;
+    public void close() {
+        List<CpuProviderSession> openSessions;
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+            initialized = false;
+            openSessions = new ArrayList<>(sessions);
+            sessions.clear();
+        }
+        openSessions.forEach(CpuProviderSession::close);
     }
 
     private static final class CpuProviderSession implements ProviderSession {
+        private final CpuComputeProvider owner;
         private final DeviceDescriptor device;
         private final Map<String, tech.kayys.aljabr.core.backend.ComputeBackend> backends;
         private boolean closed;
 
-        private CpuProviderSession(DeviceDescriptor device, CpuBackend backend) {
+        private CpuProviderSession(
+                CpuComputeProvider owner,
+                DeviceDescriptor device,
+                CpuBackend backend) {
+            this.owner = owner;
             this.device = device;
             this.backends = Map.of(BACKEND_ID, backend);
         }
@@ -91,7 +109,9 @@ public final class CpuComputeProvider implements ComputeProvider {
 
         @Override
         public synchronized void close() {
+            if (closed) return;
             closed = true;
+            owner.sessions.remove(this);
         }
     }
 }
