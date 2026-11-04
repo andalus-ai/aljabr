@@ -47,6 +47,42 @@ class ProviderConformanceTest {
     }
 
     @Test
+    void reportsFactoryFailure() {
+        ProviderConformanceResult result = ProviderConformance.verify(
+                () -> { throw new IllegalStateException("construction failed"); }, CONTEXT);
+
+        assertFalse(result.isConformant());
+        assertEquals("<unavailable>", result.providerId());
+        assertTrue(result.violations().get(0).contains("provider factory failed"));
+    }
+
+    @Test
+    void reportsCloseFailureAfterSuccessfulInitialization() {
+        AtomicBoolean initialized = new AtomicBoolean();
+        AljabrProvider provider = provider(
+                () -> initialized.set(true),
+                () -> { throw new ProviderException("close failed"); });
+
+        ProviderConformanceResult result = ProviderConformance.verify(() -> provider, CONTEXT);
+
+        assertTrue(initialized.get());
+        assertFalse(result.isConformant());
+        assertTrue(result.violations().stream().anyMatch(v -> v.contains("close() failed")));
+    }
+
+    @Test
+    void resultDefensivelyCopiesViolations() {
+        var violations = new java.util.ArrayList<String>();
+        violations.add("failure");
+
+        ProviderConformanceResult result = new ProviderConformanceResult("example/provider", violations);
+        violations.add("later failure");
+
+        assertEquals(java.util.List.of("failure"), result.violations());
+        assertThrows(UnsupportedOperationException.class, () -> result.violations().add("mutation"));
+    }
+
+    @Test
     void reportsFactoryReturningNull() {
         ProviderConformanceResult result = ProviderConformance.verify(() -> null, CONTEXT);
 
