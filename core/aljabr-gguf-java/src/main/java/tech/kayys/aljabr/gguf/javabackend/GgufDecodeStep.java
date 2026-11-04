@@ -890,31 +890,11 @@ final class GgufDecodeStep {
             final int tStart = calculatedStart;
 
             long tAttn0 = System.nanoTime();
-            GGUFVectorOps.zero(attnFull, nH * layerHDim);
-
-            int layerStride = cache.headStride(kvLayerToUse);
-            float[] kCache = cache.kLayer(kvLayerToUse);
-            float[] vCache = cache.vLayer(kvLayerToUse);
-            int kHeads = cache.nKVHeads(kvLayerToUse);
-
-            int activeLen = seqLen - tStart;
-            for (int h = 0; h < nH; h++) {
-                int kvH = h / (nH / kHeads);
-                int qOff = h * layerHDim;
-
-                for (int t = tStart; t < seqLen; t++) {
-                    int kBase = t * layerStride + kvH * layerHDim;
-                    scores[t - tStart] = GGUFVectorOps.dot(q, qOff, kCache, kBase, layerHDim) * scale;
-                }
-
-                GGUFVectorOps.softmax(scores, activeLen);
-
-                int hBase = h * layerHDim;
-                for (int t = tStart; t < seqLen; t++) {
-                    int vBase = t * layerStride + kvH * layerHDim;
-                    GGUFVectorOps.scaledAddInPlace(attnFull, hBase, scores[t - tStart], vCache, vBase, layerHDim);
-                }
-            }
+            GgufDecodeAttentionExecution.execute(
+                    q, attnFull, scores,
+                    cache.kLayer(kvLayerToUse), cache.vLayer(kvLayerToUse),
+                    cache.headStride(kvLayerToUse), cache.nKVHeads(kvLayerToUse),
+                    nH, layerHDim, seqLen, tStart, scale);
             long tAttnEnd = System.nanoTime();
             tAttn += (tAttnEnd - tAttn0);
 
