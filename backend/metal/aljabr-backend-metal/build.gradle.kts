@@ -21,8 +21,12 @@ sourceSets {
             include("tech/kayys/aljabr/backend/metal/binding/MetalFlashAttentionCpuFallback.java")
             include("tech/kayys/aljabr/backend/metal/binding/MetalLibraryDiscovery.java")
             include("tech/kayys/aljabr/backend/metal/MetalComputeBackend.java")
+            include("tech/kayys/aljabr/backend/metal/MetalComputeProvider.java")
         }
         resources {
+            // src/main/resources is already part of Gradle's default source set.
+            // Add only the generated/native resource directory to avoid copying
+            // META-INF/services entries twice.
             srcDir("src/main/cpp/resources")
         }
     }
@@ -30,6 +34,7 @@ sourceSets {
 
 
 dependencies {
+    api(project(":core:aljabr-spi-compute"))
     implementation(project(":core:aljabr-tensor"))
     implementation(project(":backend:cpu:aljabr-backend-cpu"))
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")

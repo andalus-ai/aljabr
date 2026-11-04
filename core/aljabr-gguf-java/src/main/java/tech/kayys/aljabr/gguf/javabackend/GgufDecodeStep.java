@@ -57,8 +57,6 @@ final class GgufDecodeStep {
     private final GGUFTensorInfo perLayerModelProj;
     private final float[] perLayerProjNorm;
 
-
-
     // Scratch buffers sized to worst-case (maximum) across layers
     private final float[] x, xb, q, k, v, attnFull, attnOut, gate, up, hb, scores, logits, ffnOutBuf;
     private final float[][] headScores;
@@ -81,7 +79,6 @@ final class GgufDecodeStep {
      * such layers as cross-layer KV-sharing layers during prefill.
      */
 
-
     /**
      * Explains why the native full-GPU decode path cannot be used before any
      * native buffers are registered. Kept pure so the eligibility policy can
@@ -93,17 +90,12 @@ final class GgufDecodeStep {
      * layers, and shared-KV owners with matching geometry are supported. A
      * V-only layer is not representable by the native decode path.
      *
-     * <p>Array entries are per-layer; a shared-KV layer with both projections
+     * <p>
+     * Array entries are per-layer; a shared-KV layer with both projections
      * absent uses the preceding one layer for global attention or two layers
-     * back for SWA, matching the current registration convention.</p>
+     * back for SWA, matching the current registration convention.
+     * </p>
      */
-
-
-
-
-
-
-
 
     /**
      * Classifies a failed native decode call. Falling back is safe only before
@@ -111,13 +103,11 @@ final class GgufDecodeStep {
      * because the host KV cache is not populated by successful native steps.
      */
 
-
     /**
      * Prompt KV synchronization happens before generation and before the native
      * decoder has committed any token. If any layer fails to sync, the populated
      * host cache remains the safe source of truth for per-op decoding.
      */
-
 
     GgufDecodeStep(GGUFModel model, GgufModelConfig cfg) {
         this.model = model;
@@ -154,33 +144,12 @@ final class GgufDecodeStep {
                 .map(t -> tensorResolver.dequantizeVector(t, nEmbdPerLayer > 0 ? nEmbdPerLayer : 1))
                 .orElse(null);
 
-        
-        
-        
-
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-
-        
-        
-        
-        
-        
-
         this.layerWeights = GgufLayerWeightResolver.resolve(
                 tensorResolver, cfg, dim, nEmbdPerLayer, perLayerTokEmbd);
 
         // Opt-in layer-shape diagnostics verify architecture-specific RoPE dimensions
-        // on the actual loaded GGUF, especially for Gemma 4's local/global attention mix.
+        // on the actual loaded GGUF, especially for Gemma 4's local/global attention
+        // mix.
         if (System.getenv("ALJABR_DEBUG_LAYERS") != null) {
             int previousHeadDim = -1;
             int previousRotaryDim = -1;
@@ -206,7 +175,8 @@ final class GgufDecodeStep {
         // Register static layer norms on GPU bridge once to enable zero-copy decode
         // slices
         if (GgufMetalBridge.isAvailable()) {
-            GgufMetalBridge.registerLayerNorms(layers, dim, hDim, layerWeights.postAttnNorm, layerWeights.ffnNorm, layerWeights.postFfnNorm, layerWeights.attnNorm,
+            GgufMetalBridge.registerLayerNorms(layers, dim, hDim, layerWeights.postAttnNorm, layerWeights.ffnNorm,
+                    layerWeights.postFfnNorm, layerWeights.attnNorm,
                     layerWeights.attnQNorm, layerWeights.attnKNorm);
         }
 
@@ -237,17 +207,19 @@ final class GgufDecodeStep {
             GgufMetalBridge.ensureModelRegistered(model);
         }
 
-        GgufMetalDecodeRegistration.Result metalRegistration =
-                GgufMetalDecodeRegistration.register(model, cfg, layerWeights, tokenEmbed, perLayerTokEmbd,
-                        outputNorm, outputWeight, dim, ffnDim, nH, layers, nEmbdPerLayer);
+        GgufMetalDecodeRegistration.Result metalRegistration = GgufMetalDecodeRegistration.register(model, cfg,
+                layerWeights, tokenEmbed, perLayerTokEmbd,
+                outputNorm, outputWeight, dim, ffnDim, nH, layers, nEmbdPerLayer);
         this.canUseMetalDecodeStep = metalRegistration.decodeActive();
         this.canUseMetalTokenEmbd = metalRegistration.tokenEmbeddingRegistered();
         if (isVerbose()) {
             if (metalRegistration.decodeActive()) {
-                System.out.println("[GgufDecodeStep] Full-GPU single command buffer decode step ENABLED (" + layers + " layers).");
+                System.out.println(
+                        "[GgufDecodeStep] Full-GPU single command buffer decode step ENABLED (" + layers + " layers).");
             } else {
                 String reason = metalRegistration.skipReason() == null
-                        ? "unknown eligibility or registration failure" : metalRegistration.skipReason();
+                        ? "unknown eligibility or registration failure"
+                        : metalRegistration.skipReason();
                 System.out.println("[GgufDecodeStep] Full-GPU single command buffer decode step UNAVAILABLE: "
                         + reason + "; using the existing per-op decode path.");
             }
@@ -338,8 +310,7 @@ final class GgufDecodeStep {
             int qDim = nH * layerHDim;
             int kvDim = layerNKVH * layerHDim;
             boolean hasOwnKv = GgufDecodeEligibility.hasOwnKvCache(layerWeights.wK[layer] != null);
-            int kvLayerToUse = hasOwnKv ? layer
-                    : Math.max(0, layer - (isSwa ? 2 : 1));
+            int kvLayerToUse = GgufKvCacheRouting.resolveCacheLayer(layer, hasOwnKv, isSwa);
             int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
             int attentionKvDim = attentionKVHeads * layerHDim;
 
@@ -347,7 +318,52 @@ final class GgufDecodeStep {
             long tQkv = GgufPrefillQkvProjection.project(
                     X, allXb, allQ, allK, allV, T, layer, layerWeights, cfg, execution,
                     cache, hasOwnKv, kvLayerToUse, attentionKvDim);
-            if (profilePrefill) profileQkvNanos += tQkv;
+            if (profilePrefill)
+                profileQkvNanos += tQkv;
+
+            for (int t = 0; t < T; t++) {
+                if (layerWeights.attnQNorm[layer] != null) {
+                    int qNormLen = layerWeights.attnQNorm[layer].length;
+                    for (int h = 0; h < nH; h++) {
+                        int off = t * qDim + h * layerHDim;
+                        GGUFVectorOps.rmsNorm(allQ, off, layerWeights.attnQNorm[layer], allQ, off, qNormLen, eps);
+                    }
+                }
+                GGUFVectorOps.rope(allQ, t * qDim, nH, layerHDim, cfg.rotaryDimForLayer(layer), t, layerRopeFreq,
+                        layerRopeFreqs);
+
+                if (hasOwnKv) {
+                    if (layerWeights.attnKNorm[layer] != null) {
+                        int kNormLen = layerWeights.attnKNorm[layer].length;
+                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
+                            int off = t * kvDim + kvH * layerHDim;
+                            GGUFVectorOps.rmsNorm(allK, off, layerWeights.attnKNorm[layer], allK, off, kNormLen, eps);
+                        }
+                    }
+                    if (layerWeights.attnVNorm[layer] != null) {
+                        int vNormLen = layerWeights.attnVNorm[layer].length;
+                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
+                            int off = t * kvDim + kvH * layerHDim;
+                            GGUFVectorOps.rmsNorm(allV, off, layerWeights.attnVNorm[layer], allV, off, vNormLen, eps);
+                        }
+                    } else if (cfg.hasUnitVNorm()) {
+                        for (int kvH = 0; kvH < layerNKVH; kvH++) {
+                            int off = t * kvDim + kvH * layerHDim;
+                            GGUFVectorOps.rmsNormUnit(allV, off, allV, off, layerHDim, eps);
+                        }
+                    }
+
+                    GGUFVectorOps.rope(allK, t * kvDim, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), t,
+                            layerRopeFreq, layerRopeFreqs);
+                }
+            }
+
+            if (hasOwnKv) {
+                GgufKvCacheWriteExecution.storeBatch(cache, layer, 0, allK, 0, allV, 0, T * kvDim);
+            } else {
+                GgufKvCacheReadExecution.copyLayerToBatch(
+                        cache, kvLayerToUse, allK, allV, T, attentionKvDim);
+            }
 
             // ── 3b. Attention for all T tokens ───────────────────────────────
             int swWin = cfg.slidingWindow();
@@ -356,7 +372,8 @@ final class GgufDecodeStep {
                     allAttn, allQ, allK, allV, attnScores, T, nH, attentionKVHeads,
                     layerHDim, scale, isSwa, swWin, hasOwnKv, kvDim, attentionKvDim);
             long tAttn = System.nanoTime() - tAttn0;
-            if (profilePrefill) profileAttentionNanos += tAttn;
+            if (profilePrefill)
+                profileAttentionNanos += tAttn;
             if (profilePrefill && gpuAttnDone) {
                 profileGpuAttentionLayers++;
             }
@@ -397,7 +414,8 @@ final class GgufDecodeStep {
 
                 // Per-layer embedding + Layer output scale
                 for (int t = 0; t < T; t++) {
-                    if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null && layerWeights.perLayerProj[layer] != null) {
+                    if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null
+                            && layerWeights.perLayerProj[layer] != null) {
                         float[] xSlice = new float[dim];
                         System.arraycopy(X, t * dim, xSlice, 0, dim);
                         execution.dispatchMatVec(layerWeights.perLayerInpGate[layer], xSlice, peGate);
@@ -450,9 +468,10 @@ final class GgufDecodeStep {
         }
 
         // Advance KV cache past all prefill tokens
-        cache.advance(T);
+        GgufKvCacheSequenceLifecycle.completePrefill(cache, T);
 
-        // Prompt KV synchronization is a one-time handoff from the populated host cache.
+        // Prompt KV synchronization is a one-time handoff from the populated host
+        // cache.
         if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
             int failedLayer = GgufPrefillMetalCacheSync.sync(
                     T, layerWeights.wK, cfg, cache, layers);
@@ -586,7 +605,7 @@ final class GgufDecodeStep {
             bestToken = GgufMetalBridge.decodeStepGreedy(pos, cfg.slidingWindow(), eps, x);
         }
         if (bestToken >= 0) {
-            cache.advance();
+            GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
             metalDecodeState.recordSuccessfulDecode();
             long tElapsed = System.nanoTime() - t0;
             if (isVerbose() && (pos % 10 == 0 || pos < 5)) {
@@ -596,7 +615,8 @@ final class GgufDecodeStep {
             return bestToken;
         }
 
-        String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeState.hasCommitted());
+        String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false,
+                metalDecodeState.hasCommitted());
         if (metalDecodeState.recordRuntimeFailure() == GgufMetalDecodeState.RuntimeFailure.CONTEXT_RESTART_REQUIRED) {
             String message = "[GgufDecodeStep] " + fallbackReason
                     + "; cannot safely continue with the incomplete host KV cache. "
@@ -639,7 +659,7 @@ final class GgufDecodeStep {
                 ok = GgufMetalBridge.decodeStep(pos, cfg.slidingWindow(), eps, x, this.logits);
             }
             if (ok) {
-                cache.advance();
+                GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
                 metalDecodeState.recordSuccessfulDecode();
                 long tElapsed = System.nanoTime() - t0;
                 if (isVerbose() && computeLogits && (pos % 10 == 0 || pos < 5)) {
@@ -649,8 +669,10 @@ final class GgufDecodeStep {
                 return this.logits;
             }
 
-            String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false, metalDecodeState.hasCommitted());
-            if (metalDecodeState.recordRuntimeFailure() == GgufMetalDecodeState.RuntimeFailure.CONTEXT_RESTART_REQUIRED) {
+            String fallbackReason = GgufDecodeEligibility.fullGpuDecodeRuntimeFailureReason(false,
+                    metalDecodeState.hasCommitted());
+            if (metalDecodeState
+                    .recordRuntimeFailure() == GgufMetalDecodeState.RuntimeFailure.CONTEXT_RESTART_REQUIRED) {
                 String message = "[GgufDecodeStep] " + fallbackReason
                         + "; cannot safely continue with the incomplete host KV cache. "
                         + "Recreate the decoder and prefill the full context.";
@@ -659,7 +681,8 @@ final class GgufDecodeStep {
             }
 
             // No generated token has been committed by the native path yet, so the
-            // host KV cache still contains all required history and per-op fallback is safe.
+            // host KV cache still contains all required history and per-op fallback is
+            // safe.
             disableMetalDecodeAfterRuntimeFallback(pos, fallbackReason);
         }
 
@@ -716,7 +739,8 @@ final class GgufDecodeStep {
 
                 // Q / K / V
                 if (layerWeights.wK[layer] != null && layerWeights.wV[layer] != null) {
-                    execution.dispatchMatVecTriple(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, layerWeights.wV[layer], v, xb);
+                    execution.dispatchMatVecTriple(layerWeights.wQ[layer], q, layerWeights.wK[layer], k,
+                            layerWeights.wV[layer], v, xb);
                 } else if (layerWeights.wK[layer] != null) {
                     execution.dispatchMatVecPair(layerWeights.wQ[layer], q, layerWeights.wK[layer], k, xb);
                     System.arraycopy(k, 0, v, 0, layerNKVH * layerHDim);
@@ -733,27 +757,31 @@ final class GgufDecodeStep {
             if (layerWeights.attnQNorm[layer] != null) {
                 int qNormLen = layerWeights.attnQNorm[layer].length;
                 for (int h = 0; h < nH; h++) {
-                    GGUFVectorOps.rmsNorm(q, h * layerHDim, layerWeights.attnQNorm[layer], q, h * layerHDim, qNormLen, eps);
+                    GGUFVectorOps.rmsNorm(q, h * layerHDim, layerWeights.attnQNorm[layer], q, h * layerHDim, qNormLen,
+                            eps);
                 }
             }
 
             // RoPE on Q
             GGUFVectorOps.rope(q, nH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
-            int kvLayerToUse = layer;
+            int kvLayerToUse = GgufKvCacheRouting.resolveCacheLayer(
+                    layer, layerWeights.wK[layer] != null, cfg.isSwaLayer(layer));
             if (layerWeights.wK[layer] != null) {
 
                 if (layerWeights.attnKNorm[layer] != null) {
                     int kNormLen = layerWeights.attnKNorm[layer].length;
                     for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                        GGUFVectorOps.rmsNorm(k, kvH * layerHDim, layerWeights.attnKNorm[layer], k, kvH * layerHDim, kNormLen, eps);
+                        GGUFVectorOps.rmsNorm(k, kvH * layerHDim, layerWeights.attnKNorm[layer], k, kvH * layerHDim,
+                                kNormLen, eps);
                     }
                 }
 
                 if (layerWeights.attnVNorm[layer] != null) {
                     int vNormLen = layerWeights.attnVNorm[layer].length;
                     for (int kvH = 0; kvH < layerNKVH; kvH++) {
-                        GGUFVectorOps.rmsNorm(v, kvH * layerHDim, layerWeights.attnVNorm[layer], v, kvH * layerHDim, vNormLen, eps);
+                        GGUFVectorOps.rmsNorm(v, kvH * layerHDim, layerWeights.attnVNorm[layer], v, kvH * layerHDim,
+                                vNormLen, eps);
                     }
                 } else if (cfg.hasUnitVNorm()) {
                     for (int kvH = 0; kvH < layerNKVH; kvH++) {
@@ -761,11 +789,10 @@ final class GgufDecodeStep {
                     }
                 }
 
-                GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
+                GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq,
+                        layerRopeFreqs);
 
-                cache.store(layer, k, v);
-            } else {
-                kvLayerToUse = Math.max(0, layer - (cfg.isSwaLayer(layer) ? 2 : 1));
+                GgufKvCacheWriteExecution.storeToken(cache, layer, k, v);
             }
             tRope += (System.nanoTime() - tRope0);
 
@@ -788,31 +815,11 @@ final class GgufDecodeStep {
             final int tStart = calculatedStart;
 
             long tAttn0 = System.nanoTime();
-            GGUFVectorOps.zero(attnFull, nH * layerHDim);
-
-            int layerStride = cache.headStride(kvLayerToUse);
-            float[] kCache = cache.kLayer(kvLayerToUse);
-            float[] vCache = cache.vLayer(kvLayerToUse);
-            int kHeads = cache.nKVHeads(kvLayerToUse);
-
-            int activeLen = seqLen - tStart;
-            for (int h = 0; h < nH; h++) {
-                int kvH = h / (nH / kHeads);
-                int qOff = h * layerHDim;
-
-                for (int t = tStart; t < seqLen; t++) {
-                    int kBase = t * layerStride + kvH * layerHDim;
-                    scores[t - tStart] = GGUFVectorOps.dot(q, qOff, kCache, kBase, layerHDim) * scale;
-                }
-
-                GGUFVectorOps.softmax(scores, activeLen);
-
-                int hBase = h * layerHDim;
-                for (int t = tStart; t < seqLen; t++) {
-                    int vBase = t * layerStride + kvH * layerHDim;
-                    GGUFVectorOps.scaledAddInPlace(attnFull, hBase, scores[t - tStart], vCache, vBase, layerHDim);
-                }
-            }
+            GgufDecodeAttentionExecution.execute(
+                    q, attnFull, scores,
+                    cache.kLayer(kvLayerToUse), cache.vLayer(kvLayerToUse),
+                    cache.headStride(kvLayerToUse), cache.nKVHeads(kvLayerToUse),
+                    nH, layerHDim, seqLen, tStart, scale);
             long tAttnEnd = System.nanoTime();
             tAttn += (tAttnEnd - tAttn0);
 
@@ -850,7 +857,8 @@ final class GgufDecodeStep {
                     float cap = cfg.finalLogitSoftcap();
                     woFfnDone = GgufMetalBridge.woFfnLogitsFused(
                             model, layer, x, attnFull, layerWeights.wO[layer],
-                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer], layerWeights.postFfnNorm[layer],
+                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer],
+                            layerWeights.postFfnNorm[layer],
                             eps, layerWeights.outScale[layer],
                             layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer],
                             cfg.isGeGLU(),
@@ -863,7 +871,8 @@ final class GgufDecodeStep {
                 if (!woFfnDone && canFuseNext) {
                     woFfnDone = GgufMetalBridge.woFfnNextQkvFused(
                             model, layer, x, attnFull, layerWeights.wO[layer],
-                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer], layerWeights.postFfnNorm[layer],
+                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer],
+                            layerWeights.postFfnNorm[layer],
                             eps, layerWeights.outScale[layer],
                             layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer],
                             cfg.isGeGLU(),
@@ -877,7 +886,8 @@ final class GgufDecodeStep {
                 if (!woFfnDone) {
                     woFfnDone = GgufMetalBridge.woFfnFused(
                             model, layer, x, attnFull, layerWeights.wO[layer],
-                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer], layerWeights.postFfnNorm[layer],
+                            layerWeights.postAttnNorm[layer], layerWeights.ffnNorm[layer],
+                            layerWeights.postFfnNorm[layer],
                             eps, layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer],
                             cfg.isGeGLU());
                 }
@@ -907,11 +917,13 @@ final class GgufDecodeStep {
                 long tFfn0 = System.nanoTime();
                 GGUFVectorOps.rmsNorm(x, layerWeights.ffnNorm[layer], xb, dim, eps);
                 if (layerWeights.ffnGate[layer] != null
-                        && execution.dispatchFfnFused(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer], layerWeights.ffnDown[layer], xb, xb, cfg.isGeGLU())) {
+                        && execution.dispatchFfnFused(layerWeights.ffnGate[layer], layerWeights.ffnUp[layer],
+                                layerWeights.ffnDown[layer], xb, xb, cfg.isGeGLU())) {
                     // Done directly in xb
                 } else {
                     if (layerWeights.ffnGate[layer] != null) {
-                        execution.dispatchMatVecPair(layerWeights.ffnGate[layer], gate, layerWeights.ffnUp[layer], up, xb);
+                        execution.dispatchMatVecPair(layerWeights.ffnGate[layer], gate, layerWeights.ffnUp[layer], up,
+                                xb);
                         if (cfg.isGeGLU()) {
                             GGUFVectorOps.geGLU(gate, up, hb, ffnDim);
                         } else {
@@ -934,7 +946,8 @@ final class GgufDecodeStep {
             }
 
             // Per-layer embedding residual
-            if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null && layerWeights.perLayerProj[layer] != null) {
+            if (hasPerLayer && layerWeights.perLayerInpGate[layer] != null
+                    && layerWeights.perLayerProj[layer] != null) {
                 // peGate = gelu(inp_gate(x))
                 execution.dispatchMatVec(layerWeights.perLayerInpGate[layer], x, peGate);
                 float kGelu = 0.7978845608f;
@@ -973,7 +986,7 @@ final class GgufDecodeStep {
             }
         }
 
-        cache.advance();
+        GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
 
         if (computeLogits && !logitsComputed) {
             float cap = cfg.finalLogitSoftcap();
