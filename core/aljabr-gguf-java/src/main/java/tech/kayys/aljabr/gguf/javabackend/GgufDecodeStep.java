@@ -709,18 +709,10 @@ final class GgufDecodeStep {
 
         // ── 4. Output: logits for last token ────────────────────────────────
         float[] xbFinal = new float[dim];
-        GGUFVectorOps.rmsNorm(X, (T - 1) * dim, outputNorm, xbFinal, 0, dim, cfg.rmsNormEps());
-
         float[] logits = new float[cfg.vocabSize()];
-        execution.dispatchMatVec(outputWeight, xbFinal, logits);
-
-        float cap = cfg.finalLogitSoftcap();
-        if (cap > 0.0f) {
-            float invCap = 1.0f / cap;
-            for (int i = 0; i < logits.length; i++) {
-                logits[i] = cap * (float) Math.tanh(logits[i] * invCap);
-            }
-        }
+        GgufLogitsProcessor.computePrefillSlice(
+                model, outputWeight, outputNorm, X, (T - 1) * dim,
+                xbFinal, logits, dim, cfg.rmsNormEps(), cfg.finalLogitSoftcap(), execution);
         // The first generated token is sampled from these prefill logits before
         // forward() attempts the native single-token decode step. Keep a direct,
         // opt-in diagnostic here so bad first-token distributions are not
