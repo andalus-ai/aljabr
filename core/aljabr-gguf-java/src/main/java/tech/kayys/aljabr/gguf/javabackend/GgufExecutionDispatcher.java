@@ -77,6 +77,8 @@ final class GgufExecutionDispatcher {
         if (GgufMetalBridge.matVecTripleBatch(model, t0, out0, t1, out1, t2, out2, inputBatch, batchSize)) {
             countMetal += 3L * batchSize;
         } else {
+            System.err.println("[FALLBACK TRIPLE BATCH] t0=" + (t0 != null ? t0.name() : "null")
+                    + " batchSize=" + batchSize + " falling back to per-token loop!");
             int K = (int) GgufTensorOps.matrixColumns(t0);
             int N0 = (int) GgufTensorOps.matrixRows(t0);
             int N1 = (int) GgufTensorOps.matrixRows(t1);

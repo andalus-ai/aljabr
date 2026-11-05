@@ -1105,6 +1105,8 @@ public final class GgufMetalBridge {
                                             GGUFTensorInfo t2, float[] out2,
                                             float[] vectorBatch, int batchSize) {
         if (!METAL_ENABLED || MATVEC_TRIPLE_BATCH_MH == null || t0 == null || t1 == null || t2 == null || batchSize <= 0) {
+            System.err.println("[matVecTripleBatch] rejected: metalEnabled=" + METAL_ENABLED + " mh=" + (MATVEC_TRIPLE_BATCH_MH != null)
+                    + " t0=" + t0 + " batchSize=" + batchSize);
             return false;
         }
         ensureModelRegistered(model);
@@ -1113,6 +1115,7 @@ public final class GgufMetalBridge {
         int type1 = (int) t1.typeId();
         int type2 = (int) t2.typeId();
         if (!isTypeSupported(type0) || !isTypeSupported(type1) || !isTypeSupported(type2)) {
+            System.err.println("[matVecTripleBatch] unsupported types: " + type0 + ", " + type1 + ", " + type2);
             return false;
         }
 
@@ -1120,6 +1123,8 @@ public final class GgufMetalBridge {
         int K1 = (int) GgufTensorOps.matrixColumns(t1);
         int K2 = (int) GgufTensorOps.matrixColumns(t2);
         if (K0 != K1 || K0 != K2 || vectorBatch.length < batchSize * K0) {
+            System.err.println("[matVecTripleBatch] dimension or length mismatch: K0=" + K0 + " K1=" + K1 + " K2=" + K2
+                    + " vecBatchLen=" + vectorBatch.length + " needed=" + (batchSize * K0));
             return false;
         }
         int K = K0;
@@ -1132,6 +1137,7 @@ public final class GgufMetalBridge {
         int totalC1 = batchSize * N1;
         int totalC2 = batchSize * N2;
         if (out0.length < totalC0 || out1.length < totalC1 || out2.length < totalC2) {
+            System.err.println("[matVecTripleBatch] output length mismatch: out0=" + out0.length + " need=" + totalC0);
             return false;
         }
 
@@ -1147,17 +1153,25 @@ public final class GgufMetalBridge {
             MemorySegment segB1 = GgufTensorOps.tensorData(model, t1);
             MemorySegment segB2 = GgufTensorOps.tensorData(model, t2);
 
+            long t0Nanos = System.nanoTime();
             int rc = (int) MATVEC_TRIPLE_BATCH_MH.invokeExact(segC0, segC1, segC2, segA, segB0, segB1, segB2,
                     K, N0, N1, N2, type0, type1, type2, batchSize);
+            long elapsedNanos = System.nanoTime() - t0Nanos;
+            if (elapsedNanos > 20_000_000L) { // > 20ms
+                System.err.println("[matVecTripleBatch SLOW] elapsed=" + (elapsedNanos / 1e6) + "ms t0=" + t0.name() + " rc=" + rc);
+            }
             if (rc == 0) {
                 MemorySegment.copy(segC0, ValueLayout.JAVA_FLOAT, 0, out0, 0, totalC0);
                 MemorySegment.copy(segC1, ValueLayout.JAVA_FLOAT, 0, out1, 0, totalC1);
                 MemorySegment.copy(segC2, ValueLayout.JAVA_FLOAT, 0, out2, 0, totalC2);
                 return true;
             } else {
+                System.err.println("[matVecTripleBatch FAILED] native rc=" + rc + " t0=" + t0.name());
                 return false;
             }
         } catch (Throwable t) {
+            System.err.println("[matVecTripleBatch THREW] " + t.getMessage());
+            t.printStackTrace(System.err);
             LOG.log(Level.FINE, "Metal matVecTripleBatch failed, falling back", t);
             return false;
         }
