@@ -16,6 +16,8 @@ import tech.kayys.aljabr.spi.provider.DeviceKind;
 import tech.kayys.aljabr.spi.provider.ProviderContext;
 import tech.kayys.aljabr.spi.provider.ProviderDescriptor;
 import tech.kayys.aljabr.spi.provider.ProviderException;
+import tech.kayys.aljabr.spi.provider.OperationSupport;
+import tech.kayys.aljabr.spi.provider.OperationSupportDescriptor;
 
 /** Pure-Java CPU implementation of the compute provider SPI. */
 public final class CpuComputeProvider implements ComputeProvider {
@@ -105,6 +107,26 @@ public final class CpuComputeProvider implements ComputeProvider {
         public synchronized Map<String, tech.kayys.aljabr.core.backend.ComputeBackend> computeBackends() {
             if (closed) throw new IllegalStateException("CPU provider session is closed");
             return backends;
+        }
+
+        @Override
+        public synchronized OperationSupportDescriptor operationSupport(
+                String operationId,
+                Map<String, String> constraints) {
+            Objects.requireNonNull(constraints, "constraints");
+            if (closed) throw new IllegalStateException("CPU provider session is closed");
+
+            // These operations have direct implementations in CpuBackend. Keep
+            // constrained requests conservative until dtype/layout/shape
+            // capability checks are modeled explicitly.
+            OperationSupport support = constraints.isEmpty()
+                    ? switch (Objects.requireNonNull(operationId, "operationId").trim()) {
+                        case "tensor.add", "tensor.matmul" -> OperationSupport.NATIVE;
+                        case "tensor.rope" -> OperationSupport.UNSUPPORTED;
+                        default -> OperationSupport.UNKNOWN;
+                    }
+                    : OperationSupport.UNKNOWN;
+            return new OperationSupportDescriptor(operationId, support, null);
         }
 
         @Override

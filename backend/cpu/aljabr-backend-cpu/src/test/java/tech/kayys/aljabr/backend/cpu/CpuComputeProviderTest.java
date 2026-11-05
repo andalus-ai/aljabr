@@ -16,6 +16,7 @@ import tech.kayys.aljabr.spi.provider.DeviceDescriptor;
 import tech.kayys.aljabr.spi.provider.DeviceKind;
 import tech.kayys.aljabr.spi.provider.ProviderContext;
 import tech.kayys.aljabr.spi.provider.ProviderException;
+import tech.kayys.aljabr.spi.provider.OperationSupport;
 import tech.kayys.aljabr.spi.testkit.ProviderConformance;
 
 class CpuComputeProviderTest {
@@ -40,6 +41,33 @@ class CpuComputeProviderTest {
         }
         provider.close();
         assertThrows(ProviderException.class, provider::devices);
+    }
+
+    @Test
+    void cpuSessionReportsOnlyVerifiedUnconstrainedOperationSupport() throws Exception {
+        CpuComputeProvider provider = new CpuComputeProvider();
+        provider.initialize(new ProviderContext("test", java.util.Map.of()));
+        ProviderSession session = provider.openSession(provider.devices().get(0));
+        try {
+            assertEquals(OperationSupport.NATIVE,
+                    session.operationSupport("tensor.add", java.util.Map.of()).support());
+            assertEquals(OperationSupport.NATIVE,
+                    session.operationSupport("tensor.matmul", java.util.Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", java.util.Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.softmax", java.util.Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.add", java.util.Map.of("dtype", "f16")).support());
+            assertThrows(IllegalArgumentException.class,
+                    () -> session.operationSupport(" ", java.util.Map.of()));
+            assertThrows(NullPointerException.class,
+                    () -> session.operationSupport("tensor.add", null));
+        } finally {
+            provider.close();
+        }
+        assertThrows(IllegalStateException.class,
+                () -> session.operationSupport("tensor.add", java.util.Map.of()));
     }
 
     @Test
