@@ -73,9 +73,29 @@ The two `StreamingInferenceChunk` records have the same component layout and fac
 
 ### Supporting types
 
-The inspected AQLI and Aljabr versions of `RequestContext` and `ToolDefinition` have matching APIs and behavior. The richer inference `Message` types also have matching multimodal fields and factories; both reference their repository-local `ToolCall` type.
+The inspected AQLI and Aljabr versions of `RequestContext` and `ToolDefinition` have matching APIs and behavior. `ToolCall` is also duplicated with matching constructors, builder and value semantics. The richer inference `Message` types have matching multimodal fields and factories, but each refers to its repository-local `ToolCall` type. This means the `Message` types are not assignment-compatible until the tool-call dependency is unified.
 
 Aljabr also has a separate lightweight tokenizer/model `Message` value type. It is not the inference message and must not be confused with `tech.kayys.aljabr.spi.Message` in the inference SPI.
+
+## Confirmed AQLI consumer anchors
+
+The following source files were inspected directly. This is a verified consumer sample, not yet a complete repository-wide import graph.
+
+| AQLI source | Contract usage | Classification |
+|---|---|---|
+| `framework/sdk/aqli-sdk-core/.../AqliChatService.java` | AQLI `Message`, `InferenceRequest`, `InferenceResponse`, `StreamingInferenceChunk`, `ToolDefinition` | Public SDK/service boundary; high-priority migration consumer |
+| `framework/observability/aqli-observability/.../InferenceEngineHealthCheck.java` | AQLI `InferenceEngine` | Runtime health integration |
+| `framework/plugin/aqli-plugin-core/.../InferencePhaseNodeAdapter.java` | AQLI `InferencePhasePlugin` | AQLI plugin extension; retain as AQLI-owned unless its abstraction is proven shared |
+| `runtime/runner/safetensor/aqli-safetensor-engine/.../DirectSafetensorBackend.java` | Implements Aljabr `LocalInferenceEngine` and uses Aljabr request/response/chunk/message contracts; also exposes a legacy AQLI `inferStream` return type and converts Aljabr chunks into AQLI chunks | Compatibility bridge; the clearest migration seam |
+| `runtime/runner/safetensor/aqli-safetensor-engine/.../DirectInferenceEngine.java` | Uses Aljabr `InferenceResponse` through Aljabr's Safetensors engine contract | Already consumes Aljabr model lifecycle/execution contract; not an AQLI inference SPI consumer |
+
+The Safetensors adapter is already aligned to Aljabr for its primary `infer` and `stream` methods. Its extra AQLI-typed `inferStream` method and `toAqliChunk` conversion are an explicit compatibility seam and a strong candidate for removal only after all callers are migrated.
+
+The SDK's `AqliChatService` currently exposes AQLI package types in method signatures. Migrating those signatures changes a public SDK API and must be treated as a compatibility/versioning decision, not a mechanical import cleanup.
+
+### Supporting-type caution
+
+Although AQLI and Aljabr `RequestContext` and `ToolDefinition` currently match, AQLI's `RequestContext` already imports Aljabr's `DeviceType`. It is therefore not an independent AQLI runtime-only contract. The canonical type belongs with Aljabr's inference SPI; AQLI-only request orchestration data should be carried separately rather than maintaining a second copy.
 
 ## Dependency observation
 
@@ -99,4 +119,4 @@ AQLI's `aqli-spi-inference` Gradle module already declares an API dependency on 
 
 ## Scope of this inventory
 
-This document records confirmed type-level duplication and selected contract comparisons. It does not claim that the complete production/test consumer graph has already been enumerated. The consumer inventory in step 1 is required before the first deletion or package migration.
+This document records confirmed type-level duplication and a verified sample of production consumers. It does not claim that every production/test reference, SDK consumer, plugin, external integration or serialization boundary has been enumerated. The remaining exhaustive consumer search is still required before the first deletion or package migration.
