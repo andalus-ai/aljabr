@@ -9,8 +9,7 @@ The fixture demonstrates that an independently developed provider can:
 1. Compile against the published `aljabr-spi-core` artifact only.
 2. Register through `META-INF/services/tech.kayys.aljabr.spi.provider.AljabrProvider`.
 3. Be discovered by a host using Java `ServiceLoader`.
-4. Receive an immutable `ProviderContext`, expose a descriptor, initialize,
-   execute a small operation, and close.
+4. Receive a `ProviderContext`, expose a descriptor, initialize, and close.
 
 ## Run locally
 
@@ -39,7 +38,7 @@ If testing a different Aljabr version, override the fixture's default
 Expected output includes:
 
 ```text
-example/greeting -> Hello, Aljabr!
+Discovered and initialized provider: example/greeting
 ```
 
 The fixture intentionally uses Maven Local so the provider build resolves the
