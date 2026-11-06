@@ -6,6 +6,12 @@ import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -85,6 +91,48 @@ public class HatComputeBackendTest {
         assertEquals(2, result.shape().dim(1));
         assertArrayEquals(new float[] { 58.0f, 64.0f, 139.0f, 154.0f },
                 result.toFloatArray(), 1e-4f);
+    }
+
+    @Test
+    public void testMatmulSupportsRepeatedCallsOnSameBackend() {
+        Tensor first = backend.matmul(
+                TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, 2, 2),
+                TensorFactory.of(new float[] { 5.0f, 6.0f, 7.0f, 8.0f }, 2, 2));
+        Tensor second = backend.matmul(
+                TensorFactory.of(new float[] { 2.0f, 0.0f, 0.0f, 2.0f }, 2, 2),
+                TensorFactory.of(new float[] { 3.0f, 0.0f, 0.0f, 4.0f }, 2, 2));
+
+        assertArrayEquals(new float[] { 19.0f, 22.0f, 43.0f, 50.0f },
+                first.toFloatArray(), 1e-4f);
+        assertArrayEquals(new float[] { 6.0f, 0.0f, 0.0f, 8.0f },
+                second.toFloatArray(), 1e-4f);
+    }
+
+    @Test
+    public void testMatmulSerializesConcurrentCallsOnSharedBackend() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        try {
+            List<Future<float[]>> results = new ArrayList<>();
+            for (int i = 1; i <= 8; i++) {
+                final float scale = i;
+                results.add(executor.submit(() -> {
+                    Tensor left = TensorFactory.of(
+                            new float[] { scale, 0.0f, 0.0f, scale }, 2, 2);
+                    Tensor right = TensorFactory.of(
+                            new float[] { 2.0f, 0.0f, 0.0f, 3.0f }, 2, 2);
+                    return backend.matmul(left, right).toFloatArray();
+                }));
+            }
+
+            for (int i = 0; i < results.size(); i++) {
+                float scale = i + 1.0f;
+                assertArrayEquals(
+                        new float[] { 2.0f * scale, 0.0f, 0.0f, 3.0f * scale },
+                        results.get(i).get(), 1e-4f);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     @Test

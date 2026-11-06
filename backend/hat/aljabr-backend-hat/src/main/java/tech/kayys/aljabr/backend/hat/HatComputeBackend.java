@@ -13,6 +13,15 @@ public class HatComputeBackend implements ComputeBackend {
     private static final Logger LOG = Logger.getLogger(HatComputeBackend.class);
     private final CpuBackend cpuFallback;
 
+    /*
+     * HAT's Java multi-threaded backend reuses mutable dispatch state, and
+     * Accelerator caches ComputeContext instances in a non-concurrent map.
+     * Keep one accelerator per Aljabr backend, but serialize access until HAT
+     * exposes a verified concurrent-dispatch contract.
+     */
+    private final Object hatExecutionLock = new Object();
+    private hat.Accelerator accelerator;
+
     public HatComputeBackend() {
         LOG.info("Initializing HAT Compute Backend...");
         this.cpuFallback = new CpuBackend();
@@ -68,20 +77,25 @@ public class HatComputeBackend implements ComputeBackend {
             return TensorFactory.of(result, rows, columns);
         }
 
-        hat.Accelerator accelerator = new hat.Accelerator(java.lang.invoke.MethodHandles.lookup());
-        hat.buffer.F32Array hatA = hat.buffer.F32Array.create(
-                accelerator, Math.toIntExact(a.numel()));
-        hat.buffer.F32Array hatB = hat.buffer.F32Array.create(
-                accelerator, Math.toIntExact(b.numel()));
-        hat.buffer.F32Array hatC = hat.buffer.F32Array.create(accelerator, outputLength);
+        synchronized (hatExecutionLock) {
+            if (accelerator == null) {
+                accelerator = new hat.Accelerator(java.lang.invoke.MethodHandles.lookup());
+            }
 
-        hatA.copyFrom(a.toFloatArray());
-        hatB.copyFrom(b.toFloatArray());
+            hat.buffer.F32Array hatA = hat.buffer.F32Array.create(
+                    accelerator, Math.toIntExact(a.numel()));
+            hat.buffer.F32Array hatB = hat.buffer.F32Array.create(
+                    accelerator, Math.toIntExact(b.numel()));
+            hat.buffer.F32Array hatC = hat.buffer.F32Array.create(accelerator, outputLength);
 
-        accelerator.compute((@Reflect Compute) cc ->
-                HatMatmulKernel.mxmF32Dispatch(
-                        cc, hatA, hatB, hatC, rows, columns, reductionSize));
-        hatC.copyTo(result);
+            hatA.copyFrom(a.toFloatArray());
+            hatB.copyFrom(b.toFloatArray());
+
+            accelerator.compute((@Reflect Compute) cc ->
+                    HatMatmulKernel.mxmF32Dispatch(
+                            cc, hatA, hatB, hatC, rows, columns, reductionSize));
+            hatC.copyTo(result);
+        }
 
         // Tensor.toFloatArray() returns a copy. Construct the result from the
         // computed HAT values instead of attempting to mutate that exported copy.
