@@ -23,4 +23,10 @@ class TensorFactoryTest {
         assertThrows(IllegalArgumentException.class,
                 () -> TensorFactory.ofQuantized(segment, DType.Q8_0, 31));
     }
+    @Test
+    void automaticBackendSelectionUsesCpuWhenMetalIsUnavailableAndDoesNotRequireHat() {
+        Tensor tensor = TensorFactory.zeros(1);
+        assertInstanceOf(tech.kayys.aljabr.backend.cpu.CpuBackend.class, tensor.backend());
+    }
+
 }
