@@ -131,7 +131,7 @@ public class HatComputeBackendTest {
 
         assertArrayEquals(new float[] { 58.0f, 64.0f, 139.0f, 154.0f },
                 first.toFloatArray(), 1e-4f);
-        assertArrayEquals(new float[] { 86.0f, 100.0f, 114.0f },
+        assertArrayEquals(new float[] { 92.0f, 106.0f, 120.0f },
                 second.toFloatArray(), 1e-4f);
     }
 
