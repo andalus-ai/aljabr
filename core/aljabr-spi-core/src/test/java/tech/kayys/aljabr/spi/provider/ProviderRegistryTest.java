@@ -89,7 +89,7 @@ class ProviderRegistryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/healthy");
+            return descriptorFor("test/healthy");
         }
     }
 
@@ -100,7 +100,7 @@ class ProviderRegistryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/broken");
+            return descriptorFor("test/broken");
         }
     }
 
@@ -110,7 +110,7 @@ class ProviderRegistryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/duplicate");
+            return descriptorFor("test/duplicate");
         }
     }
 
@@ -120,11 +120,11 @@ class ProviderRegistryTest {
 
         @Override
         public ProviderDescriptor descriptor() {
-            return descriptor("test/duplicate");
+            return descriptorFor("test/duplicate");
         }
     }
 
-    private static ProviderDescriptor descriptor(String id) {
+    private static ProviderDescriptor descriptorFor(String id) {
         return new ProviderDescriptor(id, "1.0.0", ">=1.0.0 <2.0.0", Set.of());
     }
 
