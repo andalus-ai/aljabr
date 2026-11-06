@@ -25,7 +25,7 @@ public final class CpuComputeProvider implements ComputeProvider {
     public static final String BACKEND_ID = "cpu-default";
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
-            PROVIDER_ID, "0.1.0", "1",
+            PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
             Set.of(new CapabilityDescriptor("tensor.compute", "1", CapabilityStability.STABLE)));
 
     private final DeviceDescriptor device = new DeviceDescriptor(
