@@ -87,290 +87,72 @@ public final class TensorFactory {
 
     private static volatile ComputeBackend defaultBackend;
 
+    /**
+     * Selects the process default backend.
+     *
+     * <p>Automatic selection prefers the production Metal backend when it is
+     * available, then falls back to the pure-Java CPU backend. HAT is
+     * intentionally excluded from automatic selection while its operation
+     * coverage and provider integration remain experimental. It can be
+     * selected explicitly with {@code -Daljabr.compute.backend=hat}.</p>
+     *
+     * <p>Supported values for {@code aljabr.compute.backend} are
+     * {@code auto} (default), {@code metal}, {@code cpu}, and {@code hat}.
+     * Explicit selections fail fast when the requested backend cannot be
+     * constructed; they never silently select a different backend.</p>
+     */
     private static ComputeBackend findDefaultBackend() {
         if (defaultBackend != null)
             return defaultBackend;
         synchronized (TensorFactory.class) {
             if (defaultBackend != null)
                 return defaultBackend;
-            try {
-                // Try HAT Tensor Backend first (Hardware accelerated via OpenJDK Babylon)
-                Class<?> c = Class.forName("tech.kayys.aljabr.backend.hat.HatComputeBackend");
-                defaultBackend = (ComputeBackend) c.getDeclaredConstructor().newInstance();
-            } catch (Throwable tHat) {
+
+            String requested = System.getProperty("aljabr.compute.backend", "auto")
+                    .trim().toLowerCase(java.util.Locale.ROOT);
+            if (requested.isEmpty()) {
+                requested = "auto";
+            }
+
+            if ("auto".equals(requested)) {
                 try {
-                    // Fallback to Metal native bindings
-                    Class<?> c = Class.forName("tech.kayys.aljabr.backend.metal.MetalComputeBackend");
-                    defaultBackend = (ComputeBackend) c.getDeclaredConstructor().newInstance();
-                } catch (Throwable tMetal) {
+                    defaultBackend = instantiateBackend(
+                            "tech.kayys.aljabr.backend.metal.MetalComputeBackend");
+                } catch (RuntimeException | LinkageError metalUnavailable) {
                     try {
-                        // Fallback to CPU backend
-                        Class<?> c = Class.forName("tech.kayys.aljabr.backend.cpu.CpuBackend");
-                        defaultBackend = (ComputeBackend) c.getDeclaredConstructor().newInstance();
-                    } catch (Throwable tCpu) {
-                        // Fallback backend that throws on use
-                        defaultBackend = new ComputeBackend() {
-                            private UnsupportedOperationException u() {
-                                return new UnsupportedOperationException("No backend available");
-                            }
-
-                            @Override
-                            public Tensor add(Tensor a, Tensor b) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor sub(Tensor a, Tensor b) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor mul(Tensor a, Tensor b) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor div(Tensor a, Tensor b) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor mul(Tensor a, float scalar) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor div(Tensor a, float scalar) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor addScalar(Tensor a, float scalar) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor matmul(Tensor a, Tensor b) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor embedding(Tensor weight, Tensor input, long paddingIdx) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor applyRoPE(Tensor input, int posOffset, float freqBase, boolean isNeox) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor reshape(Tensor a, long... newShape) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor slice(Tensor a, long[] offsets, long[] sizes) {
-                                throw u();
-                            }
-
-                            @Override
-                            public java.util.List<Tensor> split(Tensor a, int axis, int parts) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor flatten(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor unsqueeze(Tensor a, int dim) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor squeeze(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor transpose(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor transpose(Tensor a, int dim0, int dim1) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor softmax(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor softmax(Tensor a, int dim) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor logSoftmax(Tensor a, int dim) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor mean(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor mean(Tensor a, int dim, boolean keepDim) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor sum(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor sum(Tensor a, int dim, boolean keepDim) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor max(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor abs(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor relu(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor gelu(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor silu(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor sigmoid(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor tanh(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor sqrt(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor exp(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor log(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor pow(Tensor a, float exponent) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor layerNorm(Tensor input, long[] normalizedShape, Tensor weight, Tensor bias,
-                                    float eps) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor rmsNorm(Tensor input, Tensor weight, float eps) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor batchNorm(Tensor input, Tensor weight, Tensor bias, Tensor runningMean,
-                                    Tensor runningVar, boolean training, float momentum, float eps) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor conv2d(Tensor input, Tensor weight, Tensor bias, int stride, int padding,
-                                    int dilation, int groups) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor adaptiveAvgPool2d(Tensor input, int outputH, int outputW) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor dropout(Tensor input, float p, boolean training) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor crossEntropy(Tensor pred, Tensor target) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor binaryCrossEntropy(Tensor pred, Tensor target) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor attention(Tensor Q, Tensor K, Tensor V) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor zerosLike(Tensor a) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor cast(Tensor a, tech.kayys.aljabr.core.tensor.DType dtype) {
-                                throw u();
-                            }
-
-                            @Override
-                            public Tensor to(Tensor a, tech.kayys.aljabr.core.tensor.DeviceType device) {
-                                throw u();
-                            }
-
-                            @Override
-                            public long numel(Tensor a) {
-                                throw u();
-                            }
-                        };
+                        defaultBackend = instantiateBackend(
+                                "tech.kayys.aljabr.backend.cpu.CpuBackend");
+                    } catch (RuntimeException | LinkageError cpuUnavailable) {
+                        cpuUnavailable.addSuppressed(metalUnavailable);
+                        throw new IllegalStateException(
+                                "No Aljabr compute backend is available; install the CPU backend "
+                                        + "or configure an available backend explicitly",
+                                cpuUnavailable);
                     }
                 }
+                return defaultBackend;
             }
+
+            String backendClass = switch (requested) {
+                case "metal" -> "tech.kayys.aljabr.backend.metal.MetalComputeBackend";
+                case "cpu" -> "tech.kayys.aljabr.backend.cpu.CpuBackend";
+                case "hat" -> "tech.kayys.aljabr.backend.hat.HatComputeBackend";
+                default -> throw new IllegalArgumentException(
+                        "Unknown Aljabr compute backend '" + requested
+                                + "'. Supported values: auto, metal, cpu, hat");
+            };
+            defaultBackend = instantiateBackend(backendClass);
             return defaultBackend;
         }
     }
+
+    private static ComputeBackend instantiateBackend(String className) {
+        try {
+            Class<?> backendType = Class.forName(className);
+            return ComputeBackend.class.cast(backendType.getDeclaredConstructor().newInstance());
+        } catch (ReflectiveOperationException | LinkageError | ClassCastException e) {
+            throw new IllegalStateException("Unable to initialize Aljabr compute backend: " + className, e);
+        }
+    }
+
 }
