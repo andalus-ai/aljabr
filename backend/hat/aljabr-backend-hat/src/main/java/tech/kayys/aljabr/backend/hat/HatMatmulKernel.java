@@ -49,7 +49,11 @@ public final class HatMatmulKernel {
             int rows,
             int columns,
             int reductionSize) {
-        cc.dispatchKernel(of2D(columns, rows, 16, 16),
+        // Use complete 16x16 work-groups. The logical matrix dimensions are
+        // passed separately and checked by the kernel to mask padded work-items.
+        int globalColumns = ((columns + 15) / 16) * 16;
+        int globalRows = ((rows + 15) / 16) * 16;
+        cc.dispatchKernel(of2D(globalColumns, globalRows, 16, 16),
                 kc -> mxmF32(kc, matrixA, matrixB, matrixC, rows, columns, reductionSize));
     }
 }
