@@ -36,6 +36,8 @@ public final class QuantizedTensorDescriptor {
     private final Integer groupSize;
     private final long scaleCount;
     private final long zeroPointCount;
+    private final QuantizationParameterDescriptor scaleParameters;
+    private final QuantizationParameterDescriptor zeroPointParameters;
     private final String codebookId;
     private final byte[] auxiliaryMetadata;
 
@@ -60,6 +62,14 @@ public final class QuantizedTensorDescriptor {
         if (b.scaleCount < 0 || b.zeroPointCount < 0) throw new IllegalArgumentException("metadata counts must be >= 0");
         scaleCount = b.scaleCount;
         zeroPointCount = b.zeroPointCount;
+        scaleParameters = b.scaleParameters;
+        zeroPointParameters = b.zeroPointParameters;
+        if (scaleParameters != null && scaleParameters.getElementCount() != scaleCount) {
+            throw new IllegalArgumentException("scale parameter shape element count must equal scaleCount");
+        }
+        if (zeroPointParameters != null && zeroPointParameters.getElementCount() != zeroPointCount) {
+            throw new IllegalArgumentException("zero-point parameter shape element count must equal zeroPointCount");
+        }
         codebookId = b.codebookId == null ? null : requireText(b.codebookId, "codebookId");
         auxiliaryMetadata = b.auxiliaryMetadata == null ? new byte[0] : b.auxiliaryMetadata.clone();
 
@@ -89,6 +99,8 @@ public final class QuantizedTensorDescriptor {
     public Integer getGroupSize() { return groupSize; }
     public long getScaleCount() { return scaleCount; }
     public long getZeroPointCount() { return zeroPointCount; }
+    public QuantizationParameterDescriptor getScaleParameters() { return scaleParameters; }
+    public QuantizationParameterDescriptor getZeroPointParameters() { return zeroPointParameters; }
     public String getCodebookId() { return codebookId; }
     public byte[] getAuxiliaryMetadata() { return auxiliaryMetadata.clone(); }
 
@@ -138,6 +150,8 @@ public final class QuantizedTensorDescriptor {
         private Integer groupSize;
         private long scaleCount;
         private long zeroPointCount;
+        private QuantizationParameterDescriptor scaleParameters;
+        private QuantizationParameterDescriptor zeroPointParameters;
         private String codebookId;
         private byte[] auxiliaryMetadata;
 
@@ -154,6 +168,8 @@ public final class QuantizedTensorDescriptor {
         public Builder groupSize(Integer value) { groupSize = value; return this; }
         public Builder scaleCount(long value) { scaleCount = value; return this; }
         public Builder zeroPointCount(long value) { zeroPointCount = value; return this; }
+        public Builder scaleParameters(QuantizationParameterDescriptor value) { scaleParameters = value; return this; }
+        public Builder zeroPointParameters(QuantizationParameterDescriptor value) { zeroPointParameters = value; return this; }
         public Builder codebookId(String value) { codebookId = value; return this; }
         public Builder auxiliaryMetadata(byte[] value) { auxiliaryMetadata = value == null ? null : value.clone(); return this; }
         public QuantizedTensorDescriptor build() { return new QuantizedTensorDescriptor(this); }
