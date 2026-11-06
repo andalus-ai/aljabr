@@ -1,6 +1,5 @@
 package example.provider;
 
-import java.util.Map;
 import tech.kayys.aljabr.spi.provider.AljabrProvider;
 import tech.kayys.aljabr.spi.provider.CapabilityDescriptor;
 import tech.kayys.aljabr.spi.provider.CapabilityStability;
@@ -38,17 +37,7 @@ public final class ReferenceGreetingProvider implements AljabrProvider {
         if (initialized) {
             throw new IllegalStateException("provider is already initialized");
         }
-        if (!DESCRIPTOR.id().equals("example/greeting")) {
-            throw new IllegalStateException("unexpected provider descriptor");
-        }
         initialized = true;
-    }
-
-    public String greet(String name) {
-        if (!initialized || closed) {
-            throw new IllegalStateException("provider is not active");
-        }
-        return "Hello, " + name + "!";
     }
 
     @Override
