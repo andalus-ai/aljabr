@@ -109,6 +109,33 @@ public class HatComputeBackendTest {
     }
 
     @Test
+    public void testMatmulSupportsDifferentShapesAcrossCalls() {
+        Tensor first = backend.matmul(
+                TensorFactory.of(new float[] {
+                        1.0f, 2.0f, 3.0f,
+                        4.0f, 5.0f, 6.0f
+                }, 2, 3),
+                TensorFactory.of(new float[] {
+                        7.0f, 8.0f,
+                        9.0f, 10.0f,
+                        11.0f, 12.0f
+                }, 3, 2));
+        Tensor second = backend.matmul(
+                TensorFactory.of(new float[] { 2.0f, 3.0f, 4.0f, 5.0f }, 1, 4),
+                TensorFactory.of(new float[] {
+                        1.0f, 2.0f, 3.0f,
+                        4.0f, 5.0f, 6.0f,
+                        7.0f, 8.0f, 9.0f,
+                        10.0f, 11.0f, 12.0f
+                }, 4, 3));
+
+        assertArrayEquals(new float[] { 58.0f, 64.0f, 139.0f, 154.0f },
+                first.toFloatArray(), 1e-4f);
+        assertArrayEquals(new float[] { 86.0f, 100.0f, 114.0f },
+                second.toFloatArray(), 1e-4f);
+    }
+
+    @Test
     public void testMatmulSerializesConcurrentCallsOnSharedBackend() throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(4);
         try {
