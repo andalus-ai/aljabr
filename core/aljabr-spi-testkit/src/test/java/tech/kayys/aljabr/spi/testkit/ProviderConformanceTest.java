@@ -116,8 +116,8 @@ class ProviderConformanceTest {
         return new AljabrProvider() {
             @Override
             public ProviderDescriptor descriptor() {
-                return new ProviderDescriptor("example/reference", "1.0.0", ">=0.1 <1.0",
-                        Set.of(new CapabilityDescriptor("math/vector", "1", CapabilityStability.EXPERIMENTAL)));
+                return new ProviderDescriptor("example/reference", "1.0.0", ">=0.1.0 <1.0.0",
+                        Set.of(new CapabilityDescriptor("math.vector", "1", CapabilityStability.EXPERIMENTAL)));
             }
 
             @Override public void initialize(ProviderContext context) throws ProviderException {
