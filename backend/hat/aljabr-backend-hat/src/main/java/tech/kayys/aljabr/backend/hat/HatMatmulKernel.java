@@ -55,5 +55,8 @@ public final class HatMatmulKernel {
         int globalRows = ((rows + 15) / 16) * 16;
         cc.dispatchKernel(of2D(globalColumns, globalRows, 16, 16),
                 kc -> mxmF32(kc, matrixA, matrixB, matrixC, rows, columns, reductionSize));
+        // Ensure device-side writes are copied back to the host-visible buffer
+        // before HatComputeBackend reads it with F32Array.copyTo(...).
+        cc.copyOutOnExit(matrixC);
     }
 }
