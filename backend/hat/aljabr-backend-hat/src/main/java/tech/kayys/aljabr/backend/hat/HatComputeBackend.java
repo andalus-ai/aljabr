@@ -4,6 +4,7 @@ import org.jboss.logging.Logger;
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
 import java.util.List;
 import hat.Accelerator.Compute;
 import jdk.incubator.code.Reflect;
@@ -39,37 +40,52 @@ public class HatComputeBackend implements ComputeBackend {
 
     @Override
     public Tensor matmul(Tensor a, Tensor b) {
-        // We ensure a and b are F32 tensors.
-        // In a real implementation we would dynamically route based on dtype.
-        int size = (int) a.shape().dims()[0]; // Assuming square matrix for naive example
+        java.util.Objects.requireNonNull(a, "left matrix must not be null");
+        java.util.Objects.requireNonNull(b, "right matrix must not be null");
 
-        // 1. Initialize HAT Accelerator (uses default backend, e.g., CUDA or OpenCL)
+        if (a.shape().rank() != 2 || b.shape().rank() != 2) {
+            throw new IllegalArgumentException("HAT matmul currently supports rank-2 matrices only");
+        }
+        if (a.dtype() != tech.kayys.aljabr.core.tensor.DType.F32
+                || b.dtype() != tech.kayys.aljabr.core.tensor.DType.F32) {
+            throw new IllegalArgumentException("HAT matmul currently supports F32 tensors only");
+        }
+
+        long[] aShape = a.shape().dims();
+        long[] bShape = b.shape().dims();
+        int rows = Math.toIntExact(aShape[0]);
+        int reductionSize = Math.toIntExact(aShape[1]);
+        int rightReductionSize = Math.toIntExact(bShape[0]);
+        int columns = Math.toIntExact(bShape[1]);
+        if (reductionSize != rightReductionSize) {
+            throw new IllegalArgumentException("Matrix dimension mismatch: "
+                    + reductionSize + " != " + rightReductionSize);
+        }
+
+        int outputLength = Math.multiplyExact(rows, columns);
+        float[] result = new float[outputLength];
+        if (outputLength == 0 || reductionSize == 0) {
+            return TensorFactory.of(result, rows, columns);
+        }
+
         hat.Accelerator accelerator = new hat.Accelerator(java.lang.invoke.MethodHandles.lookup());
+        hat.buffer.F32Array hatA = hat.buffer.F32Array.create(
+                accelerator, Math.toIntExact(a.numel()));
+        hat.buffer.F32Array hatB = hat.buffer.F32Array.create(
+                accelerator, Math.toIntExact(b.numel()));
+        hat.buffer.F32Array hatC = hat.buffer.F32Array.create(accelerator, outputLength);
 
-        // 2. Wrap the MemorySegments or float arrays into HAT F32Arrays
-        hat.buffer.F32Array hatA = hat.buffer.F32Array.create(accelerator, (int) a.shape().numel());
         hatA.copyFrom(a.toFloatArray());
-
-        hat.buffer.F32Array hatB = hat.buffer.F32Array.create(accelerator, (int) b.shape().numel());
         hatB.copyFrom(b.toFloatArray());
 
-        hat.buffer.F32Array hatC = hat.buffer.F32Array.create(accelerator, (int) a.shape().numel());
+        accelerator.compute((@Reflect Compute) cc ->
+                HatMatmulKernel.mxmF32Dispatch(
+                        cc, hatA, hatB, hatC, rows, columns, reductionSize));
+        hatC.copyTo(result);
 
-        // 3. Dispatch the compute graph with our custom CodeReflection Kernel
-        accelerator.compute((@Reflect Compute) (cc) -> HatMatmulKernel.mxmF32Dispatch(cc, hatA, hatB, hatC, size));
-
-        // 4. Map the result back to Aljabr's off-heap tensor representation
-        float[] resultArr = new float[(int) a.shape().numel()];
-        hatC.copyTo(resultArr);
-
-        // Use cpuFallback temporarily to construct the final Tensor object properly
-        // from array
-        // (A real production implementation would construct a native Aljabr Tensor
-        // directly over the HAT buffer)
-        Tensor res = cpuFallback.matmul(a, b);
-        System.arraycopy(resultArr, 0, res.toFloatArray(), 0, resultArr.length);
-
-        return res;
+        // Tensor.toFloatArray() returns a copy. Construct the result from the
+        // computed HAT values instead of attempting to mutate that exported copy.
+        return TensorFactory.of(result, rows, columns);
     }
 
     @Override
