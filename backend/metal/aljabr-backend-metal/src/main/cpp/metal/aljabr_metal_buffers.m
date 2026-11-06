@@ -123,6 +123,11 @@ int aljabr_metal_register_model_buffer(const void *base_ptr, size_t total_bytes)
   g_master_base_aligned = (uintptr_t)aligned_ptr;
   g_master_size = total_bytes;
   madvise(aligned_ptr, aligned_bytes, MADV_WILLNEED);
+  if (mlock(aligned_ptr, aligned_bytes) == 0) {
+    ALJABR_METAL_LOG("[Metal Master Buffer] Locked %zu MB into physical RAM via mlock\n", aligned_bytes / (1024 * 1024));
+  } else {
+    ALJABR_METAL_LOG("[Metal Master Buffer] mlock advisory notice (%zu MB): %s\n", aligned_bytes / (1024 * 1024), strerror(errno));
+  }
 
   // Pre-fault GPU page tables by committing a blit touching head and tail of the buffer.
   // This moves the one-time IOGPU driver page-table mapping (5+ seconds for 6.8 GB)
