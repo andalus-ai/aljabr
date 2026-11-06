@@ -42,7 +42,7 @@ class ProviderRegistryTest {
         private boolean initialized;
 
         private TestProvider(String id) {
-            descriptor = new ProviderDescriptor(id, "1.0.0", "1", Set.of());
+            descriptor = new ProviderDescriptor(id, "1.0.0", ">=1.0.0 <2.0.0", Set.of());
         }
 
         @Override

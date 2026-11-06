@@ -148,6 +148,6 @@ class ProviderDiscoveryTest {
     }
 
     private static ProviderDescriptor descriptor(String id) {
-        return new ProviderDescriptor(id, "1.0.0", "1", java.util.Set.of());
+        return new ProviderDescriptor(id, "1.0.0", ">=1.0.0 <2.0.0", java.util.Set.of());
     }
 }
