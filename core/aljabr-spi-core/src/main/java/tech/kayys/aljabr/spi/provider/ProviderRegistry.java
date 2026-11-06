@@ -9,36 +9,49 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.ServiceConfigurationError;
-import java.util.ServiceLoader;
 
 /**
  * Immutable, classloader-scoped snapshot of discoverable Aljabr providers.
  *
- * <p>Discovery reads provider metadata only. It never calls {@link AljabrProvider#initialize(ProviderContext)}
- * and therefore does not initialize native runtimes or claim that a device is available.</p>
+ * <p>Discovery reads provider metadata only. It never calls
+ * {@link AljabrProvider#initialize(ProviderContext)} and therefore does not
+ * initialize native runtimes or claim that a device is available.</p>
+ *
+ * <p>Provider construction, descriptor validation, duplicate-id handling, and
+ * per-provider diagnostics are delegated to {@link ProviderDiscovery}. This
+ * registry is the canonical indexed view over that discovery result.</p>
  */
 public final class ProviderRegistry {
     private final Map<String, AljabrProvider> providers;
+    private final List<ProviderDiscoveryFailure> discoveryFailures;
 
-    private ProviderRegistry(Map<String, AljabrProvider> providers) {
+    private ProviderRegistry(
+            Map<String, AljabrProvider> providers,
+            List<ProviderDiscoveryFailure> discoveryFailures) {
         this.providers = Collections.unmodifiableMap(new LinkedHashMap<>(providers));
+        this.discoveryFailures = List.copyOf(discoveryFailures);
     }
 
-    /** Discovers providers visible to the supplied classloader without initializing them. */
+    /**
+     * Discovers providers visible to the supplied classloader without
+     * initializing them. Broken providers are excluded while healthy providers
+     * remain available; inspect {@link #discoveryFailures()} for diagnostics.
+     */
     public static ProviderRegistry discover(ClassLoader classLoader) {
         Objects.requireNonNull(classLoader, "classLoader");
-        List<AljabrProvider> discovered = new ArrayList<>();
-        try {
-            ServiceLoader.load(AljabrProvider.class, classLoader).forEach(discovered::add);
-        } catch (ServiceConfigurationError error) {
-            throw new IllegalStateException("Unable to discover Aljabr providers", error);
-        }
-        return fromProviders(discovered);
+        ProviderDiscoveryResult result = ProviderDiscovery.discover(classLoader);
+        return fromProviders(result.providers(), result.failures());
     }
 
     static ProviderRegistry fromProviders(Collection<? extends AljabrProvider> discovered) {
+        return fromProviders(discovered, List.of());
+    }
+
+    private static ProviderRegistry fromProviders(
+            Collection<? extends AljabrProvider> discovered,
+            List<ProviderDiscoveryFailure> failures) {
         Objects.requireNonNull(discovered, "discovered");
+        Objects.requireNonNull(failures, "failures");
         List<AljabrProvider> ordered = new ArrayList<>(discovered);
         ordered.sort(Comparator.comparing(provider -> {
             Objects.requireNonNull(provider, "provider");
@@ -55,7 +68,7 @@ public final class ProviderRegistry {
                 throw new IllegalStateException("Duplicate Aljabr provider id: " + descriptor.id());
             }
         }
-        return new ProviderRegistry(indexed);
+        return new ProviderRegistry(indexed, failures);
     }
 
     /** Returns the provider for an exact, namespaced provider id. */
@@ -67,6 +80,11 @@ public final class ProviderRegistry {
     /** Returns an immutable provider collection in stable provider-id order. */
     public Collection<AljabrProvider> providers() {
         return providers.values();
+    }
+
+    /** Returns immutable diagnostics for providers excluded during discovery. */
+    public List<ProviderDiscoveryFailure> discoveryFailures() {
+        return discoveryFailures;
     }
 
     public int size() {
