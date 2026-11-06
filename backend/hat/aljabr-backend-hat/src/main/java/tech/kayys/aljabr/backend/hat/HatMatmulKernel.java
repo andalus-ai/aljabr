@@ -1,11 +1,10 @@
 package tech.kayys.aljabr.backend.hat;
 
 import hat.ComputeContext;
+import hat.KernelContext;
 import hat.buffer.F32Array;
 import jdk.incubator.code.Reflect;
 
-import static hat.KernelContext.GIX;
-import static hat.KernelContext.GIY;
 import static hat.NDRange.of2D;
 
 /**
@@ -19,26 +18,29 @@ public final class HatMatmulKernel {
     private HatMatmulKernel() {
     }
 
-    /** Executes one output element per work item using Babylon kernel markers. */
+    /** Executes one output element per work item using the injected kernel context. */
     @Reflect
     public static void mxmF32(
+            KernelContext kc,
             F32Array matrixA,
             F32Array matrixB,
             F32Array matrixC,
             int rows,
             int columns,
             int reductionSize) {
-        int column = GIX();
-        int row = GIY();
+        int column = kc.gix;
+        int row = kc.giy;
 
-        if (column < columns && row < rows) {
-            float acc = 0.0f;
-            for (int k = 0; k < reductionSize; k++) {
-                acc += matrixA.array(row * reductionSize + k)
-                        * matrixB.array(k * columns + column);
-            }
-            matrixC.array(row * columns + column, acc);
+        if (column >= columns || row >= rows) {
+            return;
         }
+
+        float acc = 0.0f;
+        for (int k = 0; k < reductionSize; k++) {
+            acc += matrixA.array((long) row * reductionSize + k)
+                    * matrixB.array((long) k * columns + column);
+        }
+        matrixC.array((long) row * columns + column, acc);
     }
 
     /** Dispatches a padded {@code columns x rows} work grid. */
@@ -54,6 +56,6 @@ public final class HatMatmulKernel {
         int globalColumns = ((columns + 15) / 16) * 16;
         int globalRows = ((rows + 15) / 16) * 16;
         cc.dispatchKernel(of2D(globalColumns, globalRows, 16, 16),
-                () -> mxmF32(matrixA, matrixB, matrixC, rows, columns, reductionSize));
+                kc -> mxmF32(kc, matrixA, matrixB, matrixC, rows, columns, reductionSize));
     }
 }
