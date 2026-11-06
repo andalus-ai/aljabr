@@ -82,19 +82,34 @@ public class HatComputeBackend implements ComputeBackend {
                 accelerator = new hat.Accelerator(java.lang.invoke.MethodHandles.lookup());
             }
 
-            hat.buffer.F32Array hatA = hat.buffer.F32Array.create(
-                    accelerator, Math.toIntExact(a.numel()));
-            hat.buffer.F32Array hatB = hat.buffer.F32Array.create(
-                    accelerator, Math.toIntExact(b.numel()));
-            hat.buffer.F32Array hatC = hat.buffer.F32Array.create(accelerator, outputLength);
+            /*
+             * The stock Java HAT backend owns Arena.global(), so allocating
+             * operation buffers through the Accelerator would retain every
+             * allocation until process exit. Give these temporary buffers a
+             * per-call shared arena instead. Shared (rather than confined) is
+             * required because the HAT Java MT backend may access them from
+             * worker threads. The arena is closed only after dispatch and
+             * copy-out have completed.
+             */
+            try (java.lang.foreign.Arena bufferArena = java.lang.foreign.Arena.ofShared()) {
+                optkl.util.carriers.ArenaAndLookupCarrier bufferCarrier =
+                        optkl.util.carriers.ArenaAndLookupCarrier.of(
+                                accelerator.lookup(), bufferArena);
 
-            hatA.copyFrom(a.toFloatArray());
-            hatB.copyFrom(b.toFloatArray());
+                hat.buffer.F32Array hatA = hat.buffer.F32Array.create(
+                        bufferCarrier, Math.toIntExact(a.numel()));
+                hat.buffer.F32Array hatB = hat.buffer.F32Array.create(
+                        bufferCarrier, Math.toIntExact(b.numel()));
+                hat.buffer.F32Array hatC = hat.buffer.F32Array.create(bufferCarrier, outputLength);
 
-            accelerator.compute((@Reflect Compute) cc ->
-                    HatMatmulKernel.mxmF32Dispatch(
-                            cc, hatA, hatB, hatC, rows, columns, reductionSize));
-            hatC.copyTo(result);
+                hatA.copyFrom(a.toFloatArray());
+                hatB.copyFrom(b.toFloatArray());
+
+                accelerator.compute((@Reflect Compute) cc ->
+                        HatMatmulKernel.mxmF32Dispatch(
+                                cc, hatA, hatB, hatC, rows, columns, reductionSize));
+                hatC.copyTo(result);
+            }
         }
 
         // Tensor.toFloatArray() returns a copy. Construct the result from the
