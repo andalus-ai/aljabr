@@ -6,6 +6,8 @@ import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
 import java.util.List;
+import java.lang.foreign.Arena;
+import optkl.util.carriers.ArenaAndLookupCarrier;
 import hat.Accelerator.Compute;
 import jdk.incubator.code.Reflect;
 
@@ -91,9 +93,9 @@ public class HatComputeBackend implements ComputeBackend {
              * worker threads. The arena is closed only after dispatch and
              * copy-out have completed.
              */
-            try (java.lang.foreign.Arena bufferArena = java.lang.foreign.Arena.ofShared()) {
-                optkl.util.carriers.ArenaAndLookupCarrier bufferCarrier =
-                        optkl.util.carriers.ArenaAndLookupCarrier.of(
+            try (Arena bufferArena = Arena.ofShared()) {
+                ArenaAndLookupCarrier bufferCarrier =
+                        ArenaAndLookupCarrier.of(
                                 accelerator.lookup(), bufferArena);
 
                 hat.buffer.F32Array hatA = hat.buffer.F32Array.create(
