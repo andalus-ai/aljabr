@@ -26,7 +26,7 @@ class TensorFactoryTest {
     @Test
     void automaticBackendSelectionUsesCpuWhenMetalIsUnavailableAndDoesNotRequireHat() {
         Tensor tensor = TensorFactory.zeros(1);
-        assertInstanceOf(tech.kayys.aljabr.backend.cpu.CpuBackend.class, tensor.backend());
+        assertEquals("tech.kayys.aljabr.backend.cpu.CpuBackend", tensor.backend().getClass().getName());
     }
 
 }
