@@ -1,11 +1,11 @@
 package tech.kayys.aljabr.backend.hat;
 
 import hat.ComputeContext;
-import hat.KernelContext;
 import hat.buffer.F32Array;
 import jdk.incubator.code.Reflect;
-import optkl.ifacemapper.MappableIface;
 
+import static hat.KernelContext.GIX;
+import static hat.KernelContext.GIY;
 import static hat.NDRange.of2D;
 
 /**
@@ -19,18 +19,19 @@ public final class HatMatmulKernel {
     private HatMatmulKernel() {
     }
 
-    /** Executes one output element per work item. */
+    /** Executes one output element per work item using Babylon kernel markers. */
     @Reflect
-    public static void mxmF32(@MappableIface.RO KernelContext kc,
-            @MappableIface.RO F32Array matrixA,
-            @MappableIface.RO F32Array matrixB,
-            @MappableIface.WO F32Array matrixC,
+    public static void mxmF32(
+            F32Array matrixA,
+            F32Array matrixB,
+            F32Array matrixC,
             int rows,
             int columns,
             int reductionSize) {
-        int row = kc.giy;
-        int column = kc.gix;
-        if (row < rows && column < columns) {
+        int column = GIX();
+        int row = GIY();
+
+        if (column < columns && row < rows) {
             float acc = 0.0f;
             for (int k = 0; k < reductionSize; k++) {
                 acc += matrixA.array(row * reductionSize + k)
@@ -40,23 +41,19 @@ public final class HatMatmulKernel {
         }
     }
 
-    /** Dispatches an {@code N x M} work grid for an {@code M x N} result. */
+    /** Dispatches a padded {@code columns x rows} work grid. */
     @Reflect
-    public static void mxmF32Dispatch(@MappableIface.RO ComputeContext cc,
-            @MappableIface.RO F32Array matrixA,
-            @MappableIface.RO F32Array matrixB,
-            @MappableIface.WO F32Array matrixC,
+    public static void mxmF32Dispatch(
+            @Reflect ComputeContext cc,
+            F32Array matrixA,
+            F32Array matrixB,
+            F32Array matrixC,
             int rows,
             int columns,
             int reductionSize) {
-        // Use complete 16x16 work-groups. The logical matrix dimensions are
-        // passed separately and checked by the kernel to mask padded work-items.
         int globalColumns = ((columns + 15) / 16) * 16;
         int globalRows = ((rows + 15) / 16) * 16;
         cc.dispatchKernel(of2D(globalColumns, globalRows, 16, 16),
-                kc -> mxmF32(kc, matrixA, matrixB, matrixC, rows, columns, reductionSize));
-        // Ensure device-side writes are copied back to the host-visible buffer
-        
-        
+                () -> mxmF32(matrixA, matrixB, matrixC, rows, columns, reductionSize));
     }
 }
