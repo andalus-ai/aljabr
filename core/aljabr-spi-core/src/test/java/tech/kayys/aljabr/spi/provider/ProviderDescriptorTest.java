@@ -7,7 +7,7 @@ class ProviderDescriptorTest {
     @Test void acceptsNamespacedProviderAndCopiesCapabilities() {
         var capability = new CapabilityDescriptor("linear-algebra.dense", "1", CapabilityStability.STABLE);
         var capabilities = new java.util.HashSet<>(Set.of(capability));
-        var descriptor = new ProviderDescriptor("andalus/cpu-reference", "0.1.0", "^0.1", capabilities);
+        var descriptor = new ProviderDescriptor("andalus/cpu-reference", "0.1.0", ">=0.1.0 <1.0.0", capabilities);
         capabilities.clear();
         assertEquals("andalus/cpu-reference", descriptor.id());
         assertEquals(Set.of(capability), descriptor.capabilities());
