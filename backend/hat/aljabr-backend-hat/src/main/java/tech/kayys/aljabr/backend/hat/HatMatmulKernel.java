@@ -9,42 +9,47 @@ import optkl.ifacemapper.MappableIface;
 import static hat.NDRange.of2D;
 
 /**
- * Project Babylon HAT Tensor Kernel for Matrix Multiplication.
+ * Project Babylon HAT tensor kernel for row-major F32 matrix multiplication.
  *
- * This kernel uses the @Reflect annotation to allow the HAT code model
- * to analyze it and lower it to GPU instructions (like CUDA or MSL).
+ * <p>Computes {@code C[M,N] = A[M,K] * B[K,N]}. The x dimension addresses
+ * output columns and the y dimension addresses output rows.</p>
  */
-public class HatMatmulKernel {
+public final class HatMatmulKernel {
 
-    /**
-     * The actual kernel executed on the device.
-     */
+    private HatMatmulKernel() {
+    }
+
+    /** Executes one output element per work item. */
     @Reflect
     public static void mxmF32(@MappableIface.RO KernelContext kc,
             @MappableIface.RO F32Array matrixA,
             @MappableIface.RO F32Array matrixB,
             @MappableIface.WO F32Array matrixC,
-            int size) {
-        if (kc.gix < kc.gsx && kc.giy < kc.gsy) {
+            int rows,
+            int columns,
+            int reductionSize) {
+        int row = kc.giy;
+        int column = kc.gix;
+        if (row < rows && column < columns) {
             float acc = 0.0f;
-            for (int k = 0; k < size; k++) {
-                acc += (matrixA.array(k * size + kc.giy) * matrixB.array(kc.gix * size + k));
+            for (int k = 0; k < reductionSize; k++) {
+                acc += matrixA.array(row * reductionSize + k)
+                        * matrixB.array(k * columns + column);
             }
-            matrixC.array(kc.gix * size + kc.giy, acc);
+            matrixC.array(row * columns + column, acc);
         }
     }
 
-    /**
-     * Dispatches the kernel over a 2D NDRange.
-     */
+    /** Dispatches an {@code N x M} work grid for an {@code M x N} result. */
     @Reflect
     public static void mxmF32Dispatch(@MappableIface.RO ComputeContext cc,
             @MappableIface.RO F32Array matrixA,
             @MappableIface.RO F32Array matrixB,
             @MappableIface.WO F32Array matrixC,
-            int globalSize) {
-        // Dispatch over a 2D grid matching the size of the matrix.
-        cc.dispatchKernel(of2D(globalSize, globalSize, 16, 16),
-                kc -> mxmF32(kc, matrixA, matrixB, matrixC, globalSize));
+            int rows,
+            int columns,
+            int reductionSize) {
+        cc.dispatchKernel(of2D(columns, rows, 16, 16),
+                kc -> mxmF32(kc, matrixA, matrixB, matrixC, rows, columns, reductionSize));
     }
 }
