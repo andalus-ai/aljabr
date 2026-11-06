@@ -44,7 +44,7 @@ public final class HatMatmulKernel {
     /** Dispatches a padded {@code columns x rows} work grid. */
     @Reflect
     public static void mxmF32Dispatch(
-            @Reflect ComputeContext cc,
+            ComputeContext cc,
             F32Array matrixA,
             F32Array matrixB,
             F32Array matrixC,
