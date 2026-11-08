@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.models.falconh1;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import tech.kayys.aljabr.spi.model.ModelArchitecture;
 import tech.kayys.aljabr.spi.model.ModelFamilyCapability;
 import tech.kayys.aljabr.spi.model.ModelFamilyDescriptor;
 import tech.kayys.aljabr.spi.model.ModelFamilyPlugin;
@@ -12,6 +13,8 @@ import java.util.Map;
 @ApplicationScoped
 public class FalconH1ModelFamilyPlugin implements ModelFamilyPlugin {
 
+    private static final FalconH1Family ARCH_ADAPTER = new FalconH1Family();
+
     @Override
     public ModelFamilyDescriptor descriptor() {
         return new ModelFamilyDescriptor(
@@ -19,13 +22,21 @@ public class FalconH1ModelFamilyPlugin implements ModelFamilyPlugin {
                 "TII Falcon-H1",
                 List.of("falcon_h1", "falcon-h1"),
                 List.of("FalconH1ForCausalLM", "FalconH1Model"),
-                List.of(ModelFamilyCapability.CAUSAL_LM, ModelFamilyCapability.TOKENIZER,
-                        ModelFamilyCapability.CHAT_TEMPLATE),
+                List.of(
+                        ModelFamilyCapability.CAUSAL_LM,
+                        ModelFamilyCapability.TOKENIZER,
+                        ModelFamilyCapability.CHAT_TEMPLATE,
+                        ModelFamilyCapability.DIRECT_SAFETENSOR_INFERENCE),
                 Map.of(
                         "bundle_profile", "metadata_only",
                         "tokenizer", "tokenizer_json_bpe",
-                        "direct_safetensor", "pending_falcon_h1_hybrid_state_space_runtime",
+                        "direct_safetensor", "ready",
                         "version", "0.1.0-SNAPSHOT"));
+    }
+
+    @Override
+    public List<ModelArchitecture> architectureAdapters() {
+        return List.of(ARCH_ADAPTER);
     }
 
     @Override

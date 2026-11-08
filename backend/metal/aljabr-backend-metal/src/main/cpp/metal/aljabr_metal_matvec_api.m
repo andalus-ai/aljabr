@@ -4232,9 +4232,11 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
       return -4;
     }
 
+    uint64_t t_start = monotonic_nanos();
     memcpy([bufX contents], x, dimBytes);
     memcpy([bufAttn contents], attn_full, attnBytes);
 
+    uint64_t t_enc_start = monotonic_nanos();
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
     id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
 
@@ -4319,8 +4321,10 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
                                  cfg->hasPostFfnNorm != 0, cfg->outScale, pipelines, (uint32_t)bSz);
 
     [enc endEncoding];
+    uint64_t t_commit = monotonic_nanos();
     [cmd commit];
     [cmd waitUntilCompleted];
+    uint64_t t_done = monotonic_nanos();
 
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
       ALJABR_METAL_LOG("[wo_ffn_batch] rc=-8: cmd failed status=%lu\n", (unsigned long)[cmd status]);
@@ -4328,6 +4332,17 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     }
 
     memcpy(x, [bufX contents], dimBytes);
+    uint64_t t_end = monotonic_nanos();
+
+    if ((layer == 0 || layer == 24) && env_truthy("ALJABR_METAL_PREFILL_PROFILE")) {
+      printf("[WO_FFN L%02d] bSz=%zu prep=%.2fms encode=%.2fms gpu=%.2fms copy_back=%.2fms total=%.2fms\n",
+             layer, bSz,
+             (t_enc_start - t_start) / 1e6,
+             (t_commit - t_enc_start) / 1e6,
+             (t_done - t_commit) / 1e6,
+             (t_end - t_done) / 1e6,
+             (t_end - t_start) / 1e6);
+    }
     return 0;
   }
   }

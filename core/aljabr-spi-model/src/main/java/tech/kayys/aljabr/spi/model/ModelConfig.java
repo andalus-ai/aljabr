@@ -204,6 +204,71 @@ public class ModelConfig {
     @JsonProperty("num_kv_shared_layers")
     private Integer numKvSharedLayers;
 
+    // ── Mamba SSM / Falcon-H1 Hybrid fields ─────────────────────────────────
+
+    @JsonProperty("mamba_d_state")
+    private Integer mambaDState;
+
+    @JsonProperty("mamba_d_conv")
+    private Integer mambaDConv;
+
+    @JsonProperty("mamba_d_head")
+    private Integer mambaDHead;
+
+    @JsonProperty("mamba_d_ssm")
+    private Integer mambaDSsm;
+
+    @JsonProperty("mamba_expand")
+    private Integer mambaExpand;
+
+    @JsonProperty("mamba_n_heads")
+    private Integer mambaNHeads;
+
+    @JsonProperty("mamba_n_groups")
+    private Integer mambaNGroups;
+
+    @JsonProperty("mamba_chunk_size")
+    private Integer mambaChunkSize;
+
+    @JsonProperty("mamba_conv_bias")
+    private Boolean mambaConvBias;
+
+    @JsonProperty("mamba_proj_bias")
+    private Boolean mambaProjBias;
+
+    @JsonProperty("mamba_rms_norm")
+    private Boolean mambaRmsNorm;
+
+    @JsonProperty("mamba_norm_before_gate")
+    private Boolean mambaNormBeforeGate;
+
+    @JsonProperty("embedding_multiplier")
+    private Double embeddingMultiplier;
+
+    @JsonProperty("lm_head_multiplier")
+    private Double lmHeadMultiplier;
+
+    @JsonProperty("ssm_in_multiplier")
+    private Double ssmInMultiplier;
+
+    @JsonProperty("ssm_out_multiplier")
+    private Double ssmOutMultiplier;
+
+    @JsonProperty("attention_in_multiplier")
+    private Double attentionInMultiplier;
+
+    @JsonProperty("attention_out_multiplier")
+    private Double attentionOutMultiplier;
+
+    @JsonProperty("ssm_multipliers")
+    private List<Double> ssmMultipliers;
+
+    @JsonProperty("time_step_min")
+    private Double timeStepMin;
+
+    @JsonProperty("time_step_max")
+    private Double timeStepMax;
+
     // ── MoE fields ──────────────────────────────────────────────────────────
 
     @JsonProperty("num_local_experts")
@@ -2228,6 +2293,82 @@ public class ModelConfig {
     public List<String> architectures() {
         return architectures;
     }
+
+    // ── Mamba / Falcon-H1 Getters ──────────────────────────────────────────
+
+    public Integer mambaDState() { return mambaDState; }
+    public int resolvedMambaDState() { return mambaDState != null ? mambaDState : 64; }
+
+    public Integer mambaDConv() { return mambaDConv; }
+    public int resolvedMambaDConv() { return mambaDConv != null ? mambaDConv : 4; }
+
+    public Integer mambaDHead() { return mambaDHead; }
+    public int resolvedMambaDHead() {
+        if (mambaDHead != null) return mambaDHead;
+        int dSsm = resolvedMambaDSsm();
+        int nHeads = resolvedMambaNHeads();
+        return nHeads > 0 ? dSsm / nHeads : 32;
+    }
+
+    public Integer mambaDSsm() { return mambaDSsm; }
+    public int resolvedMambaDSsm() {
+        if (mambaDSsm != null) return mambaDSsm;
+        int expand = mambaExpand != null ? mambaExpand : 2;
+        return expand * hiddenSize;
+    }
+
+    public Integer mambaExpand() { return mambaExpand; }
+    public int resolvedMambaExpand() { return mambaExpand != null ? mambaExpand : 2; }
+
+    public Integer mambaNHeads() { return mambaNHeads; }
+    public int resolvedMambaNHeads() { return mambaNHeads != null ? mambaNHeads : 24; }
+
+    public Integer mambaNGroups() { return mambaNGroups; }
+    public int resolvedMambaNGroups() { return mambaNGroups != null ? mambaNGroups : 1; }
+
+    public Integer mambaChunkSize() { return mambaChunkSize; }
+    public int resolvedMambaChunkSize() { return mambaChunkSize != null ? mambaChunkSize : 128; }
+
+    public boolean mambaConvBias() { return !Boolean.FALSE.equals(mambaConvBias); }
+    public boolean mambaProjBias() { return Boolean.TRUE.equals(mambaProjBias); }
+    public boolean mambaRmsNorm() { return Boolean.TRUE.equals(mambaRmsNorm); }
+    public boolean mambaNormBeforeGate() { return Boolean.TRUE.equals(mambaNormBeforeGate); }
+
+    public Double embeddingMultiplier() { return embeddingMultiplier; }
+    public float resolvedEmbeddingMultiplier() { return embeddingMultiplier != null ? embeddingMultiplier.floatValue() : 1.0f; }
+
+    public Double lmHeadMultiplier() { return lmHeadMultiplier; }
+    public float resolvedLmHeadMultiplier() { return lmHeadMultiplier != null ? lmHeadMultiplier.floatValue() : 1.0f; }
+
+    public Double ssmInMultiplier() { return ssmInMultiplier; }
+    public float resolvedSsmInMultiplier() { return ssmInMultiplier != null ? ssmInMultiplier.floatValue() : 1.0f; }
+
+    public Double ssmOutMultiplier() { return ssmOutMultiplier; }
+    public float resolvedSsmOutMultiplier() { return ssmOutMultiplier != null ? ssmOutMultiplier.floatValue() : 1.0f; }
+
+    public Double attentionInMultiplier() { return attentionInMultiplier; }
+    public float resolvedAttentionInMultiplier() { return attentionInMultiplier != null ? attentionInMultiplier.floatValue() : 1.0f; }
+
+    public Double attentionOutMultiplier() { return attentionOutMultiplier; }
+    public float resolvedAttentionOutMultiplier() { return attentionOutMultiplier != null ? attentionOutMultiplier.floatValue() : 1.0f; }
+
+    public List<Double> ssmMultipliers() { return ssmMultipliers; }
+    public double[] resolvedSsmMultipliers() {
+        if (ssmMultipliers == null || ssmMultipliers.isEmpty()) {
+            return new double[] { 1.0, 1.0, 1.0, 1.0, 1.0 };
+        }
+        double[] res = new double[ssmMultipliers.size()];
+        for (int i = 0; i < res.length; i++) res[i] = ssmMultipliers.get(i);
+        return res;
+    }
+
+    public boolean isFalconH1() {
+        return "falcon_h1".equalsIgnoreCase(modelType)
+                || (architectures != null && architectures.contains("FalconH1ForCausalLM"));
+    }
+
+    public Double timeStepMin() { return timeStepMin; }
+    public Double timeStepMax() { return timeStepMax; }
 
     // JavaBean-style compatibility getters
     public String getModelType() { return modelType(); }

@@ -680,6 +680,16 @@ public class AccelTensor implements AutoCloseable {
      */
     public float[] toFloatArray() {
         checkClosed();
+        if (quantType != QuantType.F32) {
+            AccelTensor f32 = dequantize();
+            try {
+                return f32.toFloatArray();
+            } finally {
+                if (f32 != this && f32 != cachedDequantized) {
+                    f32.close();
+                }
+            }
+        }
         long n = numel();
         float[] result = new float[(int) n];
         if (isContiguous()) {

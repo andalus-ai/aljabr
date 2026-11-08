@@ -509,6 +509,85 @@ public interface ModelArchitecture {
         return oneCandidate(expertDownWeight(layerIdx, expertIdx));
     }
 
+    // ── Mamba / State Space Model (SSM) weights ──────────────────────────────
+
+    /** Full tensor name of Mamba in_proj weight for layer {@code i}. */
+    default String layerMambaInProjWeight(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaInProjWeightCandidates(int i) {
+        return oneCandidate(layerMambaInProjWeight(i));
+    }
+
+    /** Full tensor name of Mamba conv1d weight for layer {@code i}. */
+    default String layerMambaConv1dWeight(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaConv1dWeightCandidates(int i) {
+        return oneCandidate(layerMambaConv1dWeight(i));
+    }
+
+    /** Full tensor name of Mamba conv1d bias for layer {@code i}. */
+    default String layerMambaConv1dBias(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaConv1dBiasCandidates(int i) {
+        return oneCandidate(layerMambaConv1dBias(i));
+    }
+
+    /** Full tensor name of Mamba dt_bias for layer {@code i}. */
+    default String layerMambaDtBias(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaDtBiasCandidates(int i) {
+        return oneCandidate(layerMambaDtBias(i));
+    }
+
+    /** Full tensor name of Mamba A_log weight for layer {@code i}. */
+    default String layerMambaALogWeight(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaALogWeightCandidates(int i) {
+        return oneCandidate(layerMambaALogWeight(i));
+    }
+
+    /** Full tensor name of Mamba D skip parameter for layer {@code i}. */
+    default String layerMambaDWeight(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaDWeightCandidates(int i) {
+        return oneCandidate(layerMambaDWeight(i));
+    }
+
+    /** Full tensor name of Mamba out_proj weight for layer {@code i}. */
+    default String layerMambaOutProjWeight(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaOutProjWeightCandidates(int i) {
+        return oneCandidate(layerMambaOutProjWeight(i));
+    }
+
+    /** Full tensor name of Mamba norm weight for layer {@code i} (if gated RMSNorm). */
+    default String layerMambaNormWeight(int i) {
+        return null;
+    }
+
+    default List<String> layerMambaNormWeightCandidates(int i) {
+        return oneCandidate(layerMambaNormWeight(i));
+    }
+
+    /** Whether this architecture is a hybrid attention + Mamba/SSM model. */
+    default boolean isHybridAttentionMamba() {
+        return false;
+    }
+
     // ── Architecture properties ───────────────────────────────────────────────
 
     /** The activation function used in the FFN (e.g. SiLU, GELU). */
