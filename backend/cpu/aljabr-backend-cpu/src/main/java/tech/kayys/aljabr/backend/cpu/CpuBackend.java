@@ -49,7 +49,7 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     private static MemorySegment seg(Tensor t) {
-        return ((DefaultTensor) t).buffer().segment();
+        return ((DefaultTensor) t).hostStorage().segment();
     }
 
     private DefaultTensor out(Shape shape, CpuBuffer buf) {
