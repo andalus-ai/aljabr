@@ -47,8 +47,12 @@ public final class CpuBackend implements ComputeBackend {
         return new CpuBuffer(byteSize);
     }
 
-    private static MemorySegment seg(Tensor t) {
-        return ((DefaultTensor) t).buffer().segment();
+    private static HostAccessibleStorage hostStorage(Tensor tensor) {
+        return CpuTensorStorageAccess.hostStorage(tensor);
+    }
+
+    private static MemorySegment seg(Tensor tensor) {
+        return CpuTensorStorageAccess.segment(tensor);
     }
 
     private DefaultTensor out(Shape shape, CpuBuffer buf) {
@@ -227,33 +231,67 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor reshape(Tensor a, long... newShape) {
-        // Zero-copy: retain the shared buffer until every tensor view is released.
-        Buffer buffer = ((DefaultTensor) a).buffer();
-        buffer.retain();
-        return new DefaultTensor(new Shape(newShape), a.dtype(), a.device(), buffer, this);
+        Shape outputShape = new Shape(newShape);
+        if (outputShape.numel() != a.numel()) {
+            throw new IllegalArgumentException(
+                    "reshape must preserve the number of elements: input="
+                            + a.numel() + ", output=" + outputShape.numel());
+        }
+
+        // Share the same backend-neutral storage and give the result its own
+        // ownership reference. This does not require the legacy Buffer API.
+        TensorStorage storage = a.storage();
+        storage.retain();
+        try {
+            return new DefaultTensor(outputShape, a.dtype(), a.device(), storage, this);
+        } catch (RuntimeException | Error e) {
+            storage.release();
+            throw e;
+        }
     }
 
     @Override
     public Tensor slice(Tensor a, long[] offsets, long[] sizes) {
-        // Attempt zero-copy view when the slice is contiguous in row-major layout.
         Shape inShape = a.shape();
         int rank = inShape.rank();
-        long[] inDims = inShape.dims();
+        if (rank == 0) {
+            throw new IllegalArgumentException("Cannot slice a scalar tensor");
+        }
+        if (offsets == null || sizes == null || offsets.length != rank || sizes.length != rank) {
+            throw new IllegalArgumentException(
+                    "Slice offsets and sizes must both have one entry per tensor dimension");
+        }
+        if (a.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU slice currently supports F32 tensors only; actual dtype is " + a.dtype());
+        }
 
         Shape outShape = new Shape(sizes);
+        long[] inDims = inShape.dims();
+        for (int i = 0; i < rank; i++) {
+            if (offsets[i] < 0 || offsets[i] > inDims[i]
+                    || sizes[i] > inDims[i] - offsets[i]) {
+                throw new IllegalArgumentException(
+                        "Slice is outside tensor bounds at dimension " + i
+                                + ": offset=" + offsets[i] + ", size=" + sizes[i]
+                                + ", dimension=" + inDims[i]);
+            }
+        }
 
-        // Strides in elements (row-major) for the input
+        // Strides in elements (row-major) for the input.
         long[] baseStrides = new long[rank];
         baseStrides[rank - 1] = 1;
-        for (int i = rank - 2; i >= 0; i--)
-            baseStrides[i] = baseStrides[i + 1] * inDims[i + 1];
+        for (int i = rank - 2; i >= 0; i--) {
+            baseStrides[i] = Math.multiplyExact(baseStrides[i + 1], inDims[i + 1]);
+        }
 
-        // Expected contiguous strides for the view
+        // A rectangular slice is contiguous when its dimensions preserve the
+        // input's trailing row-major strides.
         long[] viewExpected = new long[rank];
-        long exp = 1;
+        long expectedStride = 1;
         for (int i = rank - 1; i >= 0; i--) {
-            viewExpected[i] = exp;
-            exp *= sizes[i];
+            viewExpected[i] = expectedStride;
+            expectedStride = Math.multiplyExact(expectedStride, sizes[i]);
         }
 
         boolean isContiguous = true;
@@ -264,38 +302,47 @@ public final class CpuBackend implements ComputeBackend {
             }
         }
 
-        MemorySegment src = seg(a);
+        HostAccessibleStorage parentStorage = hostStorage(a);
+        MemorySegment src = parentStorage.segment();
         long elemOffset = 0;
-        for (int i = 0; i < rank; i++)
-            elemOffset += offsets[i] * baseStrides[i];
-        long byteOffset = elemOffset * 4L;
-        long byteSize = outShape.numel() * 4L;
+        for (int i = 0; i < rank; i++) {
+            elemOffset = Math.addExact(elemOffset, Math.multiplyExact(offsets[i], baseStrides[i]));
+        }
+        long byteOffset = Math.multiplyExact(elemOffset, Float.BYTES);
+        long byteSize = Math.multiplyExact(outShape.numel(), Float.BYTES);
 
         if (isContiguous) {
-            // Create zero-copy view into the existing segment
-            MemorySegment viewSeg = src.asSlice(byteOffset, byteSize);
-            Buffer parentBuffer = ((DefaultTensor) a).buffer();
-            CpuBuffer viewBuf = CpuBuffer.view(viewSeg, parentBuffer);
-            return new DefaultTensor(outShape, a.dtype(), a.device(), viewBuf, this);
+            // Preserve the legacy Buffer view type for existing callers, while
+            // allowing non-Buffer host storage to use a neutral zero-copy view.
+            TensorStorage viewStorage = parentStorage instanceof Buffer legacyBuffer
+                    ? CpuBuffer.view(legacyBuffer, byteOffset, byteSize)
+                    : HostAccessibleStorageView.view(parentStorage, byteOffset, byteSize);
+            try {
+                return new DefaultTensor(outShape, a.dtype(), a.device(), viewStorage, this);
+            } catch (RuntimeException | Error e) {
+                viewStorage.release();
+                throw e;
+            }
         }
 
-        // Fallback: copy the selected region into a new buffer (existing behavior)
-        CpuBuffer outBuf = allocate(outShape.numel() * 4);
-
+        // Non-contiguous slices are materialized into an independent CPU buffer.
+        CpuBuffer outBuf = allocate(byteSize);
         long outIdx = 0;
         long totalOut = outShape.numel();
-
         long[] cursor = new long[rank];
         for (long elem = 0; elem < totalOut; elem++) {
             long inIdx = 0;
-            for (int d = 0; d < rank; d++)
-                inIdx += (offsets[d] + cursor[d]) * baseStrides[d];
-            outBuf.segment().set(ValueLayout.JAVA_FLOAT, outIdx * 4L,
-                    src.get(ValueLayout.JAVA_FLOAT, inIdx * 4L));
+            for (int d = 0; d < rank; d++) {
+                inIdx = Math.addExact(inIdx,
+                        Math.multiplyExact(Math.addExact(offsets[d], cursor[d]), baseStrides[d]));
+            }
+            outBuf.segment().set(ValueLayout.JAVA_FLOAT, outIdx * Float.BYTES,
+                    src.get(ValueLayout.JAVA_FLOAT, inIdx * Float.BYTES));
             outIdx++;
             for (int d = rank - 1; d >= 0; d--) {
-                if (++cursor[d] < sizes[d])
+                if (++cursor[d] < sizes[d]) {
                     break;
+                }
                 cursor[d] = 0;
             }
         }
