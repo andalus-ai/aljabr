@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
+import tech.kayys.aljabr.core.tensor.TensorFactory;
+
 class ComputeRuntimeTest {
     @Test
     void opensAndOwnsExplicitCpuProviderSession() {
@@ -15,6 +17,8 @@ class ComputeRuntimeTest {
             assertEquals("cpu:0", runtime.device().deviceId());
             assertEquals("tech.kayys.aljabr.backend.cpu.CpuBackend",
                     runtime.backend().getClass().getName());
+            var tensor = TensorFactory.zeros(runtime.backend(), 2);
+            assertEquals(runtime.backend(), tensor.backend());
         } finally {
             runtime.close();
         }
