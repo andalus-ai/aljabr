@@ -3,6 +3,10 @@ package tech.kayys.aljabr.core.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
+import java.lang.reflect.Proxy;
+import java.util.concurrent.atomic.AtomicLong;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 
 class TensorFactoryTest {
     @Test
@@ -23,6 +27,37 @@ class TensorFactoryTest {
         assertThrows(IllegalArgumentException.class,
                 () -> TensorFactory.ofQuantized(segment, DType.Q8_0, 31));
     }
+
+    @Test
+    void explicitBackendOwnsTensorAllocationAndDeviceIdentity() {
+        CpuBackend delegate = new CpuBackend();
+        AtomicLong allocatedBytes = new AtomicLong(-1);
+        ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("allocate")) {
+                        allocatedBytes.set((long) args[0]);
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+
+        Tensor tensor = TensorFactory.zeros(backend, 2, 3);
+        try {
+            assertEquals(24L, allocatedBytes.get());
+            assertEquals(DeviceType.CPU, tensor.device());
+            assertSame(backend, tensor.backend());
+            assertEquals(24L, ((DefaultTensor) tensor).buffer().sizeBytes());
+        } finally {
+            tensor.release();
+        }
+    }
+
+
     @Test
     void automaticBackendSelectionUsesCpuWhenMetalIsUnavailableAndDoesNotRequireHat() {
         Tensor tensor = TensorFactory.zeros(1);
