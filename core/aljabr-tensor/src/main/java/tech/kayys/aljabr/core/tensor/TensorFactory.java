@@ -12,7 +12,11 @@ public final class TensorFactory {
     private static final Random RNG = new Random();
 
     public static Tensor randn(long... shape) {
-        return randn(findDefaultBackend(), shape);
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        for (int i = 0; i < n; i++)
+            data[i] = (float) (RNG.nextGaussian());
+        return of(data, shape);
     }
 
     /** Creates a random tensor using an explicitly owned compute backend. */
@@ -25,7 +29,9 @@ public final class TensorFactory {
     }
 
     public static Tensor zeros(long... shape) {
-        return zeros(findDefaultBackend(), shape);
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        return of(data, shape);
     }
 
     /** Creates a zero tensor using an explicitly owned compute backend. */
@@ -36,7 +42,11 @@ public final class TensorFactory {
     }
 
     public static Tensor ones(long... shape) {
-        return ones(findDefaultBackend(), shape);
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        for (int i = 0; i < n; i++)
+            data[i] = 1f;
+        return of(data, shape);
     }
 
     /** Creates a one tensor using an explicitly owned compute backend. */
@@ -49,7 +59,11 @@ public final class TensorFactory {
     }
 
     public static Tensor full(float value, long... shape) {
-        return full(value, findDefaultBackend(), shape);
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        for (int i = 0; i < n; i++)
+            data[i] = value;
+        return of(data, shape);
     }
 
     /** Creates a filled tensor using an explicitly owned compute backend. */
