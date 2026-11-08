@@ -101,20 +101,40 @@ public interface Tensor {
         return TensorFactory.randn(shape);
     }
 
+    static Tensor randn(ComputeBackend backend, long... shape) {
+        return TensorFactory.randn(backend, shape);
+    }
+
     static Tensor zeros(long... shape) {
         return TensorFactory.zeros(shape);
+    }
+
+    static Tensor zeros(ComputeBackend backend, long... shape) {
+        return TensorFactory.zeros(backend, shape);
     }
 
     static Tensor ones(long... shape) {
         return TensorFactory.ones(shape);
     }
 
+    static Tensor ones(ComputeBackend backend, long... shape) {
+        return TensorFactory.ones(backend, shape);
+    }
+
     static Tensor full(float value, long... shape) {
         return TensorFactory.full(value, shape);
     }
 
+    static Tensor full(float value, ComputeBackend backend, long... shape) {
+        return TensorFactory.full(value, backend, shape);
+    }
+
     static Tensor of(float[] data, long... shape) {
         return TensorFactory.of(data, shape);
+    }
+
+    static Tensor of(float[] data, ComputeBackend backend, long... shape) {
+        return TensorFactory.of(data, backend, shape);
     }
 
     // Common operations
