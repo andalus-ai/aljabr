@@ -12,6 +12,22 @@ import org.junit.jupiter.api.Test;
 class CpuBufferTest {
 
     @Test
+    void cpuBufferImplementsNeutralStorageAndHostAccessContracts() {
+        CpuBuffer buffer = new CpuBuffer(16);
+        try {
+            TensorStorage storage = buffer;
+            HostAccessibleStorage hostStorage = buffer;
+            Buffer legacyBuffer = buffer;
+
+            assertEquals(16, storage.sizeBytes());
+            assertEquals(16, hostStorage.segment().byteSize());
+            assertEquals(16, legacyBuffer.sizeBytes());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
     void viewUsesRequestedSliceAndRetainsParentUntilReleased() {
         CpuBuffer parent = new CpuBuffer(128);
         long parentAddress = parent.segment().address();
