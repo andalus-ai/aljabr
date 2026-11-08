@@ -115,21 +115,30 @@ public final class ComputeRuntime implements AutoCloseable {
                     .thenComparing(candidate -> candidate.device().deviceId()));
 
             for (Candidate candidate : candidates) {
+                ProviderSession openedSession = null;
                 try {
-                    ProviderSession session = candidate.provider().openSession(candidate.device());
-                    Map<String, ComputeBackend> backends = new LinkedHashMap<>(session.computeBackends());
+                    openedSession = candidate.provider().openSession(candidate.device());
+                    Map<String, ComputeBackend> backends = new LinkedHashMap<>(openedSession.computeBackends());
                     if (!backends.isEmpty()) {
                         ComputeBackend backend = backends.entrySet().stream()
                                 .sorted(Map.Entry.comparingByKey())
                                 .map(Map.Entry::getValue)
                                 .findFirst()
                                 .orElseThrow();
-                        return new ComputeRuntime(owned, session, backend, candidate.device());
+                        return new ComputeRuntime(owned, openedSession, backend, candidate.device());
                     }
-                    session.close();
+                    openedSession.close();
+                    openedSession = null;
                     failures.add(candidate.provider().descriptor().id()
                             + ": opened a session without compute backends");
                 } catch (ProviderException | RuntimeException | LinkageError failure) {
+                    if (openedSession != null) {
+                        try {
+                            openedSession.close();
+                        } catch (ProviderException | RuntimeException closeFailure) {
+                            failure.addSuppressed(closeFailure);
+                        }
+                    }
                     failures.add(candidate.provider().descriptor().id() + ": " + failure.getMessage());
                     if (!"auto".equals(requested)) {
                         throw new IllegalStateException(
