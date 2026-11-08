@@ -28,6 +28,7 @@ if (withLegacyAutograd) {
 include("core:aljabr-numerics")
 include("core:aljabr-linear-algebra")
 include("core:aljabr-tensor")
+include("core:aljabr-compute-runtime")
 include("core:aljabr-core")
 include("core:aljabr-error-code")
 include("core:aljabr-nn")
