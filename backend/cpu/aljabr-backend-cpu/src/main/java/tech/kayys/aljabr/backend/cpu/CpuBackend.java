@@ -40,7 +40,8 @@ public final class CpuBackend implements ComputeBackend {
 
     // ── Internal helpers ──────────────────────────────────────────────────────
 
-    private CpuBuffer allocate(long byteSize) {
+    @Override
+    public CpuBuffer allocate(long byteSize) {
         if (pool != null) {
             return new CpuBuffer(pool.acquire(byteSize), pool.arena(), pool);
         }
