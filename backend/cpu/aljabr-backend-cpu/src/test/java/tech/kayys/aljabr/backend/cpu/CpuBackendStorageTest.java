@@ -77,7 +77,7 @@ class CpuBackendStorageTest {
         Tensor result = null;
         try {
             result = backend.add(input, input);
-            assertArrayEquals(new float[] { 2f, 4f, 6f, 8f }, result.toFloatArray());
+            assertArrayEquals(new float[] { 2f, 4f, 6f, 8f }, result.toFloatArray(), 0f);
         } finally {
             if (result != null) {
                 result.release();
@@ -97,7 +97,7 @@ class CpuBackendStorageTest {
             assertEquals(2, storage.references());
 
             input.release();
-            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f }, reshaped.toFloatArray());
+            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f }, reshaped.toFloatArray(), 0f);
         } finally {
             reshaped.release();
         }
@@ -115,7 +115,7 @@ class CpuBackendStorageTest {
             assertEquals(2, storage.references());
 
             input.release();
-            assertArrayEquals(new float[] { 3f, 4f }, slice.toFloatArray());
+            assertArrayEquals(new float[] { 3f, 4f }, slice.toFloatArray(), 0f);
         } finally {
             slice.release();
         }
@@ -130,7 +130,7 @@ class CpuBackendStorageTest {
         try {
             slice = backend.slice(input, new long[] { 0, 1 }, new long[] { 2, 2 });
             assertNotSame(storage, slice.storage());
-            assertArrayEquals(new float[] { 2f, 3f, 5f, 6f }, slice.toFloatArray());
+            assertArrayEquals(new float[] { 2f, 3f, 5f, 6f }, slice.toFloatArray(), 0f);
             assertEquals(1, storage.references());
         } finally {
             if (slice != null) {
@@ -152,13 +152,38 @@ class CpuBackendStorageTest {
         try {
             slice = backend.slice(input, new long[] { 1, 0 }, new long[] { 1, 2 });
             assertInstanceOf(CpuBuffer.class, ((DefaultTensor) slice).buffer());
-            assertArrayEquals(new float[] { 3f, 4f }, slice.toFloatArray());
+            assertArrayEquals(new float[] { 3f, 4f }, slice.toFloatArray(), 0f);
         } finally {
             if (slice != null) {
                 slice.release();
             }
             input.release();
         }
+    }
+
+    @Test
+    void flashAttentionReadsHostAccessibleStorageWithoutLegacyBuffer() {
+        HostStorage q = new HostStorage(1f);
+        HostStorage k = new HostStorage(1f);
+        HostStorage v = new HostStorage(3f);
+        DefaultTensor query = tensor(q, 1, 1);
+        DefaultTensor key = tensor(k, 1, 1);
+        DefaultTensor value = tensor(v, 1, 1);
+        Tensor result = null;
+        try {
+            result = FlashAttentionCpu.forward(query, key, value, 1);
+            assertArrayEquals(new float[] { 3f }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) {
+                result.release();
+            }
+            query.release();
+            key.release();
+            value.release();
+        }
+        assertEquals(0, q.references());
+        assertEquals(0, k.references());
+        assertEquals(0, v.references());
     }
 
     @Test

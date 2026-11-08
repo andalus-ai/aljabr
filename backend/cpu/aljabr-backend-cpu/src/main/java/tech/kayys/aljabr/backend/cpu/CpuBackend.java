@@ -48,18 +48,11 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     private static HostAccessibleStorage hostStorage(Tensor tensor) {
-        TensorStorage storage = tensor.storage();
-        if (!(storage instanceof HostAccessibleStorage hostStorage)) {
-            throw new UnsupportedOperationException(
-                    "CPU execution requires host-accessible tensor storage; tensor="
-                            + tensor.getClass().getName() + ", storage="
-                            + storage.getClass().getName());
-        }
-        return hostStorage;
+        return CpuTensorStorageAccess.hostStorage(tensor);
     }
 
     private static MemorySegment seg(Tensor tensor) {
-        return hostStorage(tensor).segment();
+        return CpuTensorStorageAccess.segment(tensor);
     }
 
     private DefaultTensor out(Shape shape, CpuBuffer buf) {
