@@ -34,7 +34,7 @@ public final class ComputeRuntime implements AutoCloseable {
     private final ProviderSession session;
     private final ComputeBackend backend;
     private final DeviceDescriptor device;
-    private boolean closed;
+    private volatile boolean closed;
 
     private ComputeRuntime(
             List<AljabrProvider> ownedProviders,
