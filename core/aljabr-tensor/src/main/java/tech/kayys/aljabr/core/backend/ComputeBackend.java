@@ -37,11 +37,9 @@ public interface ComputeBackend {
     /**
      * Allocates host-accessible storage for a tensor created from host data.
      *
-     * <p>This compatibility default preserves existing backends. Backends
-     * using a different host allocation strategy should override it. This
-     * method deliberately returns the legacy host-accessible {@link Buffer};
-     * device-local storage is represented by {@code TensorStorage} but is not
-     * yet supported by {@code DefaultTensor}'s host-segment execution path.</p>
+     * <p>Legacy host-accessible allocation entry point. New tensor creation
+     * should use {@link #allocateStorage(long)} so backends can return opaque
+     * device-local storage without fabricating a host {@link Buffer}.</p>
      *
      * @param sizeBytes required storage capacity in bytes
      * @return a live buffer with at least {@code sizeBytes} capacity
