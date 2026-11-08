@@ -88,11 +88,11 @@ public final class TensorFactory {
             throw new IllegalArgumentException("data length != shape numel");
 
         long bytes = n * 4L;
-        tech.kayys.aljabr.core.memory.Buffer buffer = java.util.Objects.requireNonNull(
-                backend.allocate(bytes), "backend.allocate must not return null");
-        if (buffer.sizeBytes() < bytes) {
-            long availableBytes = buffer.sizeBytes();
-            buffer.release();
+        tech.kayys.aljabr.core.memory.TensorStorage storage = java.util.Objects.requireNonNull(
+                backend.allocateStorage(bytes), "backend.allocateStorage must not return null");
+        if (storage.sizeBytes() < bytes) {
+            long availableBytes = storage.sizeBytes();
+            storage.release();
             throw new IllegalStateException(
                     "Backend " + backend.getClass().getName()
                             + " allocated " + availableBytes + " bytes; " + bytes + " required");
@@ -100,10 +100,10 @@ public final class TensorFactory {
 
         try {
             java.lang.foreign.MemorySegment src = java.lang.foreign.MemorySegment.ofArray(data);
-            buffer.segment().asSlice(0, bytes).copyFrom(src);
-            return new DefaultTensor(new Shape(shape), DType.F32, backend.deviceType(), buffer, backend);
+            backend.copyFromHost(storage, src, bytes);
+            return new DefaultTensor(new Shape(shape), DType.F32, backend.deviceType(), storage, backend);
         } catch (RuntimeException | Error failure) {
-            buffer.release();
+            storage.release();
             throw failure;
         }
     }
