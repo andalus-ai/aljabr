@@ -4,6 +4,9 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.DeviceType;
 import tech.kayys.aljabr.core.memory.Buffer;
 import tech.kayys.aljabr.core.memory.CpuBuffer;
+import tech.kayys.aljabr.core.memory.TensorStorage;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
+import java.lang.foreign.MemorySegment;
 import java.util.List;
 
 /**
