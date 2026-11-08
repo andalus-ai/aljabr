@@ -77,6 +77,8 @@ public final class ComputeRuntime implements AutoCloseable {
         List<AljabrProvider> owned = new ArrayList<>(discovery.providers());
         List<Candidate> candidates = new ArrayList<>();
         List<String> failures = new ArrayList<>();
+        discovery.failures().forEach(failure ->
+                failures.add(failure.providerType() + ": " + failure.message()));
         ProviderContext context = new ProviderContext(ALJABR_VERSION, configuration);
 
         try {
@@ -179,7 +181,7 @@ public final class ComputeRuntime implements AutoCloseable {
         RuntimeException closeFailure = null;
         try {
             session.close();
-        } catch (ProviderException failure) {
+        } catch (ProviderException | RuntimeException failure) {
             closeFailure = new IllegalStateException("Unable to close compute provider session", failure);
         }
         for (AljabrProvider provider : ownedProviders) {
