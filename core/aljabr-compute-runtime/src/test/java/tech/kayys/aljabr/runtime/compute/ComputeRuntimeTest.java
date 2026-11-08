@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.runtime.compute;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,6 +25,7 @@ class ComputeRuntimeTest {
         }
 
         assertThrows(IllegalStateException.class, runtime::backend);
+        assertDoesNotThrow(runtime::close);
     }
 
     @Test
