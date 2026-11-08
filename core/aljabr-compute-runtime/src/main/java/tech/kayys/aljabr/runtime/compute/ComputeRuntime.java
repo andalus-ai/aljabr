@@ -13,6 +13,7 @@ import tech.kayys.aljabr.spi.compute.ProviderSession;
 import tech.kayys.aljabr.spi.provider.AljabrProvider;
 import tech.kayys.aljabr.spi.provider.DeviceDescriptor;
 import tech.kayys.aljabr.spi.provider.DeviceKind;
+import tech.kayys.aljabr.spi.provider.ApiCompatibilityRange;
 import tech.kayys.aljabr.spi.provider.ProviderContext;
 import tech.kayys.aljabr.spi.provider.ProviderDiscovery;
 import tech.kayys.aljabr.spi.provider.ProviderDiscoveryResult;
@@ -86,8 +87,19 @@ public final class ComputeRuntime implements AutoCloseable {
                 if (!(provider instanceof ComputeProvider computeProvider)) {
                     continue;
                 }
-                String id = provider.descriptor().id();
+                var descriptor = provider.descriptor();
+                String id = descriptor.id();
                 if (!"auto".equals(requested) && !requested.equals(id)) {
+                    continue;
+                }
+                if (!ApiCompatibilityRange.parse(descriptor.apiCompatibility()).includes(ALJABR_VERSION)) {
+                    String message = "provider API range " + descriptor.apiCompatibility()
+                            + " does not include Aljabr " + ALJABR_VERSION;
+                    failures.add(id + ": " + message);
+                    if (!"auto".equals(requested)) {
+                        throw new IllegalStateException(
+                                "Requested compute provider '" + requested + "' is incompatible: " + message);
+                    }
                     continue;
                 }
                 try {
