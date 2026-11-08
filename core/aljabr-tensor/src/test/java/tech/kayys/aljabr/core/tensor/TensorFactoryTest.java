@@ -44,8 +44,9 @@ class TensorFactoryTest {
                 ComputeBackend.class.getClassLoader(),
                 new Class<?>[] { ComputeBackend.class },
                 (proxy, method, args) -> {
-                    if (method.getName().equals("allocate")) {
+                    if (method.getName().equals("allocateStorage")) {
                         allocatedBytes.set((long) args[0]);
+                        return delegate.allocate((long) args[0]);
                     }
                     if (method.getName().equals("deviceType")) {
                         deviceIdentityRequested.set(true);
