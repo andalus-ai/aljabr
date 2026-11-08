@@ -176,6 +176,11 @@ public final class KVCache {
         for (float[] layer : v) java.util.Arrays.fill(layer, 0f);
     }
 
+    /** Reset the sequence pointer without zeroing out the underlying arrays. */
+    public void resetFast() {
+        this.seqLen = 0;
+    }
+
     /**
      * Copies sequence positions 0 to numTokens from another cache into this cache.
      *
