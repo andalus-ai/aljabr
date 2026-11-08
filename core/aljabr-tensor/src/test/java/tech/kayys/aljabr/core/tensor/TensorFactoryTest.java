@@ -37,12 +37,17 @@ class TensorFactoryTest {
             throw new AssertionError("CPU test backend is unavailable", e);
         }
         AtomicLong allocatedBytes = new AtomicLong(-1);
+        java.util.concurrent.atomic.AtomicBoolean deviceIdentityRequested = new java.util.concurrent.atomic.AtomicBoolean();
         ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
                 ComputeBackend.class.getClassLoader(),
                 new Class<?>[] { ComputeBackend.class },
                 (proxy, method, args) -> {
                     if (method.getName().equals("allocate")) {
                         allocatedBytes.set((long) args[0]);
+                    }
+                    if (method.getName().equals("deviceType")) {
+                        deviceIdentityRequested.set(true);
+                        return DeviceType.METAL;
                     }
                     try {
                         return method.invoke(delegate, args);
@@ -54,7 +59,8 @@ class TensorFactoryTest {
         Tensor tensor = TensorFactory.zeros(backend, 2, 3);
         try {
             assertEquals(24L, allocatedBytes.get());
-            assertEquals(DeviceType.CPU, tensor.device());
+            assertEquals(DeviceType.METAL, tensor.device());
+            assertTrue(deviceIdentityRequested.get());
             assertSame(backend, tensor.backend());
             assertEquals(24L, ((DefaultTensor) tensor).buffer().sizeBytes());
         } finally {
