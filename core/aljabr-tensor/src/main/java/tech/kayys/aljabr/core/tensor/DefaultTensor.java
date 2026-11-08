@@ -6,7 +6,7 @@ import tech.kayys.aljabr.core.memory.TensorStorage;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 
 /**
- * Default concrete tensor backed by a {@link Buffer}.
+ * Default concrete tensor backed by backend-neutral {@link tech.kayys.aljabr.core.memory.TensorStorage}.
  *
  * @author bhangun
  * @since 0.1.0
