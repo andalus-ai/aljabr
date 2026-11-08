@@ -1085,6 +1085,8 @@ int aljabr_metal_matvec_tb_bf16_triple_mixed(void *C0, void *C1, void *C2,
  * justifies widening that range.
  */
 static const uint32_t kMaxValidatedB4BatchSize = 32;
+static const uint32_t kMaxCorrectnessValidatedQ4KB4BatchSize = 15;
+static const uint32_t kMaxForcedQ4KB4BatchSize = 32;
 
 static size_t calc_matvec_weight_bytes(int type, uint32_t N, uint32_t K) {
   if (type == 12)
@@ -1122,11 +1124,6 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
   BOOL is_mr4 = NO;
   BOOL is_b4 = NO;
   if (type == 12) { // Q4_K
-    // The explicit B4 mode is restricted to the opt-in benchmark hook and
-    // may probe up to the hook's hard batch limit. Production AUTO dispatch
-    // remains capped at the independently correctness-validated size.
-    static const uint32_t kMaxCorrectnessValidatedQ4KB4BatchSize = 15;
-    static const uint32_t kMaxForcedQ4KB4BatchSize = 32;
     if (dispatchMode == ALJABR_Q4K_DISPATCH_B4) {
       if (batchSize <= 1 || batchSize > kMaxForcedQ4KB4BatchSize ||
           pipelines->matvec_tb_q4_k_b4_mr4 == nil)
@@ -1502,12 +1499,15 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
     uint32_t kk = (uint32_t)K;
     uint32_t batch32 = (uint32_t)batchSize;
 
-    BOOL encoded0 = encode_matvec_sub(enc, pipelines, bufC0, bufA, B0, kk,
-                                      (uint32_t)N0, type0, batch32);
-    BOOL encoded1 = encode_matvec_sub(enc, pipelines, bufC1, bufA, B1, kk,
-                                      (uint32_t)N1, type1, batch32);
-    BOOL encoded2 = encode_matvec_sub(enc, pipelines, bufC2, bufA, B2, kk,
-                                      (uint32_t)N2, type2, batch32);
+    BOOL use_b4 = (batch32 > 1 && batch32 <= kMaxCorrectnessValidatedQ4KB4BatchSize);
+    AljabrQ4KDispatchMode q4kMode = use_b4 ? ALJABR_Q4K_DISPATCH_B4 : ALJABR_Q4K_DISPATCH_AUTO;
+
+    BOOL encoded0 = encode_matvec_sub_with_mode(enc, pipelines, bufC0, bufA, B0, kk,
+                                                (uint32_t)N0, type0, batch32, q4kMode);
+    BOOL encoded1 = encode_matvec_sub_with_mode(enc, pipelines, bufC1, bufA, B1, kk,
+                                                (uint32_t)N1, type1, batch32, q4kMode);
+    BOOL encoded2 = encode_matvec_sub_with_mode(enc, pipelines, bufC2, bufA, B2, kk,
+                                                (uint32_t)N2, type2, batch32, q4kMode);
     if (!encoded0 || !encoded1 || !encoded2) {
       if (traceTriple)
         fprintf(stderr,

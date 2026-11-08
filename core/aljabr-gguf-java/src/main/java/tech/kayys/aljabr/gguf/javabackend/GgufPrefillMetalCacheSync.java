@@ -16,8 +16,10 @@ final class GgufPrefillMetalCacheSync {
             KVCache cache, int layers) {
         for (int layer = 0; layer < layers; layer++) {
             int sourceLayer = sourceLayer(layer, keyWeights[layer] != null, config.isSwaLayer(layer));
+            int stride = cache.headStride(sourceLayer);
+            int count = tokenCount * stride;
             if (!GgufMetalBridge.syncKVCache(layer, tokenCount,
-                    cache.kLayer(sourceLayer), cache.vLayer(sourceLayer))) {
+                    cache.kLayer(sourceLayer), cache.vLayer(sourceLayer), count)) {
                 return layer;
             }
         }

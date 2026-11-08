@@ -210,16 +210,7 @@ final class GgufPrefillPass {
         GgufKvCacheSequenceLifecycle.completePrefill(cache, T);
 
         // Prompt KV synchronization is a one-time handoff from the populated host cache.
-        if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
-            int failedLayer = GgufPrefillMetalCacheSync.sync(
-                    T, layerWeights.wK, cfg, cache, layers);
-            if (failedLayer >= 0) {
-                String reason = GgufDecodeEligibility.fullGpuDecodeKvCacheSyncFailureReason(failedLayer);
-                if (fallbackDisableHandler != null) {
-                    fallbackDisableHandler.accept(T, reason);
-                }
-            }
-        }
+        syncMetalCache(T, cache);
 
         // ── 4. Output: logits for last token ────────────────────────────────
         float[] xbFinal = new float[dim];
@@ -234,6 +225,19 @@ final class GgufPrefillPass {
             logPrefillLogits(T, xLast, xbFinal, logits);
         }
         return logits;
+    }
+
+    void syncMetalCache(int tokenCount, KVCache cache) {
+        if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
+            int failedLayer = GgufPrefillMetalCacheSync.sync(
+                    tokenCount, layerWeights.wK, cfg, cache, cfg.nLayers());
+            if (failedLayer >= 0) {
+                String reason = GgufDecodeEligibility.fullGpuDecodeKvCacheSyncFailureReason(failedLayer);
+                if (fallbackDisableHandler != null) {
+                    fallbackDisableHandler.accept(tokenCount, reason);
+                }
+            }
+        }
     }
 
     private static void logPrefillLogits(

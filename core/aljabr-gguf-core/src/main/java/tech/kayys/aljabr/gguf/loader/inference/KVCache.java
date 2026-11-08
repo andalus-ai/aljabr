@@ -175,4 +175,20 @@ public final class KVCache {
         for (float[] layer : k) java.util.Arrays.fill(layer, 0f);
         for (float[] layer : v) java.util.Arrays.fill(layer, 0f);
     }
+
+    /**
+     * Copies sequence positions 0 to numTokens from another cache into this cache.
+     *
+     * @param src source KVCache
+     * @param numTokens number of sequence positions to copy
+     */
+    public void copyFrom(KVCache src, int numTokens) {
+        int nLayers = k.length;
+        for (int l = 0; l < nLayers; l++) {
+            int count = numTokens * layerStride[l];
+            System.arraycopy(src.k[l], 0, this.k[l], 0, count);
+            System.arraycopy(src.v[l], 0, this.v[l], 0, count);
+        }
+        this.seqLen = numTokens;
+    }
 }

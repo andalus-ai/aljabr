@@ -223,6 +223,10 @@ final class GgufDecodeStep {
         return prefillPass.execute(tokenIds, cache);
     }
 
+    void syncMetalCache(int tokenCount, KVCache cache) {
+        prefillPass.syncMetalCache(tokenCount, cache);
+    }
+
     void disableMetalDecodeAfterRuntimeFallback(int pos, String reason) {
         metalDecodeState.disableBeforeCommit();
         System.err.printf(

@@ -1826,6 +1826,10 @@ public final class GgufMetalBridge {
     }
 
     public static boolean syncKVCache(int layer, int seqLen, float[] kData, float[] vData) {
+        return syncKVCache(layer, seqLen, kData, vData, kData != null ? kData.length : 0);
+    }
+
+    public static boolean syncKVCache(int layer, int seqLen, float[] kData, float[] vData, int elementCount) {
         if (!isDecodeStepAvailable() || SYNC_KV_CACHE_MH == null || kData == null || vData == null) {
             LOG.warning(String.format(
                     "[GgufMetalBridge] KV-cache sync unavailable for layer=%d seqLen=%d (decodeAvailable=%b, symbolBound=%b, kData=%b, vData=%b)",
@@ -1834,7 +1838,7 @@ public final class GgufMetalBridge {
             return false;
         }
         try (Arena arena = Arena.ofConfined()) {
-            int len = kData.length;
+            int len = Math.min(elementCount, kData.length);
             MemorySegment kSeg = arena.allocate((long) len * Float.BYTES);
             MemorySegment vSeg = arena.allocate((long) len * Float.BYTES);
             MemorySegment.copy(kData, 0, kSeg, ValueLayout.JAVA_FLOAT, 0, len);

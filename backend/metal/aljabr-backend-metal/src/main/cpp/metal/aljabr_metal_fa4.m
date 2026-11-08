@@ -39,6 +39,34 @@
 #import "aljabr_metal_cpu_fallback.h"
 #import "aljabr_metal_support.h"
 
+// ── FA4 Cached MPSGraph Structure ────────────────────────────────────────────
+
+API_AVAILABLE(macos(15.0))
+@interface AljabrCachedFA4Graph : NSObject
+@property (nonatomic, strong) MPSGraph *graph;
+@property (nonatomic, strong) MPSGraphTensor *qT_orig;
+@property (nonatomic, strong) MPSGraphTensor *kT_orig;
+@property (nonatomic, strong) MPSGraphTensor *vT_orig;
+@property (nonatomic, strong) MPSGraphTensor *mT;
+@property (nonatomic, strong) MPSGraphTensor *finalOut;
+@property (nonatomic, strong) id<MTLBuffer> maskBuf;
+@property (nonatomic, strong) MPSGraphTensorData *mData;
+@end
+
+@implementation AljabrCachedFA4Graph
+@end
+
+static NSMutableDictionary<NSString *, AljabrCachedFA4Graph *> *g_fa4_graph_cache = nil;
+static NSLock *g_fa4_graph_cache_lock = nil;
+
+static void ensure_fa4_cache_init(void) {
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    g_fa4_graph_cache = [[NSMutableDictionary alloc] init];
+    g_fa4_graph_cache_lock = [[NSLock alloc] init];
+  });
+}
+
 // ── Helper
 // ─────────────────────────────────────────────────────────────────────
 
@@ -240,8 +268,121 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
 
   if (@available(macOS 15.0, *)) {
     if (soft_cap <= 0.0f) {
-      // ── MPSGraph SDPA path (macOS 15+, M3+ optimised) ─────────────────────
+      // ── MPSGraph SDPA path (macOS 15+, M3+ optimised) with Graph Caching ───
       // Fused single-pass attention: no intermediate attention matrix on DRAM.
+      ensure_fa4_cache_init();
+      NSString *cacheKey = [NSString stringWithFormat:@"%d_%d_%d_%d_%d_%d_%.6f_%d",
+                            B, T, S, H, H_kv, D, scale, is_causal];
+
+      [g_fa4_graph_cache_lock lock];
+      AljabrCachedFA4Graph *cached = g_fa4_graph_cache[cacheKey];
+      if (cached == nil) {
+        cached = [[AljabrCachedFA4Graph alloc] init];
+        MPSGraph *graph = [MPSGraph new];
+        cached.graph = graph;
+
+        // Shape descriptors: [B, T, H, D]
+        NSArray<NSNumber *> *qShapeOrig = @[ @(B), @(T), @(H), @(D) ];
+        NSArray<NSNumber *> *kShapeOrig = @[ @(B), @(S), @(H_kv), @(D) ];
+        NSArray<NSNumber *> *mShape = @[ @(B), @1, @(T), @(S) ];
+
+        cached.qT_orig = [graph placeholderWithShape:qShapeOrig
+                                             dataType:dtype
+                                                 name:@"Q_orig"];
+        cached.kT_orig = [graph placeholderWithShape:kShapeOrig
+                                             dataType:dtype
+                                                 name:@"K_orig"];
+        cached.vT_orig = [graph placeholderWithShape:kShapeOrig
+                                             dataType:dtype
+                                                 name:@"V_orig"];
+
+        // Transpose [B, T, H, D] -> [B, H, T, D]
+        MPSGraphTensor *qT = [graph transposeTensor:cached.qT_orig
+                                          dimension:1
+                                      withDimension:2
+                                               name:@"Q"];
+        MPSGraphTensor *kT = [graph transposeTensor:cached.kT_orig
+                                          dimension:1
+                                      withDimension:2
+                                               name:@"K"];
+        MPSGraphTensor *vT = [graph transposeTensor:cached.vT_orig
+                                          dimension:1
+                                      withDimension:2
+                                               name:@"V"];
+
+        // Support GQA: broadcast K and V heads if H > H_kv
+        if (H > H_kv && (H % H_kv == 0)) {
+          int group = H / H_kv;
+          MPSGraphTensor *kT_exp = [graph expandDimsOfTensor:kT axis:2 name:nil];
+          MPSGraphTensor *kT_bc = [graph broadcastTensor:kT_exp
+                                                 toShape:@[ @(B), @(H_kv), @(group), @(S), @(D) ]
+                                                    name:nil];
+          kT = [graph reshapeTensor:kT_bc
+                          withShape:@[ @(B), @(H), @(S), @(D) ]
+                               name:@"K_gqa"];
+
+          MPSGraphTensor *vT_exp = [graph expandDimsOfTensor:vT axis:2 name:nil];
+          MPSGraphTensor *vT_bc = [graph broadcastTensor:vT_exp
+                                                 toShape:@[ @(B), @(H_kv), @(group), @(S), @(D) ]
+                                                    name:nil];
+          vT = [graph reshapeTensor:vT_bc
+                          withShape:@[ @(B), @(H), @(S), @(D) ]
+                               name:@"V_gqa"];
+        }
+
+        if (is_causal) {
+          cached.mT = [graph placeholderWithShape:mShape dataType:dtype name:@"MASK"];
+        }
+
+        MPSGraphTensor *attnOut =
+            is_causal ? [graph scaledDotProductAttentionWithQueryTensor:qT
+                                                              keyTensor:kT
+                                                            valueTensor:vT
+                                                             maskTensor:cached.mT
+                                                                  scale:scale
+                                                                   name:@"sdpa"]
+                      : [graph scaledDotProductAttentionWithQueryTensor:qT
+                                                              keyTensor:kT
+                                                            valueTensor:vT
+                                                                  scale:scale
+                                                                   name:@"sdpa"];
+
+        // Transpose [B, H, T, D] -> [B, T, H, D]
+        cached.finalOut = [graph transposeTensor:attnOut
+                                        dimension:1
+                                    withDimension:2
+                                             name:@"O_t"];
+
+        if (is_causal) {
+          size_t maskElems = (size_t)B * T * S;
+          float *maskData = (float *)calloc(maskElems, sizeof(float));
+          if (maskData) {
+            for (int b = 0; b < B; b++) {
+              for (int t = 0; t < T; t++) {
+                int limit = causal_limit_for_row(T, S, t);
+                for (int s = limit; s < S; s++) {
+                  size_t idx = ((size_t)b * T + t) * S + s;
+                  maskData[idx] = -1.0e9f;
+                }
+              }
+            }
+            cached.maskBuf = [g_device newBufferWithBytes:maskData
+                                                   length:maskElems * sizeof(float)
+                                                  options:MTLResourceStorageModeShared];
+            free(maskData);
+            if (cached.maskBuf) {
+              cached.mData = [[MPSGraphTensorData alloc] initWithMTLBuffer:cached.maskBuf
+                                                                     shape:mShape
+                                                                  dataType:dtype];
+            }
+          }
+        }
+        g_fa4_graph_cache[cacheKey] = cached;
+      }
+      [g_fa4_graph_cache_lock unlock];
+
+      if (profilePhases) clock_gettime(CLOCK_MONOTONIC, &phaseGraphBuilt);
+
       size_t qBytes = (size_t)B * T * H * D * elemBytes;
       size_t kBytes = (size_t)B * S * H_kv * D * elemBytes;
       size_t oBytes = (size_t)B * T * H * D * elemBytes;
@@ -251,83 +392,9 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
       id<MTLBuffer> vBuf = wrap_ptr_fa4((void *)value, kBytes);
       id<MTLBuffer> oBuf = wrap_ptr_fa4((void *)output, oBytes);
 
-      MPSGraph *graph = [MPSGraph new];
-
-      // Shape descriptors: [B, T, H, D]
       NSArray<NSNumber *> *qShapeOrig = @[ @(B), @(T), @(H), @(D) ];
       NSArray<NSNumber *> *kShapeOrig = @[ @(B), @(S), @(H_kv), @(D) ];
-      NSArray<NSNumber *> *mShape = @[ @(B), @1, @(T), @(S) ];
 
-      MPSGraphTensor *qT_orig = [graph placeholderWithShape:qShapeOrig
-                                                   dataType:dtype
-                                                       name:@"Q_orig"];
-      MPSGraphTensor *kT_orig = [graph placeholderWithShape:kShapeOrig
-                                                   dataType:dtype
-                                                       name:@"K_orig"];
-      MPSGraphTensor *vT_orig = [graph placeholderWithShape:kShapeOrig
-                                                   dataType:dtype
-                                                       name:@"V_orig"];
-
-      // Transpose [B, T, H, D] -> [B, H, T, D]
-      MPSGraphTensor *qT = [graph transposeTensor:qT_orig
-                                        dimension:1
-                                    withDimension:2
-                                             name:@"Q"];
-      MPSGraphTensor *kT = [graph transposeTensor:kT_orig
-                                        dimension:1
-                                    withDimension:2
-                                             name:@"K"];
-      MPSGraphTensor *vT = [graph transposeTensor:vT_orig
-                                        dimension:1
-                                    withDimension:2
-                                             name:@"V"];
-
-      // Support GQA: broadcast K and V heads if H > H_kv
-      if (H > H_kv && (H % H_kv == 0)) {
-        int group = H / H_kv;
-        MPSGraphTensor *kT_exp = [graph expandDimsOfTensor:kT axis:2 name:nil];
-        MPSGraphTensor *kT_bc = [graph broadcastTensor:kT_exp
-                                               toShape:@[ @(B), @(H_kv), @(group), @(S), @(D) ]
-                                                  name:nil];
-        kT = [graph reshapeTensor:kT_bc
-                        withShape:@[ @(B), @(H), @(S), @(D) ]
-                             name:@"K_gqa"];
-
-        MPSGraphTensor *vT_exp = [graph expandDimsOfTensor:vT axis:2 name:nil];
-        MPSGraphTensor *vT_bc = [graph broadcastTensor:vT_exp
-                                               toShape:@[ @(B), @(H_kv), @(group), @(S), @(D) ]
-                                                  name:nil];
-        vT = [graph reshapeTensor:vT_bc
-                        withShape:@[ @(B), @(H), @(S), @(D) ]
-                             name:@"V_gqa"];
-      }
-
-      MPSGraphTensor *mT = nil;
-      if (is_causal) {
-        mT = [graph placeholderWithShape:mShape dataType:dtype name:@"MASK"];
-      }
-
-      MPSGraphTensor *attnOut =
-          is_causal ? [graph scaledDotProductAttentionWithQueryTensor:qT
-                                                            keyTensor:kT
-                                                          valueTensor:vT
-                                                           maskTensor:mT
-                                                                scale:scale
-                                                                 name:@"sdpa"]
-                    : [graph scaledDotProductAttentionWithQueryTensor:qT
-                                                            keyTensor:kT
-                                                          valueTensor:vT
-                                                                scale:scale
-                                                                 name:@"sdpa"];
-
-      // Transpose [B, H, T, D] -> [B, T, H, D]
-      MPSGraphTensor *finalOut = [graph transposeTensor:attnOut
-                                              dimension:1
-                                          withDimension:2
-                                                   name:@"O_t"];
-      if (profilePhases) clock_gettime(CLOCK_MONOTONIC, &phaseGraphBuilt);
-
-      // Feed data
       MPSGraphTensorData *qData =
           [[MPSGraphTensorData alloc] initWithMTLBuffer:qBuf
                                                   shape:qShapeOrig
@@ -345,45 +412,21 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
                                                   shape:qShapeOrig
                                                dataType:dtype];
 
-      id<MTLBuffer> mBuf = nil;
-      MPSGraphTensorData *mData = nil;
-      float *maskData = NULL;
-      if (is_causal) {
-        size_t maskElems = (size_t)B * T * S;
-        maskData = (float *)calloc(maskElems, sizeof(float));
-        if (!maskData) {
-          return -1;
-        }
-        for (int b = 0; b < B; b++) {
-          for (int t = 0; t < T; t++) {
-            int limit = causal_limit_for_row(T, S, t);
-            for (int s = limit; s < S; s++) {
-              size_t idx = ((size_t)b * T + t) * S + s;
-              maskData[idx] = -1.0e9f;
-            }
-          }
-        }
-        mBuf = wrap_ptr_fa4(maskData, maskElems * sizeof(float));
-        mData = [[MPSGraphTensorData alloc] initWithMTLBuffer:mBuf
-                                                        shape:mShape
-                                                     dataType:dtype];
-      }
-
       NSMutableDictionary<MPSGraphTensor *, MPSGraphTensorData *> *feeds =
-          [@{qT_orig : qData, kT_orig : kData, vT_orig : vData} mutableCopy];
-      if (mData != nil && mT != nil) {
-        feeds[mT] = mData;
+          [@{cached.qT_orig : qData, cached.kT_orig : kData, cached.vT_orig : vData} mutableCopy];
+      if (cached.mData != nil && cached.mT != nil) {
+        feeds[cached.mT] = cached.mData;
       }
       NSDictionary<MPSGraphTensor *, MPSGraphTensorData *> *results =
-          @{finalOut : oData};
+          @{cached.finalOut : oData};
 
       MPSCommandBuffer *cmdBuf =
           [MPSCommandBuffer commandBufferFromCommandQueue:g_queue];
-      [graph encodeToCommandBuffer:cmdBuf
-                             feeds:feeds
-                  targetOperations:nil
-                 resultsDictionary:results
-               executionDescriptor:nil];
+      [cached.graph encodeToCommandBuffer:cmdBuf
+                                    feeds:feeds
+                         targetOperations:nil
+                        resultsDictionary:results
+                      executionDescriptor:nil];
       if (profilePhases) clock_gettime(CLOCK_MONOTONIC, &phaseEncoded);
       [cmdBuf commit];
       [cmdBuf waitUntilCompleted];
@@ -401,12 +444,8 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
 
       if ([cmdBuf status] == MTLCommandBufferStatusError) {
         NSLog(@"[AljabrMetal FA4] SDPA error: %@", [cmdBuf error]);
-        if (maskData)
-          free(maskData);
         return -1;
       }
-      if (maskData)
-        free(maskData);
       return 0;
     }
   }

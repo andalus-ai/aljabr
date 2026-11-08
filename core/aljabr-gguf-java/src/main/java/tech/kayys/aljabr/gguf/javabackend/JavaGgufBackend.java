@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -62,6 +63,31 @@ final class JavaGgufBackend implements GgufBackend {
     private final GgufModelConfig cfg;
     private final GgufDecodeStep decodeStep;
     private final GGUFTokenizer tokenizer;
+
+    private static final class PromptCacheEntry {
+        final int[] tokens;
+        final float[][] k;
+        final float[][] v;
+        final float[] logits;
+
+        PromptCacheEntry(int[] tokens, float[][] k, float[][] v, float[] logits) {
+            this.tokens = tokens;
+            this.k = k;
+            this.v = v;
+            this.logits = logits;
+        }
+    }
+
+    private final Object promptCacheLock = new Object();
+    private PromptCacheEntry cachedPrompt = null;
+
+    private KVCache createKVCache() {
+        if (cfg.nKVHeadsPerLayer() != null && cfg.headDimPerLayer() != null) {
+            return new KVCache(cfg.nLayers(), cfg.contextLength(), cfg.nKVHeadsPerLayer(), cfg.headDimPerLayer());
+        } else {
+            return new KVCache(cfg.nLayers(), cfg.contextLength(), cfg.nKVHeads(), cfg.headDim());
+        }
+    }
 
     JavaGgufBackend(Path modelPath) throws Exception {
         long startNanos = System.nanoTime();
@@ -144,11 +170,6 @@ final class JavaGgufBackend implements GgufBackend {
 
             long startNanos = System.nanoTime();
             KVCache cache;
-            if (cfg.nKVHeadsPerLayer() != null && cfg.headDimPerLayer() != null) {
-                cache = new KVCache(cfg.nLayers(), cfg.contextLength(), cfg.nKVHeadsPerLayer(), cfg.headDimPerLayer());
-            } else {
-                cache = new KVCache(cfg.nLayers(), cfg.contextLength(), cfg.nKVHeads(), cfg.headDim());
-            }
             Sampler sampler = new Sampler(
                     sampling.temperature(), sampling.topK(), sampling.topP(), sampling.repeatPenalty());
 
@@ -168,17 +189,64 @@ final class JavaGgufBackend implements GgufBackend {
                     tokenIds[pIdx] = (int) promptTokens[pIdx];
                     history.add((int) promptTokens[pIdx]);
                 }
-                logits = decodeStep.prefill(tokenIds, cache);
-                pos = promptTokens.length;
-                prefillMs = Math.max(1, System.currentTimeMillis() - t0);
-                if (isVerbose()) {
-                    System.err.printf("[java-engine] Prompt prefill: %d tokens in %d ms (%.1f tok/s)%n",
-                            promptTokens.length, prefillMs, (promptTokens.length * 1000.0) / prefillMs);
-                    DecodeOptions dbgOpts = DecodeOptions.builder().build();
-                    for (int pIdx = 0; pIdx < tokenIds.length; pIdx++) {
-                        System.err.printf("  [PROMPT tok %d] %d -> '%s'%n", pIdx, tokenIds[pIdx], tokenizer.decode(new long[]{tokenIds[pIdx]}, dbgOpts));
+
+                PromptCacheEntry hit = null;
+                synchronized (promptCacheLock) {
+                    if (cachedPrompt != null && Arrays.equals(cachedPrompt.tokens, tokenIds)) {
+                        hit = cachedPrompt;
                     }
                 }
+
+                if (hit != null) {
+                    cache = createKVCache();
+                    for (int l = 0; l < cfg.nLayers(); l++) {
+                        int count = tokenIds.length * cache.headStride(l);
+                        System.arraycopy(hit.k[l], 0, cache.kLayer(l), 0, count);
+                        System.arraycopy(hit.v[l], 0, cache.vLayer(l), 0, count);
+                    }
+                    cache.advance(tokenIds.length);
+                    decodeStep.syncMetalCache(tokenIds.length, cache);
+                    logits = hit.logits.clone();
+                    pos = tokenIds.length;
+                    prefillMs = Math.max(1, System.currentTimeMillis() - t0);
+                    if (isVerbose()) {
+                        System.err.printf("[java-engine] Prompt prefix cache HIT: %d tokens restored in %d ms%n",
+                                tokenIds.length, prefillMs);
+                    }
+                } else {
+                    cache = createKVCache();
+                    logits = decodeStep.prefill(tokenIds, cache);
+                    pos = tokenIds.length;
+                    prefillMs = Math.max(1, System.currentTimeMillis() - t0);
+
+                    try {
+                        int nLayers = cfg.nLayers();
+                        float[][] snapK = new float[nLayers][];
+                        float[][] snapV = new float[nLayers][];
+                        for (int l = 0; l < nLayers; l++) {
+                            int count = tokenIds.length * cache.headStride(l);
+                            snapK[l] = new float[count];
+                            snapV[l] = new float[count];
+                            System.arraycopy(cache.kLayer(l), 0, snapK[l], 0, count);
+                            System.arraycopy(cache.vLayer(l), 0, snapV[l], 0, count);
+                        }
+                        synchronized (promptCacheLock) {
+                            cachedPrompt = new PromptCacheEntry(tokenIds.clone(), snapK, snapV, logits.clone());
+                        }
+                    } catch (Throwable ignored) {
+                    }
+
+                    if (isVerbose()) {
+                        System.err.printf("[java-engine] Prompt prefill: %d tokens in %d ms (%.1f tok/s)%n",
+                                promptTokens.length, prefillMs, (promptTokens.length * 1000.0) / prefillMs);
+                        DecodeOptions dbgOpts = DecodeOptions.builder().build();
+                        for (int pIdx = 0; pIdx < tokenIds.length; pIdx++) {
+                            System.err.printf("  [PROMPT tok %d] %d -> '%s'%n", pIdx, tokenIds[pIdx], tokenizer.decode(new long[]{tokenIds[pIdx]}, dbgOpts));
+                        }
+                    }
+                }
+            } else {
+                cache = createKVCache();
             }
 
             InferenceResponse.FinishReason finishReason = InferenceResponse.FinishReason.LENGTH;
