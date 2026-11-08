@@ -3,7 +3,6 @@ package tech.kayys.aljabr.core.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
-import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import java.lang.reflect.Proxy;
 import java.util.concurrent.atomic.AtomicLong;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
@@ -30,7 +29,13 @@ class TensorFactoryTest {
 
     @Test
     void explicitBackendOwnsTensorAllocationAndDeviceIdentity() {
-        CpuBackend delegate = new CpuBackend();
+        ComputeBackend delegate;
+        try {
+            delegate = (ComputeBackend) Class.forName("tech.kayys.aljabr.backend.cpu.CpuBackend")
+                    .getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("CPU test backend is unavailable", e);
+        }
         AtomicLong allocatedBytes = new AtomicLong(-1);
         ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
                 ComputeBackend.class.getClassLoader(),
