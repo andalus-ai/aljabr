@@ -177,8 +177,9 @@ int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B, int K,
             halfC != NULL ? wrap_ptr(halfC, (size_t)N * sizeof(uint16_t)) : nil;
         id<MTLBuffer> bufA =
             halfA != NULL ? wrap_ptr(halfA, (size_t)K * sizeof(uint16_t)) : nil;
+        size_t bOff = 0;
         id<MTLBuffer> bufB =
-            wrap_weight_ptr(B, (size_t)N * K * sizeof(uint16_t));
+            wrap_weight_ptr_offset(B, (size_t)N * K * sizeof(uint16_t), &bOff);
         if (bufC != nil && bufA != nil && bufB != nil) {
           @try {
             MPSMatrixDescriptor *descB = cached_matrix_descriptor(
@@ -188,6 +189,7 @@ int aljabr_metal_matvec_tb_half(void *C, const void *A, const void *B, int K,
             MPSVectorDescriptor *descC =
                 cached_vector_descriptor(N, MPSDataTypeFloat16);
             MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB
+                                                         offset:bOff
                                                      descriptor:descB];
             MPSVector *vecA = [[MPSVector alloc] initWithBuffer:bufA
                                                      descriptor:descA];
@@ -684,8 +686,9 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B, int K,
           id<MTLBuffer> bufA =
               bf16A != NULL ? wrap_ptr(bf16A, (size_t)K * sizeof(uint16_t))
                             : nil;
+          size_t bOff = 0;
           id<MTLBuffer> bufB =
-              wrap_weight_ptr(B, (size_t)N * K * sizeof(uint16_t));
+              wrap_weight_ptr_offset(B, (size_t)N * K * sizeof(uint16_t), &bOff);
           if (bufC != nil && bufA != nil && bufB != nil) {
             @try {
               MPSMatrixDescriptor *descB = cached_matrix_descriptor(
@@ -695,6 +698,7 @@ int aljabr_metal_matvec_tb_bf16(void *C, const void *A, const void *B, int K,
               MPSVectorDescriptor *descC =
                   cached_vector_descriptor(N, bf16Type);
               MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB
+                                                           offset:bOff
                                                        descriptor:descB];
               MPSVector *vecA = [[MPSVector alloc] initWithBuffer:bufA
                                                        descriptor:descA];
@@ -1110,8 +1114,9 @@ static BOOL encode_matvec_buf_with_mode(id<MTLComputeCommandEncoder> enc,
   if (dispatchMode < ALJABR_Q4K_DISPATCH_AUTO ||
       dispatchMode > ALJABR_Q4K_DISPATCH_MR4)
     return NO;
-  if (dispatchMode != ALJABR_Q4K_DISPATCH_AUTO && type != 12)
-    return NO;
+  if (type != 12) {
+    dispatchMode = ALJABR_Q4K_DISPATCH_AUTO;
+  }
   id<MTLComputePipelineState> p = nil;
   BOOL is_mr8 = NO;
   BOOL is_mr4 = NO;

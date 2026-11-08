@@ -282,6 +282,26 @@ int aljabr_metal_fa4_attention(void *output, const void *query,
                                     withDimension:2
                                              name:@"V"];
 
+      // Support GQA: broadcast K and V heads if H > H_kv
+      if (H > H_kv && (H % H_kv == 0)) {
+        int group = H / H_kv;
+        MPSGraphTensor *kT_exp = [graph expandDimsOfTensor:kT axis:2 name:nil];
+        MPSGraphTensor *kT_bc = [graph broadcastTensor:kT_exp
+                                               toShape:@[ @(B), @(H_kv), @(group), @(S), @(D) ]
+                                                  name:nil];
+        kT = [graph reshapeTensor:kT_bc
+                        withShape:@[ @(B), @(H), @(S), @(D) ]
+                             name:@"K_gqa"];
+
+        MPSGraphTensor *vT_exp = [graph expandDimsOfTensor:vT axis:2 name:nil];
+        MPSGraphTensor *vT_bc = [graph broadcastTensor:vT_exp
+                                               toShape:@[ @(B), @(H_kv), @(group), @(S), @(D) ]
+                                                  name:nil];
+        vT = [graph reshapeTensor:vT_bc
+                        withShape:@[ @(B), @(H), @(S), @(D) ]
+                             name:@"V_gqa"];
+      }
+
       MPSGraphTensor *mT = nil;
       if (is_causal) {
         mT = [graph placeholderWithShape:mShape dataType:dtype name:@"MASK"];

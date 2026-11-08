@@ -52,12 +52,13 @@ static int aljabr_metal_gated_ffn_half_impl(
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)M * output_dim * sizeof(float));
     id<MTLBuffer> bufA =
         wrap_ptr((void *)A, (size_t)M * input_dim * sizeof(float));
-    id<MTLBuffer> bufGateW = wrap_weight_ptr(
-        gateW, (size_t)intermediate_dim * input_dim * b_elem_size);
-    id<MTLBuffer> bufUpW = wrap_weight_ptr(upW, (size_t)intermediate_dim *
-                                                    input_dim * b_elem_size);
-    id<MTLBuffer> bufDownW = wrap_weight_ptr(
-        downW, (size_t)output_dim * intermediate_dim * b_elem_size);
+    size_t gateWOff = 0, upWOff = 0, downWOff = 0;
+    id<MTLBuffer> bufGateW = wrap_weight_ptr_offset(
+        gateW, (size_t)intermediate_dim * input_dim * b_elem_size, &gateWOff);
+    id<MTLBuffer> bufUpW = wrap_weight_ptr_offset(
+        upW, (size_t)intermediate_dim * input_dim * b_elem_size, &upWOff);
+    id<MTLBuffer> bufDownW = wrap_weight_ptr_offset(
+        downW, (size_t)output_dim * intermediate_dim * b_elem_size, &downWOff);
     id<MTLBuffer> bufGate = nil;
     id<MTLBuffer> bufUp = nil;
     id<MTLBuffer> bufCombined = nil;
@@ -87,9 +88,11 @@ static int aljabr_metal_gated_ffn_half_impl(
     MPSMatrix *matA = [[MPSMatrix alloc] initWithBuffer:bufA
                                              descriptor:descInput];
     MPSMatrix *matGateW = [[MPSMatrix alloc] initWithBuffer:bufGateW
-                                                 descriptor:descGateWeight];
+                                                 offset:gateWOff
+                                             descriptor:descGateWeight];
     MPSMatrix *matUpW = [[MPSMatrix alloc] initWithBuffer:bufUpW
-                                               descriptor:descGateWeight];
+                                               offset:upWOff
+                                           descriptor:descGateWeight];
     MPSMatrix *matGate = [[MPSMatrix alloc] initWithBuffer:bufGate
                                                 descriptor:descActivation];
     MPSMatrix *matUp = [[MPSMatrix alloc] initWithBuffer:bufUp
@@ -97,7 +100,8 @@ static int aljabr_metal_gated_ffn_half_impl(
     MPSMatrix *matCombined = [[MPSMatrix alloc] initWithBuffer:bufCombined
                                                     descriptor:descActivation];
     MPSMatrix *matDownW = [[MPSMatrix alloc] initWithBuffer:bufDownW
-                                                 descriptor:descDownWeight];
+                                                 offset:downWOff
+                                             descriptor:descDownWeight];
     MPSMatrix *matC = [[MPSMatrix alloc] initWithBuffer:bufC
                                              descriptor:descOutput];
 
@@ -256,12 +260,13 @@ static int aljabr_metal_gated_ffn_matvec_half_impl(
 
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)output_dim * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)input_dim * sizeof(float));
-    id<MTLBuffer> bufGateW = wrap_weight_ptr(
-        gateW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t));
-    id<MTLBuffer> bufUpW = wrap_weight_ptr(
-        upW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t));
-    id<MTLBuffer> bufDownW = wrap_weight_ptr(
-        downW, (size_t)output_dim * intermediate_dim * sizeof(uint16_t));
+    size_t gateWOff = 0, upWOff = 0, downWOff = 0;
+    id<MTLBuffer> bufGateW = wrap_weight_ptr_offset(
+        gateW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t), &gateWOff);
+    id<MTLBuffer> bufUpW = wrap_weight_ptr_offset(
+        upW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t), &upWOff);
+    id<MTLBuffer> bufDownW = wrap_weight_ptr_offset(
+        downW, (size_t)output_dim * intermediate_dim * sizeof(uint16_t), &downWOff);
     if (bufC == nil || bufA == nil || bufGateW == nil || bufUpW == nil ||
         bufDownW == nil || bufGate == nil || bufUp == nil ||
         bufCombined == nil) {
@@ -301,8 +306,8 @@ static int aljabr_metal_gated_ffn_matvec_half_impl(
     if (useFusedGateProjection) {
       [pairEnc setBuffer:bufCombined offset:0 atIndex:0];
       [pairEnc setBuffer:bufA offset:0 atIndex:1];
-      [pairEnc setBuffer:bufGateW offset:0 atIndex:2];
-      [pairEnc setBuffer:bufUpW offset:0 atIndex:3];
+      [pairEnc setBuffer:bufGateW offset:gateWOff atIndex:2];
+      [pairEnc setBuffer:bufUpW offset:upWOff atIndex:3];
       [pairEnc setBytes:&inputK length:sizeof(inputK) atIndex:4];
       [pairEnc setBytes:&interN length:sizeof(interN) atIndex:5];
       [pairEnc setBytes:&activationKind
@@ -312,8 +317,8 @@ static int aljabr_metal_gated_ffn_matvec_half_impl(
       [pairEnc setBuffer:bufGate offset:0 atIndex:0];
       [pairEnc setBuffer:bufUp offset:0 atIndex:1];
       [pairEnc setBuffer:bufA offset:0 atIndex:2];
-      [pairEnc setBuffer:bufGateW offset:0 atIndex:3];
-      [pairEnc setBuffer:bufUpW offset:0 atIndex:4];
+      [pairEnc setBuffer:bufGateW offset:gateWOff atIndex:3];
+      [pairEnc setBuffer:bufUpW offset:upWOff atIndex:4];
       [pairEnc setBytes:&inputK length:sizeof(inputK) atIndex:5];
       [pairEnc setBytes:&interN length:sizeof(interN) atIndex:6];
     }
@@ -346,7 +351,7 @@ static int aljabr_metal_gated_ffn_matvec_half_impl(
     [downEnc setComputePipelineState:downPipeline];
     [downEnc setBuffer:bufC offset:0 atIndex:0];
     [downEnc setBuffer:bufCombined offset:0 atIndex:1];
-    [downEnc setBuffer:bufDownW offset:0 atIndex:2];
+    [downEnc setBuffer:bufDownW offset:downWOff atIndex:2];
     [downEnc setBytes:&interN length:sizeof(interN) atIndex:3];
     [downEnc setBytes:&outputN length:sizeof(outputN) atIndex:4];
     NSUInteger downGroups = useBf16DownX4 ? (((NSUInteger)output_dim + 3u) / 4u)
@@ -398,12 +403,13 @@ static int aljabr_metal_gated_ffn_matvec_rows_bf16_impl(
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)M * output_dim * sizeof(float));
     id<MTLBuffer> bufA =
         wrap_ptr((void *)A, (size_t)M * input_dim * sizeof(float));
-    id<MTLBuffer> bufGateW = wrap_weight_ptr(
-        gateW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t));
-    id<MTLBuffer> bufUpW = wrap_weight_ptr(
-        upW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t));
-    id<MTLBuffer> bufDownW = wrap_weight_ptr(
-        downW, (size_t)output_dim * intermediate_dim * sizeof(uint16_t));
+    size_t gateWOff = 0, upWOff = 0, downWOff = 0;
+    id<MTLBuffer> bufGateW = wrap_weight_ptr_offset(
+        gateW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t), &gateWOff);
+    id<MTLBuffer> bufUpW = wrap_weight_ptr_offset(
+        upW, (size_t)intermediate_dim * input_dim * sizeof(uint16_t), &upWOff);
+    id<MTLBuffer> bufDownW = wrap_weight_ptr_offset(
+        downW, (size_t)output_dim * intermediate_dim * sizeof(uint16_t), &downWOff);
     if (bufC == nil || bufA == nil || bufGateW == nil || bufUpW == nil ||
         bufDownW == nil || bufCombined == nil) {
       return -4;
@@ -422,8 +428,8 @@ static int aljabr_metal_gated_ffn_matvec_rows_bf16_impl(
     [pairEnc setComputePipelineState:pairPipeline];
     [pairEnc setBuffer:bufCombined offset:0 atIndex:0];
     [pairEnc setBuffer:bufA offset:0 atIndex:1];
-    [pairEnc setBuffer:bufGateW offset:0 atIndex:2];
-    [pairEnc setBuffer:bufUpW offset:0 atIndex:3];
+    [pairEnc setBuffer:bufGateW offset:gateWOff atIndex:2];
+    [pairEnc setBuffer:bufUpW offset:upWOff atIndex:3];
     [pairEnc setBytes:&inputK length:sizeof(inputK) atIndex:4];
     [pairEnc setBytes:&interN length:sizeof(interN) atIndex:5];
     [pairEnc setBytes:&activationKind length:sizeof(activationKind) atIndex:6];
@@ -439,7 +445,7 @@ static int aljabr_metal_gated_ffn_matvec_rows_bf16_impl(
     [downEnc setComputePipelineState:downPipeline];
     [downEnc setBuffer:bufC offset:0 atIndex:0];
     [downEnc setBuffer:bufCombined offset:0 atIndex:1];
-    [downEnc setBuffer:bufDownW offset:0 atIndex:2];
+    [downEnc setBuffer:bufDownW offset:downWOff atIndex:2];
     [downEnc setBytes:&interN length:sizeof(interN) atIndex:3];
     [downEnc setBytes:&outputN length:sizeof(outputN) atIndex:4];
     [downEnc setBytes:&rows length:sizeof(rows) atIndex:5];

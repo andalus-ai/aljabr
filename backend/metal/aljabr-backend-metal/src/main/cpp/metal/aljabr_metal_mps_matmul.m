@@ -61,7 +61,8 @@ int aljabr_metal_matmul(void *C, const void *A, const void *B, int M,
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)M * N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)M * K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)K * N * sizeof(float));
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)K * N * sizeof(float), &bOff);
 
     MPSMatrixDescriptor *descA =
         cached_matrix_descriptor(M, K, K * sizeof(float), MPSDataTypeFloat32);
@@ -71,7 +72,7 @@ int aljabr_metal_matmul(void *C, const void *A, const void *B, int M,
         cached_matrix_descriptor(M, N, N * sizeof(float), MPSDataTypeFloat32);
 
     MPSMatrix *matA = [[MPSMatrix alloc] initWithBuffer:bufA descriptor:descA];
-    MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB descriptor:descB];
+    MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB offset:bOff descriptor:descB];
     MPSMatrix *matC = [[MPSMatrix alloc] initWithBuffer:bufC descriptor:descC];
 
     MPSMatrixMultiplication *mmul =
@@ -107,7 +108,8 @@ int aljabr_metal_matmul_tb(void *C, const void *A, const void *B, int M,
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)M * N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)M * K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K * sizeof(float));
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K * sizeof(float), &bOff);
 
     MPSMatrixDescriptor *descA =
         cached_matrix_descriptor(M, K, K * sizeof(float), MPSDataTypeFloat32);
@@ -117,7 +119,7 @@ int aljabr_metal_matmul_tb(void *C, const void *A, const void *B, int M,
         cached_matrix_descriptor(M, N, N * sizeof(float), MPSDataTypeFloat32);
 
     MPSMatrix *matA = [[MPSMatrix alloc] initWithBuffer:bufA descriptor:descA];
-    MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB descriptor:descB];
+    MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB offset:bOff descriptor:descB];
     MPSMatrix *matC = [[MPSMatrix alloc] initWithBuffer:bufC descriptor:descC];
 
     MPSMatrixMultiplication *mmul =
@@ -148,7 +150,8 @@ int aljabr_metal_matmul_tb_half(void *C, const void *A, const void *B,
 
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)M * N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)M * K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K * b_elem_size);
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K * b_elem_size, &bOff);
 
     MPSMatrixDescriptor *descA =
         cached_matrix_descriptor(M, K, K * sizeof(float), MPSDataTypeFloat32);
@@ -158,7 +161,7 @@ int aljabr_metal_matmul_tb_half(void *C, const void *A, const void *B,
         cached_matrix_descriptor(M, N, N * sizeof(float), MPSDataTypeFloat32);
 
     MPSMatrix *matA = [[MPSMatrix alloc] initWithBuffer:bufA descriptor:descA];
-    MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB descriptor:descB];
+    MPSMatrix *matB = [[MPSMatrix alloc] initWithBuffer:bufB offset:bOff descriptor:descB];
     MPSMatrix *matC = [[MPSMatrix alloc] initWithBuffer:bufC descriptor:descC];
 
     MPSMatrixMultiplication *mmul =
@@ -191,8 +194,9 @@ int aljabr_metal_matmul_tb_half_pair(void *C0, void *C1, const void *A,
     id<MTLBuffer> bufC0 = wrap_ptr(C0, (size_t)M * N * sizeof(float));
     id<MTLBuffer> bufC1 = wrap_ptr(C1, (size_t)M * N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)M * K * sizeof(float));
-    id<MTLBuffer> bufB0 = wrap_weight_ptr(B0, (size_t)N * K * b_elem_size);
-    id<MTLBuffer> bufB1 = wrap_weight_ptr(B1, (size_t)N * K * b_elem_size);
+    size_t b0Off = 0, b1Off = 0;
+    id<MTLBuffer> bufB0 = wrap_weight_ptr_offset(B0, (size_t)N * K * b_elem_size, &b0Off);
+    id<MTLBuffer> bufB1 = wrap_weight_ptr_offset(B1, (size_t)N * K * b_elem_size, &b1Off);
 
     MPSMatrixDescriptor *descA =
         cached_matrix_descriptor(M, K, K * sizeof(float), MPSDataTypeFloat32);
@@ -203,8 +207,10 @@ int aljabr_metal_matmul_tb_half_pair(void *C0, void *C1, const void *A,
 
     MPSMatrix *matA = [[MPSMatrix alloc] initWithBuffer:bufA descriptor:descA];
     MPSMatrix *matB0 = [[MPSMatrix alloc] initWithBuffer:bufB0
+                                                  offset:b0Off
                                               descriptor:descB];
     MPSMatrix *matB1 = [[MPSMatrix alloc] initWithBuffer:bufB1
+                                                  offset:b1Off
                                               descriptor:descB];
     MPSMatrix *matC0 = [[MPSMatrix alloc] initWithBuffer:bufC0
                                               descriptor:descC];
@@ -248,8 +254,9 @@ int aljabr_metal_matmul_tb_half_pair_mixed(void *C0, void *C1,
     id<MTLBuffer> bufC0 = wrap_ptr(C0, (size_t)M * N0 * sizeof(float));
     id<MTLBuffer> bufC1 = wrap_ptr(C1, (size_t)M * N1 * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)M * K * sizeof(float));
-    id<MTLBuffer> bufB0 = wrap_weight_ptr(B0, (size_t)N0 * K * b_elem_size);
-    id<MTLBuffer> bufB1 = wrap_weight_ptr(B1, (size_t)N1 * K * b_elem_size);
+    size_t b0Off = 0, b1Off = 0;
+    id<MTLBuffer> bufB0 = wrap_weight_ptr_offset(B0, (size_t)N0 * K * b_elem_size, &b0Off);
+    id<MTLBuffer> bufB1 = wrap_weight_ptr_offset(B1, (size_t)N1 * K * b_elem_size, &b1Off);
     if (bufC0 == nil || bufC1 == nil || bufA == nil || bufB0 == nil ||
         bufB1 == nil) {
       return -3;
@@ -268,8 +275,10 @@ int aljabr_metal_matmul_tb_half_pair_mixed(void *C0, void *C1,
 
     MPSMatrix *matA = [[MPSMatrix alloc] initWithBuffer:bufA descriptor:descA];
     MPSMatrix *matB0 = [[MPSMatrix alloc] initWithBuffer:bufB0
+                                                  offset:b0Off
                                               descriptor:descB0];
     MPSMatrix *matB1 = [[MPSMatrix alloc] initWithBuffer:bufB1
+                                                  offset:b1Off
                                               descriptor:descB1];
     MPSMatrix *matC0 = [[MPSMatrix alloc] initWithBuffer:bufC0
                                               descriptor:descC0];
@@ -316,9 +325,10 @@ int aljabr_metal_matmul_tb_half_triple_mixed(
     id<MTLBuffer> bufC1 = wrap_ptr(C1, (size_t)M * N1 * sizeof(float));
     id<MTLBuffer> bufC2 = wrap_ptr(C2, (size_t)M * N2 * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)M * K * sizeof(float));
-    id<MTLBuffer> bufB0 = wrap_weight_ptr(B0, (size_t)N0 * K * b_elem_size);
-    id<MTLBuffer> bufB1 = wrap_weight_ptr(B1, (size_t)N1 * K * b_elem_size);
-    id<MTLBuffer> bufB2 = wrap_weight_ptr(B2, (size_t)N2 * K * b_elem_size);
+    size_t b0Off = 0, b1Off = 0, b2Off = 0;
+    id<MTLBuffer> bufB0 = wrap_weight_ptr_offset(B0, (size_t)N0 * K * b_elem_size, &b0Off);
+    id<MTLBuffer> bufB1 = wrap_weight_ptr_offset(B1, (size_t)N1 * K * b_elem_size, &b1Off);
+    id<MTLBuffer> bufB2 = wrap_weight_ptr_offset(B2, (size_t)N2 * K * b_elem_size, &b2Off);
     if (bufC0 == nil || bufC1 == nil || bufC2 == nil || bufA == nil ||
         bufB0 == nil || bufB1 == nil || bufB2 == nil) {
       return -3;
@@ -341,10 +351,13 @@ int aljabr_metal_matmul_tb_half_triple_mixed(
 
     MPSMatrix *matA = [[MPSMatrix alloc] initWithBuffer:bufA descriptor:descA];
     MPSMatrix *matB0 = [[MPSMatrix alloc] initWithBuffer:bufB0
+                                                  offset:b0Off
                                               descriptor:descB0];
     MPSMatrix *matB1 = [[MPSMatrix alloc] initWithBuffer:bufB1
+                                                  offset:b1Off
                                               descriptor:descB1];
     MPSMatrix *matB2 = [[MPSMatrix alloc] initWithBuffer:bufB2
+                                                  offset:b2Off
                                               descriptor:descB2];
     MPSMatrix *matC0 = [[MPSMatrix alloc] initWithBuffer:bufC0
                                               descriptor:descC0];

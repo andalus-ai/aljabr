@@ -32,7 +32,8 @@ int aljabr_metal_dispatch_matvec_tb_half(
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K * sizeof(uint16_t));
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K * sizeof(uint16_t), &bOff);
     if (bufC == nil || bufA == nil || bufB == nil) {
       return -4;
     }
@@ -44,7 +45,7 @@ int aljabr_metal_dispatch_matvec_tb_half(
     [enc setComputePipelineState:pipeline];
     [enc setBuffer:bufC offset:0 atIndex:0];
     [enc setBuffer:bufA offset:0 atIndex:1];
-    [enc setBuffer:bufB offset:0 atIndex:2];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
     [enc setBytes:&kk length:sizeof(kk) atIndex:3];
     [enc setBytes:&nn length:sizeof(nn) atIndex:4];
 
@@ -75,9 +76,10 @@ int aljabr_metal_dispatch_matvec_tb_int4(
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)((N * K + 1) / 2));
+    size_t bOff = 0, scalesOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)((N * K + 1) / 2), &bOff);
     id<MTLBuffer> bufScales =
-        wrap_weight_ptr(scales, (size_t)((N * K / blockSize) * sizeof(float)));
+        wrap_weight_ptr_offset(scales, (size_t)((N * K / blockSize) * sizeof(float)), &scalesOff);
     if (bufC == nil || bufA == nil || bufB == nil || bufScales == nil) {
       return -4;
     }
@@ -90,8 +92,8 @@ int aljabr_metal_dispatch_matvec_tb_int4(
     [enc setComputePipelineState:pipeline];
     [enc setBuffer:bufC offset:0 atIndex:0];
     [enc setBuffer:bufA offset:0 atIndex:1];
-    [enc setBuffer:bufB offset:0 atIndex:2];
-    [enc setBuffer:bufScales offset:0 atIndex:3];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
+    [enc setBuffer:bufScales offset:scalesOff atIndex:3];
     [enc setBytes:&kk length:sizeof(kk) atIndex:4];
     [enc setBytes:&nn length:sizeof(nn) atIndex:5];
     [enc setBytes:&bs length:sizeof(bs) atIndex:6];
@@ -608,7 +610,8 @@ int aljabr_metal_dispatch_matvec_tb_q8_0(
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
     // Q8_0 block is 34 bytes for 32 elements
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K / 32 * 34);
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K / 32 * 34, &bOff);
     if (bufC == nil || bufA == nil || bufB == nil) {
       return -4;
     }
@@ -620,7 +623,7 @@ int aljabr_metal_dispatch_matvec_tb_q8_0(
     [enc setComputePipelineState:pipeline];
     [enc setBuffer:bufC offset:0 atIndex:0];
     [enc setBuffer:bufA offset:0 atIndex:1];
-    [enc setBuffer:bufB offset:0 atIndex:2];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
     [enc setBytes:&kk length:sizeof(kk) atIndex:3];
     [enc setBytes:&nn length:sizeof(nn) atIndex:4];
 
@@ -650,9 +653,10 @@ int aljabr_metal_dispatch_matvec_tb_nf4(
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B_packed, (size_t)((N * K + 1) / 2));
+    size_t bOff = 0, absmaxOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B_packed, (size_t)((N * K + 1) / 2), &bOff);
     id<MTLBuffer> bufAbsmax =
-        wrap_weight_ptr(absmax, (size_t)((N * K / blockSize) * sizeof(float)));
+        wrap_weight_ptr_offset(absmax, (size_t)((N * K / blockSize) * sizeof(float)), &absmaxOff);
     if (bufC == nil || bufA == nil || bufB == nil || bufAbsmax == nil) {
       return -4;
     }
@@ -665,8 +669,8 @@ int aljabr_metal_dispatch_matvec_tb_nf4(
     [enc setComputePipelineState:pipeline];
     [enc setBuffer:bufC offset:0 atIndex:0];
     [enc setBuffer:bufA offset:0 atIndex:1];
-    [enc setBuffer:bufB offset:0 atIndex:2];
-    [enc setBuffer:bufAbsmax offset:0 atIndex:3];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
+    [enc setBuffer:bufAbsmax offset:absmaxOff atIndex:3];
     [enc setBytes:&kk length:sizeof(kk) atIndex:4];
     [enc setBytes:&nn length:sizeof(nn) atIndex:5];
     [enc setBytes:&bs length:sizeof(bs) atIndex:6];
@@ -696,7 +700,8 @@ int aljabr_metal_dispatch_matvec_tb_half_x4(
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K * sizeof(uint16_t));
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K * sizeof(uint16_t), &bOff);
     if (bufC == nil || bufA == nil || bufB == nil) {
       return -4;
     }
@@ -708,7 +713,7 @@ int aljabr_metal_dispatch_matvec_tb_half_x4(
     [enc setComputePipelineState:pipeline];
     [enc setBuffer:bufC offset:0 atIndex:0];
     [enc setBuffer:bufA offset:0 atIndex:1];
-    [enc setBuffer:bufB offset:0 atIndex:2];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
     [enc setBytes:&kk length:sizeof(kk) atIndex:3];
     [enc setBytes:&nn length:sizeof(nn) atIndex:4];
 
@@ -737,7 +742,8 @@ int aljabr_metal_dispatch_matvec_tb_half_x8(
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K * sizeof(uint16_t));
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K * sizeof(uint16_t), &bOff);
     if (bufC == nil || bufA == nil || bufB == nil) {
       return -4;
     }
@@ -749,7 +755,7 @@ int aljabr_metal_dispatch_matvec_tb_half_x8(
     [enc setComputePipelineState:pipeline];
     [enc setBuffer:bufC offset:0 atIndex:0];
     [enc setBuffer:bufA offset:0 atIndex:1];
-    [enc setBuffer:bufB offset:0 atIndex:2];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
     [enc setBytes:&kk length:sizeof(kk) atIndex:3];
     [enc setBytes:&nn length:sizeof(nn) atIndex:4];
 
@@ -778,7 +784,8 @@ int aljabr_metal_dispatch_matvec_t_half(
   @autoreleasepool {
     id<MTLBuffer> bufC = wrap_ptr(C, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
-    id<MTLBuffer> bufB = wrap_weight_ptr(B, (size_t)N * K * sizeof(uint16_t));
+    size_t bOff = 0;
+    id<MTLBuffer> bufB = wrap_weight_ptr_offset(B, (size_t)N * K * sizeof(uint16_t), &bOff);
     if (bufC == nil || bufA == nil || bufB == nil) {
       return -4;
     }
@@ -790,7 +797,7 @@ int aljabr_metal_dispatch_matvec_t_half(
     [enc setComputePipelineState:pipeline];
     [enc setBuffer:bufC offset:0 atIndex:0];
     [enc setBuffer:bufA offset:0 atIndex:1];
-    [enc setBuffer:bufB offset:0 atIndex:2];
+    [enc setBuffer:bufB offset:bOff atIndex:2];
     [enc setBytes:&kk length:sizeof(kk) atIndex:3];
     [enc setBytes:&nn length:sizeof(nn) atIndex:4];
 
@@ -819,8 +826,9 @@ int aljabr_metal_dispatch_matvec_tb_half_pair(
     id<MTLBuffer> bufC0 = wrap_ptr(C0, (size_t)N * sizeof(float));
     id<MTLBuffer> bufC1 = wrap_ptr(C1, (size_t)N * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
-    id<MTLBuffer> bufB0 = wrap_weight_ptr(B0, (size_t)N * K * sizeof(uint16_t));
-    id<MTLBuffer> bufB1 = wrap_weight_ptr(B1, (size_t)N * K * sizeof(uint16_t));
+    size_t b0Off = 0, b1Off = 0;
+    id<MTLBuffer> bufB0 = wrap_weight_ptr_offset(B0, (size_t)N * K * sizeof(uint16_t), &b0Off);
+    id<MTLBuffer> bufB1 = wrap_weight_ptr_offset(B1, (size_t)N * K * sizeof(uint16_t), &b1Off);
     if (bufC0 == nil || bufC1 == nil || bufA == nil || bufB0 == nil ||
         bufB1 == nil) {
       return -4;
@@ -834,8 +842,8 @@ int aljabr_metal_dispatch_matvec_tb_half_pair(
     [enc setBuffer:bufC0 offset:0 atIndex:0];
     [enc setBuffer:bufC1 offset:0 atIndex:1];
     [enc setBuffer:bufA offset:0 atIndex:2];
-    [enc setBuffer:bufB0 offset:0 atIndex:3];
-    [enc setBuffer:bufB1 offset:0 atIndex:4];
+    [enc setBuffer:bufB0 offset:b0Off atIndex:3];
+    [enc setBuffer:bufB1 offset:b1Off atIndex:4];
     [enc setBytes:&kk length:sizeof(kk) atIndex:5];
     [enc setBytes:&nn length:sizeof(nn) atIndex:6];
 
@@ -866,12 +874,13 @@ int aljabr_metal_dispatch_matvec_tb_half_triple_mixed(
     id<MTLBuffer> bufC1 = wrap_ptr(C1, (size_t)N1 * sizeof(float));
     id<MTLBuffer> bufC2 = wrap_ptr(C2, (size_t)N2 * sizeof(float));
     id<MTLBuffer> bufA = wrap_ptr((void *)A, (size_t)K * sizeof(float));
+    size_t b0Off = 0, b1Off = 0, b2Off = 0;
     id<MTLBuffer> bufB0 =
-        wrap_weight_ptr(B0, (size_t)N0 * K * sizeof(uint16_t));
+        wrap_weight_ptr_offset(B0, (size_t)N0 * K * sizeof(uint16_t), &b0Off);
     id<MTLBuffer> bufB1 =
-        wrap_weight_ptr(B1, (size_t)N1 * K * sizeof(uint16_t));
+        wrap_weight_ptr_offset(B1, (size_t)N1 * K * sizeof(uint16_t), &b1Off);
     id<MTLBuffer> bufB2 =
-        wrap_weight_ptr(B2, (size_t)N2 * K * sizeof(uint16_t));
+        wrap_weight_ptr_offset(B2, (size_t)N2 * K * sizeof(uint16_t), &b2Off);
     if (bufC0 == nil || bufC1 == nil || bufC2 == nil || bufA == nil ||
         bufB0 == nil || bufB1 == nil || bufB2 == nil) {
       return -4;
@@ -889,9 +898,9 @@ int aljabr_metal_dispatch_matvec_tb_half_triple_mixed(
     [enc setBuffer:bufC1 offset:0 atIndex:1];
     [enc setBuffer:bufC2 offset:0 atIndex:2];
     [enc setBuffer:bufA offset:0 atIndex:3];
-    [enc setBuffer:bufB0 offset:0 atIndex:4];
-    [enc setBuffer:bufB1 offset:0 atIndex:5];
-    [enc setBuffer:bufB2 offset:0 atIndex:6];
+    [enc setBuffer:bufB0 offset:b0Off atIndex:4];
+    [enc setBuffer:bufB1 offset:b1Off atIndex:5];
+    [enc setBuffer:bufB2 offset:b2Off atIndex:6];
     [enc setBytes:&kk length:sizeof(kk) atIndex:7];
     [enc setBytes:&n0 length:sizeof(n0) atIndex:8];
     [enc setBytes:&n1 length:sizeof(n1) atIndex:9];
