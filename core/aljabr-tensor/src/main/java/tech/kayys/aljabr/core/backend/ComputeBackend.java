@@ -51,6 +51,35 @@ public interface ComputeBackend {
     }
 
     /**
+     * Allocates backend-neutral tensor storage.
+     *
+     * <p>The default preserves compatibility with host-buffer backends.
+     * Device-memory backends should override this method and
+     * {@link #copyFromHost(TensorStorage, MemorySegment, long)}.</p>
+     */
+    default TensorStorage allocateStorage(long sizeBytes) {
+        return allocate(sizeBytes);
+    }
+
+    /**
+     * Copies host data into backend-owned storage. The default implementation
+     * supports host-accessible storage; device-memory backends must override
+     * this method to perform an explicit host-to-device transfer.
+     */
+    default void copyFromHost(TensorStorage destination, MemorySegment source, long sizeBytes) {
+        if (!(destination instanceof HostAccessibleStorage hostStorage)) {
+            throw new UnsupportedOperationException(
+                    "Backend " + getClass().getName()
+                            + " must implement copyFromHost for non-host-accessible storage");
+        }
+        if (sizeBytes < 0 || sizeBytes > source.byteSize()
+                || sizeBytes > hostStorage.sizeBytes()) {
+            throw new IllegalArgumentException("Invalid host copy size: " + sizeBytes);
+        }
+        hostStorage.segment().asSlice(0, sizeBytes).copyFrom(source.asSlice(0, sizeBytes));
+    }
+
+    /**
      * Device identity used for tensors allocated by this backend.
      *
      * <p>Backends that transparently fall back to another device should
