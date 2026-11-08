@@ -71,7 +71,9 @@ public final class ComputeRuntime implements AutoCloseable {
         }
 
         ProviderDiscoveryResult discovery = ProviderDiscovery.discover(
-                Thread.currentThread().getContextClassLoader());
+                Thread.currentThread().getContextClassLoader() == null
+                        ? ComputeRuntime.class.getClassLoader()
+                        : Thread.currentThread().getContextClassLoader());
         List<AljabrProvider> owned = new ArrayList<>(discovery.providers());
         List<Candidate> candidates = new ArrayList<>();
         List<String> failures = new ArrayList<>();
@@ -174,7 +176,7 @@ public final class ComputeRuntime implements AutoCloseable {
         for (AljabrProvider provider : ownedProviders) {
             try {
                 provider.close();
-            } catch (RuntimeException failure) {
+            } catch (ProviderException | RuntimeException failure) {
                 if (closeFailure == null) {
                     closeFailure = new IllegalStateException("Unable to close compute provider", failure);
                 } else {
@@ -210,7 +212,7 @@ public final class ComputeRuntime implements AutoCloseable {
         for (AljabrProvider provider : providers) {
             try {
                 provider.close();
-            } catch (RuntimeException closeFailure) {
+            } catch (ProviderException | RuntimeException closeFailure) {
                 primary.addSuppressed(closeFailure);
             }
         }
