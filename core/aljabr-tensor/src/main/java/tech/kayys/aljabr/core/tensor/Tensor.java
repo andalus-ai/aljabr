@@ -1,32 +1,24 @@
 package tech.kayys.aljabr.core.tensor;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.memory.TensorStorage;
 
 /**
  * The core abstraction of the Aljabr framework representing a multi-dimensional
  * array of elements.
- * 
- * <p>
- * A {@code Tensor} is immutable with respect to its mathematical properties
- * (shape, data type).
- * By default, computation operations return a new {@code Tensor} instance
- * unless an explicitly
- * mutable operation (like {@code assign} or in-place ops if added) is used.
- * 
- * <p>
- * Tensors are backed by a {@link ComputeBackend} and allocate memory according
- * to the rules of
- * that backend. For example, a CPU backend allocates off-heap native memory
- * using the Java Foreign
- * Function &amp; Memory API (FFM), while a GPU backend allocates memory on the
- * device.
- * @author bhangun
+ *
+ * <p>A {@code Tensor} is immutable with respect to its mathematical properties
+ * (shape, data type). By default, computation operations return a new
+ * {@code Tensor} instance unless an explicitly mutable operation is used.</p>
+ *
+ * <p>Storage access is an optional capability for tensor implementations.
+ * Eager tensors expose their backing storage; lazy or remote implementations
+ * may materialize or reject direct storage access.</p>
  */
 public interface Tensor {
     /**
      * Evaluates and materializes this Tensor if it is a lazy computation graph
-     * node.
-     * For eager tensors, this returns the tensor itself.
+     * node. For eager tensors, this returns the tensor itself.
      */
     Tensor eval();
 
@@ -37,6 +29,20 @@ public interface Tensor {
     DType dtype();
 
     ComputeBackend backend();
+
+    /**
+     * Returns this tensor's backing storage when the implementation exposes it.
+     *
+     * <p>Implementations that do not expose backing storage should retain the
+     * default unsupported behavior. Lazy implementations may evaluate before
+     * returning storage.</p>
+     *
+     * @throws UnsupportedOperationException when backing storage is not exposed
+     */
+    default TensorStorage storage() {
+        throw new UnsupportedOperationException(
+                "Backing storage is not exposed by " + getClass().getName());
+    }
 
     Tensor add(Tensor other);
 

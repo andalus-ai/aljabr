@@ -1,10 +1,20 @@
 package tech.kayys.aljabr.core.tensor;
 
+import java.lang.foreign.MemorySegment;
+import java.util.Objects;
+
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.Buffer;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
+import tech.kayys.aljabr.core.memory.TensorStorage;
 
 /**
- * Default concrete tensor backed by a {@link Buffer}.
+ * Default eager tensor backed by backend-neutral {@link TensorStorage}.
+ *
+ * <p>The constructor takes ownership of one existing storage reference after
+ * successful validation. The caller retains ownership if construction fails.
+ * The legacy {@link #buffer()} accessor remains available for FFM/Arena-backed
+ * buffers during the storage migration.</p>
  *
  * @author bhangun
  * @since 0.1.0
@@ -14,26 +24,40 @@ public final class DefaultTensor implements Tensor {
     private final Shape shape;
     private final DType dtype;
     private final DeviceType device;
-    private final Buffer buffer;
+    private final TensorStorage storage;
     private final ComputeBackend backend;
     private Tensor grad;
     private boolean requiresGrad;
 
+    /**
+     * Creates a tensor using the legacy Buffer contract.
+     *
+     * <p>This overload is retained for source and binary compatibility.</p>
+     */
     public DefaultTensor(Shape shape, DType dtype, DeviceType device, Buffer buffer, ComputeBackend backend) {
-        this.shape = java.util.Objects.requireNonNull(shape, "shape must not be null");
-        this.dtype = java.util.Objects.requireNonNull(dtype, "dtype must not be null");
-        this.device = java.util.Objects.requireNonNull(device, "device must not be null");
-        this.buffer = java.util.Objects.requireNonNull(buffer, "buffer must not be null");
-        this.backend = java.util.Objects.requireNonNull(backend, "backend must not be null");
+        this(shape, dtype, device, (TensorStorage) Objects.requireNonNull(buffer, "buffer must not be null"), backend);
+    }
 
-        // Validate storage at the boundary where logical tensor metadata and physical
-        // allocation meet. Larger buffers are allowed for pooled allocations and views,
-        // but a tensor must never expose less storage than its dtype/shape require.
+    /**
+     * Creates a tensor using backend-neutral storage.
+     *
+     * <p>On successful construction this tensor owns the supplied storage
+     * reference and releases it from {@link #release()}.</p>
+     */
+    public DefaultTensor(Shape shape, DType dtype, DeviceType device, TensorStorage storage, ComputeBackend backend) {
+        this.shape = Objects.requireNonNull(shape, "shape must not be null");
+        this.dtype = Objects.requireNonNull(dtype, "dtype must not be null");
+        this.device = Objects.requireNonNull(device, "device must not be null");
+        this.storage = Objects.requireNonNull(storage, "storage must not be null");
+        this.backend = Objects.requireNonNull(backend, "backend must not be null");
+
+        // Larger allocations are valid for pooled storage and tensor views.
+        // A tensor must never expose less capacity than its logical shape needs.
         final long requiredBytes = dtype.memoryFootprintBytes(shape.numel());
-        final long availableBytes = buffer.sizeBytes();
+        final long availableBytes = storage.sizeBytes();
         if (availableBytes < requiredBytes) {
             throw new IllegalArgumentException(
-                    "Tensor buffer is too small: shape=" + shape
+                    "Tensor storage is too small: shape=" + shape
                             + ", dtype=" + dtype
                             + ", requires=" + requiredBytes + " bytes"
                             + ", available=" + availableBytes + " bytes");
@@ -65,8 +89,37 @@ public final class DefaultTensor implements Tensor {
         return backend;
     }
 
+    /** Returns the canonical backend-neutral storage contract. */
+    @Override
+    public TensorStorage storage() {
+        return storage;
+    }
+
+    /**
+     * Returns the legacy FFM/Arena buffer view.
+     *
+     * @throws UnsupportedOperationException when this tensor is backed by
+     *         storage that does not implement the legacy Buffer contract
+     */
     public Buffer buffer() {
-        return buffer;
+        if (storage instanceof Buffer buffer) {
+            return buffer;
+        }
+        throw new UnsupportedOperationException(
+                "Tensor storage does not implement the legacy Buffer API: "
+                        + storage.getClass().getName()
+                        + ". Use storage() and check for HostAccessibleStorage when host access is required.");
+    }
+
+    private MemorySegment requireHostSegment(String operation) {
+        if (storage instanceof HostAccessibleStorage hostStorage) {
+            return Objects.requireNonNull(hostStorage.segment(),
+                    "HostAccessibleStorage.segment() must not return null");
+        }
+        throw new UnsupportedOperationException(
+                operation + " requires host-accessible tensor storage; device=" + device
+                        + ", storage=" + storage.getClass().getName()
+                        + ". Transfer the tensor to host-accessible storage before reading its values.");
     }
 
     @Override
@@ -321,7 +374,8 @@ public final class DefaultTensor implements Tensor {
             throw new UnsupportedOperationException(
                     "toFloatArray currently requires F32 tensors; actual dtype is " + dtype);
         }
-        return buffer.segment().asSlice(0, Math.multiplyExact(numel(), Float.BYTES))
+        return requireHostSegment("toFloatArray")
+                .asSlice(0, Math.multiplyExact(numel(), Float.BYTES))
                 .toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
     }
 
@@ -331,9 +385,9 @@ public final class DefaultTensor implements Tensor {
             throw new IllegalStateException("item() requires exactly one element; tensor has " + numel());
         }
         return switch (dtype) {
-            case F32 -> buffer.segment().get(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0);
-            case I32 -> buffer.segment().get(java.lang.foreign.ValueLayout.JAVA_INT, 0);
-            case I8, INT8 -> buffer.segment().get(java.lang.foreign.ValueLayout.JAVA_BYTE, 0);
+            case F32 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0);
+            case I32 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_INT, 0);
+            case I8, INT8 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_BYTE, 0);
             default -> throw new UnsupportedOperationException("item() is not supported for dtype " + dtype);
         };
     }
@@ -364,7 +418,6 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public void release() {
-        if (buffer != null)
-            buffer.release();
+        storage.release();
     }
 }

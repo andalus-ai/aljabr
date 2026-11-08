@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.core.tensor.lazy;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.memory.TensorStorage;
 import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.DeviceType;
 import tech.kayys.aljabr.core.tensor.Shape;
@@ -40,6 +41,14 @@ public class LazyTensor implements Tensor {
             node.setMaterializedData(optimized.getMaterializedData());
         }
         return node.getMaterializedData();
+    }
+
+    /**
+     * Direct storage access materializes the lazy graph first.
+     */
+    @Override
+    public TensorStorage storage() {
+        return eval().storage();
     }
 
     @Override
