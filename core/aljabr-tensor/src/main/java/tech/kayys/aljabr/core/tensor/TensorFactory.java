@@ -19,10 +19,26 @@ public final class TensorFactory {
         return of(data, shape);
     }
 
+    /** Creates a random tensor using an explicitly owned compute backend. */
+    public static Tensor randn(ComputeBackend backend, long... shape) {
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        for (int i = 0; i < n; i++)
+            data[i] = (float) (RNG.nextGaussian());
+        return of(data, backend, shape);
+    }
+
     public static Tensor zeros(long... shape) {
         long n = numel(shape);
-        float[] data = new float[arrayLength(n)]; // zero-initialized
+        float[] data = new float[arrayLength(n)];
         return of(data, shape);
+    }
+
+    /** Creates a zero tensor using an explicitly owned compute backend. */
+    public static Tensor zeros(ComputeBackend backend, long... shape) {
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        return of(data, backend, shape);
     }
 
     public static Tensor ones(long... shape) {
@@ -33,6 +49,15 @@ public final class TensorFactory {
         return of(data, shape);
     }
 
+    /** Creates a one tensor using an explicitly owned compute backend. */
+    public static Tensor ones(ComputeBackend backend, long... shape) {
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        for (int i = 0; i < n; i++)
+            data[i] = 1f;
+        return of(data, backend, shape);
+    }
+
     public static Tensor full(float value, long... shape) {
         long n = numel(shape);
         float[] data = new float[arrayLength(n)];
@@ -41,17 +66,27 @@ public final class TensorFactory {
         return of(data, shape);
     }
 
+    /** Creates a filled tensor using an explicitly owned compute backend. */
+    public static Tensor full(float value, ComputeBackend backend, long... shape) {
+        long n = numel(shape);
+        float[] data = new float[arrayLength(n)];
+        for (int i = 0; i < n; i++)
+            data[i] = value;
+        return of(data, backend, shape);
+    }
+
     public static Tensor of(float[] data, long... shape) {
+        return of(data, findDefaultBackend(), shape);
+    }
+
+    /** Creates a tensor backed by the supplied compute backend. */
+    public static Tensor of(float[] data, ComputeBackend backend, long... shape) {
         java.util.Objects.requireNonNull(data, "data must not be null");
+        java.util.Objects.requireNonNull(backend, "backend must not be null");
         long n = numel(shape);
         if (data.length != n)
             throw new IllegalArgumentException("data length != shape numel");
 
-        // Try to instantiate a CPU backend if available via reflection, otherwise use a
-        // noop backend
-        ComputeBackend backend = findDefaultBackend();
-
-        // Allocate an off-heap buffer and copy data
         long bytes = n * 4L;
         tech.kayys.aljabr.core.memory.CpuBuffer buf = new tech.kayys.aljabr.core.memory.CpuBuffer(bytes);
         java.lang.foreign.MemorySegment src = java.lang.foreign.MemorySegment.ofArray(data);
