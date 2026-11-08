@@ -18,7 +18,7 @@ public class MetalComputeBackend implements ComputeBackend {
     private Tensor wrap(Tensor cpuRes) {
         if (cpuRes instanceof tech.kayys.aljabr.core.tensor.DefaultTensor dt) {
             return new tech.kayys.aljabr.core.tensor.DefaultTensor(dt.shape(), dt.dtype(), dt.device(),
-                    dt.buffer(), this);
+                    dt.storage(), this);
         }
         return cpuRes;
     }
