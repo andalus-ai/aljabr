@@ -57,57 +57,41 @@ public class MultiheadAttention extends NNModule {
         return forward(query, query, query, null);
     }
 
-    /**
-     * Computes batch-first multi-head attention. An attention mask is rejected
-     * until the backend attention contract supports mask semantics.
-     */
+    /** Computes batch-first attention without causal restriction. */
     public Tensor forward(Tensor query, Tensor key, Tensor value, Tensor attnMask) {
-        validateInputBackend(query);
-        validateInputBackend(key);
-        validateInputBackend(value);
-        Objects.requireNonNull(query, "query must not be null");
-        Objects.requireNonNull(key, "key must not be null");
-        Objects.requireNonNull(value, "value must not be null");
-        if (attnMask != null) {
-            validateInputBackend(attnMask);
-            throw new UnsupportedOperationException("Attention masks are not supported by this backend contract yet");
-        }
-        requireSequenceShape("query", query);
-        requireSequenceShape("key", key);
-        requireSequenceShape("value", value);
-        if (query.shape().dim(0) != key.shape().dim(0)
-                || key.shape().dim(0) != value.shape().dim(0)
-                || key.shape().dim(1) != value.shape().dim(1)) {
+        return forward(query,key,value,attnMask,false);
+    }
+
+    /** Additive mask shape is [querySequence,keySequence]; negative infinity suppresses a position. */
+    public Tensor forward(Tensor query, Tensor key, Tensor value, Tensor attnMask, boolean causal) {
+        Objects.requireNonNull(query,"query must not be null");
+        Objects.requireNonNull(key,"key must not be null");
+        Objects.requireNonNull(value,"value must not be null");
+        validateInputBackend(query); validateInputBackend(key); validateInputBackend(value);
+        if(attnMask!=null) validateInputBackend(attnMask);
+        requireSequenceShape("query",query); requireSequenceShape("key",key); requireSequenceShape("value",value);
+        if(query.shape().dim(0)!=key.shape().dim(0) || key.shape().dim(0)!=value.shape().dim(0)
+                || key.shape().dim(1)!=value.shape().dim(1))
             throw new IllegalArgumentException("query/key/value batch sizes and key/value sequence lengths must match");
-        }
-
-        long batch = query.shape().dim(0);
-        long queryLength = query.shape().dim(1);
-        long keyLength = key.shape().dim(1);
-
-        Tensor q = projectAndSplit(queryProjection, query, batch, queryLength);
-        Tensor k = projectAndSplit(keyProjection, key, batch, keyLength);
-        Tensor v = projectAndSplit(valueProjection, value, batch, keyLength);
-        Tensor attended = null;
-        Tensor merged = null;
-        Tensor flattened = null;
+        long batch=query.shape().dim(0), queryLength=query.shape().dim(1), keyLength=key.shape().dim(1);
+        if(attnMask!=null && (attnMask.shape().rank()!=2 || attnMask.shape().dim(0)!=queryLength || attnMask.shape().dim(1)!=keyLength))
+            throw new IllegalArgumentException("attention mask must have shape [querySequence, keySequence]");
+        Tensor q=projectAndSplit(queryProjection,query,batch,queryLength);
+        Tensor k=projectAndSplit(keyProjection,key,batch,keyLength);
+        Tensor v=projectAndSplit(valueProjection,value,batch,keyLength);
+        Tensor attended=null, merged=null, flattened=null;
         try {
-            attended = query.backend().attention(q, k, v);
-            merged = attended.transpose(1, 2).reshape(batch, queryLength, embedDim);
-            flattened = merged.reshape(Math.multiplyExact(batch, queryLength), embedDim);
-            Tensor projected = outputProjection.forward(flattened);
-            try {
-                return projected.reshape(batch, queryLength, embedDim);
-            } finally {
-                projected.release();
-            }
+            attended=query.backend().attention(q,k,v,attnMask,causal);
+            merged=attended.transpose(1,2).reshape(batch,queryLength,embedDim);
+            flattened=merged.reshape(Math.multiplyExact(batch,queryLength),embedDim);
+            Tensor projected=outputProjection.forward(flattened);
+            try { return projected.reshape(batch,queryLength,embedDim); }
+            finally { projected.release(); }
         } finally {
-            if (flattened != null) flattened.release();
-            if (merged != null) merged.release();
-            if (attended != null) attended.release();
-            q.release();
-            k.release();
-            v.release();
+            if(flattened!=null) flattened.release();
+            if(merged!=null) merged.release();
+            if(attended!=null) attended.release();
+            q.release(); k.release(); v.release();
         }
     }
 

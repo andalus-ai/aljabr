@@ -56,15 +56,23 @@ class MultiheadAttentionTest {
     }
 
     @Test
-    void rejectsAttentionMaskUntilMaskSemanticsAreImplemented() {
+    void acceptsAdditiveMaskAndCausalAttention() {
         CpuBackend backend = new CpuBackend();
         MultiheadAttention attention = new MultiheadAttention(backend, 4, 2);
         Tensor input = TensorFactory.of(new float[8], backend, 1, 2, 4);
-        Tensor mask = TensorFactory.of(new float[4], backend, 2, 2);
+        Tensor mask = TensorFactory.of(new float[] {0f, Float.NEGATIVE_INFINITY, 0f, 0f}, backend, 2, 2);
+        Tensor masked = null;
+        Tensor causal = null;
         try {
-            assertThrows(UnsupportedOperationException.class,
-                    () -> attention.forward(input, input, input, mask));
+            masked = attention.forward(input, input, input, mask);
+            causal = attention.forward(input, input, input, null, true);
+            assertEquals(3, masked.shape().rank());
+            assertEquals(3, causal.shape().rank());
+            assertEquals(backend, masked.backend());
+            assertEquals(backend, causal.backend());
         } finally {
+            if (causal != null) causal.release();
+            if (masked != null) masked.release();
             mask.release();
             input.release();
             attention.close();

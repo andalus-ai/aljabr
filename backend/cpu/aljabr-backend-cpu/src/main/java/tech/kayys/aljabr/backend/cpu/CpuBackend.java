@@ -858,90 +858,72 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor attention(Tensor Q, Tensor K, Tensor V) {
-        if (Q == null || K == null || V == null) {
-            throw new IllegalArgumentException("attention Q, K, and V must not be null");
-        }
-        if (Q.backend() != this || K.backend() != this || V.backend() != this) {
-            throw new IllegalArgumentException("attention tensors must belong to this CPU backend instance");
-        }
-        if (Q.dtype() != DType.F32 || K.dtype() != DType.F32 || V.dtype() != DType.F32) {
-            throw new UnsupportedOperationException("CPU attention currently supports F32 tensors only");
-        }
+        return attention(Q, K, V, null, false);
+    }
 
+    @Override
+    public Tensor attention(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
+        if (Q == null || K == null || V == null) throw new IllegalArgumentException("attention Q, K, and V must not be null");
+        if (Q.backend() != this || K.backend() != this || V.backend() != this)
+            throw new IllegalArgumentException("attention tensors must belong to this CPU backend instance");
+        if (Q.dtype() != DType.F32 || K.dtype() != DType.F32 || V.dtype() != DType.F32)
+            throw new UnsupportedOperationException("CPU attention currently supports F32 tensors only");
         int rank = Q.shape().rank();
-        if (rank == 2) {
+        if (rank == 2 && additiveMask == null && !causal) {
             if (K.shape().rank() != 2 || V.shape().rank() != 2
-                    || Q.shape().dim(0) != K.shape().dim(0)
-                    || K.shape().dim(0) != V.shape().dim(0)
-                    || Q.shape().dim(1) != K.shape().dim(1)
-                    || K.shape().dim(1) != V.shape().dim(1)) {
+                    || Q.shape().dim(0) != K.shape().dim(0) || K.shape().dim(0) != V.shape().dim(0)
+                    || Q.shape().dim(1) != K.shape().dim(1) || K.shape().dim(1) != V.shape().dim(1))
                 throw new IllegalArgumentException("rank-2 attention expects matching [sequence, headDim] Q/K/V");
-            }
             return FlashAttentionCpu.forward(Q, K, V, Runtime.getRuntime().availableProcessors());
         }
-        if (rank != 4 || K.shape().rank() != 4 || V.shape().rank() != 4) {
-            throw new IllegalArgumentException("attention expects rank-2 [S,D] or rank-4 [B,H,S,D] tensors");
-        }
-
-        long batch = Q.shape().dim(0);
-        long heads = Q.shape().dim(1);
-        long queryLength = Q.shape().dim(2);
-        long headDim = Q.shape().dim(3);
-        long keyLength = K.shape().dim(2);
-        if (batch <= 0 || heads <= 0 || queryLength <= 0 || keyLength <= 0 || headDim <= 0
-                || K.shape().dim(0) != batch || K.shape().dim(1) != heads
-                || K.shape().dim(3) != headDim
-                || V.shape().dim(0) != batch || V.shape().dim(1) != heads
-                || V.shape().dim(2) != keyLength || V.shape().dim(3) != headDim) {
-            throw new IllegalArgumentException(
-                    "rank-4 attention expects Q[B,H,Sq,D], K/V[B,H,Sk,D] with matching B/H/D");
-        }
-
-        Shape outputShape = new Shape(batch, heads, queryLength, headDim);
-        CpuBuffer output = allocate(Math.multiplyExact(outputShape.numel(), Float.BYTES));
-        MemorySegment q = seg(Q);
-        MemorySegment k = seg(K);
-        MemorySegment v = seg(V);
-        MemorySegment out = output.segment();
-        float scale = (float) (1.0 / Math.sqrt(headDim));
-        for (long b = 0; b < batch; b++) {
-            for (long h = 0; h < heads; h++) {
-                long qBase = (b * heads + h) * queryLength * headDim;
-                long kBase = (b * heads + h) * keyLength * headDim;
-                long vBase = kBase;
-                long oBase = qBase;
-                float[] scores = new float[Math.toIntExact(keyLength)];
-                for (long qi = 0; qi < queryLength; qi++) {
-                    float max = Float.NEGATIVE_INFINITY;
-                    for (long ki = 0; ki < keyLength; ki++) {
-                        float score = 0f;
-                        for (long d = 0; d < headDim; d++) {
-                            score += q.get(ValueLayout.JAVA_FLOAT, (qBase + qi * headDim + d) * Float.BYTES)
-                                    * k.get(ValueLayout.JAVA_FLOAT, (kBase + ki * headDim + d) * Float.BYTES);
-                        }
-                        score *= scale;
-                        scores[Math.toIntExact(ki)] = score;
-                        max = Math.max(max, score);
-                    }
-                    double denominator = 0d;
-                    for (int ki = 0; ki < scores.length; ki++) {
-                        scores[ki] = (float) Math.exp(scores[ki] - max);
-                        denominator += scores[ki];
-                    }
-                    for (long d = 0; d < headDim; d++) {
-                        double value = 0d;
-                        for (long ki = 0; ki < keyLength; ki++) {
-                            float probability = (float) (scores[Math.toIntExact(ki)] / denominator);
-                            value += probability * v.get(ValueLayout.JAVA_FLOAT,
-                                    (vBase + ki * headDim + d) * Float.BYTES);
-                        }
-                        out.set(ValueLayout.JAVA_FLOAT,
-                                (oBase + qi * headDim + d) * Float.BYTES, (float) value);
-                    }
+        if (rank != 4 || K.shape().rank() != 4 || V.shape().rank() != 4)
+            throw new IllegalArgumentException("masked attention expects rank-4 [B,H,S,D] Q/K/V tensors");
+        long batch=Q.shape().dim(0), heads=Q.shape().dim(1), queryLength=Q.shape().dim(2), headDim=Q.shape().dim(3), keyLength=K.shape().dim(2);
+        if (batch<=0 || heads<=0 || queryLength<=0 || keyLength<=0 || headDim<=0
+                || K.shape().dim(0)!=batch || K.shape().dim(1)!=heads || K.shape().dim(3)!=headDim
+                || V.shape().dim(0)!=batch || V.shape().dim(1)!=heads || V.shape().dim(2)!=keyLength || V.shape().dim(3)!=headDim)
+            throw new IllegalArgumentException("rank-4 attention expects Q[B,H,Sq,D], K/V[B,H,Sk,D] with matching B/H/D");
+        if (additiveMask != null && (additiveMask.backend()!=this || additiveMask.dtype()!=DType.F32
+                || additiveMask.shape().rank()!=2 || additiveMask.shape().dim(0)!=queryLength
+                || additiveMask.shape().dim(1)!=keyLength))
+            throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] on this backend");
+        Shape outputShape=new Shape(batch,heads,queryLength,headDim);
+        CpuBuffer output=allocate(Math.multiplyExact(outputShape.numel(),Float.BYTES));
+        MemorySegment q=seg(Q), k=seg(K), v=seg(V), mask=additiveMask==null?null:seg(additiveMask), out=output.segment();
+        float scale=(float)(1.0/Math.sqrt(headDim));
+        for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) {
+            long qBase=(b*heads+h)*queryLength*headDim, kBase=(b*heads+h)*keyLength*headDim;
+            float[] scores=new float[Math.toIntExact(keyLength)];
+            for(long qi=0;qi<queryLength;qi++) {
+                float max=Float.NEGATIVE_INFINITY;
+                for(long ki=0;ki<keyLength;ki++) {
+                    float additive=mask==null?0f:mask.get(ValueLayout.JAVA_FLOAT,(qi*keyLength+ki)*Float.BYTES);
+                    if((causal && ki>qi) || additive==Float.NEGATIVE_INFINITY) { scores[Math.toIntExact(ki)]=Float.NEGATIVE_INFINITY; continue; }
+                    if(Float.isNaN(additive) || additive==Float.POSITIVE_INFINITY)
+                        throw new IllegalArgumentException("attention mask values must not be NaN or positive infinity");
+                    float score=0f;
+                    for(long d=0;d<headDim;d++)
+                        score+=q.get(ValueLayout.JAVA_FLOAT,(qBase+qi*headDim+d)*Float.BYTES)*k.get(ValueLayout.JAVA_FLOAT,(kBase+ki*headDim+d)*Float.BYTES);
+                    score=score*scale+additive; scores[Math.toIntExact(ki)]=score; max=Math.max(max,score);
+                }
+                if(max==Float.NEGATIVE_INFINITY) {
+                    for(long d=0;d<headDim;d++) out.set(ValueLayout.JAVA_FLOAT,(qBase+qi*headDim+d)*Float.BYTES,0f);
+                    continue;
+                }
+                double denominator=0d;
+                for(int ki=0;ki<scores.length;ki++) {
+                    scores[ki]=scores[ki]==Float.NEGATIVE_INFINITY?0f:(float)Math.exp(scores[ki]-max);
+                    denominator+=scores[ki];
+                }
+                for(long d=0;d<headDim;d++) {
+                    double value=0d;
+                    for(long ki=0;ki<keyLength;ki++)
+                        value+=(scores[Math.toIntExact(ki)]/denominator)*v.get(ValueLayout.JAVA_FLOAT,(kBase+ki*headDim+d)*Float.BYTES);
+                    out.set(ValueLayout.JAVA_FLOAT,(qBase+qi*headDim+d)*Float.BYTES,(float)value);
                 }
             }
         }
-        return out(outputShape, output);
+        return out(outputShape,output);
     }
 
     // ── Conv / Pool ───────────────────────────────────────────────────────────

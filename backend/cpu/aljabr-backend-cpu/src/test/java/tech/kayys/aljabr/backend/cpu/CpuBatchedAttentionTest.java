@@ -44,4 +44,42 @@ class CpuBatchedAttentionTest {
         key.release();
         query.release();
     }
+
+    @Test
+    void additiveMaskSuppressesMaskedKeyAndCausalModeRestrictsFutureKeys() {
+        CpuBackend backend = new CpuBackend();
+        Tensor query = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor key = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor value = TensorFactory.of(new float[] {2f, 8f}, backend, 1, 1, 2, 1);
+        Tensor mask = TensorFactory.of(new float[] {0f, Float.NEGATIVE_INFINITY}, backend, 2, 1);
+        Tensor masked = null;
+        Tensor causal = null;
+        try {
+            masked = backend.attention(query, key, value, mask, false);
+            assertArrayEquals(new float[] {2f, 2f}, masked.toFloatArray(), 1e-6f);
+            causal = backend.attention(query, key, value, null, true);
+            assertArrayEquals(new float[] {2f, 5f}, causal.toFloatArray(), 1e-6f);
+        } finally {
+            if (causal != null) causal.release();
+            if (masked != null) masked.release();
+            mask.release(); value.release(); key.release(); query.release();
+        }
+    }
+
+    @Test
+    void returnsZeroWhenEveryKeyIsMasked() {
+        CpuBackend backend = new CpuBackend();
+        Tensor query = TensorFactory.of(new float[1], backend, 1, 1, 1, 1);
+        Tensor key = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor value = TensorFactory.of(new float[] {2f, 8f}, backend, 1, 1, 2, 1);
+        Tensor mask = TensorFactory.of(new float[] {Float.NEGATIVE_INFINITY, Float.NEGATIVE_INFINITY}, backend, 1, 2);
+        Tensor output = null;
+        try {
+            output = backend.attention(query, key, value, mask, false);
+            assertArrayEquals(new float[] {0f}, output.toFloatArray(), 1e-6f);
+        } finally {
+            if (output != null) output.release();
+            mask.release(); value.release(); key.release(); query.release();
+        }
+    }
 }

@@ -291,6 +291,16 @@ public class MetalComputeBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor attention(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
+        if (additiveMask == null && !causal) {
+            return attention(Q, K, V);
+        }
+        // Masked attention currently uses the CPU reference implementation.
+        // The result is wrapped to preserve this backend's tensor ownership contract.
+        return wrap(cpuFallback.attention(Q, K, V, additiveMask, causal));
+    }
+
+    @Override
     public Tensor attention(Tensor Q, Tensor K, Tensor V) {
         if (!isNative)
             return wrap(cpuFallback.attention(Q, K, V));
