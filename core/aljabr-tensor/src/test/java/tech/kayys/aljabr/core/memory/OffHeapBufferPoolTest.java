@@ -101,4 +101,19 @@ class OffHeapBufferPoolTest {
             executor.shutdownNow();
         }
     }
+    @Test
+    void closeDefersArenaTeardownUntilOutstandingLeaseIsReturned() {
+        OffHeapBufferPool pool = new OffHeapBufferPool();
+        MemorySegment lease = pool.acquire(64);
+        pool.close();
+
+        assertTrue(pool.isClosed());
+        assertTrue(lease.scope().isAlive());
+        assertThrows(IllegalStateException.class, () -> pool.acquire(64));
+
+        pool.release(lease);
+        assertFalse(lease.scope().isAlive());
+        assertThrows(IllegalArgumentException.class, () -> pool.release(lease));
+    }
+
 }
