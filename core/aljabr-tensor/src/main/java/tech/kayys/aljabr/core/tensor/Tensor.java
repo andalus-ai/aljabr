@@ -199,6 +199,16 @@ public interface Tensor {
 
     Tensor conv2d(Tensor weight, Tensor bias, int stride, int padding, int dilation, int groups);
 
+    /**
+     * Resizes an NCHW tensor using nearest-neighbor sampling.
+     *
+     * @param outputH positive output height
+     * @param outputW positive output width
+     */
+    default Tensor upsampleNearest2d(int outputH, int outputW) {
+        return backend().upsampleNearest2d(this, outputH, outputW);
+    }
+
     Tensor maxPool2d(int kernelSize, int stride, int padding);
 
     Tensor adaptiveAvgPool2d(int outputH, int outputW);

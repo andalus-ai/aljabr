@@ -575,6 +575,11 @@ public class MetalComputeBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor upsampleNearest2d(Tensor input, int outputH, int outputW) {
+        return wrap(cpuFallback.upsampleNearest2d(input, outputH, outputW));
+    }
+
+    @Override
     public Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding) {
         return wrap(cpuFallback.maxPool2d(input, kernelSize, stride, padding));
     }
