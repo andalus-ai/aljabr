@@ -51,7 +51,7 @@ class CpuBatchedAttentionTest {
         Tensor query = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
         Tensor key = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
         Tensor value = TensorFactory.of(new float[] {2f, 8f}, backend, 1, 1, 2, 1);
-        Tensor mask = TensorFactory.of(new float[] {0f, Float.NEGATIVE_INFINITY}, backend, 2, 1);
+        Tensor mask = TensorFactory.of(new float[] {0f, Float.NEGATIVE_INFINITY, 0f, Float.NEGATIVE_INFINITY}, backend, 2, 2);
         Tensor masked = null;
         Tensor causal = null;
         try {
