@@ -26,7 +26,7 @@ public class LlamaCppCoalescer {
     private static final Logger log = Logger.getLogger(LlamaCppCoalescer.class);
 
     private final LlamaCppBinding binding;
-    private final LlamaCppProviderConfig providerConfig;
+    private final LlamaCppProviderSettings providerConfig;
     private final LlamaCppMetricsRecorder metricsRecorder;
     private final InferenceExecutor inferenceExecutor;
 
@@ -43,7 +43,7 @@ public class LlamaCppCoalescer {
 
     public LlamaCppCoalescer(
             LlamaCppBinding binding,
-            LlamaCppProviderConfig providerConfig,
+            LlamaCppProviderSettings providerConfig,
             LlamaCppMetricsRecorder metricsRecorder,
             InferenceExecutor inferenceExecutor) {
 
