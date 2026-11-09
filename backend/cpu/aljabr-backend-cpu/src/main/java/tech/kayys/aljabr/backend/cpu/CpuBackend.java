@@ -937,14 +937,10 @@ public final class CpuBackend implements ComputeBackend {
                             continue;
                         }
 
-                        float score = 0f;
-                        for (long d = 0; d < headDim; d++) {
-                            score += q.get(ValueLayout.JAVA_FLOAT,
-                                    (qBase + qi * headDim + d) * Float.BYTES)
-                                    * k.get(ValueLayout.JAVA_FLOAT,
-                                            (kBase + ki * headDim + d) * Float.BYTES);
-                        }
-                        score = score * scale + additive;
+                        float score = CpuAttentionOps.dot(
+                                q, (qBase + qi * headDim) * Float.BYTES,
+                                k, (kBase + ki * headDim) * Float.BYTES,
+                                Math.toIntExact(headDim)) * scale + additive;
 
                         float nextMax = Math.max(runningMax, score);
                         double previousScale = runningMax == Float.NEGATIVE_INFINITY
