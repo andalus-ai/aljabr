@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.core.nn;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 
 /**
  * Fully connected (linear) layer: y = xW^T + b.
@@ -12,22 +13,30 @@ public class Linear extends NNModule {
     private final long outFeatures;
     private final boolean hasBias;
 
+    /** @deprecated Use the constructor that accepts an explicit compute backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public Linear(long inFeatures, long outFeatures, boolean bias) {
+        this(null, inFeatures, outFeatures, bias);
+    }
+
+    public Linear(ComputeBackend backend, long inFeatures, long outFeatures, boolean bias) {
+        super(backend);
         this.inFeatures = inFeatures;
         this.outFeatures = outFeatures;
         this.hasBias = bias;
 
         // Initialize weight (using randn)
-        Tensor weight = Tensor.randn(outFeatures, inFeatures);
+        Tensor weight = randomNormal(outFeatures, inFeatures);
         registerParameter("weight", weight);
 
         if (bias) {
-            Tensor biasParam = Tensor.zeros(outFeatures);
+            Tensor biasParam = zeros(outFeatures);
             registerParameter("bias", biasParam);
         }
     }
 
     public Linear(Tensor weight, Tensor bias) {
+        super(java.util.Objects.requireNonNull(weight, "weight must not be null").backend());
         this.outFeatures = weight.shape().dim(0);
         this.inFeatures = weight.shape().dim(1);
         this.hasBias = (bias != null);
@@ -37,12 +46,19 @@ public class Linear extends NNModule {
         }
     }
 
+    /** @deprecated Use {@link #Linear(ComputeBackend, long, long)}. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public Linear(long inFeatures, long outFeatures) {
-        this(inFeatures, outFeatures, true);
+        this(null, inFeatures, outFeatures, true);
+    }
+
+    public Linear(ComputeBackend backend, long inFeatures, long outFeatures) {
+        this(backend, inFeatures, outFeatures, true);
     }
 
     @Override
     public Tensor forward(Tensor input) {
+        validateInputBackend(input);
         Tensor weight = parameters.get("weight");
         Tensor output;
 

@@ -10,6 +10,8 @@ import java.lang.foreign.MemorySegment;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.DeviceType;
 import tech.kayys.aljabr.core.tensor.DefaultTensor;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
 
 /**
  * Abstract base class for all neural network modules in Aljabr.
@@ -22,9 +24,47 @@ public abstract class NNModule implements AutoCloseable {
     protected final Map<String, Tensor> buffers = new LinkedHashMap<>();
     protected final Map<String, NNModule> submodules = new LinkedHashMap<>();
     protected boolean training = true;
+    private final ComputeBackend computeBackend;
+
+    protected NNModule() {
+        this(null);
+    }
+
+    /** Creates a module whose parameters and buffers are owned by the supplied backend. */
+    protected NNModule(ComputeBackend computeBackend) {
+        this.computeBackend = computeBackend;
+    }
+
+    /** Returns the explicitly configured backend, or {@code null} for legacy modules. */
+    public final ComputeBackend computeBackend() {
+        return computeBackend;
+    }
+
+    protected final Tensor randomNormal(long... shape) {
+        return computeBackend == null ? TensorFactory.randn(shape) : TensorFactory.randn(computeBackend, shape);
+    }
+
+    protected final Tensor zeros(long... shape) {
+        return computeBackend == null ? TensorFactory.zeros(shape) : TensorFactory.zeros(computeBackend, shape);
+    }
+
+    protected final Tensor ones(long... shape) {
+        return computeBackend == null ? TensorFactory.ones(shape) : TensorFactory.ones(computeBackend, shape);
+    }
+
+    protected final void validateInputBackend(Tensor input) {
+        Objects.requireNonNull(input, "input must not be null");
+        if (computeBackend != null && input.backend() != computeBackend) {
+            throw new IllegalArgumentException("Module backend mismatch: expected "
+                    + computeBackend.getClass().getName() + " but input uses "
+                    + input.backend().getClass().getName());
+        }
+    }
 
     protected void registerParameter(String name, Tensor param) {
         Objects.requireNonNull(name, "Parameter name must not be null");
+        Objects.requireNonNull(param, "Parameter must not be null");
+        validateOwnedTensor(name, param);
         parameters.put(name, param);
     }
 
@@ -34,12 +74,24 @@ public abstract class NNModule implements AutoCloseable {
 
     protected void registerBuffer(String name, Tensor buffer) {
         Objects.requireNonNull(name, "Buffer name must not be null");
+        Objects.requireNonNull(buffer, "Buffer must not be null");
+        validateOwnedTensor(name, buffer);
         buffers.put(name, buffer);
+    }
+
+    private void validateOwnedTensor(String name, Tensor tensor) {
+        if (computeBackend != null && tensor.backend() != computeBackend) {
+            throw new IllegalArgumentException("Module state '" + name + "' uses a different compute backend");
+        }
     }
 
     protected <T extends NNModule> T registerModule(String name, T module) {
         Objects.requireNonNull(name, "NNModule name must not be null");
         Objects.requireNonNull(module, "NNModule must not be null");
+        if (computeBackend != null && module.computeBackend() != null
+                && module.computeBackend() != computeBackend) {
+            throw new IllegalArgumentException("Submodule '" + name + "' uses a different compute backend");
+        }
         submodules.put(name, module);
         return module;
     }
