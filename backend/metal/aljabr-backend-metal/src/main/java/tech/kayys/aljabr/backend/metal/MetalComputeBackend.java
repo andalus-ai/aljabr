@@ -7,6 +7,7 @@ import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.memory.CpuBuffer;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.memory.TensorStorage;
+import tech.kayys.aljabr.core.memory.TensorAllocator;
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
 
 import java.lang.foreign.MemorySegment;
@@ -56,8 +57,21 @@ public class MetalComputeBackend implements ComputeBackend {
     private final CpuBackend cpuFallback;
     private final boolean isNative;
     private final boolean forceCpu;
+    private final TensorAllocator hostStagingAllocator;
 
     public MetalComputeBackend() {
+        this(null);
+    }
+
+    /**
+     * Creates a Metal backend with an explicit allocator for host-accessible
+     * output staging. The current FFM bridge writes through host MemorySegments,
+     * so this allocator must not return opaque device-local storage.
+     */
+    public MetalComputeBackend(TensorAllocator hostStagingAllocator) {
+        this.hostStagingAllocator = hostStagingAllocator != null
+                ? hostStagingAllocator
+                : CpuBuffer::new;
         this.forceCpu = Boolean.parseBoolean(System.getProperty(FORCE_CPU_PROPERTY, "false"));
 
         if (forceCpu) {
@@ -120,7 +134,23 @@ public class MetalComputeBackend implements ComputeBackend {
      * requires a separate TensorStorage implementation and binding contract.
      */
     private HostAccessibleStorage allocateHostStorage(long sizeBytes) {
-        return new CpuBuffer(sizeBytes);
+        TensorStorage storage = Objects.requireNonNull(
+                hostStagingAllocator.allocate(sizeBytes),
+                "Metal host-staging allocator must not return null");
+        if (!(storage instanceof HostAccessibleStorage hostStorage)) {
+            storage.release();
+            throw new IllegalArgumentException(
+                    "Metal FFM output staging requires HostAccessibleStorage, got "
+                            + storage.getClass().getName());
+        }
+        if (hostStorage.sizeBytes() < sizeBytes) {
+            long available = hostStorage.sizeBytes();
+            hostStorage.release();
+            throw new IllegalStateException(
+                    "Metal host-staging allocator returned " + available
+                            + " bytes; " + sizeBytes + " required");
+        }
+        return hostStorage;
     }
 
     /**
