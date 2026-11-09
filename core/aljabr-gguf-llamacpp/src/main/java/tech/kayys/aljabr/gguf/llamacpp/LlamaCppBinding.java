@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * @see LlamaCppProvider
  * @see LlamaCppSession
  */
-public class LlamaCppBinding {
+public class LlamaCppBinding implements AutoCloseable {
 
     private static final Logger log = Logger.getLogger(LlamaCppBinding.class);
 
