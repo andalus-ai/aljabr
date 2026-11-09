@@ -6,10 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.lang.foreign.MemorySegment;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.DeviceType;
-import tech.kayys.aljabr.core.tensor.DefaultTensor;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
 
@@ -227,7 +225,7 @@ public abstract class NNModule implements AutoCloseable {
      * @param stateDict source tensors keyed by fully qualified state name
      * @param strict when true, source and destination state names must match exactly
      * @throws IllegalArgumentException if names, shapes, or dtypes are incompatible
-     * @throws UnsupportedOperationException if a tensor implementation cannot be copied in place
+     * @throws UnsupportedOperationException if the destination backend does not support the required storage transfer
      */
     public void loadStateDict(Map<String, Tensor> stateDict, boolean strict) {
         Objects.requireNonNull(stateDict, "stateDict must not be null");
@@ -266,16 +264,7 @@ public abstract class NNModule implements AutoCloseable {
                 throw new IllegalArgumentException("DType mismatch for state " + entry.getKey()
                         + ": expected " + dst.dtype() + " but got " + src.dtype());
             }
-            if (!(src instanceof DefaultTensor) || !(dst instanceof DefaultTensor)) {
-                throw new UnsupportedOperationException(
-                        "In-place loadStateDict currently supports DefaultTensor only: " + entry.getKey());
-            }
-            long requiredBytes = dst.dtype().memoryFootprintBytes(dst.numel());
-            if (((DefaultTensor) src).buffer().sizeBytes() < requiredBytes
-                    || ((DefaultTensor) dst).buffer().sizeBytes() < requiredBytes) {
-                throw new IllegalArgumentException("Insufficient storage for state " + entry.getKey()
-                        + "; required " + requiredBytes + " bytes");
-            }
+            dst.backend().validateCopyInto(dst, src);
         }
 
         for (Map.Entry<String, Tensor> entry : supplied.entrySet()) {
@@ -283,10 +272,7 @@ public abstract class NNModule implements AutoCloseable {
             if (dst == null) {
                 continue;
             }
-            long requiredBytes = dst.dtype().memoryFootprintBytes(dst.numel());
-            MemorySegment srcSeg = ((DefaultTensor) entry.getValue()).buffer().segment();
-            MemorySegment dstSeg = ((DefaultTensor) dst).buffer().segment();
-            MemorySegment.copy(srcSeg, 0, dstSeg, 0, requiredBytes);
+            dst.backend().copyInto(dst, entry.getValue());
         }
     }
 

@@ -71,6 +71,79 @@ public interface ComputeBackend extends AutoCloseable {
     }
 
     /**
+     * Validates whether this backend can copy {@code source} into
+     * {@code destination} without modifying either tensor. Device backends
+     * should override this method when their storage compatibility rules differ
+     * from the host-accessible default.
+     */
+    default void validateCopyInto(Tensor destination, Tensor source) {
+        if (destination == null || source == null) {
+            throw new NullPointerException("destination and source tensors must not be null");
+        }
+        if (!java.util.Arrays.equals(destination.shape().dims(), source.shape().dims())) {
+            throw new IllegalArgumentException("Tensor copy shape mismatch: destination="
+                    + destination.shape() + ", source=" + source.shape());
+        }
+        if (destination.dtype() != source.dtype()) {
+            throw new IllegalArgumentException("Tensor copy dtype mismatch: destination="
+                    + destination.dtype() + ", source=" + source.dtype());
+        }
+        long sizeBytes = destination.dtype().memoryFootprintBytes(destination.numel());
+        TensorStorage destinationStorage = destination.storage();
+        TensorStorage sourceStorage = source.storage();
+        if (destinationStorage.sizeBytes() < sizeBytes || sourceStorage.sizeBytes() < sizeBytes) {
+            throw new IllegalArgumentException("Tensor copy storage is smaller than required " + sizeBytes + " bytes");
+        }
+        if (!(destinationStorage instanceof HostAccessibleStorage)
+                || !(sourceStorage instanceof HostAccessibleStorage)) {
+            throw new UnsupportedOperationException("Backend " + getClass().getName()
+                    + " must implement validateCopyInto for non-host-accessible tensor storage");
+        }
+    }
+
+    /**
+     * Copies the logical contents of {@code source} into the already allocated
+     * {@code destination} tensor without replacing its storage or metadata.
+     *
+     * <p>The default implementation supports host-accessible storage. Backends
+     * with opaque or device-local storage must override this method and perform
+     * the appropriate storage transfer. The destination backend owns this
+     * operation, so callers do not need to inspect concrete tensor or storage
+     * implementations.</p>
+     *
+     * @param destination tensor whose contents will be replaced
+     * @param source tensor supplying the contents
+     * @throws IllegalArgumentException when tensor metadata or storage capacity
+     *         is incompatible
+     * @throws UnsupportedOperationException when this backend cannot access
+     *         either storage representation
+     */
+    default void copyInto(Tensor destination, Tensor source) {
+        if (destination == null || source == null) {
+            throw new NullPointerException("destination and source tensors must not be null");
+        }
+        if (!java.util.Arrays.equals(destination.shape().dims(), source.shape().dims())) {
+            throw new IllegalArgumentException("Tensor copy shape mismatch: destination="
+                    + destination.shape() + ", source=" + source.shape());
+        }
+        if (destination.dtype() != source.dtype()) {
+            throw new IllegalArgumentException("Tensor copy dtype mismatch: destination="
+                    + destination.dtype() + ", source=" + source.dtype());
+        }
+        validateCopyInto(destination, source);
+        long sizeBytes = destination.dtype().memoryFootprintBytes(destination.numel());
+        TensorStorage destinationStorage = destination.storage();
+        TensorStorage sourceStorage = source.storage();
+        if (destinationStorage == sourceStorage || sizeBytes == 0) {
+            return;
+        }
+        HostAccessibleStorage destinationHost = (HostAccessibleStorage) destinationStorage;
+        HostAccessibleStorage sourceHost = (HostAccessibleStorage) sourceStorage;
+        destinationHost.segment().asSlice(0, sizeBytes)
+                .copyFrom(sourceHost.segment().asSlice(0, sizeBytes));
+    }
+
+    /**
      * Copies host data into backend-owned storage. The default implementation
      * supports host-accessible storage; device-memory backends must override
      * this method to perform an explicit host-to-device transfer.
