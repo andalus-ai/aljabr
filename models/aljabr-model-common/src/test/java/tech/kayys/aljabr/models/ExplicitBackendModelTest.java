@@ -13,29 +13,16 @@ import tech.kayys.aljabr.core.nn.NNModule;
 class ExplicitBackendModelTest {
 
     @Test
-    void bertFactoriesPropagateTheExplicitBackend() {
+    void llamaPropagatesBackendToEveryNestedModuleAndStateTensor() {
         CpuBackend backend = new CpuBackend();
-        NNModule encoder = BERT.bertBase(backend, BERT.VOCAB_SIZE_BASE);
-        NNModule classifier = BERT.forSequenceClassification(3, BERT.VOCAB_SIZE_BASE, backend);
-        try {
-            assertEquals(backend, encoder.computeBackend());
-            assertEquals(backend, classifier.computeBackend());
-            assertEquals(backend, classifier.children().get("encoder").computeBackend());
-            assertEquals(backend, classifier.children().get("classifier").computeBackend());
-            classifier.stateDict().values().forEach(tensor -> assertEquals(backend, tensor.backend()));
-        } finally {
-            encoder.close();
-            classifier.close();
-        }
-    }
-
-    @Test
-    void gpt2PropagatesTheExplicitBackendToEveryChildAndParameter() {
-        CpuBackend backend = new CpuBackend();
-        GPT2.GPT2Model model = new GPT2.GPT2Model(backend, 8, 2, 2, 16, 32, 64, 0.1f);
+        LLaMA.LLaMAModel model = new LLaMA.LLaMAModel(backend, 8, 2, 2, 16, 32, 64, 0.0f);
         try {
             assertEquals(backend, model.computeBackend());
-            model.children().values().forEach(child -> assertEquals(backend, child.computeBackend()));
+            assertEquals(backend, model.children().get("embed").computeBackend());
+            assertEquals(backend, model.children().get("norm").computeBackend());
+            assertEquals(backend, model.children().get("lm_head").computeBackend());
+            model.children().get("block_0").stateDict().values()
+                    .forEach(tensor -> assertEquals(backend, tensor.backend()));
             model.stateDict().values().forEach(tensor -> assertEquals(backend, tensor.backend()));
         } finally {
             model.close();
@@ -43,19 +30,16 @@ class ExplicitBackendModelTest {
     }
 
     @Test
-    void bertAndGpt2RejectInputsFromAnotherBackend() {
+    void llamaRejectsInputOwnedByAnotherBackend() {
         CpuBackend owner = new CpuBackend();
         CpuBackend other = new CpuBackend();
-        NNModule bert = BERT.bertBase(owner, BERT.VOCAB_SIZE_BASE);
-        GPT2.GPT2Model gpt2 = new GPT2.GPT2Model(owner, 8, 2, 1, 16, 32, 64, 0.1f);
+        NNModule model = new LLaMA.LLaMAModel(owner, 8, 2, 1, 16, 32, 64, 0.0f);
         Tensor input = TensorFactory.of(new float[8], other, 1, 1, 8);
         try {
-            assertThrows(IllegalArgumentException.class, () -> bert.forward(input));
-            assertThrows(IllegalArgumentException.class, () -> gpt2.forward(input));
+            assertThrows(IllegalArgumentException.class, () -> model.forward(input));
         } finally {
             input.release();
-            bert.close();
-            gpt2.close();
+            model.close();
         }
     }
 }
