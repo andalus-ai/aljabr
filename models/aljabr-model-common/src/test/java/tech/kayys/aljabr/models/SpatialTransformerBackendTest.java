@@ -54,7 +54,7 @@ class SpatialTransformerBackendTest {
         try (SpatialTransformer transformer = new SpatialTransformer(backend, 32, 2, 8, 12)) {
             Tensor wrongChannels = TensorFactory.of(new float[16], backend, 1, 16, 1, 1);
             Tensor input = TensorFactory.of(new float[32], backend, 1, 32, 1, 1);
-            Tensor wrongContext = TensorFactory.of(new float[24], backend, 1, 2, 12);
+            Tensor wrongContext = TensorFactory.of(new float[26], backend, 1, 2, 13);
             try {
                 assertThatThrownBy(() -> transformer.forward(wrongChannels, null))
                         .isInstanceOf(IllegalArgumentException.class)
