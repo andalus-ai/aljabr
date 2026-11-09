@@ -19,7 +19,7 @@ public class LlamaCppKVCacheManager {
     private static final Logger log = Logger.getLogger(LlamaCppKVCacheManager.class);
 
     private final LlamaCppBinding binding;
-    private final LlamaCppProviderConfig providerConfig;
+    private final LlamaCppProviderSettings providerConfig;
     private final ModelManifest manifest;
 
     private int[] kvTokenHistory = new int[0];
@@ -33,7 +33,7 @@ public class LlamaCppKVCacheManager {
                 }
             });
 
-    public LlamaCppKVCacheManager(LlamaCppBinding binding, LlamaCppProviderConfig providerConfig, ModelManifest manifest) {
+    public LlamaCppKVCacheManager(LlamaCppBinding binding, LlamaCppProviderSettings providerConfig, ModelManifest manifest) {
         this.binding = binding;
         this.providerConfig = providerConfig;
         this.manifest = manifest;
