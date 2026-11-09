@@ -1,14 +1,17 @@
 package tech.kayys.aljabr.models;
 
+import java.util.List;
 import java.util.Objects;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorOps;
 import tech.kayys.aljabr.core.nn.NNModule;
 import tech.kayys.aljabr.core.nn.GroupNorm;
 import tech.kayys.aljabr.core.nn.Linear;
 import tech.kayys.aljabr.core.nn.Sequential;
 import tech.kayys.aljabr.core.nn.Conv2d;
+import tech.kayys.aljabr.core.nn.Downsample2d;
 import tech.kayys.aljabr.core.nn.Upsample2d;
 import tech.kayys.aljabr.core.nn.SiLU;
 
@@ -35,6 +38,7 @@ public class UNet2DConditional extends NNModule {
 
     private final ResnetBlock2D down1;
     private final SpatialTransformer downAttn1;
+    private final Downsample2d downsample;
     private final ResnetBlock2D down2;
     private final SpatialTransformer downAttn2;
 
@@ -84,8 +88,10 @@ public class UNet2DConditional extends NNModule {
         this.downAttn1 = register("down1_attn",
                 new SpatialTransformer(backend, BASE_CHANNELS, 8, 40, contextDim));
 
+        this.downsample = register("downsample",
+                new Downsample2d(backend, BASE_CHANNELS, EXPANDED_CHANNELS));
         this.down2 = register("down2_res",
-                new ResnetBlock2D(backend, BASE_CHANNELS, EXPANDED_CHANNELS, tembDim * 4));
+                new ResnetBlock2D(backend, EXPANDED_CHANNELS, EXPANDED_CHANNELS, tembDim * 4));
         this.downAttn2 = register("down2_attn",
                 new SpatialTransformer(backend, EXPANDED_CHANNELS, 8, 80, contextDim));
 
@@ -95,12 +101,12 @@ public class UNet2DConditional extends NNModule {
                 new SpatialTransformer(backend, EXPANDED_CHANNELS, 8, 80, contextDim));
 
         this.upsample1 = register("up1_upsample", new Upsample2d(backend, 2.0f));
+        // 640 decoder channels concatenate with the 320-channel encoder skip.
         this.up1 = register("up1_res",
-                new ResnetBlock2D(backend, EXPANDED_CHANNELS, BASE_CHANNELS, tembDim * 4));
+                new ResnetBlock2D(backend, EXPANDED_CHANNELS + BASE_CHANNELS, BASE_CHANNELS, tembDim * 4));
         this.upAttn1 = register("up1_attn",
                 new SpatialTransformer(backend, BASE_CHANNELS, 8, 40, contextDim));
 
-        this.upsample2 = register("up2_upsample", new Upsample2d(backend, 2.0f));
         this.up2 = register("up2_res",
                 new ResnetBlock2D(backend, BASE_CHANNELS, BASE_CHANNELS, tembDim * 4));
 
@@ -126,10 +132,10 @@ public class UNet2DConditional extends NNModule {
 
         if (latents.shape().rank() != 4
                 || latents.shape().dim(1) != inChannels
-                || latents.shape().dim(2) <= 0
-                || latents.shape().dim(3) <= 0) {
+                || latents.shape().dim(2) < 2
+                || latents.shape().dim(3) < 2) {
             throw new IllegalArgumentException(
-                    "latents must have shape [N, " + inChannels + ", H, W]");
+                    "latents must have shape [N, " + inChannels + ", H, W] with H and W >= 2");
         }
         if (timestep.shape().rank() != 2
                 || timestep.shape().dim(0) != latents.shape().dim(0)
@@ -153,19 +159,17 @@ public class UNet2DConditional extends NNModule {
         Tensor s1 = down1.forward(h, temb);
         s1 = downAttn1.forward(s1, context);
 
-        Tensor s2 = down2.forward(s1, temb);
+        Tensor h = downsample.forward(s1);
+        Tensor s2 = down2.forward(h, temb);
         s2 = downAttn2.forward(s2, context);
 
         h = midRes.forward(s2, temb);
         h = midAttn.forward(h, context);
 
-        h = upsample1.forward(h);
-        h = h.add(s2);
+        h = upsample1.forwardTo(h, s1);
+        h = TensorOps.cat(List.of(h, s1), 1);
         h = up1.forward(h, temb);
         h = upAttn1.forward(h, context);
-
-        h = upsample2.forward(h);
-        h = h.add(s1);
         h = up2.forward(h, temb);
 
         h = convNormOut.forward(h).silu();
