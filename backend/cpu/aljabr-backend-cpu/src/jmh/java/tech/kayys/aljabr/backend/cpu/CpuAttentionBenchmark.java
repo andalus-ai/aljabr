@@ -1,7 +1,5 @@
 package tech.kayys.aljabr.backend.cpu;
 
-import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
 
 import org.openjdk.jmh.annotations.Benchmark;
@@ -49,8 +47,6 @@ public class CpuAttentionBenchmark {
     private Tensor query;
     private Tensor key;
     private Tensor value;
-    private MemorySegment querySegment;
-    private MemorySegment keySegment;
 
     @Setup(Level.Trial)
     public void setUp() {
@@ -58,8 +54,6 @@ public class CpuAttentionBenchmark {
         query = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
         key = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
         value = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
-        querySegment = CpuTensorStorageAccess.segment(query);
-        keySegment = CpuTensorStorageAccess.segment(key);
     }
 
     @TearDown(Level.Trial)
@@ -68,24 +62,6 @@ public class CpuAttentionBenchmark {
         if (key != null) key.release();
         if (query != null) query.release();
         if (backend != null) backend.close();
-    }
-
-    /** Measures the SIMD primitive independently of attention's softmax and value accumulation. */
-    @Benchmark
-    public float vectorizedDotProduct() {
-        return CpuAttentionOps.dot(querySegment, 0, keySegment, 0, headDimension);
-    }
-
-    /** Scalar reference with the same memory inputs, for an apples-to-apples primitive comparison. */
-    @Benchmark
-    public float scalarDotProduct() {
-        float result = 0f;
-        for (int i = 0; i < headDimension; i++) {
-            float left = querySegment.get(ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES);
-            float right = keySegment.get(ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES);
-            result += left * right;
-        }
-        return result;
     }
 
     @Benchmark
