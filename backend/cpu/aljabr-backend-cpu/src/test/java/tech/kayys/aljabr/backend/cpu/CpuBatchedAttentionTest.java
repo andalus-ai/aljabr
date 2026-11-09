@@ -35,7 +35,7 @@ class CpuBatchedAttentionTest {
     void rejectsIncompatibleBatchHeadAndFeatureDimensions() {
         CpuBackend backend = new CpuBackend();
         Tensor query = TensorFactory.of(new float[8], backend, 1, 2, 2, 2);
-        Tensor key = TensorFactory.of(new float[12], backend, 1, 1, 3, 2);
+        Tensor key = TensorFactory.of(new float[6], backend, 1, 1, 3, 2);
         Tensor value = TensorFactory.of(new float[12], backend, 1, 2, 3, 2);
 
         assertThrows(IllegalArgumentException.class, () -> backend.attention(query, key, value));

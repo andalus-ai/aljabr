@@ -120,7 +120,21 @@ public final class MetalComputeProvider implements ComputeProvider {
             openSessions = new ArrayList<>(sessions);
             sessions.clear();
         }
-        openSessions.forEach(MetalProviderSession::close);
+        RuntimeException failure = null;
+        for (MetalProviderSession session : openSessions) {
+            try {
+                session.close();
+            } catch (ProviderException closeFailure) {
+                if (failure == null) {
+                    failure = new IllegalStateException("Unable to close all Metal provider sessions", closeFailure);
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     private static boolean isMacOs() {
@@ -165,14 +179,15 @@ public final class MetalComputeProvider implements ComputeProvider {
         }
 
         @Override
-        public synchronized void close() {
+        public synchronized void close() throws ProviderException {
             if (closed) {
                 return;
             }
-            // MetalBinding is currently a process-scoped singleton; the legacy
-            // backend exposes no per-session native release operation.
             closed = true;
             owner.sessions.remove(this);
+            // MetalBinding remains process-scoped; closing this session closes
+            // its backend instance without unloading the shared native bridge.
+            ProviderSession.closeBackends(backends);
         }
     }
 }

@@ -52,6 +52,38 @@ class MetalComputeProviderTest {
     }
 
     @Test
+    void sessionCloseReleasesItsOwnedBackendExactlyOnce() throws Exception {
+        AtomicInteger closeCalls = new AtomicInteger();
+        ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("close")) {
+                        closeCalls.incrementAndGet();
+                        return null;
+                    }
+                    if (method.getDeclaringClass() == Object.class) {
+                        return switch (method.getName()) {
+                            case "toString" -> "tracked-metal-backend";
+                            case "hashCode" -> System.identityHashCode(proxy);
+                            case "equals" -> proxy == args[0];
+                            default -> null;
+                        };
+                    }
+                    throw new UnsupportedOperationException("No hardware execution in provider contract test");
+                });
+        MetalComputeProvider provider = new MetalComputeProvider(() -> true, () -> backend);
+        provider.initialize(new ProviderContext("test", Map.of()));
+        ProviderSession session = provider.openSession(provider.devices().get(0));
+
+        session.close();
+        session.close();
+
+        assertEquals(1, closeCalls.get());
+        provider.close();
+    }
+
+    @Test
     void providerRejectsUnsupportedPlatformAndForeignDevice() throws Exception {
         MetalComputeProvider unsupported = new MetalComputeProvider(() -> false, MetalComputeProviderTest::inertBackend);
         unsupported.initialize(new ProviderContext("test", Map.of()));

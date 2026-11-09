@@ -32,7 +32,18 @@ import java.util.List;
  * GC pressure and maximize throughput.
  * @author bhangun
  */
-public interface ComputeBackend {
+public interface ComputeBackend extends AutoCloseable {
+
+    /**
+     * Releases resources owned by this backend instance. Stateless backends
+     * need not override this method. Provider sessions close each distinct
+     * backend instance they own when the session is closed.
+     */
+    @Override
+    default void close() {
+        // Most CPU and compatibility backends do not own closeable resources.
+    }
+
 
     /**
      * Allocates host-accessible storage for a tensor created from host data.

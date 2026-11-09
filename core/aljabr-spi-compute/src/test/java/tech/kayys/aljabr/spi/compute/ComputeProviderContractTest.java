@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.lang.reflect.Proxy;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +35,53 @@ class ComputeProviderContractTest {
 
         session.close();
         assertEquals(1, session.closeCount);
+    }
+
+
+    @Test
+    void sessionResourceHelperClosesDistinctBackendInstancesExactlyOnce() throws Exception {
+        AtomicInteger closeCalls = new AtomicInteger();
+        ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("close")) {
+                        closeCalls.incrementAndGet();
+                        return null;
+                    }
+                    return null;
+                });
+
+        ProviderSession.closeBackends(Map.of("primary", backend, "alias", backend));
+
+        assertEquals(1, closeCalls.get());
+    }
+
+    @Test
+    void sessionResourceHelperAttemptsRemainingBackendsAfterCloseFailure() throws Exception {
+        AtomicInteger successfulCloseCalls = new AtomicInteger();
+        ComputeBackend failing = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("close")) {
+                        throw new IllegalStateException("close failed");
+                    }
+                    return null;
+                });
+        ComputeBackend successful = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("close")) {
+                        successfulCloseCalls.incrementAndGet();
+                    }
+                    return null;
+                });
+
+        assertThrows(ProviderException.class,
+                () -> ProviderSession.closeBackends(Map.of("failing", failing, "successful", successful)));
+        assertEquals(1, successfulCloseCalls.get());
     }
 
     private static final class FakeSession implements ProviderSession {
