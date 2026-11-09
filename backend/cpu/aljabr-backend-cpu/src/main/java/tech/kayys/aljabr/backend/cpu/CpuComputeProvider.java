@@ -71,7 +71,7 @@ public final class CpuComputeProvider implements ComputeProvider {
     }
 
     @Override
-    public void close() throws ProviderException {
+    public void close() {
         List<CpuProviderSession> openSessions;
         synchronized (this) {
             if (closed) return;
@@ -80,13 +80,13 @@ public final class CpuComputeProvider implements ComputeProvider {
             openSessions = new ArrayList<>(sessions);
             sessions.clear();
         }
-        ProviderException failure = null;
+        RuntimeException failure = null;
         for (CpuProviderSession session : openSessions) {
             try {
                 session.close();
             } catch (ProviderException closeFailure) {
                 if (failure == null) {
-                    failure = new ProviderException("Unable to close all CPU provider sessions", closeFailure);
+                    failure = new IllegalStateException("Unable to close all CPU provider sessions", closeFailure);
                 } else {
                     failure.addSuppressed(closeFailure);
                 }
