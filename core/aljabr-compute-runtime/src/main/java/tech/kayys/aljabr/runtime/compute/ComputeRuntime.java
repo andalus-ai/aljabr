@@ -1,8 +1,6 @@
 package tech.kayys.aljabr.runtime.compute;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -64,11 +62,32 @@ public final class ComputeRuntime implements AutoCloseable {
 
     /** Opens a provider with immutable provider initialization configuration. */
     public static ComputeRuntime open(String providerId, Map<String, String> configuration) {
+        return open(providerId, null, configuration);
+    }
+
+    /**
+     * Opens a provider and selects a backend by its stable provider-defined id.
+     * When {@code backendId} is omitted, the selected session must expose exactly
+     * one backend; ambiguous multi-backend sessions are never resolved by map order.
+     */
+    public static ComputeRuntime open(String providerId, String backendId) {
+        return open(providerId, backendId, Map.of());
+    }
+
+    /** Opens a provider with an explicit backend id and immutable initialization configuration. */
+    public static ComputeRuntime open(
+            String providerId,
+            String backendId,
+            Map<String, String> configuration) {
         Objects.requireNonNull(providerId, "providerId");
         Objects.requireNonNull(configuration, "configuration");
         String requested = providerId.trim();
+        String requestedBackend = backendId == null ? null : backendId.trim();
         if (requested.isEmpty()) {
             throw new IllegalArgumentException("providerId must not be blank");
+        }
+        if (requestedBackend != null && requestedBackend.isEmpty()) {
+            throw new IllegalArgumentException("backendId must not be blank");
         }
 
         ProviderDiscoveryResult discovery = ProviderDiscovery.discover(
@@ -132,19 +151,9 @@ public final class ComputeRuntime implements AutoCloseable {
                 ProviderSession openedSession = null;
                 try {
                     openedSession = candidate.provider().openSession(candidate.device());
-                    Map<String, ComputeBackend> backends = new LinkedHashMap<>(openedSession.computeBackends());
-                    if (!backends.isEmpty()) {
-                        ComputeBackend backend = backends.entrySet().stream()
-                                .sorted(Map.Entry.comparingByKey())
-                                .map(Map.Entry::getValue)
-                                .findFirst()
-                                .orElseThrow();
-                        return new ComputeRuntime(owned, openedSession, backend, candidate.device());
-                    }
-                    openedSession.close();
-                    openedSession = null;
-                    failures.add(candidate.provider().descriptor().id()
-                            + ": opened a session without compute backends");
+                    Map<String, ComputeBackend> backends = openedSession.computeBackends();
+                    ComputeBackend backend = selectBackend(backends, requestedBackend);
+                    return new ComputeRuntime(owned, openedSession, backend, candidate.device());
                 } catch (ProviderException | RuntimeException | LinkageError failure) {
                     if (openedSession != null) {
                         try {
@@ -210,6 +219,26 @@ public final class ComputeRuntime implements AutoCloseable {
         if (closeFailure != null) {
             throw closeFailure;
         }
+    }
+
+    static ComputeBackend selectBackend(Map<String, ComputeBackend> backends, String requestedBackend) {
+        Objects.requireNonNull(backends, "backends");
+        if (backends.isEmpty()) {
+            throw new IllegalStateException("Provider session exposes no compute backends");
+        }
+        if (requestedBackend != null) {
+            ComputeBackend selected = backends.get(requestedBackend);
+            if (selected == null) {
+                throw new IllegalStateException("Requested compute backend '" + requestedBackend
+                        + "' is unavailable; available backends: " + backends.keySet());
+            }
+            return selected;
+        }
+        if (backends.size() != 1) {
+            throw new IllegalStateException("Provider session exposes multiple compute backends "
+                    + backends.keySet() + "; select one by its provider-defined backend id");
+        }
+        return backends.values().iterator().next();
     }
 
     private void ensureOpen() {
