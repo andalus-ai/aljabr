@@ -12,9 +12,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Session-scoped, size-bucketed off-heap memory pool.
- * Normal acquire/release calls share a lifecycle read lock; close takes the
- * write lock and waits for in-flight pool operations before closing the arena.
- * Callers must stop using acquired segments before closing this pool.
+ *
+ * <p>Closing prevents new leases and discards idle buffers. Outstanding leases
+ * remain valid until returned; the arena is closed when the final lease is
+ * released. This permits owners to shut down without invalidating live tensors.</p>
  */
 public final class OffHeapBufferPool implements AutoCloseable {
     private static final int MIN_BUCKET_SHIFT = 6;
@@ -26,9 +27,9 @@ public final class OffHeapBufferPool implements AutoCloseable {
     private final AtomicReference<Node>[] heads = new AtomicReference[NUM_BUCKETS];
     private final Arena arena;
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicBoolean arenaClosed = new AtomicBoolean();
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
-    // Identity semantics are required: a lease is the exact segment instance returned by acquire().
-    // Access is synchronized because multiple operations hold the lifecycle read lock concurrently.
+    // Identity semantics: only exact segment instances returned by acquire are leases.
     private final Map<MemorySegment, Boolean> activeSegments = new IdentityHashMap<>();
     private final LongAdder hits = new LongAdder();
     private final LongAdder misses = new LongAdder();
@@ -76,13 +77,15 @@ public final class OffHeapBufferPool implements AutoCloseable {
         } finally { lock.unlock(); }
     }
 
-    /** Returns a segment for reuse. The caller must not access it afterwards. */
+    /**
+     * Returns a lease. After close(), returned segments are discarded rather
+     * than pooled; the last outstanding lease closes the arena.
+     */
     public void release(MemorySegment segment) {
         Objects.requireNonNull(segment, "segment must not be null");
         var lock = lifecycle.readLock();
         lock.lock();
         try {
-            if (closed.get()) return;
             if (segment.scope() != arena.scope()) {
                 throw new IllegalArgumentException("Segment must belong to this pool's arena");
             }
@@ -90,6 +93,10 @@ public final class OffHeapBufferPool implements AutoCloseable {
                 if (activeSegments.remove(segment) == null) {
                     throw new IllegalArgumentException(
                             "Segment was not acquired from this pool or has already been released");
+                }
+                if (closed.get()) {
+                    closeArenaIfDrained();
+                    return;
                 }
             }
             int idx = bucketFor(segment.byteSize());
@@ -107,6 +114,7 @@ public final class OffHeapBufferPool implements AutoCloseable {
     public long hits() { return hits.sum(); }
     public long misses() { return misses.sum(); }
     public long bytesPooled() { return bytesPooled.sum(); }
+    public boolean isClosed() { return closed.get(); }
 
     public String stats() {
         long hitCount = hits();
@@ -117,20 +125,28 @@ public final class OffHeapBufferPool implements AutoCloseable {
                 hitCount, missCount, rate, humanBytes(bytesPooled()));
     }
 
-    /** Waits for in-flight pool operations, then invalidates arena-backed segments. */
+    /**
+     * Stops new acquisitions and discards idle segments. Existing leases remain
+     * valid and are responsible for returning themselves before arena teardown.
+     */
     @Override public void close() {
         var lock = lifecycle.writeLock();
         lock.lock();
         try {
             if (closed.compareAndSet(false, true)) {
                 for (AtomicReference<Node> head : heads) head.set(null);
-                synchronized (activeSegments) {
-                    activeSegments.clear();
-                }
                 bytesPooled.reset();
+            }
+            closeArenaIfDrained();
+        } finally { lock.unlock(); }
+    }
+
+    private void closeArenaIfDrained() {
+        synchronized (activeSegments) {
+            if (closed.get() && activeSegments.isEmpty() && arenaClosed.compareAndSet(false, true)) {
                 arena.close();
             }
-        } finally { lock.unlock(); }
+        }
     }
 
     private void markAcquired(MemorySegment segment) {
