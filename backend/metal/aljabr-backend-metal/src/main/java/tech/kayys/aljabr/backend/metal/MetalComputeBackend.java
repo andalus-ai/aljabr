@@ -35,6 +35,9 @@ public class MetalComputeBackend implements ComputeBackend {
             // Preserve support for Tensor implementations that do not expose
             // backing storage through the optional Tensor.storage() capability.
             return cpuRes;
+        if (cpuRes instanceof tech.kayys.aljabr.core.tensor.DefaultTensor dt) {
+            return new tech.kayys.aljabr.core.tensor.DefaultTensor(dt.shape(), dt.dtype(), dt.device(),
+                    dt.storage(), this);
         }
     }
 
@@ -112,6 +115,11 @@ public class MetalComputeBackend implements ComputeBackend {
 
     private static MemorySegment optionalSegment(Tensor tensor) {
         return tensor == null ? MemorySegment.NULL : segment(tensor);
+    }
+
+    @Override
+    public DeviceType deviceType() {
+        return isNative ? DeviceType.METAL : DeviceType.CPU;
     }
 
     @Override
