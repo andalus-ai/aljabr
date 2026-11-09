@@ -928,6 +928,49 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor upsampleNearest2d(Tensor input, int outputH, int outputW) {
+        if (input.shape().rank() != 4) {
+            throw new IllegalArgumentException("upsampleNearest2d expects NCHW rank-4 input");
+        }
+        if (input.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU nearest-neighbor upsampling currently supports F32 tensors only");
+        }
+        if (outputH <= 0 || outputW <= 0) {
+            throw new IllegalArgumentException("output height and width must be positive");
+        }
+
+        long batch = input.shape().dim(0);
+        long channels = input.shape().dim(1);
+        long inputH = input.shape().dim(2);
+        long inputW = input.shape().dim(3);
+        if (inputH <= 0 || inputW <= 0) {
+            throw new IllegalArgumentException("input height and width must be positive");
+        }
+
+        Shape outputShape = new Shape(batch, channels, outputH, outputW);
+        CpuBuffer output = allocate(Math.multiplyExact(outputShape.numel(), Float.BYTES));
+        MemorySegment source = seg(input);
+        MemorySegment destination = output.segment();
+
+        for (long n = 0; n < batch; n++) {
+            for (long c = 0; c < channels; c++) {
+                for (int oh = 0; oh < outputH; oh++) {
+                    long ih = Math.min(inputH - 1, (long) oh * inputH / outputH);
+                    for (int ow = 0; ow < outputW; ow++) {
+                        long iw = Math.min(inputW - 1, (long) ow * inputW / outputW);
+                        long sourceIndex = ((n * channels + c) * inputH + ih) * inputW + iw;
+                        long destinationIndex = ((n * channels + c) * outputH + oh) * outputW + ow;
+                        destination.set(ValueLayout.JAVA_FLOAT, destinationIndex * Float.BYTES,
+                                source.get(ValueLayout.JAVA_FLOAT, sourceIndex * Float.BYTES));
+                    }
+                }
+            }
+        }
+        return out(outputShape, output);
+    }
+
+    @Override
     public Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding) {
         long N = input.shape().dim(0);
         long C = input.shape().dim(1);

@@ -6,9 +6,7 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 /**
  * 2D upsampling module.
  *
- * <p>The current forward operation is intentionally a placeholder and returns
- * its input unchanged. It exists as an architectural slot until a backend
- * implementation of spatial interpolation is provided.</p>
+ * <p>Uses the backend's nearest-neighbor resize operation for NCHW tensors.</p>
  */
 public class Upsample2d extends NNModule {
 
@@ -31,7 +29,16 @@ public class Upsample2d extends NNModule {
     @Override
     public Tensor forward(Tensor input) {
         validateInputBackend(input);
-        return input;
+        if (input.shape().rank() != 4) {
+            throw new IllegalArgumentException("Upsample2d expects NCHW rank-4 input");
+        }
+        long outputH = (long) Math.floor(input.shape().dim(2) * (double) scaleFactor);
+        long outputW = (long) Math.floor(input.shape().dim(3) * (double) scaleFactor);
+        if (outputH <= 0 || outputW <= 0 || outputH > Integer.MAX_VALUE || outputW > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("scaleFactor produces invalid output dimensions: "
+                    + outputH + "x" + outputW);
+        }
+        return input.upsampleNearest2d((int) outputH, (int) outputW);
     }
 
     public float scaleFactor() {

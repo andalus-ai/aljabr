@@ -211,6 +211,17 @@ public interface ComputeBackend {
     Tensor conv2d(Tensor input, Tensor weight, Tensor bias,
             int stride, int padding, int dilation, int groups);
 
+    /**
+     * Nearest-neighbor resize for NCHW tensors.
+     *
+     * <p>Backends may implement this operation natively. The default fails
+     * explicitly so unsupported backends never silently return the input.</p>
+     */
+    default Tensor upsampleNearest2d(Tensor input, int outputH, int outputW) {
+        throw new UnsupportedOperationException(
+                "Nearest-neighbor 2D upsampling is not supported by backend " + getClass().getName());
+    }
+
     /** 2D max pooling. */
     Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding);
 
