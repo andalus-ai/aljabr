@@ -52,6 +52,14 @@ public abstract class NNModule implements AutoCloseable {
         return computeBackend == null ? TensorFactory.ones(shape) : TensorFactory.ones(computeBackend, shape);
     }
 
+    /** Creates tensor data on this module's backend, preserving legacy behavior for unconfigured modules. */
+    @SuppressWarnings("removal")
+    protected final Tensor tensorOf(float[] values, long... shape) {
+        return computeBackend == null
+                ? TensorFactory.of(values, shape)
+                : TensorFactory.of(values, computeBackend, shape);
+    }
+
     protected final void validateInputBackend(Tensor input) {
         Objects.requireNonNull(input, "input must not be null");
         if (computeBackend != null && input.backend() != computeBackend) {
