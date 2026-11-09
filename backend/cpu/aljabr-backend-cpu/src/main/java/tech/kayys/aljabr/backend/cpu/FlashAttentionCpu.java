@@ -28,9 +28,9 @@ public final class FlashAttentionCpu {
         CpuBuffer out = new CpuBuffer((long) seqLen * dim * 4);
         try {
             compute(
-                    ((DefaultTensor) Q).buffer().segment(),
-                    ((DefaultTensor) K).buffer().segment(),
-                    ((DefaultTensor) V).buffer().segment(),
+                    CpuTensorStorageAccess.segment(Q),
+                    CpuTensorStorageAccess.segment(K),
+                    CpuTensorStorageAccess.segment(V),
                     out.segment(),
                     seqLen,
                     dim,
@@ -43,7 +43,7 @@ public final class FlashAttentionCpu {
                 Q.dtype(),
                 Q.device(),
                 out,
-                null // backend injected outside if needed
+                Q.backend()
         );
     }
 
