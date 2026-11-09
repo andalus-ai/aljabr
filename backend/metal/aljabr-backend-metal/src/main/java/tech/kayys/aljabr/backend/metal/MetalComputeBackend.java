@@ -585,8 +585,6 @@ public class MetalComputeBackend implements ComputeBackend {
         for (int i = 0; i < shape.rank() - 1; i++) {
             rows *= shape.dim(i);
         }
-        final int rowCount = rows;
-
         final int normalizedWidth = n;
         final int rowCount = rows;
         HostAccessibleStorage bufferOut = allocateHostStorage((long) rowCount * normalizedWidth * 4);
