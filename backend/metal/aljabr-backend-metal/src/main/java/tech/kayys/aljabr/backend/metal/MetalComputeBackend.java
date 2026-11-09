@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Metal hardware-accelerated computation backend.
@@ -59,16 +60,17 @@ public class MetalComputeBackend implements ComputeBackend {
     private final boolean forceCpu;
     private final TensorAllocator hostStagingAllocator;
     private final MetalFallbackPolicy fallbackPolicy;
+    private final MetalExecutionObserver executionObserver;
 
     public MetalComputeBackend() {
-        this(null, MetalRuntimePolicy.ALLOW_CPU_FALLBACK, MetalFallbackPolicy.ALLOW_CPU_FALLBACK);
+        this(null, MetalRuntimePolicy.ALLOW_CPU_FALLBACK, MetalFallbackPolicy.ALLOW_CPU_FALLBACK, MetalExecutionObserver.NO_OP);
     }
 
     /**
      * Creates a backend with an explicit allocator for host-accessible output staging.
      */
     public MetalComputeBackend(TensorAllocator hostStagingAllocator) {
-        this(hostStagingAllocator, MetalRuntimePolicy.ALLOW_CPU_FALLBACK, MetalFallbackPolicy.ALLOW_CPU_FALLBACK);
+        this(hostStagingAllocator, MetalRuntimePolicy.ALLOW_CPU_FALLBACK, MetalFallbackPolicy.ALLOW_CPU_FALLBACK, MetalExecutionObserver.NO_OP);
     }
 
     /**
@@ -77,7 +79,7 @@ public class MetalComputeBackend implements ComputeBackend {
      * individual operations may still use CPU kernels when no native kernel exists.
      */
     public MetalComputeBackend(TensorAllocator hostStagingAllocator, MetalRuntimePolicy runtimePolicy) {
-        this(hostStagingAllocator, runtimePolicy, MetalFallbackPolicy.ALLOW_CPU_FALLBACK);
+        this(hostStagingAllocator, runtimePolicy, MetalFallbackPolicy.ALLOW_CPU_FALLBACK, MetalExecutionObserver.NO_OP);
     }
 
     /**
@@ -88,8 +90,21 @@ public class MetalComputeBackend implements ComputeBackend {
             TensorAllocator hostStagingAllocator,
             MetalRuntimePolicy runtimePolicy,
             MetalFallbackPolicy fallbackPolicy) {
+        this(hostStagingAllocator, runtimePolicy, fallbackPolicy, MetalExecutionObserver.NO_OP);
+    }
+
+    /**
+     * Creates a backend with opt-in execution reporting. Observer callbacks are isolated
+     * from computation: observer failures are logged and never change operation results.
+     */
+    public MetalComputeBackend(
+            TensorAllocator hostStagingAllocator,
+            MetalRuntimePolicy runtimePolicy,
+            MetalFallbackPolicy fallbackPolicy,
+            MetalExecutionObserver executionObserver) {
         this.hostStagingAllocator = hostStagingAllocator != null ? hostStagingAllocator : CpuBuffer::new;
         this.fallbackPolicy = Objects.requireNonNull(fallbackPolicy, "fallbackPolicy");
+        this.executionObserver = Objects.requireNonNull(executionObserver, "executionObserver");
         Objects.requireNonNull(runtimePolicy, "runtimePolicy");
         this.forceCpu = Boolean.parseBoolean(System.getProperty(FORCE_CPU_PROPERTY, "false"));
 
@@ -221,12 +236,43 @@ public class MetalComputeBackend implements ComputeBackend {
      */
     private <T> T fallback(String operation, Supplier<T> cpuExecution) {
         if (fallbackPolicy == MetalFallbackPolicy.FAIL_IF_UNSUPPORTED) {
+            reportExecution(new MetalExecutionEvent(operation, MetalExecutionEvent.ExecutionPath.REJECTED,
+                    "Native Metal execution is unavailable for this operation or input"));
             throw new UnsupportedOperationException(
                     "Metal operation '" + operation
                             + "' cannot execute natively and CPU fallback is disabled");
         }
+        reportExecution(new MetalExecutionEvent(operation, MetalExecutionEvent.ExecutionPath.CPU_FALLBACK,
+                "No usable native Metal implementation for this operation or input"));
         LOG.debugf("Metal operation '%s' is executing through the CPU fallback", operation);
         return cpuExecution.get();
+    }
+
+    private void reportExecution(MetalExecutionEvent event) {
+        try {
+            executionObserver.onExecution(event);
+        } catch (RuntimeException observerFailure) {
+            LOG.warnf(observerFailure, "Metal execution observer failed for operation '%s'", event.operation());
+        }
+    }
+
+    private Tensor dispatchOutputObserved(
+            String operation,
+            HostAccessibleStorage output,
+            IntSupplier dispatch,
+            Supplier<Tensor> fallback,
+            Function<HostAccessibleStorage, Tensor> resultFactory) {
+        AtomicBoolean nativeDispatchSucceeded = new AtomicBoolean();
+        Tensor result = dispatchOutput(output, () -> {
+            int status = dispatch.getAsInt();
+            nativeDispatchSucceeded.set(status == 0);
+            return status;
+        }, fallback, resultFactory);
+        if (nativeDispatchSucceeded.get()) {
+            reportExecution(new MetalExecutionEvent(operation, MetalExecutionEvent.ExecutionPath.METAL_NATIVE,
+                    "Native Metal dispatch completed successfully"));
+        }
+        return result;
     }
 
     private static HostAccessibleStorage hostStorage(Tensor tensor) {
@@ -300,7 +346,7 @@ public class MetalComputeBackend implements ComputeBackend {
         long sizeBytes = shapeC.numel() * byteSize(a.dtype());
 
         HostAccessibleStorage bufferC = allocateHostStorage(sizeBytes);
-        return dispatchOutput(
+        return dispatchOutputObserved("matmul",
                 bufferC,
                 () -> metalBinding.matmul(bufferC.segment(), segment(a), segment(b), M, K, N, 1.0f, 0.0f),
                 () -> fallback("matmul", () -> wrap(cpuFallback.matmul(a, b))),
@@ -315,7 +361,7 @@ public class MetalComputeBackend implements ComputeBackend {
         Shape shapeC = new Shape(M, N);
         HostAccessibleStorage bufferC = allocateHostStorage((long) M * N * 4);
 
-        return dispatchOutput(
+        return dispatchOutputObserved("matmul",
                 bufferC,
                 () -> {
                     int status = 0;
@@ -375,7 +421,7 @@ public class MetalComputeBackend implements ComputeBackend {
         long sizeBytes = shapeOut.numel() * byteSize(Q.dtype());
         HostAccessibleStorage bufferOut = allocateHostStorage(sizeBytes);
 
-        return dispatchOutput(
+        return dispatchOutputObserved("attention",
                 bufferOut,
                 () -> {
                     try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
@@ -407,7 +453,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
-        return dispatchOutput(
+        return dispatchOutputObserved("softmax",
                 bufferOut,
                 () -> metalBinding.softmax(bufferOut.segment(), segment(a), n),
                 () -> fallback("softmax", () -> wrap(cpuFallback.softmax(a))),
@@ -509,7 +555,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
-        return dispatchOutput(
+        return dispatchOutputObserved("silu",
                 bufferOut,
                 () -> metalBinding.silu(bufferOut.segment(), segment(a), n),
                 () -> fallback("silu", () -> wrap(cpuFallback.silu(a))),
@@ -550,7 +596,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
-        return dispatchOutput(
+        return dispatchOutputObserved("gelu",
                 bufferOut,
                 () -> metalBinding.gelu(bufferOut.segment(), segment(a), n),
                 () -> fallback("gelu", () -> wrap(cpuFallback.gelu(a))),
@@ -571,7 +617,7 @@ public class MetalComputeBackend implements ComputeBackend {
             final int rowCount = rows;
 
             HostAccessibleStorage bufferOut = allocateHostStorage(rowCount * cols * 4L);
-            return dispatchOutput(
+            return dispatchOutputObserved("softmax",
                     bufferOut,
                     () -> metalBinding.softmaxRows(bufferOut.segment(), segment(a), rowCount, cols),
                     () -> fallback("softmax", () -> wrap(cpuFallback.softmax(a, dim))),
@@ -622,7 +668,7 @@ public class MetalComputeBackend implements ComputeBackend {
         final int normalizedWidth = n;
         final int rowCount = rows;
 
-        return dispatchOutput(
+        return dispatchOutputObserved("layerNorm",
                 bufferOut,
                 () -> rowCount == 1
                         ? metalBinding.layerNorm(bufferOut.segment(), segment(input),
@@ -647,7 +693,7 @@ public class MetalComputeBackend implements ComputeBackend {
         final int normalizedWidth = n;
         final int rowCount = rows;
         HostAccessibleStorage bufferOut = allocateHostStorage((long) rowCount * normalizedWidth * 4);
-        return dispatchOutput(
+        return dispatchOutputObserved("rmsNorm",
                 bufferOut,
                 () -> rowCount == 1
                         ? metalBinding.rmsNorm(bufferOut.segment(), segment(input), segment(weight), normalizedWidth, eps, false)
@@ -703,7 +749,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int headDim = Math.toIntExact(input.shape().dim(input.shape().rank() - 1)); // Last dimension is headDim
 
         HostAccessibleStorage bufferOut = allocateHostStorage((long) n * 4);
-        return dispatchOutput(
+        return dispatchOutputObserved("applyRoPE",
                 bufferOut,
                 () -> metalBinding.rope(bufferOut.segment(), segment(input), n, headDim, posOffset, freqBase,
                         isNeox),
