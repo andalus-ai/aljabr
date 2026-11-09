@@ -630,14 +630,12 @@ public class MetalComputeBackend implements ComputeBackend {
         int headDim = Math.toIntExact(input.shape().dim(input.shape().rank() - 1)); // Last dimension is headDim
 
         HostAccessibleStorage bufferOut = allocateHostStorage((long) n * 4);
-        int status = metalBinding.rope(bufferOut.segment(), segment(input), n, headDim, posOffset, freqBase,
-                isNeox);
-
-        if (status != 0) {
-            bufferOut.release();
-            return wrap(cpuFallback.applyRoPE(input, posOffset, freqBase, isNeox));
-        }
-        return new DefaultTensor(input.shape(), DType.F32, DeviceType.METAL, bufferOut, this);
+        return dispatchOutput(
+                bufferOut,
+                () -> metalBinding.rope(bufferOut.segment(), segment(input), n, headDim, posOffset, freqBase,
+                        isNeox),
+                () -> wrap(cpuFallback.applyRoPE(input, posOffset, freqBase, isNeox)),
+                output -> new DefaultTensor(input.shape(), DType.F32, DeviceType.METAL, output, this));
     }
 
     @Override
