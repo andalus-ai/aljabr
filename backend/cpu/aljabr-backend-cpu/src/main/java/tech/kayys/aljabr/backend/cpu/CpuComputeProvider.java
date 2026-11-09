@@ -80,7 +80,21 @@ public final class CpuComputeProvider implements ComputeProvider {
             openSessions = new ArrayList<>(sessions);
             sessions.clear();
         }
-        openSessions.forEach(CpuProviderSession::close);
+        RuntimeException failure = null;
+        for (CpuProviderSession session : openSessions) {
+            try {
+                session.close();
+            } catch (ProviderException closeFailure) {
+                if (failure == null) {
+                    failure = new IllegalStateException("Unable to close all CPU provider sessions", closeFailure);
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     private static final class CpuProviderSession implements ProviderSession {
@@ -130,10 +144,11 @@ public final class CpuComputeProvider implements ComputeProvider {
         }
 
         @Override
-        public synchronized void close() {
+        public synchronized void close() throws ProviderException {
             if (closed) return;
             closed = true;
             owner.sessions.remove(this);
+            ProviderSession.closeBackends(backends);
         }
     }
 }

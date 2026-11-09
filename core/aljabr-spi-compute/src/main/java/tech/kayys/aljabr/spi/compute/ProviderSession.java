@@ -1,7 +1,10 @@
 package tech.kayys.aljabr.spi.compute;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.spi.provider.DeviceDescriptor;
@@ -15,9 +18,10 @@ import tech.kayys.aljabr.spi.provider.ProviderException;
  * <p>A provider may expose multiple backend instances from one session. Keys
  * are stable provider-defined backend identifiers, not selection policies.
  * Consumers must close the session when execution using it has finished.
- * Closing a session releases session-owned resources but does not close the
- * provider itself. Provider closure, in turn, closes all sessions still owned
- * by that provider.</p>
+ * Closing a session closes each distinct backend instance owned by that
+ * session, then releases other session-owned resources. Backends shared across
+ * sessions must be managed by the provider instead of being session-owned.
+ * Provider closure, in turn, closes all sessions still owned by that provider.</p>
  *
  * <p>Session close is terminal and idempotent. The device descriptor remains
  * available for diagnostics after close, but accessing compute backends after
@@ -54,6 +58,36 @@ public interface ProviderSession extends AutoCloseable {
             Map<String, String> constraints) {
         Objects.requireNonNull(constraints, "constraints");
         return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+    }
+
+    /**
+     * Closes each distinct backend instance in a session-owned backend map.
+     * Identity, rather than {@code equals}, defines distinct instances. All
+     * backends are attempted even if one close operation fails.
+     */
+    static void closeBackends(Map<String, ComputeBackend> backends) throws ProviderException {
+        Objects.requireNonNull(backends, "backends");
+        Set<ComputeBackend> closed = Collections.newSetFromMap(new IdentityHashMap<>());
+        ProviderException failure = null;
+        for (ComputeBackend backend : backends.values()) {
+            Objects.requireNonNull(backend, "backend");
+            if (!closed.add(backend)) {
+                continue;
+            }
+            try {
+                backend.close();
+            } catch (RuntimeException closeFailure) {
+                if (failure == null) {
+                    failure = new ProviderException("Unable to close one or more session-owned compute backends",
+                            closeFailure);
+                } else {
+                    failure.addSuppressed(closeFailure);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
+        }
     }
 
     /** Releases resources owned by this session; repeated calls must be harmless. */
