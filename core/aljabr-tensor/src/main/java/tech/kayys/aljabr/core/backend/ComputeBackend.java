@@ -4,6 +4,9 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.DeviceType;
 import tech.kayys.aljabr.core.memory.Buffer;
 import tech.kayys.aljabr.core.memory.CpuBuffer;
+import tech.kayys.aljabr.core.memory.TensorStorage;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
+import java.lang.foreign.MemorySegment;
 import java.util.List;
 
 /**
@@ -34,17 +37,44 @@ public interface ComputeBackend {
     /**
      * Allocates host-accessible storage for a tensor created from host data.
      *
-     * <p>This compatibility default preserves existing backends. Backends
-     * using a different host allocation strategy should override it. This
-     * method deliberately returns the legacy host-accessible {@link Buffer};
-     * device-local storage is represented by {@code TensorStorage} but is not
-     * yet supported by {@code DefaultTensor}'s host-segment execution path.</p>
+     * <p>Legacy host-accessible allocation entry point. New tensor creation
+     * should use {@link #allocateStorage(long)} so backends can return opaque
+     * device-local storage without fabricating a host {@link Buffer}.</p>
      *
      * @param sizeBytes required storage capacity in bytes
      * @return a live buffer with at least {@code sizeBytes} capacity
      */
     default Buffer allocate(long sizeBytes) {
         return new CpuBuffer(sizeBytes);
+    }
+
+    /**
+     * Allocates backend-neutral tensor storage.
+     *
+     * <p>The default preserves compatibility with host-buffer backends.
+     * Device-memory backends should override this method and
+     * {@link #copyFromHost(TensorStorage, MemorySegment, long)}.</p>
+     */
+    default TensorStorage allocateStorage(long sizeBytes) {
+        return allocate(sizeBytes);
+    }
+
+    /**
+     * Copies host data into backend-owned storage. The default implementation
+     * supports host-accessible storage; device-memory backends must override
+     * this method to perform an explicit host-to-device transfer.
+     */
+    default void copyFromHost(TensorStorage destination, MemorySegment source, long sizeBytes) {
+        if (!(destination instanceof HostAccessibleStorage hostStorage)) {
+            throw new UnsupportedOperationException(
+                    "Backend " + getClass().getName()
+                            + " must implement copyFromHost for non-host-accessible storage");
+        }
+        if (sizeBytes < 0 || sizeBytes > source.byteSize()
+                || sizeBytes > hostStorage.sizeBytes()) {
+            throw new IllegalArgumentException("Invalid host copy size: " + sizeBytes);
+        }
+        hostStorage.segment().asSlice(0, sizeBytes).copyFrom(source.asSlice(0, sizeBytes));
     }
 
     /**
