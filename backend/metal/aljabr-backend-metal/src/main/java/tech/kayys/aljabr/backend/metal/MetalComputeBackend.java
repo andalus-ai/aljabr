@@ -501,7 +501,7 @@ public class MetalComputeBackend implements ComputeBackend {
             int cols = (int) a.shape().dim(dim);
             final int rowCount = rows;
 
-            HostAccessibleStorage bufferOut = allocateHostStorage(rowCount * cols * 4);
+            HostAccessibleStorage bufferOut = allocateHostStorage(rowCount * cols * 4L);
             return dispatchOutput(
                     bufferOut,
                     () -> metalBinding.softmaxRows(bufferOut.segment(), segment(a), rowCount, cols),
@@ -550,16 +550,16 @@ public class MetalComputeBackend implements ComputeBackend {
             n *= s;
         }
         int rows = (int) (shape.numel() / n);
+        final int normalizedWidth = n;
         final int rowCount = rows;
-        final int normalizedElements = n;
 
         return dispatchOutput(
                 bufferOut,
                 () -> rowCount == 1
                         ? metalBinding.layerNorm(bufferOut.segment(), segment(input),
-                                optionalSegment(weight), optionalSegment(bias), normalizedElements, eps)
+                                optionalSegment(weight), optionalSegment(bias), normalizedWidth, eps)
                         : metalBinding.layerNormRows(bufferOut.segment(), segment(input),
-                                optionalSegment(weight), optionalSegment(bias), rowCount, normalizedElements, eps),
+                                optionalSegment(weight), optionalSegment(bias), rowCount, normalizedWidth, eps),
                 () -> wrap(cpuFallback.layerNorm(input, normalizedShape, weight, bias, eps)),
                 output -> new DefaultTensor(shape, input.dtype(), input.device(), output, this));
     }
@@ -577,13 +577,15 @@ public class MetalComputeBackend implements ComputeBackend {
         }
         final int rowCount = rows;
 
-        HostAccessibleStorage bufferOut = allocateHostStorage(rowCount * n * 4);
+        final int normalizedWidth = n;
+        final int rowCount = rows;
+        HostAccessibleStorage bufferOut = allocateHostStorage((long) rowCount * normalizedWidth * 4);
         return dispatchOutput(
                 bufferOut,
                 () -> rowCount == 1
-                        ? metalBinding.rmsNorm(bufferOut.segment(), segment(input), segment(weight), n, eps, false)
+                        ? metalBinding.rmsNorm(bufferOut.segment(), segment(input), segment(weight), normalizedWidth, eps, false)
                         : metalBinding.rmsNormRows(bufferOut.segment(), segment(input),
-                                segment(weight), rowCount, n, eps, false),
+                                segment(weight), rowCount, normalizedWidth, eps, false),
                 () -> wrap(cpuFallback.rmsNorm(input, weight, eps)),
                 output -> new DefaultTensor(shape, input.dtype(), input.device(), output, this));
     }
