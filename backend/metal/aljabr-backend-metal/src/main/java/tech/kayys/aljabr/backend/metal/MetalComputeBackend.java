@@ -73,6 +73,28 @@ public class MetalComputeBackend implements ComputeBackend {
         throw new IllegalArgumentException("MetalComputeBackend only supports DefaultTensor");
     }
 
+    /**
+     * Exposes storage to the current native Metal FFM bridge.
+     *
+     * <p>The bridge accepts host MemorySegments (currently backed by shared
+     * host-visible allocations). Opaque device-local storage must not be
+     * passed through this boundary until Metal-native buffer binding and
+     * transfer operations are implemented.</p>
+     */
+    static MemorySegment metalSegment(Tensor tensor) {
+        if (!(tensor instanceof DefaultTensor defaultTensor)) {
+            throw new IllegalArgumentException("Metal FFM dispatch only supports DefaultTensor storage");
+        }
+        try {
+            return defaultTensor.hostStorage().segment();
+        } catch (UnsupportedOperationException failure) {
+            throw new UnsupportedOperationException(
+                    "Metal FFM dispatch requires host-accessible storage; opaque device-local storage "
+                            + "requires a Metal-native binding path",
+                    failure);
+        }
+    }
+
     private long byteSize(DType dtype) {
         return switch (dtype) {
             case F32, I32 -> 4;
@@ -148,7 +170,7 @@ public class MetalComputeBackend implements ComputeBackend {
         long sizeBytes = shapeC.numel() * byteSize(a.dtype());
 
         CpuBuffer bufferC = allocate(sizeBytes);
-        int status = metalBinding.matmul(bufferC.segment(), da.buffer().segment(), db.buffer().segment(), M, K, N, 1.0f,
+        int status = metalBinding.matmul(bufferC.segment(), metalSegment(da), metalSegment(db), M, K, N, 1.0f,
                 0.0f);
         if (status != 0) {
             System.err.println("Metal matmul falling back to CPU for a=" + a.dtype() + " (shape=" + a.shape() + "), b="
@@ -172,8 +194,8 @@ public class MetalComputeBackend implements ComputeBackend {
             for (int m = 0; m < M; m++) {
                 status = metalBinding.matvecTransposedRightQ4K(
                         bufferC.segment().asSlice(m * N * 4L, N * 4L),
-                        a.buffer().segment().asSlice(m * K * 4L, K * 4L),
-                        db.buffer().segment(), K, N);
+                        metalSegment(a).asSlice(m * K * 4L, K * 4L),
+                        metalSegment(db), K, N);
                 if (status != 0)
                     break;
             }
@@ -181,8 +203,8 @@ public class MetalComputeBackend implements ComputeBackend {
             for (int m = 0; m < M; m++) {
                 status = metalBinding.matvecTransposedRightQ8_0(
                         bufferC.segment().asSlice(m * N * 4L, N * 4L),
-                        a.buffer().segment().asSlice(m * K * 4L, K * 4L),
-                        db.buffer().segment(), K, N);
+                        metalSegment(a).asSlice(m * K * 4L, K * 4L),
+                        metalSegment(db), K, N);
                 if (status != 0)
                     break;
             }
@@ -235,12 +257,12 @@ public class MetalComputeBackend implements ComputeBackend {
             java.lang.foreign.MemorySegment empty = java.lang.foreign.MemorySegment.NULL;
 
             if (H == Hkv) {
-                status = metalBinding.flashAttention(bufferOut.segment(), dQ.buffer().segment(), dK.buffer().segment(),
-                        dV.buffer().segment(),
+                status = metalBinding.flashAttention(bufferOut.segment(), metalSegment(dQ), metalSegment(dK),
+                        metalSegment(dV),
                         B, T, H, D);
             } else {
-                status = metalBinding.attentionGqa(bufferOut.segment(), dQ.buffer().segment(), dK.buffer().segment(),
-                        dV.buffer().segment(),
+                status = metalBinding.attentionGqa(bufferOut.segment(), metalSegment(dQ), metalSegment(dK),
+                        metalSegment(dV),
                         empty, contextLens, B, T, H, Hkv, D, 16, 1024, (float) (1.0 / Math.sqrt(D)), 1, 0.0f);
             }
         }
@@ -262,7 +284,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         CpuBuffer bufferOut = allocate(n * 4);
 
-        int status = metalBinding.softmax(bufferOut.segment(), da.buffer().segment(), n);
+        int status = metalBinding.softmax(bufferOut.segment(), metalSegment(da), n);
         if (status != 0) {
             return wrap(cpuFallback.softmax(a));
         }
@@ -366,7 +388,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         CpuBuffer bufferOut = allocate(n * 4);
 
-        int status = metalBinding.silu(bufferOut.segment(), da.buffer().segment(), n);
+        int status = metalBinding.silu(bufferOut.segment(), metalSegment(da), n);
         if (status != 0) {
             return wrap(cpuFallback.silu(a));
         }
@@ -409,7 +431,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         CpuBuffer bufferOut = allocate(n * 4);
 
-        int status = metalBinding.gelu(bufferOut.segment(), da.buffer().segment(), n);
+        int status = metalBinding.gelu(bufferOut.segment(), metalSegment(da), n);
         if (status != 0) {
             return wrap(cpuFallback.gelu(a));
         }
@@ -431,7 +453,7 @@ public class MetalComputeBackend implements ComputeBackend {
 
             DefaultTensor da = asDefault(a);
             CpuBuffer bufferOut = allocate(rows * cols * 4);
-            int status = metalBinding.softmaxRows(bufferOut.segment(), da.buffer().segment(), rows, cols);
+            int status = metalBinding.softmaxRows(bufferOut.segment(), metalSegment(da), rows, cols);
             if (status == 0) {
                 return new DefaultTensor(a.shape(), a.dtype(), a.device(), bufferOut, this);
             }
@@ -485,14 +507,14 @@ public class MetalComputeBackend implements ComputeBackend {
 
         int status;
         if (rows == 1) {
-            status = metalBinding.layerNorm(bufferOut.segment(), dInput.buffer().segment(),
-                    dWeight != null ? dWeight.buffer().segment() : MemorySegment.NULL,
-                    dBias != null ? dBias.buffer().segment() : MemorySegment.NULL,
+            status = metalBinding.layerNorm(bufferOut.segment(), metalSegment(dInput),
+                    dWeight != null ? metalSegment(dWeight) : MemorySegment.NULL,
+                    dBias != null ? metalSegment(dBias) : MemorySegment.NULL,
                     n, eps);
         } else {
-            status = metalBinding.layerNormRows(bufferOut.segment(), dInput.buffer().segment(),
-                    dWeight != null ? dWeight.buffer().segment() : MemorySegment.NULL,
-                    dBias != null ? dBias.buffer().segment() : MemorySegment.NULL,
+            status = metalBinding.layerNormRows(bufferOut.segment(), metalSegment(dInput),
+                    dWeight != null ? metalSegment(dWeight) : MemorySegment.NULL,
+                    dBias != null ? metalSegment(dBias) : MemorySegment.NULL,
                     rows, n, eps);
         }
 
@@ -521,11 +543,11 @@ public class MetalComputeBackend implements ComputeBackend {
         CpuBuffer bufferOut = allocate(rows * n * 4);
         int status;
         if (rows == 1) {
-            status = metalBinding.rmsNorm(bufferOut.segment(), dInput.buffer().segment(), dWeight.buffer().segment(), n,
+            status = metalBinding.rmsNorm(bufferOut.segment(), metalSegment(dInput), metalSegment(dWeight), n,
                     eps, false);
         } else {
-            status = metalBinding.rmsNormRows(bufferOut.segment(), dInput.buffer().segment(),
-                    dWeight.buffer().segment(), rows, n, eps, false);
+            status = metalBinding.rmsNormRows(bufferOut.segment(), metalSegment(dInput),
+                    metalSegment(dWeight), rows, n, eps, false);
         }
 
         if (status != 0) {
@@ -577,7 +599,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int headDim = (int) dInput.shape().dim(dInput.shape().rank() - 1); // Last dimension is headDim
 
         CpuBuffer bufferOut = allocate((long) n * 4);
-        int status = metalBinding.rope(bufferOut.segment(), dInput.buffer().segment(), n, headDim, posOffset, freqBase,
+        int status = metalBinding.rope(bufferOut.segment(), metalSegment(dInput), n, headDim, posOffset, freqBase,
                 isNeox);
 
         if (status != 0) {
