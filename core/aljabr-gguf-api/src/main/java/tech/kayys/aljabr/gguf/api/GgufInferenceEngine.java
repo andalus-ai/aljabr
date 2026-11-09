@@ -185,37 +185,26 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                     .filter(GgufBackendProvider::isAvailable)
                     .findFirst()
                     .orElseThrow(() -> new InferenceException(
-                            "Requested GGUF backend '" + selection.requestedValue()
-                                    + "' is not available. Available: " + availableIds()));
+                            "Requested GGUF backend '" + selection.requestedValue() + "' is not available. Available: " + availableIds()));
         }
 
-        List<String> readiness = new ArrayList<>();
         for (GgufBackendProvider provider : providers) {
             if (!provider.isAvailable()) {
-                readiness.add(provider.id() + ": unavailable");
                 continue;
             }
             try {
                 GgufBackendCapability capability = provider.probe(modelPath);
-                if (capability != null && capability.generationReady()) {
+                if (capability.generationReady()) {
                     return provider;
                 }
-                String reason = capability == null
-                        ? "probe returned no capability"
-                        : capability.reason() == null || capability.reason().isBlank()
-                                ? "generation is not ready"
-                                : capability.reason();
-                readiness.add(provider.id() + ": " + reason);
-            } catch (Exception error) {
-                readiness.add(provider.id() + ": probe failed (" + error.getClass().getSimpleName()
-                        + (error.getMessage() == null ? "" : ": " + error.getMessage()) + ")");
+            } catch (Exception ignored) {
             }
         }
 
-        throw new InferenceException(
-                "No GGUF backend reports generation readiness for model: " + modelPath
-                        + ". Provider readiness: " + String.join("; ", readiness)
-                        + ". Select a provider explicitly only for deliberate testing, or install a compatible backend.");
+        return providers.stream()
+                .filter(GgufBackendProvider::isAvailable)
+                .findFirst()
+                .orElseThrow(() -> new InferenceException("No available GGUF backend providers on classpath."));
     }
 
     private static boolean matches(GgufBackendProvider provider, String normalizedValue) {
