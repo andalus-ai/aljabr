@@ -17,6 +17,7 @@ class TensorOpsTest {
             Tensor result = TensorOps.cat(List.of(a, b), 0);
             try {
                 assertThat(result.shape().dims()).containsExactly(3, 2);
+                assertThat(result.backend()).isSameAs(a.backend());
                 assertThat(result.toFloatArray()).containsExactly(1, 2, 3, 4, 5, 6);
             } finally {
                 result.release();
@@ -72,6 +73,7 @@ class TensorOpsTest {
             Tensor result = TensorOps.einsum("ij,jk->ik", a, b);
             try {
                 assertThat(result.shape().dims()).containsExactly(2, 2);
+                assertThat(result.backend()).isSameAs(a.backend());
                 assertThat(result.toFloatArray()).containsExactly(19, 22, 43, 50);
             } finally {
                 result.release();
