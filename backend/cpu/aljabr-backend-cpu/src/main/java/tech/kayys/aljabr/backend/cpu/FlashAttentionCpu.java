@@ -4,6 +4,8 @@ import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.memory.*;
 import java.lang.foreign.*;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.*;
 import jdk.incubator.vector.*;
 
@@ -25,7 +27,8 @@ public final class FlashAttentionCpu {
             int numThreads) {
         int seqLen = (int) Q.shape().dim(0);
         int dim = (int) Q.shape().dim(1);
-        CpuBuffer out = new CpuBuffer((long) seqLen * dim * 4);
+        CpuBuffer out = new CpuBuffer((long) seqLen * dim * Float.BYTES);
+        boolean transferred = false;
         try {
             compute(
                     CpuTensorStorageAccess.segment(Q),
@@ -35,16 +38,23 @@ public final class FlashAttentionCpu {
                     seqLen,
                     dim,
                     numThreads);
+            Tensor result = new DefaultTensor(
+                    new Shape(seqLen, dim),
+                    Q.dtype(),
+                    Q.device(),
+                    out,
+                    Q.backend()
+            );
+            transferred = true;
+            return result;
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while computing CPU flash attention", e);
+        } finally {
+            if (!transferred) {
+                out.release();
+            }
         }
-        return new DefaultTensor(
-                new Shape(seqLen, dim),
-                Q.dtype(),
-                Q.device(),
-                out,
-                Q.backend()
-        );
     }
 
     // =========================================================
@@ -58,19 +68,61 @@ public final class FlashAttentionCpu {
             int seqLen,
             int dim,
             int numThreads) throws InterruptedException {
-        ExecutorService pool = Executors.newFixedThreadPool(numThreads);
-        int qBlocks = (seqLen + BLOCK_Q - 1) / BLOCK_Q;
-        CountDownLatch latch = new CountDownLatch(qBlocks);
-        for (int qb = 0; qb < qBlocks; qb++) {
-            final int qStart = qb * BLOCK_Q;
-            final int qEnd = Math.min(qStart + BLOCK_Q, seqLen);
-            pool.submit(() -> {
-                computeQBlock(Q, K, V, O, qStart, qEnd, seqLen, dim);
-                latch.countDown();
-            });
+        if (numThreads <= 0) {
+            throw new IllegalArgumentException("numThreads must be positive");
         }
-        latch.await();
-        pool.shutdown();
+        int qBlocks = (seqLen + BLOCK_Q - 1) / BLOCK_Q;
+        ExecutorService pool = Executors.newFixedThreadPool(Math.min(numThreads, qBlocks));
+        List<Future<?>> tasks = new ArrayList<>(qBlocks);
+        boolean completed = false;
+        try {
+            for (int qb = 0; qb < qBlocks; qb++) {
+                final int qStart = qb * BLOCK_Q;
+                final int qEnd = Math.min(qStart + BLOCK_Q, seqLen);
+                tasks.add(pool.submit(() -> computeQBlock(
+                        Q, K, V, O, qStart, qEnd, seqLen, dim)));
+            }
+            for (Future<?> task : tasks) {
+                try {
+                    task.get();
+                } catch (ExecutionException e) {
+                    throw new IllegalStateException("CPU flash-attention query block failed", e.getCause());
+                }
+            }
+            completed = true;
+        } finally {
+            if (completed) {
+                pool.shutdown();
+            } else {
+                for (Future<?> task : tasks) {
+                    task.cancel(true);
+                }
+                shutdownAndAwaitTermination(pool);
+            }
+        }
+    }
+
+    /**
+     * Stops failed/interrupted work before the caller releases the output
+     * segment that worker tasks may still be writing.
+     */
+    private static void shutdownAndAwaitTermination(ExecutorService pool) {
+        pool.shutdownNow();
+        boolean interrupted = Thread.interrupted();
+        try {
+            while (!pool.isTerminated()) {
+                try {
+                    pool.awaitTermination(1, TimeUnit.DAYS);
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                    pool.shutdownNow();
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     // =========================================================
@@ -88,10 +140,16 @@ public final class FlashAttentionCpu {
         float scale = (float) (1.0 / Math.sqrt(dim));
 
         for (int i = qStart; i < qEnd; i++) {
+            if (Thread.currentThread().isInterrupted()) {
+                return;
+            }
             float m_i = Float.NEGATIVE_INFINITY;
             float l_i = 0f;
             float[] acc = new float[dim];
             for (int kb = 0; kb < seqLen; kb += BLOCK_K) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
                 int kEnd = Math.min(kb + BLOCK_K, seqLen);
                 for (int j = kb; j < kEnd; j++) {
                     float score = dot(Q, K, i, j, dim) * scale;
