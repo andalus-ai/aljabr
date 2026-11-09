@@ -5,9 +5,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
+
 import org.junit.jupiter.api.Test;
 
 class TensorOpsTest {
+
+    private final ComputeBackend backend = new CpuBackend();
+
+    private Tensor tensor(float[] data, long... shape) {
+        return TensorFactory.of(data, backend, shape);
+    }
+
 
     @Test
     void catConcatenatesAlongFirstDimension() {

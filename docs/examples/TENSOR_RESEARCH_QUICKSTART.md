@@ -6,26 +6,30 @@ This example demonstrates the current Aljabr tensor API from ordinary Java. It i
 
 ## Example
 
-Save as `TensorResearchQuickstart.java` in a Java project that depends on the Aljabr tensor module:
+Save as `TensorResearchQuickstart.java` in a Java project that depends on the Aljabr tensor module, compute runtime, and CPU provider:
 
 ```java
 import java.util.Arrays;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.runtime.compute.ComputeRuntime;
 
 public final class TensorResearchQuickstart {
     private TensorResearchQuickstart() {}
 
     public static void main(String[] args) {
-        Tensor inputs = Tensor.of(new float[] {
+        try (ComputeRuntime runtime = ComputeRuntime.open("cpu", "cpu-default")) {
+            var backend = runtime.backend();
+            Tensor inputs = TensorFactory.of(new float[] {
             1.0f, 2.0f,
             3.0f, 4.0f
-        }, 2, 2);
+        }, backend, 2, 2);
 
-        Tensor weights = Tensor.of(new float[] {
+        Tensor weights = TensorFactory.of(new float[] {
             0.5f, 1.0f,
             1.5f, 2.0f
-        }, 2, 2);
+        }, backend, 2, 2);
 
         Tensor predictions = null;
         Tensor mean = null;
@@ -42,6 +46,7 @@ public final class TensorResearchQuickstart {
             if (predictions != null) predictions.release();
             weights.release();
             inputs.release();
+        }
         }
     }
 }
@@ -62,7 +67,7 @@ When experimenting, record:
 
 ## Build and dependency note
 
-Use JDK 25 and the Gradle module coordinates published for the version you select. In a checkout, inspect the actual module name and its dependencies with:
+Use JDK 25 and the Gradle module coordinates published for the version you select. The example explicitly opens the `cpu` provider's `cpu-default` backend through `ComputeRuntime`; keep that runtime open until all tensors using its backend have been released. In a checkout, inspect the actual module name and its dependencies with:
 
 ```bash
 ./gradlew projects
