@@ -27,16 +27,17 @@ try (ComputeRuntime runtime = ComputeRuntime.open("andalus/cpu", "cpu-default"))
 ```
 
 The default selection is `auto`, which ranks available devices as GPU,
-accelerator, CPU, then other. Set `-Daljabr.compute.provider=andalus/cpu`
-to select a provider for the process. Explicit selection fails rather than
-silently falling back to another provider.
+accelerator, CPU, then other. A session with exactly one backend selects it
+automatically. A session with multiple backends requires an explicit backend id;
+map iteration order is never treated as a priority. Set
+`-Daljabr.compute.provider=andalus/cpu` to select a provider for the process.
+Explicit provider selection fails rather than silently falling back to another provider.
 
 The runtime owns discovered provider instances and the selected device session.
 Keep it open while tensors using its backend are in use; close it when that
 work is complete. Tensor storage remains governed by the tensor factory and
 backend implementation. This initial runtime exposes one selected backend;
 multi-device scheduling and per-operation dispatch are separate concerns.
-
 
 ## Backend ownership migration
 

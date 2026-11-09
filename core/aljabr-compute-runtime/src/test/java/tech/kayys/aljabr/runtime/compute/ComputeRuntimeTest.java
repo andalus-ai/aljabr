@@ -3,6 +3,7 @@ package tech.kayys.aljabr.runtime.compute;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Proxy;
@@ -37,7 +38,7 @@ class ComputeRuntimeTest {
     @Test
     void selectsTheOnlyBackendWhenNoBackendIdIsSpecified() {
         ComputeBackend backend = backendStub();
-        assertEquals(backend, ComputeRuntime.selectBackend(Map.of("provider-default", backend), null).backend());
+        assertSame(backend, ComputeRuntime.selectBackend(Map.of("provider-default", backend), null).backend());
     }
 
     @Test
@@ -49,7 +50,7 @@ class ComputeRuntimeTest {
                 () -> ComputeRuntime.selectBackend(
                         Map.of("fast-kernel", first, "portable-kernel", second), null));
         assertTrue(failure.getMessage().contains("select one"));
-        assertEquals(first, ComputeRuntime.selectBackend(
+        assertSame(first, ComputeRuntime.selectBackend(
                 Map.of("fast-kernel", first, "portable-kernel", second), "fast-kernel").backend());
     }
 
