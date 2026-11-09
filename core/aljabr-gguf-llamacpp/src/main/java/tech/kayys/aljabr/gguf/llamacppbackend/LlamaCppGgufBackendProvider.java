@@ -7,11 +7,16 @@ import tech.kayys.aljabr.gguf.api.GgufBackendProvider;
 import tech.kayys.aljabr.gguf.llamacpp.GGUFChatTemplateService;
 import tech.kayys.aljabr.gguf.llamacpp.LlamaCppBinding;
 import tech.kayys.aljabr.gguf.llamacpp.LlamaCppRunner;
+import tech.kayys.aljabr.gguf.llamacpp.LlamaCppProviderSettings;
+import tech.kayys.aljabr.core.model.ModelFormat;
+import tech.kayys.aljabr.spi.model.ArtifactLocation;
+import tech.kayys.aljabr.spi.model.ModelManifest;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Registers the native llama.cpp backend with {@link tech.kayys.aljabr.gguf.api.GgufInferenceEngine} via
@@ -42,8 +47,7 @@ public final class LlamaCppGgufBackendProvider implements GgufBackendProvider {
 
     @Override
     public boolean isAvailable() {
-        try {
-            LlamaCppBinding.load();
+        try (LlamaCppBinding ignored = LlamaCppBinding.load()) {
             return true;
         } catch (Throwable t) {
             log.debugf("llama.cpp native library not available: %s", t.getMessage());
@@ -63,10 +67,41 @@ public final class LlamaCppGgufBackendProvider implements GgufBackendProvider {
 
     @Override
     public GgufBackend create(Path modelPath, Map<String, Object> config) throws Exception {
+        if (!Files.isRegularFile(modelPath)) {
+            throw new IllegalArgumentException("GGUF model file does not exist: " + modelPath);
+        }
         LlamaCppBinding binding = LlamaCppBinding.load();
-        GGUFChatTemplateService templateService = new GGUFChatTemplateService();
-        LlamaCppRunner runner = new LlamaCppRunner(binding, null, templateService);
-        return new LlamaCppGgufBackend(runner);
+        LlamaCppProviderSettings settings = LlamaCppProviderSettings.from(config);
+        LlamaCppRunner runner = new LlamaCppRunner(
+                binding, settings, new GGUFChatTemplateService());
+        try {
+            runner.initialize(manifestFor(modelPath), config == null ? Map.of() : config);
+            return new LlamaCppGgufBackend(runner);
+        } catch (Exception error) {
+            try {
+                binding.close();
+            } catch (Exception closeError) {
+                error.addSuppressed(closeError);
+            }
+            throw new IllegalStateException(
+                    "Failed to initialize llama.cpp GGUF backend for " + modelPath, error);
+        }
+    }
+
+    static ModelManifest manifestFor(Path modelPath) throws Exception {
+        Path absolutePath = modelPath.toAbsolutePath().normalize();
+        String modelId = absolutePath.getFileName().toString();
+        ArtifactLocation artifact = new ArtifactLocation(
+                absolutePath.toString(), null, Files.size(absolutePath), "application/octet-stream");
+        return ModelManifest.builder()
+                .modelId(modelId)
+                .name(modelId)
+                .version("local")
+                .path(absolutePath.toString())
+                .apiKey("local")
+                .requestId(UUID.randomUUID().toString())
+                .artifacts(Map.of(ModelFormat.GGUF, artifact))
+                .build();
     }
 
     @Override
