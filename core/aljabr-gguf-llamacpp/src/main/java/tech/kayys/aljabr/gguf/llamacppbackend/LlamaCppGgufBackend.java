@@ -3,8 +3,13 @@ package tech.kayys.aljabr.gguf.llamacppbackend;
 import org.jboss.logging.Logger;
 import tech.kayys.aljabr.gguf.api.GgufBackend;
 import tech.kayys.aljabr.gguf.llamacpp.LlamaCppRunner;
+import io.smallrye.mutiny.Multi;
+import io.smallrye.mutiny.Uni;
+import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
+import tech.kayys.aljabr.spi.embedding.EmbeddingResponse;
 import tech.kayys.aljabr.spi.inference.InferenceRequest;
 import tech.kayys.aljabr.spi.inference.InferenceResponse;
+import tech.kayys.aljabr.spi.inference.StreamingInferenceChunk;
 
 /**
  * GGUF backend powered by llama.cpp native bindings.
@@ -35,6 +40,16 @@ final class LlamaCppGgufBackend implements GgufBackend {
         } catch (Exception e) {
             throw new tech.kayys.aljabr.spi.exception.InferenceException("Llama.cpp GGUF inference failed: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public Multi<StreamingInferenceChunk> stream(InferenceRequest request) {
+        return runner.inferStream(request);
+    }
+
+    @Override
+    public Uni<EmbeddingResponse> embed(EmbeddingRequest request) {
+        return runner.embed(request);
     }
 
     @Override
