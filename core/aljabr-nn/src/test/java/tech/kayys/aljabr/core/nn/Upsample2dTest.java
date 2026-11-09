@@ -14,35 +14,52 @@ class Upsample2dTest {
     @Test
     void nearestNeighborUpsamplingRepeatsSpatialSamples() {
         CpuBackend backend = new CpuBackend();
-        try (Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 1, 1, 2, 2);
-             Tensor output = new Upsample2d(backend, 2.0f).forward(input)) {
-            assertThat(output.shape().dims()).containsExactly(1, 1, 4, 4);
-            assertThat(output.toFloatArray()).containsExactly(
-                    1, 1, 2, 2,
-                    1, 1, 2, 2,
-                    3, 3, 4, 4,
-                    3, 3, 4, 4);
-            assertThat(output.backend()).isSameAs(backend);
+        Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 1, 1, 2, 2);
+        try {
+            Tensor output = new Upsample2d(backend, 2.0f).forward(input);
+            try {
+                assertThat(output.shape().dims()).containsExactly(1, 1, 4, 4);
+                assertThat(output.toFloatArray()).containsExactly(
+                        1, 1, 2, 2,
+                        1, 1, 2, 2,
+                        3, 3, 4, 4,
+                        3, 3, 4, 4);
+                assertThat(output.backend()).isSameAs(backend);
+            } finally {
+                output.release();
+            }
+        } finally {
+            input.release();
         }
     }
 
     @Test
     void fractionalScaleUsesFloorForOutputDimensions() {
         CpuBackend backend = new CpuBackend();
-        try (Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 1, 1, 2, 2);
-             Tensor output = new Upsample2d(backend, 1.5f).forward(input)) {
-            assertThat(output.shape().dims()).containsExactly(1, 1, 3, 3);
-            assertThat(output.toFloatArray()).containsExactly(1, 1, 2, 1, 1, 2, 3, 3, 4);
+        Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 1, 1, 2, 2);
+        try {
+            Tensor output = new Upsample2d(backend, 1.5f).forward(input);
+            try {
+                assertThat(output.shape().dims()).containsExactly(1, 1, 3, 3);
+                assertThat(output.toFloatArray()).containsExactly(1, 1, 2, 1, 1, 2, 3, 3, 4);
+            } finally {
+                output.release();
+            }
+        } finally {
+            input.release();
         }
     }
 
     @Test
     void rejectsNonNchwInputs() {
         CpuBackend backend = new CpuBackend();
-        try (Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 1, 4)) {
+        Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 1, 4);
+        try {
             assertThatThrownBy(() -> new Upsample2d(backend, 2.0f).forward(input))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("NCHW");
+        } finally {
+            input.release();
         }
     }
 }
