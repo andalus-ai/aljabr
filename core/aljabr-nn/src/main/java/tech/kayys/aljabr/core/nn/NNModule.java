@@ -159,9 +159,7 @@ public abstract class NNModule implements AutoCloseable {
 
     public NNModule to(DeviceType device) {
         parameters.replaceAll((name, param) -> {
-            boolean requiresGrad = param.requiresGrad();
             Tensor moved = param.to(device);
-            moved.setRequiresGrad(requiresGrad);
             Parameter registered = parameterObjects.get(name);
             if (registered != null) {
                 registered.replaceTensor(moved);
