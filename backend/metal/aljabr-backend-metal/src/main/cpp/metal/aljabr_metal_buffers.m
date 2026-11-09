@@ -1,9 +1,9 @@
 /**
  * aljabr_metal_buffers.m — shared Metal buffer helpers.
  *
- * Buffer cache uses CFMutableDictionaryRef with NULL key callbacks so raw
- * void* pointers are stored as opaque identity keys — no ObjC messaging on
- * the key, no ARC bridge-cast UB.
+ * Model-weight buffers use a CFMutableDictionaryRef cache. Ordinary tensor
+ * pointer wrappers are scoped to individual synchronous dispatches so cached
+ * Metal objects cannot outlive their Java FFM arena-backed storage.
  */
 
 #import "aljabr_metal_buffers.h"
