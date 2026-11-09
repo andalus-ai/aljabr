@@ -15,7 +15,7 @@ import tech.kayys.aljabr.core.memory.TensorStorage;
  * Eager tensors expose their backing storage; lazy or remote implementations
  * may materialize or reject direct storage access.</p>
  */
-public interface Tensor {
+public interface Tensor extends AutoCloseable {
     /**
      * Evaluates and materializes this Tensor if it is a lazy computation graph
      * node. For eager tensors, this returns the tensor itself.
@@ -100,7 +100,21 @@ public interface Tensor {
 
     void setRequiresGrad(boolean requiresGrad);
 
+    /**
+     * Releases this tensor's owned resources. Implementations that own storage
+     * must make repeated release calls harmless.
+     */
     default void release() {
+    }
+
+    /**
+     * Releases this tensor and its owned resources.
+     * Views and derived tensors retain their own storage references and may
+     * outlive the tensor from which they were created.
+     */
+    @Override
+    default void close() {
+        release();
     }
 
     /** @deprecated Use {@link #randn(ComputeBackend, long...)} with an owned runtime backend. */

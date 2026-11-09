@@ -2,6 +2,7 @@ package tech.kayys.aljabr.core.tensor;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.Buffer;
@@ -28,6 +29,7 @@ public final class DefaultTensor implements Tensor {
     private final ComputeBackend backend;
     private Tensor grad;
     private boolean requiresGrad;
+    private final AtomicBoolean released = new AtomicBoolean();
 
     /**
      * Creates a tensor using the legacy Buffer contract.
@@ -92,6 +94,7 @@ public final class DefaultTensor implements Tensor {
     /** Returns the canonical backend-neutral storage contract. */
     @Override
     public TensorStorage storage() {
+        ensureOpen();
         return storage;
     }
 
@@ -102,6 +105,7 @@ public final class DefaultTensor implements Tensor {
      *         storage that does not implement the legacy Buffer contract
      */
     public Buffer buffer() {
+        ensureOpen();
         if (storage instanceof Buffer buffer) {
             return buffer;
         }
@@ -112,6 +116,7 @@ public final class DefaultTensor implements Tensor {
     }
 
     private MemorySegment requireHostSegment(String operation) {
+        ensureOpen();
         if (storage instanceof HostAccessibleStorage hostStorage) {
             return Objects.requireNonNull(hostStorage.segment(),
                     "HostAccessibleStorage.segment() must not return null");
@@ -418,6 +423,14 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public void release() {
-        storage.release();
+        if (released.compareAndSet(false, true)) {
+            storage.release();
+        }
+    }
+
+    private void ensureOpen() {
+        if (released.get()) {
+            throw new IllegalStateException("Tensor has already been released");
+        }
     }
 }

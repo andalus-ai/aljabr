@@ -175,6 +175,22 @@ class DefaultTensorTest {
         assertEquals(0, storage.references());
     }
 
+
+    @Test
+    void closeReleasesOwnedStorageExactlyOnceAndRejectsFurtherStorageAccess() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.METAL,
+                storage, unusedBackend());
+
+        tensor.close();
+        tensor.close();
+        tensor.release();
+
+        assertEquals(0, storage.references());
+        assertThrows(IllegalStateException.class, tensor::storage);
+        assertThrows(IllegalStateException.class, tensor::toFloatArray);
+    }
+
     @Test
     void rejectsStorageSmallerThanTensorWithoutTakingOwnership() {
         DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES - 1L);
