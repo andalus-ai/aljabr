@@ -69,9 +69,15 @@ public abstract class NNModule implements AutoCloseable {
     }
 
     protected void registerParameter(String name, Tensor param) {
+        registerParameter(name, param, true);
+    }
+
+    /** Registers a parameter and explicitly controls whether it is trainable. */
+    protected void registerParameter(String name, Tensor param, boolean requiresGrad) {
         Objects.requireNonNull(name, "Parameter name must not be null");
         Objects.requireNonNull(param, "Parameter must not be null");
         validateOwnedTensor(name, param);
+        param.setRequiresGrad(requiresGrad);
         parameters.put(name, param);
         Parameter registered = parameterObjects.get(name);
         if (registered == null) {
