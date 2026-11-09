@@ -88,18 +88,28 @@ public abstract class NNModule implements AutoCloseable {
     protected <T extends NNModule> T registerModule(String name, T module) {
         Objects.requireNonNull(name, "NNModule name must not be null");
         Objects.requireNonNull(module, "NNModule must not be null");
-        if (computeBackend != null && module.computeBackend() != null
-                && module.computeBackend() != computeBackend) {
-            throw new IllegalArgumentException("Submodule '" + name + "' uses a different compute backend");
-        }
+        validateSubmoduleBackend(name, module);
         submodules.put(name, module);
         return module;
     }
 
+    private void validateSubmoduleBackend(String name, NNModule module) {
+        if (computeBackend == null) {
+            return;
+        }
+        if (module.computeBackend() != null && module.computeBackend() != computeBackend) {
+            throw new IllegalArgumentException("Submodule '" + name + "' uses a different compute backend");
+        }
+        module.stateDict().forEach((stateName, tensor) -> {
+            if (tensor.backend() != computeBackend) {
+                throw new IllegalArgumentException("Submodule '" + name + "' state '" + stateName
+                        + "' uses a different compute backend");
+            }
+        });
+    }
+
     protected <T extends NNModule> T register(String name, T module) {
-        Objects.requireNonNull(name, "Module name must not be null");
-        submodules.put(name, module);
-        return module;
+        return registerModule(name, module);
     }
 
 
