@@ -86,6 +86,27 @@ public class MetalComputeBackend implements ComputeBackend {
 
 
 
+    /**
+     * Exposes storage to the current native Metal FFM bridge.
+     *
+     * <p>The current bridge accepts host MemorySegments. Opaque device-local storage must not be
+     * passed through this boundary until Metal-native buffer binding and
+     * transfer operations are implemented.</p>
+     */
+    static MemorySegment metalSegment(Tensor tensor) {
+        if (!(tensor instanceof DefaultTensor defaultTensor)) {
+            throw new IllegalArgumentException("Metal FFM dispatch only supports DefaultTensor storage");
+        }
+        try {
+            return defaultTensor.hostStorage().segment();
+        } catch (UnsupportedOperationException failure) {
+            throw new UnsupportedOperationException(
+                    "Metal FFM dispatch requires host-accessible storage; opaque device-local storage "
+                            + "requires a Metal-native binding path",
+                    failure);
+        }
+    }
+
     private long byteSize(DType dtype) {
         return switch (dtype) {
             case F32, I32 -> 4;
