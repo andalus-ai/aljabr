@@ -37,10 +37,10 @@ public final class FusedTransformerLayer {
         CpuBuffer ffn2 = new CpuBuffer((long) seq * dim * 4);
 
         // 1. RMSNorm
-        rmsnorm(((DefaultTensor) x).buffer().segment(), norm1.segment(), seq, dim);
+        rmsnorm(CpuTensorStorageAccess.segment(x), norm1.segment(), seq, dim);
 
         // 2. QKV fused projection
-        matmul(norm1.segment(), ((DefaultTensor) wqkv).buffer().segment(), qkv.segment(), seq, dim, dim * 3);
+        matmul(norm1.segment(), CpuTensorStorageAccess.segment(wqkv), qkv.segment(), seq, dim, dim * 3);
 
         // 3. Split Q K V
         MemorySegment Q = slice(qkv.segment(), 0, (long) seq * dim);
@@ -57,23 +57,23 @@ public final class FusedTransformerLayer {
         }
 
         // 5. Output projection
-        matmul(attn.segment(), ((DefaultTensor) wout).buffer().segment(), proj.segment(), seq, dim, dim);
+        matmul(attn.segment(), CpuTensorStorageAccess.segment(wout), proj.segment(), seq, dim, dim);
 
         // Residual add
-        add(proj.segment(), ((DefaultTensor) x).buffer().segment(), proj.segment(), seq * dim);
+        add(proj.segment(), CpuTensorStorageAccess.segment(x), proj.segment(), seq * dim);
 
         // 6. RMSNorm 2
         rmsnorm(proj.segment(), norm2.segment(), seq, dim);
 
         // 7. FFN (fused SwiGLU-style)
-        matmul(norm2.segment(), ((DefaultTensor) w1).buffer().segment(), ffn1.segment(), seq, dim, dim * 4);
+        matmul(norm2.segment(), CpuTensorStorageAccess.segment(w1), ffn1.segment(), seq, dim, dim * 4);
         silu(ffn1.segment(), seq * dim * 4);
-        matmul(ffn1.segment(), ((DefaultTensor) w2).buffer().segment(), ffn2.segment(), seq, dim * 4, dim);
+        matmul(ffn1.segment(), CpuTensorStorageAccess.segment(w2), ffn2.segment(), seq, dim * 4, dim);
 
         // Residual
         add(ffn2.segment(), proj.segment(), ffn2.segment(), seq * dim);
 
-        return new DefaultTensor(new Shape(seq, dim), x.dtype(), x.device(), ffn2, null);
+        return new DefaultTensor(new Shape(seq, dim), x.dtype(), x.device(), ffn2, x.backend());
     }
 
     // =========================================================

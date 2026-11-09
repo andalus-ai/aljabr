@@ -2,12 +2,17 @@ package tech.kayys.aljabr.core.tensor;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+
 import org.junit.jupiter.api.Test;
 import java.lang.reflect.Proxy;
 import java.util.concurrent.atomic.AtomicLong;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.TensorStorage;
 import java.lang.foreign.MemorySegment;
+
+import tech.kayys.aljabr.core.memory.CpuBuffer;
 
 class TensorFactoryTest {
     @Test
@@ -24,7 +29,7 @@ class TensorFactoryTest {
 
     @Test
     void rejectsQuantizedStorageWithIncompleteBlockShape() {
-        var segment = java.lang.foreign.Arena.ofAuto().allocate(16);
+        var segment = Arena.ofAuto().allocate(16);
         assertThrows(IllegalArgumentException.class,
                 () -> TensorFactory.ofQuantized(segment, DType.Q8_0, 31));
     }

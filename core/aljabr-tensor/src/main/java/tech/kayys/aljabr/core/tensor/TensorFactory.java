@@ -108,17 +108,33 @@ public final class TensorFactory {
         }
     }
 
+    /**
+     * Creates a quantized tensor by copying the required encoded bytes into
+     * tensor-owned native storage.
+     *
+     * <p>The source segment remains owned by the caller and may be closed or
+     * released independently after this method returns.</p>
+     */
     public static Tensor ofQuantized(java.lang.foreign.MemorySegment data, DType dtype, long... shape) {
         java.util.Objects.requireNonNull(data, "data must not be null");
         java.util.Objects.requireNonNull(dtype, "dtype must not be null");
+        if (!dtype.isQuantized()) {
+            throw new IllegalArgumentException("ofQuantized requires a quantized dtype; actual dtype is " + dtype);
+        }
         long n = numel(shape);
         long bytes = dtype.memoryFootprintBytes(n);
         if (data.byteSize() < bytes)
             throw new IllegalArgumentException("segment too small for quantized tensor");
 
         ComputeBackend backend = findDefaultBackend();
-        tech.kayys.aljabr.core.memory.CpuBuffer buf = new tech.kayys.aljabr.core.memory.CpuBuffer(data, null);
-        return new DefaultTensor(new Shape(shape), dtype, DeviceType.CPU, buf, backend);
+        tech.kayys.aljabr.core.memory.CpuBuffer buffer = new tech.kayys.aljabr.core.memory.CpuBuffer(bytes);
+        try {
+            buffer.segment().copyFrom(data.asSlice(0, bytes));
+            return new DefaultTensor(new Shape(shape), dtype, DeviceType.CPU, buffer, backend);
+        } catch (RuntimeException | Error failure) {
+            buffer.release();
+            throw failure;
+        }
     }
 
     private static long numel(long... shape) {
