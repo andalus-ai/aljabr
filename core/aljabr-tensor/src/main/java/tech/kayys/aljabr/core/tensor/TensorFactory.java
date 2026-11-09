@@ -125,8 +125,9 @@ public final class TensorFactory {
      *
      * <p>The source segment remains owned by the caller. The returned tensor
      * owns its allocated storage.</p>
+     *
+     * @deprecated Use the explicit-backend overload with an owned runtime backend.
      */
-    /** @deprecated Use the explicit-backend overload with an owned runtime backend. */
     @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor ofQuantized(java.lang.foreign.MemorySegment data, DType dtype, long... shape) {
         return ofQuantized(data, findDefaultBackend(), dtype, shape);
