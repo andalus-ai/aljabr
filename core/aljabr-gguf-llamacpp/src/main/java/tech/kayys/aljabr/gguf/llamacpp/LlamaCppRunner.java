@@ -41,7 +41,7 @@ public class LlamaCppRunner {
 
     // Components
     private final LlamaCppBinding binding;
-    private final LlamaCppProviderConfig providerConfig;
+    private final LlamaCppProviderSettings providerConfig;
     private final GGUFChatTemplateService templateService;
     private LlamaCppModelInitializer modelInitializer;
     private LlamaCppMetricsRecorder metricsRecorder;
@@ -59,7 +59,7 @@ public class LlamaCppRunner {
     private final ExecutorService executorService = Executors.newCachedThreadPool();
     private final Semaphore concurrencyLimit;
 
-    public LlamaCppRunner(LlamaCppBinding binding, LlamaCppProviderConfig config, GGUFChatTemplateService templateService) {
+    public LlamaCppRunner(LlamaCppBinding binding, LlamaCppProviderSettings config, GGUFChatTemplateService templateService) {
         this.binding = binding;
         this.providerConfig = config;
         this.templateService = templateService;
@@ -178,6 +178,11 @@ public class LlamaCppRunner {
         executorService.shutdownNow();
         if (coalescer != null)
             coalescer.shutdown();
+        try {
+            binding.close();
+        } catch (Exception e) {
+            log.warn("Failed to close llama.cpp binding", e);
+        }
         initialized = false;
     }
 
