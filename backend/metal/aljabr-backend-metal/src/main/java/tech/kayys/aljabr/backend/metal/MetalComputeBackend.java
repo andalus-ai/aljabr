@@ -303,12 +303,7 @@ public class MetalComputeBackend implements ComputeBackend {
         return dispatchOutput(
                 bufferC,
                 () -> metalBinding.matmul(bufferC.segment(), segment(a), segment(b), M, K, N, 1.0f, 0.0f),
-                () -> {
-                    System.err.println("Metal matmul falling back to CPU for a=" + a.dtype()
-                            + " (shape=" + a.shape() + "), b=" + b.dtype() + " (shape=" + b.shape()
-                            + "), M=" + M + ", K=" + K + ", N=" + N);
-                    return fallback("matmul", () -> wrap(cpuFallback.matmul(a, b)));
-                },
+                () -> fallback("matmul", () -> wrap(cpuFallback.matmul(a, b))),
                 output -> new DefaultTensor(shapeC, a.dtype(), a.device(), output, this));
     }
 
@@ -345,12 +340,7 @@ public class MetalComputeBackend implements ComputeBackend {
                     }
                     return status;
                 },
-                () -> {
-                    System.err.println("Metal matmul falling back to CPU for a=" + a.dtype()
-                            + " (shape=" + a.shape() + "), b=" + db.dtype() + " (shape=" + db.shape()
-                            + "), M=" + M + ", K=" + K + ", N=" + N);
-                    return fallback("matmul", () -> wrap(cpuFallback.matmul(a, db)));
-                },
+                () -> fallback("matmul", () -> wrap(cpuFallback.matmul(a, db))),
                 output -> new DefaultTensor(shapeC, tech.kayys.aljabr.core.tensor.DType.F32, a.device(), output, this));
     }
 
