@@ -20,12 +20,8 @@ public final class TensorFactory {
     /** @deprecated Use {@link #randn(ComputeBackend, long...)} with an owned runtime backend. */
     @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor randn(long... shape) {
-        long n = numel(shape);
-        float[] data = new float[arrayLength(n)];
-        for (int i = 0; i < n; i++) {
-            data[i] = (float) RNG.nextGaussian();
-        }
-        return of(data, shape);
+        arrayLength(numel(shape));
+        throw implicitBackendSelectionRemoved();
     }
 
     /** Creates a random tensor using an explicitly owned compute backend. */
@@ -41,8 +37,8 @@ public final class TensorFactory {
     /** @deprecated Use {@link #zeros(ComputeBackend, long...)} with an owned runtime backend. */
     @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor zeros(long... shape) {
-        long n = numel(shape);
-        return of(new float[arrayLength(n)], shape);
+        arrayLength(numel(shape));
+        throw implicitBackendSelectionRemoved();
     }
 
     /** Creates a zero tensor using an explicitly owned compute backend. */
@@ -54,12 +50,8 @@ public final class TensorFactory {
     /** @deprecated Use {@link #ones(ComputeBackend, long...)} with an owned runtime backend. */
     @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor ones(long... shape) {
-        long n = numel(shape);
-        float[] data = new float[arrayLength(n)];
-        for (int i = 0; i < n; i++) {
-            data[i] = 1f;
-        }
-        return of(data, shape);
+        arrayLength(numel(shape));
+        throw implicitBackendSelectionRemoved();
     }
 
     /** Creates a one tensor using an explicitly owned compute backend. */
@@ -75,12 +67,8 @@ public final class TensorFactory {
     /** @deprecated Use {@link #full(float, ComputeBackend, long...)} with an owned runtime backend. */
     @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor full(float value, long... shape) {
-        long n = numel(shape);
-        float[] data = new float[arrayLength(n)];
-        for (int i = 0; i < n; i++) {
-            data[i] = value;
-        }
-        return of(data, shape);
+        arrayLength(numel(shape));
+        throw implicitBackendSelectionRemoved();
     }
 
     /** Creates a filled tensor using an explicitly owned compute backend. */
@@ -96,7 +84,12 @@ public final class TensorFactory {
     /** @deprecated Use {@link #of(float[], ComputeBackend, long...)} with an owned runtime backend. */
     @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor of(float[] data, long... shape) {
-        return of(data, findDefaultBackend(), shape);
+        java.util.Objects.requireNonNull(data, "data must not be null");
+        long n = numel(shape);
+        if (data.length != n) {
+            throw new IllegalArgumentException("data length != shape numel");
+        }
+        throw implicitBackendSelectionRemoved();
     }
 
     /** Creates a tensor backed by the supplied compute backend. */
@@ -121,16 +114,24 @@ public final class TensorFactory {
     }
 
     /**
-     * Creates a quantized tensor using the default backend.
+     * Deprecated convenience overload retained for source compatibility.
+     * It validates its arguments but does not select a backend.
      *
-     * <p>The source segment remains owned by the caller. The returned tensor
-     * owns its allocated storage.</p>
-     *
-     * @deprecated Use the explicit-backend overload with an owned runtime backend.
+     * @deprecated Pass an explicitly selected, runtime-owned backend.
      */
     @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor ofQuantized(java.lang.foreign.MemorySegment data, DType dtype, long... shape) {
-        return ofQuantized(data, findDefaultBackend(), dtype, shape);
+        java.util.Objects.requireNonNull(data, "data must not be null");
+        java.util.Objects.requireNonNull(dtype, "dtype must not be null");
+        if (!dtype.isQuantized()) {
+            throw new IllegalArgumentException(
+                    "ofQuantized requires a quantized dtype; actual dtype is " + dtype);
+        }
+        long bytes = dtype.memoryFootprintBytes(numel(shape));
+        if (data.byteSize() < bytes) {
+            throw new IllegalArgumentException("segment too small for quantized tensor");
+        }
+        throw implicitBackendSelectionRemoved();
     }
 
     /**
@@ -196,75 +197,18 @@ public final class TensorFactory {
         return Math.toIntExact(numel);
     }
 
-    private static volatile ComputeBackend defaultBackend;
-
     /**
-     * Selects the process default backend.
+     * Fails fast for deprecated convenience methods that previously selected
+     * and cached a process-global backend from the tensor core.
      *
-     * <p>Automatic selection prefers the production Metal backend when it is
-     * available, then falls back to the pure-Java CPU backend. HAT is
-     * intentionally excluded from automatic selection while its operation
-     * coverage and provider integration remain experimental. It can be
-     * selected explicitly with {@code -Daljabr.compute.backend=hat}.</p>
-     *
-     * <p>Supported values for {@code aljabr.compute.backend} are
-     * {@code auto} (default), {@code metal}, {@code cpu}, and {@code hat}.
-     * Explicit selections fail fast when the requested backend cannot be
-     * constructed; they never silently select a different backend.</p>
+     * <p>Backend selection and provider-session ownership belong to the
+     * application/runtime. Pass the selected backend explicitly to the
+     * overloads that accept {@link ComputeBackend}.</p>
      */
-    private static ComputeBackend findDefaultBackend() {
-        if (defaultBackend != null) {
-            return defaultBackend;
-        }
-        synchronized (TensorFactory.class) {
-            if (defaultBackend != null) {
-                return defaultBackend;
-            }
-
-            String requested = System.getProperty("aljabr.compute.backend", "auto")
-                    .trim().toLowerCase(java.util.Locale.ROOT);
-            if (requested.isEmpty()) {
-                requested = "auto";
-            }
-
-            if ("auto".equals(requested)) {
-                try {
-                    defaultBackend = instantiateBackend(
-                            "tech.kayys.aljabr.backend.metal.MetalComputeBackend");
-                } catch (RuntimeException | LinkageError metalUnavailable) {
-                    try {
-                        defaultBackend = instantiateBackend(
-                                "tech.kayys.aljabr.backend.cpu.CpuBackend");
-                    } catch (RuntimeException | LinkageError cpuUnavailable) {
-                        cpuUnavailable.addSuppressed(metalUnavailable);
-                        throw new IllegalStateException(
-                                "No Aljabr compute backend is available; install the CPU backend "
-                                        + "or configure an available backend explicitly",
-                                cpuUnavailable);
-                    }
-                }
-                return defaultBackend;
-            }
-
-            String backendClass = switch (requested) {
-                case "metal" -> "tech.kayys.aljabr.backend.metal.MetalComputeBackend";
-                case "cpu" -> "tech.kayys.aljabr.backend.cpu.CpuBackend";
-                case "hat" -> "tech.kayys.aljabr.backend.hat.HatComputeBackend";
-                default -> throw new IllegalArgumentException(
-                        "Unknown Aljabr compute backend '" + requested
-                                + "'. Supported values: auto, metal, cpu, hat");
-            };
-            defaultBackend = instantiateBackend(backendClass);
-            return defaultBackend;
-        }
-    }
-
-    private static ComputeBackend instantiateBackend(String className) {
-        try {
-            Class<?> backendType = Class.forName(className);
-            return ComputeBackend.class.cast(backendType.getDeclaredConstructor().newInstance());
-        } catch (ReflectiveOperationException | LinkageError | ClassCastException e) {
-            throw new IllegalStateException("Unable to initialize Aljabr compute backend: " + className, e);
-        }
+    private static IllegalStateException implicitBackendSelectionRemoved() {
+        return new IllegalStateException(
+                "Implicit tensor backend selection is no longer supported. "
+                        + "Select and own a backend in your application/runtime, then pass it "
+                        + "to the TensorFactory overload that accepts ComputeBackend.");
     }
 }
