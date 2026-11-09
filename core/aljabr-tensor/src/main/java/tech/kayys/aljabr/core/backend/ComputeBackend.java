@@ -60,6 +60,37 @@ public interface ComputeBackend {
     }
 
     /**
+     * Validates whether this backend can copy {@code source} into
+     * {@code destination} without modifying either tensor. Device backends
+     * should override this method when their storage compatibility rules differ
+     * from the host-accessible default.
+     */
+    default void validateCopyInto(Tensor destination, Tensor source) {
+        if (destination == null || source == null) {
+            throw new NullPointerException("destination and source tensors must not be null");
+        }
+        if (!java.util.Arrays.equals(destination.shape().dims(), source.shape().dims())) {
+            throw new IllegalArgumentException("Tensor copy shape mismatch: destination="
+                    + destination.shape() + ", source=" + source.shape());
+        }
+        if (destination.dtype() != source.dtype()) {
+            throw new IllegalArgumentException("Tensor copy dtype mismatch: destination="
+                    + destination.dtype() + ", source=" + source.dtype());
+        }
+        long sizeBytes = destination.dtype().memoryFootprintBytes(destination.numel());
+        TensorStorage destinationStorage = destination.storage();
+        TensorStorage sourceStorage = source.storage();
+        if (destinationStorage.sizeBytes() < sizeBytes || sourceStorage.sizeBytes() < sizeBytes) {
+            throw new IllegalArgumentException("Tensor copy storage is smaller than required " + sizeBytes + " bytes");
+        }
+        if (!(destinationStorage instanceof HostAccessibleStorage)
+                || !(sourceStorage instanceof HostAccessibleStorage)) {
+            throw new UnsupportedOperationException("Backend " + getClass().getName()
+                    + " must implement validateCopyInto for non-host-accessible tensor storage");
+        }
+    }
+
+    /**
      * Copies the logical contents of {@code source} into the already allocated
      * {@code destination} tensor without replacing its storage or metadata.
      *
@@ -88,20 +119,15 @@ public interface ComputeBackend {
             throw new IllegalArgumentException("Tensor copy dtype mismatch: destination="
                     + destination.dtype() + ", source=" + source.dtype());
         }
+        validateCopyInto(destination, source);
         long sizeBytes = destination.dtype().memoryFootprintBytes(destination.numel());
         TensorStorage destinationStorage = destination.storage();
         TensorStorage sourceStorage = source.storage();
-        if (destinationStorage.sizeBytes() < sizeBytes || sourceStorage.sizeBytes() < sizeBytes) {
-            throw new IllegalArgumentException("Tensor copy storage is smaller than required " + sizeBytes + " bytes");
-        }
         if (destinationStorage == sourceStorage || sizeBytes == 0) {
             return;
         }
-        if (!(destinationStorage instanceof HostAccessibleStorage destinationHost)
-                || !(sourceStorage instanceof HostAccessibleStorage sourceHost)) {
-            throw new UnsupportedOperationException("Backend " + getClass().getName()
-                    + " must implement copyInto for non-host-accessible tensor storage");
-        }
+        HostAccessibleStorage destinationHost = (HostAccessibleStorage) destinationStorage;
+        HostAccessibleStorage sourceHost = (HostAccessibleStorage) sourceStorage;
         destinationHost.segment().asSlice(0, sizeBytes)
                 .copyFrom(sourceHost.segment().asSlice(0, sizeBytes));
     }
