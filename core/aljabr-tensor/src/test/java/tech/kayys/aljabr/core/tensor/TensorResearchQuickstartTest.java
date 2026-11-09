@@ -24,7 +24,7 @@ class TensorResearchQuickstartTest {
         Tensor weights = TensorFactory.of(new float[] {
                 0.5f, 1.0f,
                 1.5f, 2.0f
-        }, 2, 2);
+        }, backend, 2, 2);
 
         Tensor predictions = null;
         Tensor mean = null;
