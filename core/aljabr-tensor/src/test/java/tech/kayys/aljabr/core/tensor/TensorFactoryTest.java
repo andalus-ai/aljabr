@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.CpuBuffer;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
+import tech.kayys.aljabr.core.memory.TensorAllocator;
 import tech.kayys.aljabr.core.memory.TensorStorage;
 
 class TensorFactoryTest {
@@ -233,12 +235,13 @@ class TensorFactoryTest {
         AtomicLong released = new AtomicLong();
         TensorAllocator allocator = size -> {
             requestedBytes.set(size);
-            return new TensorStorage() {
+            return new HostAccessibleStorage() {
                 private final Arena arena = Arena.ofShared();
                 private final MemorySegment segment = arena.allocate(size);
                 private boolean live = true;
 
                 @Override public long sizeBytes() { return segment.byteSize(); }
+                @Override public MemorySegment segment() { return segment; }
                 @Override public void retain() {
                     if (!live) throw new IllegalStateException("released");
                 }
