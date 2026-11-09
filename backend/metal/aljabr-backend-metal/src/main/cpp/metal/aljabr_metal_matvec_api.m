@@ -3306,8 +3306,8 @@ int aljabr_metal_register_norm_buffer(int slot, const void *ptr, size_t bytes) {
     return -1;
   if (!g_initialized)
     return -1;
-  /* Registered norm weights outlive an individual dispatch. */
-  g_norm_buffers[slot] = wrap_weight_ptr(ptr, bytes);
+  /* The registered slot retains this wrapper for the norm-weight lifetime. */
+  g_norm_buffers[slot] = wrap_ptr((void *)ptr, bytes);
   g_norm_buffer_bytes[slot] = bytes;
   return (g_norm_buffers[slot] != nil) ? 0 : -2;
 }
