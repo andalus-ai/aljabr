@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.gguf.api;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.spi.exception.InferenceException;
 import tech.kayys.aljabr.spi.inference.InferenceRequest;
 import tech.kayys.aljabr.spi.inference.InferenceResponse;
 
