@@ -146,11 +146,7 @@ public final class MetalComputeProvider implements ComputeProvider {
         // contains a legacy CPU fallback. Refuse to publish a Metal session if
         // that fallback was activated: provider selection must not silently
         // turn a requested Metal session into CPU execution.
-        MetalComputeBackend backend = new MetalComputeBackend();
-        if (!MetalBinding.getInstance().isRuntimeActive()) {
-            throw new IllegalStateException("Metal native runtime is not active; refusing CPU fallback session");
-        }
-        return backend;
+        return new MetalComputeBackend(null, MetalRuntimePolicy.REQUIRE_NATIVE);
     }
 
     private static final class MetalProviderSession implements ProviderSession {

@@ -60,21 +60,30 @@ public class MetalComputeBackend implements ComputeBackend {
     private final TensorAllocator hostStagingAllocator;
 
     public MetalComputeBackend() {
-        this(null);
+        this(null, MetalRuntimePolicy.ALLOW_CPU_FALLBACK);
     }
 
     /**
-     * Creates a Metal backend with an explicit allocator for host-accessible
-     * output staging. The current FFM bridge writes through host MemorySegments,
-     * so this allocator must not return opaque device-local storage.
+     * Creates a backend with an explicit allocator for host-accessible output staging.
      */
     public MetalComputeBackend(TensorAllocator hostStagingAllocator) {
-        this.hostStagingAllocator = hostStagingAllocator != null
-                ? hostStagingAllocator
-                : CpuBuffer::new;
+        this(hostStagingAllocator, MetalRuntimePolicy.ALLOW_CPU_FALLBACK);
+    }
+
+    /**
+     * REQUIRE_NATIVE rejects forced-CPU mode, a missing native library, or an
+     * unavailable Metal device. It guarantees runtime initialization only;
+     * individual operations may still use CPU kernels when no native kernel exists.
+     */
+    public MetalComputeBackend(TensorAllocator hostStagingAllocator, MetalRuntimePolicy runtimePolicy) {
+        this.hostStagingAllocator = hostStagingAllocator != null ? hostStagingAllocator : CpuBuffer::new;
+        Objects.requireNonNull(runtimePolicy, "runtimePolicy");
         this.forceCpu = Boolean.parseBoolean(System.getProperty(FORCE_CPU_PROPERTY, "false"));
 
         if (forceCpu) {
+            if (runtimePolicy == MetalRuntimePolicy.REQUIRE_NATIVE) {
+                throw new IllegalStateException("Native Metal runtime is required, but CPU mode was forced");
+            }
             LOG.info("MetalComputeBackend forced into CPU mode by system properties.");
             MetalBinding.initializeFallback();
             this.metalBinding = MetalBinding.getInstance();
@@ -84,6 +93,9 @@ public class MetalComputeBackend implements ComputeBackend {
         }
 
         boolean loaded = MetalBinding.initialize();
+        if (!loaded && runtimePolicy == MetalRuntimePolicy.REQUIRE_NATIVE) {
+            throw new IllegalStateException("Native Metal runtime is required, but the Metal library could not be loaded");
+        }
         if (!loaded) {
             LOG.warn("Failed to initialize MetalBinding. MetalComputeBackend will operate in CPU fallback mode.");
             MetalBinding.initializeFallback();
@@ -92,13 +104,13 @@ public class MetalComputeBackend implements ComputeBackend {
         this.metalBinding = MetalBinding.getInstance();
         this.metalBinding.init();
         this.isNative = metalBinding.isRuntimeActive();
+        if (!isNative && runtimePolicy == MetalRuntimePolicy.REQUIRE_NATIVE) {
+            throw new IllegalStateException("Native Metal runtime is required, but no active Metal device was initialized");
+        }
         this.cpuFallback = new CpuBackend();
-
         LOG.infof("Initialized MetalComputeBackend [Device: %s, Unified Memory: %s]",
                 metalBinding.deviceName(), metalBinding.isUnifiedMemory());
     }
-
-
 
     /**
      * Exposes storage to the current native Metal FFM bridge.
