@@ -91,11 +91,8 @@ public class MetalComputeBackend implements ComputeBackend {
      * transfer operations are implemented.</p>
      */
     static MemorySegment metalSegment(Tensor tensor) {
-        if (!(tensor instanceof DefaultTensor defaultTensor)) {
-            throw new IllegalArgumentException("Metal FFM dispatch only supports DefaultTensor storage");
-        }
         try {
-            return defaultTensor.hostStorage().segment();
+            return MetalTensorStorageAccess.segment(tensor);
         } catch (UnsupportedOperationException failure) {
             throw new UnsupportedOperationException(
                     "Metal FFM dispatch requires host-accessible storage; opaque device-local storage "
@@ -119,7 +116,7 @@ public class MetalComputeBackend implements ComputeBackend {
      * represented as device-local Metal memory; a native device allocator
      * requires a separate TensorStorage implementation and binding contract.
      */
-    private HostAccessibleStorage allocate(long sizeBytes) {
+    private HostAccessibleStorage allocateHostStorage(long sizeBytes) {
         return new CpuBuffer(sizeBytes);
     }
 
@@ -193,7 +190,7 @@ public class MetalComputeBackend implements ComputeBackend {
         Shape shapeC = new Shape(M, N);
         long sizeBytes = shapeC.numel() * byteSize(a.dtype());
 
-        HostAccessibleStorage bufferC = allocate(sizeBytes);
+        HostAccessibleStorage bufferC = allocateHostStorage(sizeBytes);
         int status = metalBinding.matmul(bufferC.segment(), segment(a), segment(b), M, K, N, 1.0f,
                 0.0f);
         if (status != 0) {
@@ -211,7 +208,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int N = (int) db.shape().dim(0); // weight rows = output dim
 
         Shape shapeC = new Shape(M, N);
-        HostAccessibleStorage bufferC = allocate((long) M * N * 4);
+        HostAccessibleStorage bufferC = allocateHostStorage((long) M * N * 4);
 
         int status = 0;
         if (db.dtype() == tech.kayys.aljabr.core.tensor.DType.Q4_K) {
@@ -265,7 +262,7 @@ public class MetalComputeBackend implements ComputeBackend {
 
         Shape shapeOut = Q.shape();
         long sizeBytes = shapeOut.numel() * byteSize(Q.dtype());
-        HostAccessibleStorage bufferOut = allocate(sizeBytes);
+        HostAccessibleStorage bufferOut = allocateHostStorage(sizeBytes);
 
         int status;
         try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
@@ -301,7 +298,7 @@ public class MetalComputeBackend implements ComputeBackend {
 
         Shape shape = a.shape();
         int n = (int) shape.numel();
-        HostAccessibleStorage bufferOut = allocate(n * 4);
+        HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
         int status = metalBinding.softmax(bufferOut.segment(), segment(a), n);
         if (status != 0) {
@@ -363,7 +360,7 @@ public class MetalComputeBackend implements ComputeBackend {
     public Tensor zerosLike(Tensor a) {
         Shape shape = a.shape();
         long sizeBytes = shape.numel() * byteSize(a.dtype());
-        HostAccessibleStorage buffer = allocate(sizeBytes);
+        HostAccessibleStorage buffer = allocateHostStorage(sizeBytes);
         return new DefaultTensor(shape, a.dtype(), a.device(), buffer, this);
     }
 
@@ -404,7 +401,7 @@ public class MetalComputeBackend implements ComputeBackend {
 
         Shape shape = a.shape();
         int n = (int) shape.numel();
-        HostAccessibleStorage bufferOut = allocate(n * 4);
+        HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
         int status = metalBinding.silu(bufferOut.segment(), segment(a), n);
         if (status != 0) {
@@ -446,7 +443,7 @@ public class MetalComputeBackend implements ComputeBackend {
 
         Shape shape = a.shape();
         int n = (int) shape.numel();
-        HostAccessibleStorage bufferOut = allocate(n * 4);
+        HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
         int status = metalBinding.gelu(bufferOut.segment(), segment(a), n);
         if (status != 0) {
@@ -468,7 +465,7 @@ public class MetalComputeBackend implements ComputeBackend {
             }
             int cols = (int) a.shape().dim(dim);
 
-                HostAccessibleStorage bufferOut = allocate(rows * cols * 4);
+                HostAccessibleStorage bufferOut = allocateHostStorage(rows * cols * 4);
             int status = metalBinding.softmaxRows(bufferOut.segment(), segment(a), rows, cols);
             if (status == 0) {
                 return new DefaultTensor(a.shape(), a.dtype(), a.device(), bufferOut, this);
@@ -509,7 +506,7 @@ public class MetalComputeBackend implements ComputeBackend {
 
         Shape shape = input.shape();
         long sizeBytes = shape.numel() * byteSize(input.dtype());
-        HostAccessibleStorage bufferOut = allocate(sizeBytes);
+        HostAccessibleStorage bufferOut = allocateHostStorage(sizeBytes);
 
         int n = 1;
         for (long s : normalizedShape) {
@@ -549,7 +546,7 @@ public class MetalComputeBackend implements ComputeBackend {
             rows *= shape.dim(i);
         }
 
-        HostAccessibleStorage bufferOut = allocate(rows * n * 4);
+        HostAccessibleStorage bufferOut = allocateHostStorage(rows * n * 4);
         int status;
         if (rows == 1) {
             status = metalBinding.rmsNorm(bufferOut.segment(), segment(input), segment(weight), n,
@@ -606,7 +603,7 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = Math.toIntExact(input.numel());
         int headDim = Math.toIntExact(input.shape().dim(input.shape().rank() - 1)); // Last dimension is headDim
 
-        HostAccessibleStorage bufferOut = allocate((long) n * 4);
+        HostAccessibleStorage bufferOut = allocateHostStorage((long) n * 4);
         int status = metalBinding.rope(bufferOut.segment(), segment(input), n, headDim, posOffset, freqBase,
                 isNeox);
 

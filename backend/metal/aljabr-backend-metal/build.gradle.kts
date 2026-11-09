@@ -21,6 +21,7 @@ sourceSets {
             include("tech/kayys/aljabr/backend/metal/binding/MetalFlashAttentionCpuFallback.java")
             include("tech/kayys/aljabr/backend/metal/binding/MetalLibraryDiscovery.java")
             include("tech/kayys/aljabr/backend/metal/MetalComputeBackend.java")
+            include("tech/kayys/aljabr/backend/metal/MetalTensorStorageAccess.java")
             include("tech/kayys/aljabr/backend/metal/MetalComputeProvider.java")
         }
         resources {
