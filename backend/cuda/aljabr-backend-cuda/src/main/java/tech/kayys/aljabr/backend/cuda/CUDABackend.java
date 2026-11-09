@@ -69,7 +69,7 @@ public class CUDABackend implements ComputeBackend {
         };
     }
 
-    private CpuBuffer allocate(long sizeBytes) {
+    private CpuBuffer allocateHostBuffer(long sizeBytes) {
         return new CpuBuffer(sizeBytes); // Using CpuBuffer assuming managed memory or host allocation initially
     }
 
@@ -156,7 +156,7 @@ public class CUDABackend implements ComputeBackend {
         }
 
         // 4. Copy device to host
-        CpuBuffer bufferC = allocate(sizeBytesC);
+        CpuBuffer bufferC = allocateHostBuffer(sizeBytesC);
         cudaBinding.cudaMemcpy(bufferC.segment(), d_C, sizeBytesC, CudaBinding.cudaMemcpyDeviceToHost);
 
         // 5. Free GPU memory
@@ -198,7 +198,7 @@ public class CUDABackend implements ComputeBackend {
             return cpuFallback.softmax(a);
         }
 
-        CpuBuffer bufferOut = allocate(sizeBytes);
+        CpuBuffer bufferOut = allocateHostBuffer(sizeBytes);
         cudaBinding.cudaMemcpy(bufferOut.segment(), d_out, sizeBytes, CudaBinding.cudaMemcpyDeviceToHost);
         cudaBinding.cudaFree(d_in);
         cudaBinding.cudaFree(d_out);
@@ -310,7 +310,7 @@ public class CUDABackend implements ComputeBackend {
             return cpuFallback.silu(a);
         }
 
-        CpuBuffer bufferOut = allocate(sizeBytes);
+        CpuBuffer bufferOut = allocateHostBuffer(sizeBytes);
         cudaBinding.cudaMemcpy(bufferOut.segment(), d_out, sizeBytes, CudaBinding.cudaMemcpyDeviceToHost);
         cudaBinding.cudaFree(d_in);
         cudaBinding.cudaFree(d_out);
@@ -364,7 +364,7 @@ public class CUDABackend implements ComputeBackend {
             return cpuFallback.gelu(a);
         }
 
-        CpuBuffer bufferOut = allocate(sizeBytes);
+        CpuBuffer bufferOut = allocateHostBuffer(sizeBytes);
         cudaBinding.cudaMemcpy(bufferOut.segment(), d_out, sizeBytes, CudaBinding.cudaMemcpyDeviceToHost);
         cudaBinding.cudaFree(d_in);
         cudaBinding.cudaFree(d_out);
@@ -448,7 +448,7 @@ public class CUDABackend implements ComputeBackend {
             return cpuFallback.layerNorm(input, normalizedShape, weight, bias, eps);
         }
 
-        CpuBuffer bufferOut = allocate(sizeBytes);
+        CpuBuffer bufferOut = allocateHostBuffer(sizeBytes);
         cudaBinding.cudaMemcpy(bufferOut.segment(), d_out, sizeBytes, CudaBinding.cudaMemcpyDeviceToHost);
 
         cudaBinding.cudaFree(d_in);
