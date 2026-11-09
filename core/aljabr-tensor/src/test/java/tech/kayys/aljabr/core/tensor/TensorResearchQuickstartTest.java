@@ -4,27 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
-import tech.kayys.aljabr.backend.cpu.CpuBackend;
-import tech.kayys.aljabr.core.backend.ComputeBackend;
-
 /**
  * Executable counterpart to docs/examples/TENSOR_RESEARCH_QUICKSTART.md.
  */
 class TensorResearchQuickstartTest {
 
-    private final ComputeBackend backend = new CpuBackend();
-
     @Test
     void matrixMultiplicationAndMeanMatchReferenceValues() {
-        Tensor inputs = TensorFactory.of(new float[] {
+        Tensor inputs = Tensor.of(new float[] {
                 1.0f, 2.0f,
                 3.0f, 4.0f
-        }, backend, 2, 2);
+        }, 2, 2);
 
-        Tensor weights = TensorFactory.of(new float[] {
+        Tensor weights = Tensor.of(new float[] {
                 0.5f, 1.0f,
                 1.5f, 2.0f
-        }, backend, 2, 2);
+        }, 2, 2);
 
         Tensor predictions = null;
         Tensor mean = null;

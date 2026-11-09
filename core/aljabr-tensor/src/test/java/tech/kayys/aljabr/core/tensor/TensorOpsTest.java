@@ -21,8 +21,8 @@ class TensorOpsTest {
 
     @Test
     void catConcatenatesAlongFirstDimension() {
-        Tensor a = Tensor.of(new float[] { 1, 2, 3, 4 }, 2, 2);
-        Tensor b = Tensor.of(new float[] { 5, 6 }, 1, 2);
+        Tensor a = tensor(new float[] { 1, 2, 3, 4 }, 2, 2);
+        Tensor b = tensor(new float[] { 5, 6 }, 1, 2);
         try {
             Tensor result = TensorOps.cat(List.of(a, b), 0);
             try {
@@ -39,8 +39,8 @@ class TensorOpsTest {
 
     @Test
     void catConcatenatesAlongInnerDimensionAndSupportsNegativeAxis() {
-        Tensor a = Tensor.of(new float[] { 1, 2, 3, 4 }, 2, 2);
-        Tensor b = Tensor.of(new float[] { 5, 6, 7, 8 }, 2, 2);
+        Tensor a = tensor(new float[] { 1, 2, 3, 4 }, 2, 2);
+        Tensor b = tensor(new float[] { 5, 6, 7, 8 }, 2, 2);
         try {
             Tensor result = TensorOps.cat(List.of(a, b), -1);
             try {
@@ -59,8 +59,8 @@ class TensorOpsTest {
     void catRejectsEmptyListInvalidAxisAndIncompatibleShapes() {
         assertThatThrownBy(() -> TensorOps.cat(List.of(), 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        Tensor a = Tensor.of(new float[] { 1, 2 }, 1, 2);
-        Tensor wrongShape = Tensor.of(new float[] { 3, 4, 5 }, 1, 3);
+        Tensor a = tensor(new float[] { 1, 2 }, 1, 2);
+        Tensor wrongShape = tensor(new float[] { 3, 4, 5 }, 1, 3);
         try {
             assertThatThrownBy(() -> TensorOps.cat(List.of(a), 2))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -76,8 +76,8 @@ class TensorOpsTest {
 
     @Test
     void einsumComputesMatrixMultiplication() {
-        Tensor a = Tensor.of(new float[] { 1, 2, 3, 4 }, 2, 2);
-        Tensor b = Tensor.of(new float[] { 5, 6, 7, 8 }, 2, 2);
+        Tensor a = tensor(new float[] { 1, 2, 3, 4 }, 2, 2);
+        Tensor b = tensor(new float[] { 5, 6, 7, 8 }, 2, 2);
         try {
             Tensor result = TensorOps.einsum("ij,jk->ik", a, b);
             try {
@@ -94,8 +94,8 @@ class TensorOpsTest {
 
     @Test
     void einsumComputesDotProductAndScalarReduction() {
-        Tensor a = Tensor.of(new float[] { 1, 2, 3 }, 3);
-        Tensor b = Tensor.of(new float[] { 4, 5, 6 }, 3);
+        Tensor a = tensor(new float[] { 1, 2, 3 }, 3);
+        Tensor b = tensor(new float[] { 4, 5, 6 }, 3);
         try {
             Tensor dot = TensorOps.einsum("i,i->", a, b);
             try {
@@ -119,9 +119,9 @@ class TensorOpsTest {
 
     @Test
     void einsumSupportsTransposeAndOuterProduct() {
-        Tensor matrix = Tensor.of(new float[] { 1, 2, 3, 4 }, 2, 2);
-        Tensor left = Tensor.of(new float[] { 1, 2 }, 2);
-        Tensor right = Tensor.of(new float[] { 3, 4, 5 }, 3);
+        Tensor matrix = tensor(new float[] { 1, 2, 3, 4 }, 2, 2);
+        Tensor left = tensor(new float[] { 1, 2 }, 2);
+        Tensor right = tensor(new float[] { 3, 4, 5 }, 3);
         try {
             Tensor transpose = TensorOps.einsum("ij->ji", matrix);
             try {
@@ -147,9 +147,9 @@ class TensorOpsTest {
 
     @Test
     void einsumRejectsMalformedEquationsAndIncompatibleDimensions() {
-        Tensor a = Tensor.of(new float[] { 1, 2, 3, 4 }, 2, 2);
-        Tensor aVector = Tensor.of(new float[] { 1, 2, 3, 4 }, 4);
-        Tensor wrongShape = Tensor.of(new float[] { 1, 2, 3 }, 3);
+        Tensor a = tensor(new float[] { 1, 2, 3, 4 }, 2, 2);
+        Tensor aVector = tensor(new float[] { 1, 2, 3, 4 }, 4);
+        Tensor wrongShape = tensor(new float[] { 1, 2, 3 }, 3);
         try {
             assertThatThrownBy(() -> TensorOps.einsum("ij,jk", a, a))
                     .isInstanceOf(IllegalArgumentException.class)
