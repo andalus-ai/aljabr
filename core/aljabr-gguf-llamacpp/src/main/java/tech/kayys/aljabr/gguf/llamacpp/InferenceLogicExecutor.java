@@ -42,7 +42,7 @@ class InferenceLogicExecutor {
     }
 
     private final LlamaCppBinding binding;
-    private final LlamaCppProviderConfig providerConfig;
+    private final LlamaCppProviderSettings providerConfig;
     private final GGUFChatTemplateService templateService;
     private final MemorySegment model, context;
     private final int contextSize, vocabSize, eosToken, bosToken, runtimeBatchSize;
@@ -52,7 +52,7 @@ class InferenceLogicExecutor {
     private final LlamaCppMetricsRecorder metricsRecorder;
     private final ModelManifest manifest;
 
-    InferenceLogicExecutor(LlamaCppBinding binding, LlamaCppProviderConfig providerConfig,
+    InferenceLogicExecutor(LlamaCppBinding binding, LlamaCppProviderSettings providerConfig,
             GGUFChatTemplateService templateService, MemorySegment model, MemorySegment context,
             int contextSize, int vocabSize, int eosToken, int bosToken, int runtimeBatchSize,
             String chatTemplate, LlamaCppKVCacheManager kvCacheManager, LlamaCppTokenSampler tokenSampler,
