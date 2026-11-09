@@ -282,6 +282,13 @@ public final class ComputeRuntime implements AutoCloseable {
     }
 
     record BackendSelection(String backendId, ComputeBackend backend) {
+        BackendSelection {
+            Objects.requireNonNull(backendId, "backendId");
+            Objects.requireNonNull(backend, "backend");
+            if (backendId.isBlank()) {
+                throw new IllegalStateException("Provider session contains a blank backend id");
+            }
+        }
     }
 
     private record Candidate(ComputeProvider provider, DeviceDescriptor device) {
