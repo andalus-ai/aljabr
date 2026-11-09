@@ -12,6 +12,9 @@ import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
+import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 /**
  * Metal hardware-accelerated computation backend.
@@ -120,6 +123,43 @@ public class MetalComputeBackend implements ComputeBackend {
         return new CpuBuffer(sizeBytes);
     }
 
+    /**
+     * Runs a native operation that writes into a newly allocated output buffer.
+     * Ownership transfers to the result tensor only after a successful dispatch.
+     * On native failure or an exception, the temporary output is released before
+     * the CPU fallback is evaluated or the exception is propagated.
+     */
+    static Tensor dispatchOutput(
+            HostAccessibleStorage output,
+            IntSupplier dispatch,
+            Supplier<Tensor> fallback,
+            Function<HostAccessibleStorage, Tensor> resultFactory) {
+        Objects.requireNonNull(output, "output must not be null");
+        Objects.requireNonNull(dispatch, "dispatch must not be null");
+        Objects.requireNonNull(fallback, "fallback must not be null");
+        Objects.requireNonNull(resultFactory, "resultFactory must not be null");
+
+        final int status;
+        try {
+            status = dispatch.getAsInt();
+        } catch (RuntimeException | Error failure) {
+            output.release();
+            throw failure;
+        }
+
+        if (status != 0) {
+            output.release();
+            return fallback.get();
+        }
+
+        try {
+            return resultFactory.apply(output);
+        } catch (RuntimeException | Error failure) {
+            output.release();
+            throw failure;
+        }
+    }
+
     private static HostAccessibleStorage hostStorage(Tensor tensor) {
         return MetalTensorStorageAccess.hostStorage(tensor);
     }
@@ -191,15 +231,16 @@ public class MetalComputeBackend implements ComputeBackend {
         long sizeBytes = shapeC.numel() * byteSize(a.dtype());
 
         HostAccessibleStorage bufferC = allocateHostStorage(sizeBytes);
-        int status = metalBinding.matmul(bufferC.segment(), segment(a), segment(b), M, K, N, 1.0f,
-                0.0f);
-        if (status != 0) {
-            System.err.println("Metal matmul falling back to CPU for a=" + a.dtype() + " (shape=" + a.shape() + "), b="
-                    + b.dtype() + " (shape=" + b.shape() + "), M=" + M + ", K=" + K + ", N=" + N);
-            return wrap(cpuFallback.matmul(a, b));
-        }
-
-        return new DefaultTensor(shapeC, a.dtype(), a.device(), bufferC, this);
+        return dispatchOutput(
+                bufferC,
+                () -> metalBinding.matmul(bufferC.segment(), segment(a), segment(b), M, K, N, 1.0f, 0.0f),
+                () -> {
+                    System.err.println("Metal matmul falling back to CPU for a=" + a.dtype()
+                            + " (shape=" + a.shape() + "), b=" + b.dtype() + " (shape=" + b.shape()
+                            + "), M=" + M + ", K=" + K + ", N=" + N);
+                    return wrap(cpuFallback.matmul(a, b));
+                },
+                output -> new DefaultTensor(shapeC, a.dtype(), a.device(), output, this));
     }
 
     private Tensor matmulQuantized(Tensor a, Tensor db) {
@@ -210,37 +251,38 @@ public class MetalComputeBackend implements ComputeBackend {
         Shape shapeC = new Shape(M, N);
         HostAccessibleStorage bufferC = allocateHostStorage((long) M * N * 4);
 
-        int status = 0;
-        if (db.dtype() == tech.kayys.aljabr.core.tensor.DType.Q4_K) {
-            for (int m = 0; m < M; m++) {
-                status = metalBinding.matvecTransposedRightQ4K(
-                        bufferC.segment().asSlice(m * N * 4L, N * 4L),
-                        segment(a).asSlice(m * K * 4L, K * 4L),
-                        segment(db), K, N);
-                if (status != 0)
-                    break;
-            }
-        } else if (db.dtype() == tech.kayys.aljabr.core.tensor.DType.Q8_0) {
-            for (int m = 0; m < M; m++) {
-                status = metalBinding.matvecTransposedRightQ8_0(
-                        bufferC.segment().asSlice(m * N * 4L, N * 4L),
-                        segment(a).asSlice(m * K * 4L, K * 4L),
-                        segment(db), K, N);
-                if (status != 0)
-                    break;
-            }
-        } else {
-            status = -1;
-        }
-
-        if (status != 0) {
-            System.err.println("Metal matmul falling back to CPU for a=" + a.dtype() + " (shape=" + a.shape() + "), b="
-                    + db.dtype() + " (shape=" + db.shape() + "), M=" + M + ", K=" + K + ", N=" + N + ", status="
-                    + status);
-            return wrap(cpuFallback.matmul(a, db));
-        }
-
-        return new DefaultTensor(shapeC, tech.kayys.aljabr.core.tensor.DType.F32, a.device(), bufferC, this);
+        return dispatchOutput(
+                bufferC,
+                () -> {
+                    int status = 0;
+                    if (db.dtype() == tech.kayys.aljabr.core.tensor.DType.Q4_K) {
+                        for (int m = 0; m < M; m++) {
+                            status = metalBinding.matvecTransposedRightQ4K(
+                                    bufferC.segment().asSlice(m * N * 4L, N * 4L),
+                                    segment(a).asSlice(m * K * 4L, K * 4L),
+                                    segment(db), K, N);
+                            if (status != 0) break;
+                        }
+                    } else if (db.dtype() == tech.kayys.aljabr.core.tensor.DType.Q8_0) {
+                        for (int m = 0; m < M; m++) {
+                            status = metalBinding.matvecTransposedRightQ8_0(
+                                    bufferC.segment().asSlice(m * N * 4L, N * 4L),
+                                    segment(a).asSlice(m * K * 4L, K * 4L),
+                                    segment(db), K, N);
+                            if (status != 0) break;
+                        }
+                    } else {
+                        status = -1;
+                    }
+                    return status;
+                },
+                () -> {
+                    System.err.println("Metal matmul falling back to CPU for a=" + a.dtype()
+                            + " (shape=" + a.shape() + "), b=" + db.dtype() + " (shape=" + db.shape()
+                            + "), M=" + M + ", K=" + K + ", N=" + N);
+                    return wrap(cpuFallback.matmul(a, db));
+                },
+                output -> new DefaultTensor(shapeC, tech.kayys.aljabr.core.tensor.DType.F32, a.device(), output, this));
     }
 
     @Override
@@ -264,31 +306,27 @@ public class MetalComputeBackend implements ComputeBackend {
         long sizeBytes = shapeOut.numel() * byteSize(Q.dtype());
         HostAccessibleStorage bufferOut = allocateHostStorage(sizeBytes);
 
-        int status;
-        try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
-            java.lang.foreign.MemorySegment contextLens = arena.allocate(java.lang.foreign.ValueLayout.JAVA_INT, B);
-            for (int b = 0; b < B; b++) {
-                contextLens.setAtIndex(java.lang.foreign.ValueLayout.JAVA_INT, b, Skv);
-            }
-
-            java.lang.foreign.MemorySegment empty = java.lang.foreign.MemorySegment.NULL;
-
-            if (H == Hkv) {
-                status = metalBinding.flashAttention(bufferOut.segment(), segment(Q), segment(K),
-                        segment(V),
-                        B, T, H, D);
-            } else {
-                status = metalBinding.attentionGqa(bufferOut.segment(), segment(Q), segment(K),
-                        segment(V),
-                        empty, contextLens, B, T, H, Hkv, D, 16, 1024, (float) (1.0 / Math.sqrt(D)), 1, 0.0f);
-            }
-        }
-
-        if (status != 0) {
-            return wrap(cpuFallback.attention(Q, K, V));
-        }
-
-        return new DefaultTensor(shapeOut, Q.dtype(), Q.device(), bufferOut, this);
+        return dispatchOutput(
+                bufferOut,
+                () -> {
+                    try (java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
+                        java.lang.foreign.MemorySegment contextLens =
+                                arena.allocate(java.lang.foreign.ValueLayout.JAVA_INT, B);
+                        for (int b = 0; b < B; b++) {
+                            contextLens.setAtIndex(java.lang.foreign.ValueLayout.JAVA_INT, b, Skv);
+                        }
+                        java.lang.foreign.MemorySegment empty = java.lang.foreign.MemorySegment.NULL;
+                        if (H == Hkv) {
+                            return metalBinding.flashAttention(bufferOut.segment(), segment(Q), segment(K),
+                                    segment(V), B, T, H, D);
+                        }
+                        return metalBinding.attentionGqa(bufferOut.segment(), segment(Q), segment(K),
+                                segment(V), empty, contextLens, B, T, H, Hkv, D, 16, 1024,
+                                (float) (1.0 / Math.sqrt(D)), 1, 0.0f);
+                    }
+                },
+                () -> wrap(cpuFallback.attention(Q, K, V)),
+                output -> new DefaultTensor(shapeOut, Q.dtype(), Q.device(), output, this));
     }
 
     @Override
@@ -300,12 +338,11 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
-        int status = metalBinding.softmax(bufferOut.segment(), segment(a), n);
-        if (status != 0) {
-            return wrap(cpuFallback.softmax(a));
-        }
-
-        return new DefaultTensor(shape, a.dtype(), a.device(), bufferOut, this);
+        return dispatchOutput(
+                bufferOut,
+                () -> metalBinding.softmax(bufferOut.segment(), segment(a), n),
+                () -> wrap(cpuFallback.softmax(a)),
+                output -> new DefaultTensor(shape, a.dtype(), a.device(), output, this));
     }
 
     @Override
@@ -403,12 +440,11 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
-        int status = metalBinding.silu(bufferOut.segment(), segment(a), n);
-        if (status != 0) {
-            return wrap(cpuFallback.silu(a));
-        }
-
-        return new DefaultTensor(shape, a.dtype(), a.device(), bufferOut, this);
+        return dispatchOutput(
+                bufferOut,
+                () -> metalBinding.silu(bufferOut.segment(), segment(a), n),
+                () -> wrap(cpuFallback.silu(a)),
+                output -> new DefaultTensor(shape, a.dtype(), a.device(), output, this));
     }
 
     @Override
@@ -445,12 +481,11 @@ public class MetalComputeBackend implements ComputeBackend {
         int n = (int) shape.numel();
         HostAccessibleStorage bufferOut = allocateHostStorage(n * 4);
 
-        int status = metalBinding.gelu(bufferOut.segment(), segment(a), n);
-        if (status != 0) {
-            return wrap(cpuFallback.gelu(a));
-        }
-
-        return new DefaultTensor(shape, a.dtype(), a.device(), bufferOut, this);
+        return dispatchOutput(
+                bufferOut,
+                () -> metalBinding.gelu(bufferOut.segment(), segment(a), n),
+                () -> wrap(cpuFallback.gelu(a)),
+                output -> new DefaultTensor(shape, a.dtype(), a.device(), output, this));
     }
 
     @Override
@@ -466,10 +501,11 @@ public class MetalComputeBackend implements ComputeBackend {
             int cols = (int) a.shape().dim(dim);
 
                 HostAccessibleStorage bufferOut = allocateHostStorage(rows * cols * 4);
-            int status = metalBinding.softmaxRows(bufferOut.segment(), segment(a), rows, cols);
-            if (status == 0) {
-                return new DefaultTensor(a.shape(), a.dtype(), a.device(), bufferOut, this);
-            }
+            return dispatchOutput(
+                    bufferOut,
+                    () -> metalBinding.softmaxRows(bufferOut.segment(), segment(a), rows, cols),
+                    () -> wrap(cpuFallback.softmax(a, dim)),
+                    output -> new DefaultTensor(a.shape(), a.dtype(), a.device(), output, this));
         }
         return wrap(cpuFallback.softmax(a, dim));
     }
@@ -514,24 +550,15 @@ public class MetalComputeBackend implements ComputeBackend {
         }
         int rows = (int) (shape.numel() / n);
 
-        int status;
-        if (rows == 1) {
-            status = metalBinding.layerNorm(bufferOut.segment(), segment(input),
-                    optionalSegment(weight),
-                    optionalSegment(bias),
-                    n, eps);
-        } else {
-            status = metalBinding.layerNormRows(bufferOut.segment(), segment(input),
-                    optionalSegment(weight),
-                    optionalSegment(bias),
-                    rows, n, eps);
-        }
-
-        if (status != 0) {
-            return wrap(cpuFallback.layerNorm(input, normalizedShape, weight, bias, eps));
-        }
-
-        return new DefaultTensor(shape, input.dtype(), input.device(), bufferOut, this);
+        return dispatchOutput(
+                bufferOut,
+                () -> rows == 1
+                        ? metalBinding.layerNorm(bufferOut.segment(), segment(input),
+                                optionalSegment(weight), optionalSegment(bias), n, eps)
+                        : metalBinding.layerNormRows(bufferOut.segment(), segment(input),
+                                optionalSegment(weight), optionalSegment(bias), rows, n, eps),
+                () -> wrap(cpuFallback.layerNorm(input, normalizedShape, weight, bias, eps)),
+                output -> new DefaultTensor(shape, input.dtype(), input.device(), output, this));
     }
 
     @Override
@@ -547,20 +574,14 @@ public class MetalComputeBackend implements ComputeBackend {
         }
 
         HostAccessibleStorage bufferOut = allocateHostStorage(rows * n * 4);
-        int status;
-        if (rows == 1) {
-            status = metalBinding.rmsNorm(bufferOut.segment(), segment(input), segment(weight), n,
-                    eps, false);
-        } else {
-            status = metalBinding.rmsNormRows(bufferOut.segment(), segment(input),
-                    segment(weight), rows, n, eps, false);
-        }
-
-        if (status != 0) {
-            return wrap(cpuFallback.rmsNorm(input, weight, eps));
-        }
-
-        return new DefaultTensor(shape, input.dtype(), input.device(), bufferOut, this);
+        return dispatchOutput(
+                bufferOut,
+                () -> rows == 1
+                        ? metalBinding.rmsNorm(bufferOut.segment(), segment(input), segment(weight), n, eps, false)
+                        : metalBinding.rmsNormRows(bufferOut.segment(), segment(input),
+                                segment(weight), rows, n, eps, false),
+                () -> wrap(cpuFallback.rmsNorm(input, weight, eps)),
+                output -> new DefaultTensor(shape, input.dtype(), input.device(), output, this));
     }
 
     @Override
