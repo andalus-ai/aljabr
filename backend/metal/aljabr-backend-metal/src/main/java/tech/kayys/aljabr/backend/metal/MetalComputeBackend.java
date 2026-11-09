@@ -499,11 +499,12 @@ public class MetalComputeBackend implements ComputeBackend {
                 rows *= a.shape().dim(i);
             }
             int cols = (int) a.shape().dim(dim);
+            final int rowCount = rows;
 
-                HostAccessibleStorage bufferOut = allocateHostStorage(rows * cols * 4);
+            HostAccessibleStorage bufferOut = allocateHostStorage(rowCount * cols * 4);
             return dispatchOutput(
                     bufferOut,
-                    () -> metalBinding.softmaxRows(bufferOut.segment(), segment(a), rows, cols),
+                    () -> metalBinding.softmaxRows(bufferOut.segment(), segment(a), rowCount, cols),
                     () -> wrap(cpuFallback.softmax(a, dim)),
                     output -> new DefaultTensor(a.shape(), a.dtype(), a.device(), output, this));
         }
@@ -549,14 +550,16 @@ public class MetalComputeBackend implements ComputeBackend {
             n *= s;
         }
         int rows = (int) (shape.numel() / n);
+        final int rowCount = rows;
+        final int normalizedElements = n;
 
         return dispatchOutput(
                 bufferOut,
-                () -> rows == 1
+                () -> rowCount == 1
                         ? metalBinding.layerNorm(bufferOut.segment(), segment(input),
-                                optionalSegment(weight), optionalSegment(bias), n, eps)
+                                optionalSegment(weight), optionalSegment(bias), normalizedElements, eps)
                         : metalBinding.layerNormRows(bufferOut.segment(), segment(input),
-                                optionalSegment(weight), optionalSegment(bias), rows, n, eps),
+                                optionalSegment(weight), optionalSegment(bias), rowCount, normalizedElements, eps),
                 () -> wrap(cpuFallback.layerNorm(input, normalizedShape, weight, bias, eps)),
                 output -> new DefaultTensor(shape, input.dtype(), input.device(), output, this));
     }
@@ -572,14 +575,15 @@ public class MetalComputeBackend implements ComputeBackend {
         for (int i = 0; i < shape.rank() - 1; i++) {
             rows *= shape.dim(i);
         }
+        final int rowCount = rows;
 
-        HostAccessibleStorage bufferOut = allocateHostStorage(rows * n * 4);
+        HostAccessibleStorage bufferOut = allocateHostStorage(rowCount * n * 4);
         return dispatchOutput(
                 bufferOut,
-                () -> rows == 1
+                () -> rowCount == 1
                         ? metalBinding.rmsNorm(bufferOut.segment(), segment(input), segment(weight), n, eps, false)
                         : metalBinding.rmsNormRows(bufferOut.segment(), segment(input),
-                                segment(weight), rows, n, eps, false),
+                                segment(weight), rowCount, n, eps, false),
                 () -> wrap(cpuFallback.rmsNorm(input, weight, eps)),
                 output -> new DefaultTensor(shape, input.dtype(), input.device(), output, this));
     }
