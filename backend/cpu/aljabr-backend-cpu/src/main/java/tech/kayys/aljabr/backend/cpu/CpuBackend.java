@@ -891,35 +891,63 @@ public final class CpuBackend implements ComputeBackend {
         CpuBuffer output=allocate(Math.multiplyExact(outputShape.numel(),Float.BYTES));
         MemorySegment q=seg(Q), k=seg(K), v=seg(V), mask=additiveMask==null?null:seg(additiveMask), out=output.segment();
         float scale=(float)(1.0/Math.sqrt(headDim));
-        for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) {
-            long qBase=(b*heads+h)*queryLength*headDim, kBase=(b*heads+h)*keyLength*headDim;
-            float[] scores=new float[Math.toIntExact(keyLength)];
-            for(long qi=0;qi<queryLength;qi++) {
-                float max=Float.NEGATIVE_INFINITY;
-                for(long ki=0;ki<keyLength;ki++) {
-                    float additive=mask==null?0f:mask.get(ValueLayout.JAVA_FLOAT,(qi*keyLength+ki)*Float.BYTES);
-                    if((causal && ki>qi) || additive==Float.NEGATIVE_INFINITY) { scores[Math.toIntExact(ki)]=Float.NEGATIVE_INFINITY; continue; }
-                    if(Float.isNaN(additive) || additive==Float.POSITIVE_INFINITY)
-                        throw new IllegalArgumentException("attention mask values must not be NaN or positive infinity");
-                    float score=0f;
-                    for(long d=0;d<headDim;d++)
-                        score+=q.get(ValueLayout.JAVA_FLOAT,(qBase+qi*headDim+d)*Float.BYTES)*k.get(ValueLayout.JAVA_FLOAT,(kBase+ki*headDim+d)*Float.BYTES);
-                    score=score*scale+additive; scores[Math.toIntExact(ki)]=score; max=Math.max(max,score);
-                }
-                if(max==Float.NEGATIVE_INFINITY) {
-                    for(long d=0;d<headDim;d++) out.set(ValueLayout.JAVA_FLOAT,(qBase+qi*headDim+d)*Float.BYTES,0f);
-                    continue;
-                }
-                double denominator=0d;
-                for(int ki=0;ki<scores.length;ki++) {
-                    scores[ki]=scores[ki]==Float.NEGATIVE_INFINITY?0f:(float)Math.exp(scores[ki]-max);
-                    denominator+=scores[ki];
-                }
-                for(long d=0;d<headDim;d++) {
-                    double value=0d;
-                    for(long ki=0;ki<keyLength;ki++)
-                        value+=(scores[Math.toIntExact(ki)]/denominator)*v.get(ValueLayout.JAVA_FLOAT,(kBase+ki*headDim+d)*Float.BYTES);
-                    out.set(ValueLayout.JAVA_FLOAT,(qBase+qi*headDim+d)*Float.BYTES,(float)value);
+        for (long b = 0; b < batch; b++) {
+            for (long h = 0; h < heads; h++) {
+                long qBase = (b * heads + h) * queryLength * headDim;
+                long kBase = (b * heads + h) * keyLength * headDim;
+                double[] weightedValues = new double[Math.toIntExact(headDim)];
+
+                for (long qi = 0; qi < queryLength; qi++) {
+                    java.util.Arrays.fill(weightedValues, 0d);
+                    float runningMax = Float.NEGATIVE_INFINITY;
+                    double denominator = 0d;
+
+                    // Online softmax: maintain a numerically stable running
+                    // normalization and weighted-value sum without storing
+                    // the query's full key-length score/probability vector.
+                    for (long ki = 0; ki < keyLength; ki++) {
+                        float additive = mask == null ? 0f
+                                : mask.get(ValueLayout.JAVA_FLOAT, (qi * keyLength + ki) * Float.BYTES);
+                        if (Float.isNaN(additive) || additive == Float.POSITIVE_INFINITY) {
+                            throw new IllegalArgumentException(
+                                    "attention mask values must not be NaN or positive infinity");
+                        }
+                        if ((causal && ki > qi) || additive == Float.NEGATIVE_INFINITY) {
+                            continue;
+                        }
+
+                        float score = 0f;
+                        for (long d = 0; d < headDim; d++) {
+                            score += q.get(ValueLayout.JAVA_FLOAT,
+                                    (qBase + qi * headDim + d) * Float.BYTES)
+                                    * k.get(ValueLayout.JAVA_FLOAT,
+                                            (kBase + ki * headDim + d) * Float.BYTES);
+                        }
+                        score = score * scale + additive;
+
+                        float nextMax = Math.max(runningMax, score);
+                        double previousScale = runningMax == Float.NEGATIVE_INFINITY
+                                ? 0d : Math.exp(runningMax - nextMax);
+                        double currentScale = Math.exp(score - nextMax);
+                        denominator = denominator * previousScale + currentScale;
+
+                        for (long d = 0; d < headDim; d++) {
+                            float valueAtKey = v.get(ValueLayout.JAVA_FLOAT,
+                                    (kBase + ki * headDim + d) * Float.BYTES);
+                            weightedValues[Math.toIntExact(d)] =
+                                    weightedValues[Math.toIntExact(d)] * previousScale
+                                            + currentScale * valueAtKey;
+                        }
+                        runningMax = nextMax;
+                    }
+
+                    for (long d = 0; d < headDim; d++) {
+                        float result = denominator == 0d
+                                ? 0f
+                                : (float) (weightedValues[Math.toIntExact(d)] / denominator);
+                        out.set(ValueLayout.JAVA_FLOAT,
+                                (qBase + qi * headDim + d) * Float.BYTES, result);
+                    }
                 }
             }
         }

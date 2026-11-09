@@ -82,4 +82,55 @@ class CpuBatchedAttentionTest {
             mask.release(); value.release(); key.release(); query.release();
         }
     }
+
+    @Test
+    void onlineSoftmaxMatchesStableReferenceForLongerKeySequence() {
+        CpuBackend backend = new CpuBackend();
+        float[] qValues = {0.7f, -0.3f};
+        float[] kValues = {
+                0.2f, 0.8f,
+                -0.4f, 0.1f,
+                0.9f, -0.2f,
+                0.3f, 0.5f,
+                -0.7f, -0.6f
+        };
+        float[] vValues = {
+                1f, 2f,
+                3f, -1f,
+                -2f, 4f,
+                0.5f, 0.25f,
+                5f, -3f
+        };
+        Tensor query = TensorFactory.of(qValues, backend, 1, 1, 1, 2);
+        Tensor key = TensorFactory.of(kValues, backend, 1, 1, 5, 2);
+        Tensor value = TensorFactory.of(vValues, backend, 1, 1, 5, 2);
+        Tensor output = null;
+        try {
+            output = backend.attention(query, key, value);
+            double[] logits = new double[5];
+            double max = Double.NEGATIVE_INFINITY;
+            for (int i = 0; i < 5; i++) {
+                logits[i] = (qValues[0] * kValues[i * 2] + qValues[1] * kValues[i * 2 + 1])
+                        / Math.sqrt(2d);
+                max = Math.max(max, logits[i]);
+            }
+            double denominator = 0d;
+            double expected0 = 0d;
+            double expected1 = 0d;
+            for (int i = 0; i < 5; i++) {
+                double probability = Math.exp(logits[i] - max);
+                denominator += probability;
+                expected0 += probability * vValues[i * 2];
+                expected1 += probability * vValues[i * 2 + 1];
+            }
+            assertArrayEquals(new float[] {
+                    (float) (expected0 / denominator), (float) (expected1 / denominator)
+            }, output.toFloatArray(), 1e-5f);
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+        }
+    }
 }
