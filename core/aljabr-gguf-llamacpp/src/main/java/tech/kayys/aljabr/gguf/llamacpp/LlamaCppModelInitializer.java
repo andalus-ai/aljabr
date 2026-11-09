@@ -20,9 +20,9 @@ public class LlamaCppModelInitializer {
     private static final long LARGE_MODEL_THRESHOLD = 4L * 1024L * 1024L * 1024L; // 4 GiB
 
     private final LlamaCppBinding binding;
-    private final LlamaCppProviderConfig providerConfig;
+    private final LlamaCppProviderSettings providerConfig;
 
-    public LlamaCppModelInitializer(LlamaCppBinding binding, LlamaCppProviderConfig providerConfig) {
+    public LlamaCppModelInitializer(LlamaCppBinding binding, LlamaCppProviderSettings providerConfig) {
         this.binding = binding;
         this.providerConfig = providerConfig;
     }
