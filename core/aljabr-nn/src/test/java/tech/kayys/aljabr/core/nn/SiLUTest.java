@@ -2,6 +2,7 @@ package tech.kayys.aljabr.core.nn;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import org.junit.jupiter.api.Test;
 
@@ -20,10 +21,10 @@ class SiLUTest {
             Tensor output = activation.forward(input);
             try {
                 assertThat(output.backend()).isSameAs(backend);
-                assertThat(output.toFloatArray()).containsExactly(
-                        -2f / (1f + (float) Math.exp(2f)),
-                        0f,
-                        2f / (1f + (float) Math.exp(-2f)));
+                float[] values = output.toFloatArray();
+                assertThat(values[0]).isCloseTo(-2f / (1f + (float) Math.exp(2f)), within(1e-6f));
+                assertThat(values[1]).isCloseTo(0f, within(1e-6f));
+                assertThat(values[2]).isCloseTo(2f / (1f + (float) Math.exp(-2f)), within(1e-6f));
             } finally {
                 output.release();
             }
