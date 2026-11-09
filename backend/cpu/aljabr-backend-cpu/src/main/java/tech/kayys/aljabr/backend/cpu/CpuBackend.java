@@ -988,10 +988,26 @@ public final class CpuBackend implements ComputeBackend {
                                 k, (kBase + ki * headDim) * Float.BYTES,
                                 Math.toIntExact(headDim)) * scale + additive;
 
-                        float nextMax = Math.max(runningMax, score);
-                        double previousScale = runningMax == Float.NEGATIVE_INFINITY
-                                ? 0d : Math.exp(runningMax - nextMax);
-                        double currentScale = Math.exp(score - nextMax);
+                        float nextMax;
+                        double previousScale;
+                        double currentScale;
+                        if (Float.isFinite(score)) {
+                            if (score > runningMax) {
+                                previousScale = Math.exp(runningMax - score);
+                                currentScale = 1d;
+                                nextMax = score;
+                            } else {
+                                previousScale = 1d;
+                                currentScale = Math.exp(score - runningMax);
+                                nextMax = runningMax;
+                            }
+                        } else {
+                            // Preserve the existing exceptional-value behavior.
+                            nextMax = Math.max(runningMax, score);
+                            previousScale = runningMax == Float.NEGATIVE_INFINITY
+                                    ? 0d : Math.exp(runningMax - nextMax);
+                            currentScale = Math.exp(score - nextMax);
+                        }
                         denominator = denominator * previousScale + currentScale;
 
                         for (long d = 0; d < headDim; d++) {
