@@ -76,8 +76,7 @@ public class MetalComputeBackend implements ComputeBackend {
     /**
      * Exposes storage to the current native Metal FFM bridge.
      *
-     * <p>The bridge accepts host MemorySegments (currently backed by shared
-     * host-visible allocations). Opaque device-local storage must not be
+     * <p>The current bridge accepts host MemorySegments. Opaque device-local storage must not be
      * passed through this boundary until Metal-native buffer binding and
      * transfer operations are implemented.</p>
      */
