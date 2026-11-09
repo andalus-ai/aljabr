@@ -51,6 +51,7 @@ class MetalHostStagingAllocatorTest {
 
         assertThrows(IllegalArgumentException.class, () -> backend.zerosLike(input));
         assertEquals(1, releases.get());
+        input.release();
     }
 
     private static final class TrackingHostStorage implements HostAccessibleStorage {
