@@ -13,21 +13,32 @@ try (ComputeRuntime runtime = ComputeRuntime.open()) {
 }
 ```
 
-Select a provider explicitly by its stable provider id:
+Select a provider explicitly by its stable provider id and, when needed, a backend id:
 
 ```java
 try (ComputeRuntime runtime = ComputeRuntime.open("andalus/cpu")) {
     Tensor input = Tensor.ones(runtime.backend(), 4);
 }
+
+// When a provider exposes multiple backends, choose the stable backend id:
+try (ComputeRuntime runtime = ComputeRuntime.open("andalus/cpu", "cpu-default")) {
+    Tensor input = Tensor.ones(runtime.backend(), 4);
+}
 ```
 
 The default selection is `auto`, which ranks available devices as GPU,
-accelerator, CPU, then other. Set `-Daljabr.compute.provider=andalus/cpu`
-to select a provider for the process. Explicit selection fails rather than
-silently falling back to another provider.
+accelerator, CPU, then other. A session with exactly one backend selects it
+automatically. A session with multiple backends requires an explicit backend id;
+map iteration order is never treated as a priority. Set
+`-Daljabr.compute.provider=andalus/cpu` to select a provider for the process.
+Explicit provider selection fails rather than silently falling back to another provider.
 
 The runtime owns discovered provider instances and the selected device session.
 Keep it open while tensors using its backend are in use; close it when that
 work is complete. Tensor storage remains governed by the tensor factory and
 backend implementation. This initial runtime exposes one selected backend;
 multi-device scheduling and per-operation dispatch are separate concerns.
+
+## Backend ownership migration
+
+Backend-less `Tensor` and `TensorFactory` convenience methods are deprecated for removal in the next breaking API release. They currently use a process-wide compatibility selector and cannot express provider/session ownership. New code should open a `ComputeRuntime`, pass `runtime.backend()` to the explicit-backend tensor factories, and keep the runtime open for the full lifetime of tensors using that backend. This staged deprecation preserves source compatibility while internal call sites and examples migrate; the legacy selector is not removed in this change.
