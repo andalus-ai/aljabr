@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
+
 class ParameterTest {
 
     @Test
     void parameterHandleDelegatesGradientStateToItsTensor() {
-        try (Linear layer = new Linear(2, 2, true)) {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true)) {
             Parameter weight = layer.namedParameterObjects().get("weight");
 
             assertThat(weight).isNotNull();
@@ -29,9 +32,10 @@ class ParameterTest {
 
     @Test
     void parameterHandlesAreAvailableThroughQualifiedModuleNames() {
-        try (Sequential model = new Sequential(
-                new Linear(2, 3, true),
-                new Linear(3, 1, false))) {
+        CpuBackend backend = new CpuBackend();
+        try (Sequential model = new Sequential(backend,
+                new Linear(backend, 2, 3, true),
+                new Linear(backend, 3, 1, false))) {
 
             assertThat(model.namedParameterObjects())
                     .containsKeys("0.weight", "0.bias", "1.weight");
