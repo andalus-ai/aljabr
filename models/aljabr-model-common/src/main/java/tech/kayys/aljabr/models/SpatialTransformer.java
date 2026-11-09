@@ -1,5 +1,8 @@
 package tech.kayys.aljabr.models;
 
+import java.util.Objects;
+
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.nn.NNModule;
 import tech.kayys.aljabr.core.nn.GroupNorm;
@@ -9,46 +12,70 @@ import tech.kayys.aljabr.core.nn.MultiheadAttention;
 import tech.kayys.aljabr.core.nn.Linear;
 
 /**
- * Spatial Transformer block for Stable Diffusion.
- * <p>
- * Bridges the gap between spatial CNN features and semantic text embeddings
- * through Multi-Head Cross Attention.
+ * Spatial transformer block for diffusion models.
+ *
+ * <p>This class owns its parameters and child modules on one explicit compute
+ * backend. The current MultiheadAttention implementation remains a simplified
+ * projection path; this class does not claim complete cross-attention semantics.</p>
  */
 public class SpatialTransformer extends NNModule {
 
+    private static final int NORM_GROUPS = 32;
+
+    private final int inChannels;
+    private final int innerDim;
+    private final int contextDim;
+
     private final GroupNorm norm;
     private final Conv2d projIn;
-    
-    // Transformer block components
     private final LayerNorm norm1;
     private final MultiheadAttention selfAttn;
-    
     private final LayerNorm norm2;
     private final MultiheadAttention crossAttn;
-    
     private final LayerNorm norm3;
     private final Linear ff1;
     private final Linear ff2;
-    
     private final Conv2d projOut;
 
+    /** @deprecated Use the constructor that accepts an explicit compute backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public SpatialTransformer(int inChannels, int numHeads, int headDim, int contextDim) {
-        int innerDim = numHeads * headDim;
-        
-        this.norm = register("norm", new GroupNorm(32, inChannels));
-        this.projIn = register("proj_in", new Conv2d(inChannels, innerDim, 1, 1, 0));
-        
-        this.norm1 = register("norm1", new LayerNorm(innerDim));
-        this.selfAttn = register("attn1", new MultiheadAttention(innerDim, numHeads));
-        
-        this.norm2 = register("norm2", new LayerNorm(innerDim));
-        this.crossAttn = register("attn2", new MultiheadAttention(innerDim, numHeads));
-        
-        this.norm3 = register("norm3", new LayerNorm(innerDim));
-        this.ff1 = register("ff_net_primary", new Linear(innerDim, innerDim * 4));
-        this.ff2 = register("ff_net_secondary", new Linear(innerDim * 4, innerDim));
-        
-        this.projOut = register("proj_out", new Conv2d(innerDim, inChannels, 1, 1, 0));
+        this(null, inChannels, numHeads, headDim, contextDim);
+    }
+
+    public SpatialTransformer(
+            ComputeBackend backend,
+            int inChannels,
+            int numHeads,
+            int headDim,
+            int contextDim) {
+        super(backend);
+        if (inChannels <= 0 || numHeads <= 0 || headDim <= 0 || contextDim <= 0) {
+            throw new IllegalArgumentException("channel and attention dimensions must be positive");
+        }
+        if (inChannels % NORM_GROUPS != 0) {
+            throw new IllegalArgumentException(
+                    "inChannels must be divisible by " + NORM_GROUPS + " for GroupNorm");
+        }
+
+        this.inChannels = inChannels;
+        this.innerDim = Math.multiplyExact(numHeads, headDim);
+        this.contextDim = contextDim;
+
+        this.norm = register("norm", new GroupNorm(backend, NORM_GROUPS, inChannels));
+        this.projIn = register("proj_in", new Conv2d(backend, inChannels, innerDim, 1, 1, 0));
+
+        this.norm1 = register("norm1", new LayerNorm(backend, innerDim));
+        this.selfAttn = register("attn1", new MultiheadAttention(backend, innerDim, numHeads));
+
+        this.norm2 = register("norm2", new LayerNorm(backend, innerDim));
+        this.crossAttn = register("attn2", new MultiheadAttention(backend, innerDim, numHeads));
+
+        this.norm3 = register("norm3", new LayerNorm(backend, innerDim));
+        this.ff1 = register("ff_net_primary", new Linear(backend, innerDim, innerDim * 4L));
+        this.ff2 = register("ff_net_secondary", new Linear(backend, innerDim * 4L, innerDim));
+
+        this.projOut = register("proj_out", new Conv2d(backend, innerDim, inChannels, 1, 1, 0));
     }
 
     @Override
@@ -57,49 +84,72 @@ public class SpatialTransformer extends NNModule {
     }
 
     /**
-     * Differentiable forward pass with optional cross-attention context.
-     * 
-     * @param input    [N, C, H, W] spatial features
-     * @param context  [N, seqLen, contextDim] text embeddings from CLIP
-     * @return         [N, C, H, W] conditioned spatial features
+     * Forward pass with optional context.
+     *
+     * @param input spatial features with shape [N, inChannels, H, W]
+     * @param context optional context with shape [N, sequenceLength, contextDim]
+     * @return spatial features with shape [N, inChannels, H, W]
      */
     public Tensor forward(Tensor input, Tensor context) {
-        long[] shape = input.shape().dims();
-        int N = (int) shape[0];
-        int C = (int) shape[1];
-        int H = (int) shape[2];
-        int W = (int) shape[3];
+        Objects.requireNonNull(input, "input must not be null");
+        validateInputBackend(input);
+        if (input.shape().rank() != 4 || input.shape().dim(1) != inChannels) {
+            throw new IllegalArgumentException(
+                    "SpatialTransformer expected [N, " + inChannels + ", H, W] input but got " + input.shape());
+        }
+        if (context != null) {
+            validateInputBackend(context);
+            if (context.shape().rank() != 3
+                    || context.shape().dim(0) != input.shape().dim(0)
+                    || context.shape().dim(2) != contextDim) {
+                throw new IllegalArgumentException(
+                        "context must have shape [N, sequenceLength, " + contextDim + "]");
+            }
+        }
 
-        // 1. Initial projection to inner transformer space
+        long[] shape = input.shape().dims();
+        int batch = Math.toIntExact(shape[0]);
+        int height = Math.toIntExact(shape[2]);
+        int width = Math.toIntExact(shape[3]);
+
         Tensor x = norm.forward(input);
         x = projIn.forward(x);
-        
-        // Reshape to sequence: [N, innerDim, H, W] -> [N, H*W, innerDim]
-        int innerDim = (int) x.shape().dim(1);
-        x = x.reshape(N, innerDim, H * W).transpose(); // [N, H*W, innerDim]
 
-        // 2. Self-Attention Block
+        // [N, innerDim, H, W] -> [N, H*W, innerDim]
+        x = x.reshape(batch, innerDim, height * width).transpose();
+
         Tensor residual = x;
-        x = norm1.forward(x.reshape(N * H * W, innerDim)).reshape(N, H * W, innerDim);
+        x = norm1.forward(x.reshape(batch * height * width, innerDim))
+                .reshape(batch, height * width, innerDim);
         x = selfAttn.forward(x).add(residual);
 
-        // 3. Cross-Attention Block (Text Conditioning)
         if (context != null) {
             residual = x;
-            x = norm2.forward(x.reshape(N * H * W, innerDim)).reshape(N, H * W, innerDim);
+            x = norm2.forward(x.reshape(batch * height * width, innerDim))
+                    .reshape(batch, height * width, innerDim);
             x = crossAttn.forward(x, context, context, null).add(residual);
         }
 
-        // 4. Feed-Forward Block
         residual = x;
-        x = norm3.forward(x.reshape(N * H * W, innerDim)).reshape(N, H * W, innerDim);
+        x = norm3.forward(x.reshape(batch * height * width, innerDim))
+                .reshape(batch, height * width, innerDim);
         x = ff1.forward(x).silu();
         x = ff2.forward(x).add(residual);
 
-        // 5. Project back to spatial dimensions
-        x = x.transpose().reshape(N, innerDim, H, W);
+        x = x.transpose().reshape(batch, innerDim, height, width);
         x = projOut.forward(x);
-
         return x.add(input);
+    }
+
+    public int inChannels() {
+        return inChannels;
+    }
+
+    public int innerDim() {
+        return innerDim;
+    }
+
+    public int contextDim() {
+        return contextDim;
     }
 }

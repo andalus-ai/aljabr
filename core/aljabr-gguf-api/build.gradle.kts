@@ -22,6 +22,9 @@ dependencies {
     api(project(":core:aljabr-spi-model"))
     api("io.smallrye.reactive:mutiny:2.5.5")
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
+
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
 }
 
 publishing {
