@@ -8,15 +8,18 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
 
 class NNModuleStateDictTest {
 
     @Test
     void stateDictExposesNamedParametersAndLoadsMatchingValues() {
-        try (Linear layer = new Linear(2, 2, true)) {
-            Tensor sourceWeight = Tensor.of(new float[] { 1f, 2f, 3f, 4f }, 2, 2);
-            Tensor sourceBias = Tensor.of(new float[] { 5f, 6f }, 2);
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true)) {
+            Tensor sourceWeight = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
+            Tensor sourceBias = TensorFactory.of(new float[] { 5f, 6f }, backend, 2);
             try {
                 layer.loadStateDict(Map.of("weight", sourceWeight, "bias", sourceBias));
 
@@ -38,7 +41,7 @@ class NNModuleStateDictTest {
     void strictLoadRejectsMissingAndUnexpectedKeysBeforeMutation() {
         try (Linear layer = new Linear(2, 2, true)) {
             float[] before = layer.stateDict().get("weight").toFloatArray();
-            Tensor replacement = Tensor.of(new float[] { 9f, 9f, 9f, 9f }, 2, 2);
+            Tensor replacement = TensorFactory.of(new float[] { 9f, 9f, 9f, 9f }, backend, 2, 2);
             try {
                 assertThatThrownBy(() -> layer.loadStateDict(Map.of("weight", replacement)))
                         .isInstanceOf(IllegalArgumentException.class)
@@ -48,8 +51,8 @@ class NNModuleStateDictTest {
                 replacement.release();
             }
 
-            Tensor weight = Tensor.of(new float[] { 1f, 2f, 3f, 4f }, 2, 2);
-            Tensor bias = Tensor.of(new float[] { 1f, 2f }, 2);
+            Tensor weight = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
+            Tensor bias = TensorFactory.of(new float[] { 1f, 2f }, backend, 2);
             try {
                 Map<String, Tensor> withUnexpected = new LinkedHashMap<>();
                 withUnexpected.put("weight", weight);
@@ -68,7 +71,7 @@ class NNModuleStateDictTest {
     @Test
     void loadRejectsDifferentShapeEvenWhenElementCountMatches() {
         try (Linear layer = new Linear(2, 2, true)) {
-            Tensor wrongShape = Tensor.of(new float[] { 1f, 2f, 3f, 4f }, 4);
+            Tensor wrongShape = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 4);
             Tensor bias = Tensor.of(new float[] { 1f, 2f }, 2);
             try {
                 assertThatThrownBy(() -> layer.loadStateDict(Map.of("weight", wrongShape, "bias", bias)))
@@ -84,7 +87,7 @@ class NNModuleStateDictTest {
     @Test
     void nonStrictLoadAllowsPartialState() {
         try (Linear layer = new Linear(2, 2, true)) {
-            Tensor replacement = Tensor.of(new float[] { 7f, 8f, 9f, 10f }, 2, 2);
+            Tensor replacement = TensorFactory.of(new float[] { 7f, 8f, 9f, 10f }, backend, 2, 2);
             try {
                 layer.loadStateDict(Map.of("weight", replacement, "future.extra", replacement), false);
                 assertThat(layer.stateDict().get("weight").toFloatArray())
