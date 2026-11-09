@@ -4,6 +4,7 @@ import java.util.Random;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.TensorStorage;
+import tech.kayys.aljabr.core.memory.TensorAllocator;
 
 /**
  * Factory for creating tensors.
@@ -94,15 +95,31 @@ public final class TensorFactory {
 
     /** Creates a tensor backed by the supplied compute backend. */
     public static Tensor of(float[] data, ComputeBackend backend, long... shape) {
+        java.util.Objects.requireNonNull(backend, "backend must not be null");
+        return of(data, backend, backend::allocateStorage, shape);
+    }
+
+    /**
+     * Creates a tensor using an allocation policy independent of the compute
+     * backend. The allocator transfers one storage ownership reference to the
+     * returned tensor; the backend remains responsible for host-to-storage copy
+     * and compute operations.
+     */
+    public static Tensor of(
+            float[] data,
+            ComputeBackend backend,
+            TensorAllocator allocator,
+            long... shape) {
         java.util.Objects.requireNonNull(data, "data must not be null");
         java.util.Objects.requireNonNull(backend, "backend must not be null");
+        java.util.Objects.requireNonNull(allocator, "allocator must not be null");
         long n = numel(shape);
         if (data.length != n) {
             throw new IllegalArgumentException("data length != shape numel");
         }
 
         long bytes = Math.multiplyExact(n, (long) Float.BYTES);
-        TensorStorage storage = allocateStorage(backend, bytes);
+        TensorStorage storage = allocateStorage(allocator, bytes);
         try {
             java.lang.foreign.MemorySegment src = java.lang.foreign.MemorySegment.ofArray(data);
             backend.copyFromHost(storage, src, bytes);
@@ -160,7 +177,36 @@ public final class TensorFactory {
             throw new IllegalArgumentException("segment too small for quantized tensor");
         }
 
-        TensorStorage storage = allocateStorage(backend, bytes);
+        return ofQuantized(data, backend, backend::allocateStorage, dtype, shape);
+    }
+
+    /**
+     * Creates a quantized tensor using an independent storage allocation policy.
+     * The source segment remains caller-owned; the returned tensor owns the
+     * allocator's storage lease.
+     */
+    public static Tensor ofQuantized(
+            java.lang.foreign.MemorySegment data,
+            ComputeBackend backend,
+            TensorAllocator allocator,
+            DType dtype,
+            long... shape) {
+        java.util.Objects.requireNonNull(data, "data must not be null");
+        java.util.Objects.requireNonNull(backend, "backend must not be null");
+        java.util.Objects.requireNonNull(allocator, "allocator must not be null");
+        java.util.Objects.requireNonNull(dtype, "dtype must not be null");
+        if (!dtype.isQuantized()) {
+            throw new IllegalArgumentException(
+                    "ofQuantized requires a quantized dtype; actual dtype is " + dtype);
+        }
+
+        long n = numel(shape);
+        long bytes = dtype.memoryFootprintBytes(n);
+        if (data.byteSize() < bytes) {
+            throw new IllegalArgumentException("segment too small for quantized tensor");
+        }
+
+        TensorStorage storage = allocateStorage(allocator, bytes);
         try {
             backend.copyFromHost(storage, data.asSlice(0, bytes), bytes);
             return new DefaultTensor(new Shape(shape), dtype, backend.deviceType(), storage, backend);
@@ -170,15 +216,15 @@ public final class TensorFactory {
         }
     }
 
-    private static TensorStorage allocateStorage(ComputeBackend backend, long requiredBytes) {
+    private static TensorStorage allocateStorage(TensorAllocator allocator, long requiredBytes) {
         TensorStorage storage = java.util.Objects.requireNonNull(
-                backend.allocateStorage(requiredBytes),
-                "backend.allocateStorage must not return null");
+                allocator.allocate(requiredBytes),
+                "tensor allocator must not return null");
         long availableBytes = storage.sizeBytes();
         if (availableBytes < requiredBytes) {
             storage.release();
             throw new IllegalStateException(
-                    "Backend " + backend.getClass().getName()
+                    "Tensor allocator " + allocator.getClass().getName()
                             + " allocated " + availableBytes + " bytes; "
                             + requiredBytes + " required");
         }
