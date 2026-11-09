@@ -256,6 +256,17 @@ public interface ComputeBackend {
     // ── Memory / device ───────────────────────────────────────────────
     Tensor attention(Tensor Q, Tensor K, Tensor V);
 
+    /**
+     * Attention with an optional additive [queryLength, keyLength] mask.
+     * Negative infinity suppresses a key. Causal mode permits keyIndex <= queryIndex.
+     * Backends without masked attention support must fail explicitly.
+     */
+    default Tensor attention(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
+        if (additiveMask == null && !causal) return attention(Q, K, V);
+        throw new UnsupportedOperationException(
+                "Masked attention is not supported by backend " + getClass().getName());
+    }
+
     Tensor zerosLike(Tensor a);
 
     Tensor cast(Tensor a, tech.kayys.aljabr.core.tensor.DType dtype);
