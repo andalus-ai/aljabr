@@ -91,7 +91,14 @@ public class MetalComputeBackend implements ComputeBackend {
      * transfer operations are implemented.</p>
      */
     static MemorySegment metalSegment(Tensor tensor) {
-        return MetalTensorStorageAccess.segment(tensor);
+        try {
+            return MetalTensorStorageAccess.segment(tensor);
+        } catch (UnsupportedOperationException failure) {
+            throw new UnsupportedOperationException(
+                    "Metal FFM dispatch requires host-accessible storage; opaque device-local storage "
+                            + "requires a Metal-native binding path",
+                    failure);
+        }
     }
 
     private long byteSize(DType dtype) {
