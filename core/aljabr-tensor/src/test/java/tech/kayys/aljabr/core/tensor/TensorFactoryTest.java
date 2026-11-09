@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.CpuBuffer;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
+import tech.kayys.aljabr.core.memory.TensorAllocator;
 import tech.kayys.aljabr.core.memory.TensorStorage;
 
 class TensorFactoryTest {
@@ -223,6 +225,68 @@ class TensorFactoryTest {
             MemorySegment source = arena.allocate(34);
             assertThrows(IllegalStateException.class,
                     () -> TensorFactory.ofQuantized(source, DType.Q8_0, 32));
+        }
+    }
+
+    @Test
+    void tensorFactoryAcceptsAllocationPolicyIndependentOfComputeBackend() {
+        ComputeBackend backend = cpuBackend();
+        AtomicLong requestedBytes = new AtomicLong(-1);
+        AtomicLong released = new AtomicLong();
+        TensorAllocator allocator = size -> {
+            requestedBytes.set(size);
+            return new HostAccessibleStorage() {
+                private final Arena arena = Arena.ofShared();
+                private final MemorySegment segment = arena.allocate(size);
+                private boolean live = true;
+
+                @Override public long sizeBytes() { return segment.byteSize(); }
+                @Override public MemorySegment segment() { return segment; }
+                @Override public void retain() {
+                    if (!live) throw new IllegalStateException("released");
+                }
+                @Override public void release() {
+                    if (live) {
+                        live = false;
+                        arena.close();
+                        released.incrementAndGet();
+                    }
+                }
+            };
+        };
+
+        Tensor tensor = TensorFactory.of(
+                new float[] {1f, 2f, 3f, 4f}, backend, allocator, 2, 2);
+        try {
+            assertEquals(16L, requestedBytes.get());
+            assertSame(backend, tensor.backend());
+            assertEquals(DeviceType.CPU, tensor.device());
+            assertEquals(16L, tensor.storage().sizeBytes());
+        } finally {
+            tensor.release();
+        }
+        assertEquals(1L, released.get());
+    }
+
+    @Test
+    void quantizedFactoryAcceptsIndependentAllocationPolicy() {
+        ComputeBackend backend = cpuBackend();
+        AtomicLong requestedBytes = new AtomicLong(-1);
+        TensorAllocator allocator = size -> {
+            requestedBytes.set(size);
+            return new CpuBuffer(size);
+        };
+
+        try (Arena arena = Arena.ofConfined()) {
+            Tensor tensor = TensorFactory.ofQuantized(
+                    arena.allocate(40), backend, allocator, DType.Q8_0, 32);
+            try {
+                assertEquals(34L, requestedBytes.get());
+                assertEquals(DType.Q8_0, tensor.dtype());
+                assertEquals(34L, tensor.storage().sizeBytes());
+            } finally {
+                tensor.release();
+            }
         }
     }
 
