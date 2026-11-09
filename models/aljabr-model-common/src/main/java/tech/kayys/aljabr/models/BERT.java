@@ -1,10 +1,10 @@
 package tech.kayys.aljabr.models;
 
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
-import tech.kayys.aljabr.core.nn.*;
-import tech.kayys.aljabr.core.nn.*;
-import tech.kayys.aljabr.core.nn.*;
-import tech.kayys.aljabr.core.nn.*;
+import tech.kayys.aljabr.core.nn.Linear;
+import tech.kayys.aljabr.core.nn.NNModule;
+import tech.kayys.aljabr.core.nn.TransformerEncoder;
 
 /**
  * BERT (Bidirectional Encoder Representations from Transformers) model family.
@@ -21,104 +21,102 @@ import tech.kayys.aljabr.core.nn.*;
  *
  * <h3>Example — fine-tuning for classification</h3>
  * <pre>{@code
- * NNModule model = BERT.forSequenceClassification(numClasses = 2, vocabSize = 30522);
- * Tensor logits = model.forward(embeddings); // [B, T, 768] → [B, numClasses]
+ * NNModule model = BERT.forSequenceClassification(2, 30522, backend);
+ * Tensor logits = model.forward(embeddings);
  * }</pre>
  */
 public final class BERT {
 
     /** BERT-base vocabulary size (WordPiece). */
-    public static final int VOCAB_SIZE_BASE  = 30522;
+    public static final int VOCAB_SIZE_BASE = 30522;
 
     /** BERT-large vocabulary size. */
     public static final int VOCAB_SIZE_LARGE = 30522;
 
     private BERT() {}
 
-    /**
-     * Constructs a BERT-base encoder (12 layers, dModel=768, 12 heads).
-     *
-     * @param vocabSize vocabulary size (use {@link #VOCAB_SIZE_BASE} for standard BERT)
-     * @return BERT-base {@link TransformerEncoder}
-     */
+    /** @deprecated Use {@link #bertBase(ComputeBackend, int)}. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static TransformerEncoder bertBase(int vocabSize) {
-        return TransformerEncoder.builder()
-            
-            .dModel(768)
-            .nHeads(12)
-            .dFF(3072)
-            .nLayers(12)
-            .maxSeqLen(512)
-            .dropout(0.1f)
-            .build();
+        return bertBase(null, vocabSize);
     }
 
-    /**
-     * Constructs a BERT-large encoder (24 layers, dModel=1024, 16 heads).
-     *
-     * @param vocabSize vocabulary size
-     * @return BERT-large {@link TransformerEncoder}
-     */
+    /** Constructs BERT-base with all module state owned by {@code backend}. */
+    public static TransformerEncoder bertBase(ComputeBackend backend, int vocabSize) {
+        TransformerEncoder.Builder builder = backend == null
+                ? TransformerEncoder.builder()
+                : TransformerEncoder.builder(backend);
+        return builder
+                .dModel(768)
+                .nHeads(12)
+                .dFF(3072)
+                .nLayers(12)
+                .maxSeqLen(512)
+                .dropout(0.1f)
+                .build();
+    }
+
+    /** @deprecated Use {@link #bertLarge(ComputeBackend, int)}. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static TransformerEncoder bertLarge(int vocabSize) {
-        return TransformerEncoder.builder()
-            
-            .dModel(1024)
-            .nHeads(16)
-            .dFF(4096)
-            .nLayers(24)
-            .maxSeqLen(512)
-            .dropout(0.1f)
-            .build();
+        return bertLarge(null, vocabSize);
     }
 
-    /**
-     * Constructs a BERT-base model with a sequence classification head.
-     *
-     * <p>Architecture: BERT-base encoder → [CLS] pooling → Dropout → Linear(numClasses)
-     *
-     * @param numClasses number of output classes
-     * @param vocabSize  vocabulary size
-     * @return classification model
-     */
+    /** Constructs BERT-large with all module state owned by {@code backend}. */
+    public static TransformerEncoder bertLarge(ComputeBackend backend, int vocabSize) {
+        TransformerEncoder.Builder builder = backend == null
+                ? TransformerEncoder.builder()
+                : TransformerEncoder.builder(backend);
+        return builder
+                .dModel(1024)
+                .nHeads(16)
+                .dFF(4096)
+                .nLayers(24)
+                .maxSeqLen(512)
+                .dropout(0.1f)
+                .build();
+    }
+
+    /** @deprecated Use {@link #forSequenceClassification(int, int, ComputeBackend)}. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static NNModule forSequenceClassification(int numClasses, int vocabSize) {
-        return new BertForClassification(bertBase(vocabSize), numClasses);
+        return forSequenceClassification(numClasses, vocabSize, null);
     }
 
-    // ── Classification head ───────────────────────────────────────────────
+    /** Constructs BERT-base with a classification head on the same explicit backend. */
+    public static NNModule forSequenceClassification(
+            int numClasses, int vocabSize, ComputeBackend backend) {
+        return new BertForClassification(bertBase(backend, vocabSize), numClasses);
+    }
 
-    /**
-     * BERT encoder with a linear classification head on the [CLS] token.
-     */
+    /** BERT encoder with a linear classification head on the [CLS] token. */
     static final class BertForClassification extends NNModule {
 
         private final TransformerEncoder encoder;
         private final Linear classifier;
 
-        /**
-         * @param encoder   pre-built BERT encoder
-         * @param numClasses number of output classes
-         */
         BertForClassification(TransformerEncoder encoder, int numClasses) {
-            this.encoder    = register("encoder",    encoder);
-            this.classifier = register("classifier", new Linear(768, numClasses));
+            super(encoder.computeBackend());
+            this.encoder = register("encoder", encoder);
+            this.classifier = register("classifier", computeBackend() == null
+                    ? new Linear(768, numClasses)
+                    : new Linear(computeBackend(), 768, numClasses));
         }
 
-        /**
-         * Forward pass: encode → extract [CLS] token → classify.
-         *
-         * @param x input embeddings {@code [B, T, dModel]}
-         * @return logits {@code [B, numClasses]}
-         */
         @Override
         public Tensor forward(Tensor x) {
-            Tensor encoded = encoder.forward(x); // [B, T, dModel]
-            // Extract [CLS] token (position 0): [B, dModel]
-            long[] s = encoded.shape().dims();
-            int B = (int) s[0], dModel = (int) s[2];
-            float[] cls = new float[B * dModel];
-            for (int b = 0; b < B; b++)
-                System.arraycopy(encoded.toFloatArray(), b * (int) s[1] * dModel, cls, b * dModel, dModel);
-            return classifier.forward(Tensor.of(cls, B, dModel));
+            validateInputBackend(x);
+            Tensor encoded = encoder.forward(x);
+            long[] shape = encoded.shape().dims();
+            int batch = Math.toIntExact(shape[0]);
+            int modelDim = Math.toIntExact(shape[2]);
+            float[] cls = new float[Math.multiplyExact(batch, modelDim)];
+            float[] encodedValues = encoded.toFloatArray();
+            for (int b = 0; b < batch; b++) {
+                System.arraycopy(encodedValues, b * Math.toIntExact(shape[1]) * modelDim,
+                        cls, b * modelDim, modelDim);
+            }
+            return classifier.forward(tensorOf(cls, batch, modelDim));
         }
     }
 }
