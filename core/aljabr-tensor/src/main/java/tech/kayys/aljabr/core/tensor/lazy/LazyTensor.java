@@ -8,6 +8,7 @@ import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A Tensor implementation that defers computation by recording operations into
@@ -22,6 +23,7 @@ public class LazyTensor implements Tensor {
     private final GraphNode node;
     private final ComputeBackend executionBackend;
     private final GraphExecutor executor;
+    private final AtomicBoolean released = new AtomicBoolean();
 
     public LazyTensor(GraphNode node, ComputeBackend executionBackend) {
         this.node = node;
@@ -35,6 +37,7 @@ public class LazyTensor implements Tensor {
 
     @Override
     public Tensor eval() {
+        ensureOpen();
         if (!node.isEvaluated()) {
             GraphNode optimized = GraphOptimizer.optimize(node);
             executor.evaluate(optimized);
@@ -49,6 +52,30 @@ public class LazyTensor implements Tensor {
     @Override
     public TensorStorage storage() {
         return eval().storage();
+    }
+
+    /**
+     * Releases a materialized result owned by this lazy operation. Constant
+     * nodes merely reference caller-owned tensors and therefore do not release
+     * their input when the lazy wrapper is closed.
+     */
+    @Override
+    public void release() {
+        if (!released.compareAndSet(false, true)) {
+            return;
+        }
+        if (node.isEvaluated() && node.getOp() != OpType.CONSTANT) {
+            Tensor materialized = node.getMaterializedData();
+            if (materialized != null && materialized != this) {
+                materialized.release();
+            }
+        }
+    }
+
+    private void ensureOpen() {
+        if (released.get()) {
+            throw new IllegalStateException("Lazy tensor has already been released");
+        }
     }
 
     @Override
