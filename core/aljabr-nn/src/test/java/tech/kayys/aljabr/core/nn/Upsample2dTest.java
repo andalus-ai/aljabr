@@ -62,4 +62,38 @@ class Upsample2dTest {
             input.release();
         }
     }
+    @Test
+    void resizesToReferenceSpatialDimensionsForOddShapes() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[1 * 2 * 2 * 3], backend, 1, 2, 2, 3);
+        Tensor reference = TensorFactory.of(new float[1 * 4 * 3 * 5], backend, 1, 4, 3, 5);
+        try {
+            Tensor output = new Upsample2d(backend, 2.0f).forwardTo(input, reference);
+            try {
+                assertThat(output.shape().dims()).containsExactly(1, 2, 3, 5);
+                assertThat(output.backend()).isSameAs(backend);
+            } finally {
+                output.release();
+            }
+        } finally {
+            input.release();
+            reference.release();
+        }
+    }
+
+    @Test
+    void rejectsReferenceWithDifferentBatchSize() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[4], backend, 1, 1, 2, 2);
+        Tensor reference = TensorFactory.of(new float[8], backend, 2, 1, 2, 2);
+        try {
+            assertThatThrownBy(() -> new Upsample2d(backend, 2.0f).forwardTo(input, reference))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("batch");
+        } finally {
+            input.release();
+            reference.release();
+        }
+    }
+
 }
