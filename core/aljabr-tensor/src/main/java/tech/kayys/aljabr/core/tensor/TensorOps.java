@@ -269,6 +269,6 @@ public final class TensorOps {
                 destination += blockLength;
             }
         }
-        return Tensor.of(output, outputDims);
+        return TensorFactory.of(output, first.backend(), outputDims);
     }
 }
