@@ -19,9 +19,8 @@ import tech.kayys.aljabr.core.nn.SiLU;
  * Simplified conditional 2D UNet scaffold for diffusion denoising.
  *
  * <p>The model and all child modules are owned by one explicit compute backend.
- * This class is not yet a complete Stable Diffusion UNet: its spatial
- * downsampling/upsampling and several attention operations remain simplified
- * or placeholders.</p>
+ * This class is not yet a complete Stable Diffusion UNet: its spatial downsampling and skip connections are represented explicitly;
+ * attention remains simplified and is not yet a complete Stable Diffusion UNet.</p>
  */
 public class UNet2DConditional extends NNModule {
 
@@ -48,7 +47,6 @@ public class UNet2DConditional extends NNModule {
     private final Upsample2d upsample1;
     private final ResnetBlock2D up1;
     private final SpatialTransformer upAttn1;
-    private final Upsample2d upsample2;
     private final ResnetBlock2D up2;
 
     private final GroupNorm convNormOut;
@@ -159,7 +157,7 @@ public class UNet2DConditional extends NNModule {
         Tensor s1 = down1.forward(h, temb);
         s1 = downAttn1.forward(s1, context);
 
-        Tensor h = downsample.forward(s1);
+        h = downsample.forward(s1);
         Tensor s2 = down2.forward(h, temb);
         s2 = downAttn2.forward(s2, context);
 
