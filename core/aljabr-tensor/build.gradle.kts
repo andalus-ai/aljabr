@@ -9,5 +9,5 @@ dependencies {
         testImplementation(aljabrCoreProject)
     }
 
-    testRuntimeOnly(project(":backend:cpu:aljabr-backend-cpu"))
+    testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
 }
