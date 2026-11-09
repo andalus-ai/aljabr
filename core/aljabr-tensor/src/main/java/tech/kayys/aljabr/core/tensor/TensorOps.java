@@ -203,8 +203,8 @@ public final class TensorOps {
         if (axis < 0 || axis >= rank) {
             throw new IllegalArgumentException("dimension " + dim + " out of range for rank " + rank);
         }
-        if (first.dtype() != DType.F32 || first.device() != DeviceType.CPU) {
-            throw new UnsupportedOperationException("cat currently supports F32 CPU tensors only");
+        if (first.dtype() != DType.F32) {
+            throw new UnsupportedOperationException("cat currently supports F32 tensors only");
         }
 
         long[] outputDims = first.shape().dims();
@@ -252,23 +252,6 @@ public final class TensorOps {
             throw new IllegalArgumentException("cat block size overflows long", e);
         }
 
-        float[][] sources = new float[tensors.size()][];
-        for (int i = 0; i < tensors.size(); i++) {
-            sources[i] = tensors.get(i).toFloatArray();
-        }
-
-        float[] output = new float[Math.toIntExact(outputElements)];
-        int destination = 0;
-        for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
-            for (int i = 0; i < tensors.size(); i++) {
-                Tensor tensor = tensors.get(i);
-                long blockElements = Math.multiplyExact(tensor.shape().dim(axis), inner);
-                long sourceOffset = Math.multiplyExact(outerIndex, blockElements);
-                int blockLength = Math.toIntExact(blockElements);
-                System.arraycopy(sources[i], Math.toIntExact(sourceOffset), output, destination, blockLength);
-                destination += blockLength;
-            }
-        }
-        return TensorFactory.of(output, first.backend(), outputDims);
+        return first.backend().cat(tensors, axis);
     }
 }

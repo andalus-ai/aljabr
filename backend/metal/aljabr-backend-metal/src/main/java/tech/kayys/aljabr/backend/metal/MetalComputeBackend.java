@@ -619,6 +619,12 @@ public class MetalComputeBackend implements ComputeBackend {
         return new DefaultTensor(input.shape(), DType.F32, DeviceType.METAL, bufferOut, this);
     }
 
+
+    @Override
+    public Tensor cat(List<Tensor> tensors, int axis) {
+        return wrap(cpuFallback.cat(tensors, axis));
+    }
+
     @Override
     public long numel(Tensor a) {
         return cpuFallback.numel(a);
