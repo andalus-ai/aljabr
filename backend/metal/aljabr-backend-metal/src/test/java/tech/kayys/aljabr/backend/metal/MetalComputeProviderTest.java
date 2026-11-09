@@ -139,6 +139,9 @@ class MetalComputeProviderTest {
     private static ComputeBackend inertBackend() {
         return (ComputeBackend) Proxy.newProxyInstance(ComputeBackend.class.getClassLoader(),
                 new Class<?>[] { ComputeBackend.class }, (proxy, method, args) -> {
+                    if (method.getName().equals("close")) {
+                        return null;
+                    }
                     if (method.getDeclaringClass() == Object.class) {
                         return switch (method.getName()) {
                             case "toString" -> "inert-metal-backend";
