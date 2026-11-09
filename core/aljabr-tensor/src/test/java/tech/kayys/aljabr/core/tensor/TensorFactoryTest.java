@@ -3,6 +3,9 @@ package tech.kayys.aljabr.core.tensor;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import java.lang.reflect.Proxy;
+import java.util.concurrent.atomic.AtomicLong;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 
 class TensorFactoryTest {
     @Test
@@ -23,6 +26,49 @@ class TensorFactoryTest {
         assertThrows(IllegalArgumentException.class,
                 () -> TensorFactory.ofQuantized(segment, DType.Q8_0, 31));
     }
+
+    @Test
+    void explicitBackendOwnsTensorAllocationAndDeviceIdentity() {
+        ComputeBackend delegate;
+        try {
+            delegate = (ComputeBackend) Class.forName("tech.kayys.aljabr.backend.cpu.CpuBackend")
+                    .getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("CPU test backend is unavailable", e);
+        }
+        AtomicLong allocatedBytes = new AtomicLong(-1);
+        java.util.concurrent.atomic.AtomicBoolean deviceIdentityRequested = new java.util.concurrent.atomic.AtomicBoolean();
+        ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("allocate")) {
+                        allocatedBytes.set((long) args[0]);
+                    }
+                    if (method.getName().equals("deviceType")) {
+                        deviceIdentityRequested.set(true);
+                        return DeviceType.METAL;
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+
+        Tensor tensor = TensorFactory.zeros(backend, 2, 3);
+        try {
+            assertEquals(24L, allocatedBytes.get());
+            assertEquals(DeviceType.METAL, tensor.device());
+            assertTrue(deviceIdentityRequested.get());
+            assertSame(backend, tensor.backend());
+            assertEquals(24L, ((DefaultTensor) tensor).buffer().sizeBytes());
+        } finally {
+            tensor.release();
+        }
+    }
+
+
     @Test
     void automaticBackendSelectionUsesCpuWhenMetalIsUnavailableAndDoesNotRequireHat() {
         Tensor tensor = TensorFactory.zeros(1);

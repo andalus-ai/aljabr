@@ -1,6 +1,9 @@
 package tech.kayys.aljabr.core.backend;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.DeviceType;
+import tech.kayys.aljabr.core.memory.Buffer;
+import tech.kayys.aljabr.core.memory.CpuBuffer;
 import java.util.List;
 
 /**
@@ -27,6 +30,32 @@ import java.util.List;
  * @author bhangun
  */
 public interface ComputeBackend {
+
+    /**
+     * Allocates host-accessible storage for a tensor created from host data.
+     *
+     * <p>This compatibility default preserves existing backends. Backends
+     * using a different host allocation strategy should override it. This
+     * method deliberately returns the legacy host-accessible {@link Buffer};
+     * device-local storage is represented by {@code TensorStorage} but is not
+     * yet supported by {@code DefaultTensor}'s host-segment execution path.</p>
+     *
+     * @param sizeBytes required storage capacity in bytes
+     * @return a live buffer with at least {@code sizeBytes} capacity
+     */
+    default Buffer allocate(long sizeBytes) {
+        return new CpuBuffer(sizeBytes);
+    }
+
+    /**
+     * Device identity used for tensors allocated by this backend.
+     *
+     * <p>Backends that transparently fall back to another device should
+     * report the device actually used.</p>
+     */
+    default DeviceType deviceType() {
+        return DeviceType.CPU;
+    }
 
     // ── Element-wise binary ───────────────────────────────────────────
     Tensor add(Tensor a, Tensor b);

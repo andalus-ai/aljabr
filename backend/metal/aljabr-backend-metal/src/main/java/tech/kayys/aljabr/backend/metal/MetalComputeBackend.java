@@ -82,8 +82,14 @@ public class MetalComputeBackend implements ComputeBackend {
         };
     }
 
-    private CpuBuffer allocate(long sizeBytes) {
+    @Override
+    public CpuBuffer allocate(long sizeBytes) {
         return new CpuBuffer(sizeBytes);
+    }
+
+    @Override
+    public DeviceType deviceType() {
+        return isNative ? DeviceType.METAL : DeviceType.CPU;
     }
 
     @Override

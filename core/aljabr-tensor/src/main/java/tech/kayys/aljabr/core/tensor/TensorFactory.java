@@ -88,11 +88,24 @@ public final class TensorFactory {
             throw new IllegalArgumentException("data length != shape numel");
 
         long bytes = n * 4L;
-        tech.kayys.aljabr.core.memory.CpuBuffer buf = new tech.kayys.aljabr.core.memory.CpuBuffer(bytes);
-        java.lang.foreign.MemorySegment src = java.lang.foreign.MemorySegment.ofArray(data);
-        buf.segment().copyFrom(src);
+        tech.kayys.aljabr.core.memory.Buffer buffer = java.util.Objects.requireNonNull(
+                backend.allocate(bytes), "backend.allocate must not return null");
+        if (buffer.sizeBytes() < bytes) {
+            long availableBytes = buffer.sizeBytes();
+            buffer.release();
+            throw new IllegalStateException(
+                    "Backend " + backend.getClass().getName()
+                            + " allocated " + availableBytes + " bytes; " + bytes + " required");
+        }
 
-        return new DefaultTensor(new Shape(shape), DType.F32, DeviceType.CPU, buf, backend);
+        try {
+            java.lang.foreign.MemorySegment src = java.lang.foreign.MemorySegment.ofArray(data);
+            buffer.segment().asSlice(0, bytes).copyFrom(src);
+            return new DefaultTensor(new Shape(shape), DType.F32, backend.deviceType(), buffer, backend);
+        } catch (RuntimeException | Error failure) {
+            buffer.release();
+            throw failure;
+        }
     }
 
     public static Tensor ofQuantized(java.lang.foreign.MemorySegment data, DType dtype, long... shape) {
