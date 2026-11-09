@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
@@ -258,6 +259,50 @@ class CpuBackendStorageTest {
         MemorySegment next = pool.acquire(16);
         pool.release(next);
         pool.close();
+    }
+
+    @Test
+    void cpuKernelOutputsUseConfiguredTensorAllocator() {
+        AtomicInteger allocations = new AtomicInteger();
+        CpuBackend allocatingBackend = new CpuBackend(
+                null,
+                CpuBackend.PoolOwnership.BORROWED,
+                size -> {
+                    allocations.incrementAndGet();
+                    return new CpuBuffer(size);
+                });
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, allocatingBackend);
+        Tensor result = null;
+        try {
+            result = allocatingBackend.add(input, input);
+            assertEquals(1, allocations.get());
+            assertInstanceOf(HostAccessibleStorage.class, result.storage());
+            assertArrayEquals(new float[] {2f, 4f, 6f, 8f}, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            allocatingBackend.close();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void cpuBackendRejectsDeviceOnlyOutputAllocatorAndReleasesRejectedStorage() {
+        AtomicInteger releases = new AtomicInteger();
+        CpuBackend allocatingBackend = new CpuBackend(
+                null,
+                CpuBackend.PoolOwnership.BORROWED,
+                size -> new TensorStorage() {
+                    @Override public long sizeBytes() { return size; }
+                    @Override public void retain() { }
+                    @Override public void release() { releases.incrementAndGet(); }
+                });
+
+        assertThrows(IllegalArgumentException.class, () -> allocatingBackend.allocateStorage(16));
+        assertEquals(1, releases.get());
+        allocatingBackend.close();
     }
 
 }

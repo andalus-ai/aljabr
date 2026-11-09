@@ -29,24 +29,39 @@ public final class CpuBackend implements ComputeBackend {
 
     private final OffHeapBufferPool pool;
     private final PoolOwnership poolOwnership;
+    private final TensorAllocator outputAllocator;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     public CpuBackend() {
-        this(null, PoolOwnership.BORROWED);
+        this(null, PoolOwnership.BORROWED, null);
     }
 
     /** Injects a shared pool; the caller retains responsibility for closing it. */
     public CpuBackend(OffHeapBufferPool pool) {
-        this(pool, PoolOwnership.BORROWED);
+        this(pool, PoolOwnership.BORROWED, null);
     }
 
     /** Injects a pool with an explicit lifecycle ownership policy. */
     public CpuBackend(OffHeapBufferPool pool, PoolOwnership poolOwnership) {
+        this(pool, poolOwnership, null);
+    }
+
+    /**
+     * Injects a CPU output-storage allocator independently of the pool used by
+     * the legacy {@link #allocate(long)} API. The allocator must return
+     * host-accessible storage because current CPU kernels operate on
+     * {@link MemorySegment} views.
+     */
+    public CpuBackend(
+            OffHeapBufferPool pool,
+            PoolOwnership poolOwnership,
+            TensorAllocator outputAllocator) {
         this.pool = pool;
         this.poolOwnership = Objects.requireNonNull(poolOwnership, "poolOwnership");
         if (pool == null && poolOwnership == PoolOwnership.OWNED) {
             throw new IllegalArgumentException("An owned pool must not be null");
         }
+        this.outputAllocator = outputAllocator != null ? outputAllocator : this::allocate;
     }
 
     @Override
@@ -58,6 +73,37 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Allocates storage for CPU kernel outputs using the configured policy.
+     * CPU kernels currently require host-accessible segments; device-local
+     * storage belongs to a different backend implementation.
+     */
+    private HostAccessibleStorage allocateOutput(long byteSize) {
+        if (closed.get()) {
+            throw new IllegalStateException("CPU backend is closed");
+        }
+        TensorStorage storage = Objects.requireNonNull(
+                outputAllocator.allocate(byteSize), "CPU output allocator must not return null");
+        if (!(storage instanceof HostAccessibleStorage hostStorage)) {
+            storage.release();
+            throw new IllegalArgumentException(
+                    "CPU output allocator must return HostAccessibleStorage, got "
+                            + storage.getClass().getName());
+        }
+        if (hostStorage.sizeBytes() < byteSize) {
+            long available = hostStorage.sizeBytes();
+            hostStorage.release();
+            throw new IllegalStateException(
+                    "CPU output allocator returned " + available + " bytes; " + byteSize + " required");
+        }
+        return hostStorage;
+    }
+
+    @Override
+    public TensorStorage allocateStorage(long byteSize) {
+        return allocateOutput(byteSize);
+    }
 
     @Override
     public CpuBuffer allocate(long byteSize) {
@@ -78,7 +124,7 @@ public final class CpuBackend implements ComputeBackend {
         return CpuTensorStorageAccess.segment(tensor);
     }
 
-    private DefaultTensor out(Shape shape, CpuBuffer buf) {
+    private DefaultTensor out(Shape shape, HostAccessibleStorage buf) {
         return new DefaultTensor(shape, DType.F32, DeviceType.CPU, buf, this);
     }
     // ── Arithmetic ────────────────────────────────────────────────────────────
@@ -89,7 +135,7 @@ public final class CpuBackend implements ComputeBackend {
             return broadcastOp(a, b, 0);
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.add(seg(a), seg(b), o.segment(), n);
         return out(s, o);
     }
@@ -100,7 +146,7 @@ public final class CpuBackend implements ComputeBackend {
             return broadcastOp(a, b, 3);
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.sub(seg(a), seg(b), o.segment(), n);
         return out(s, o);
     }
@@ -109,7 +155,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor mul(Tensor a, float scalar) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.mulScalar(seg(a), scalar, o.segment(), n);
         return out(s, o);
     }
@@ -120,7 +166,7 @@ public final class CpuBackend implements ComputeBackend {
             return broadcastOp(a, b, 1);
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.mul(seg(a), seg(b), o.segment(), n);
         return out(s, o);
     }
@@ -136,7 +182,7 @@ public final class CpuBackend implements ComputeBackend {
             return broadcastOp(a, b, 2);
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.div(seg(a), seg(b), o.segment(), n);
         return out(s, o);
     }
@@ -177,7 +223,7 @@ public final class CpuBackend implements ComputeBackend {
                 sb *= shapeB[bIdx];
         }
 
-        CpuBuffer o = allocate(numel * 4);
+        HostAccessibleStorage o = allocateOutput(numel * 4);
         MemorySegment segA = seg(a);
         MemorySegment segB = seg(b);
         MemorySegment segO = o.segment();
@@ -215,7 +261,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor addScalar(Tensor a, float scalar) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.addScalar(seg(a), scalar, o.segment(), n);
         return out(s, o);
     }
@@ -240,7 +286,7 @@ public final class CpuBackend implements ComputeBackend {
         outDims[outDims.length - 2] = m;
         outDims[outDims.length - 1] = n;
         Shape outShape = new Shape(outDims);
-        CpuBuffer outBuf = allocate(outShape.numel() * 4);
+        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
 
         // Zero-init output
         outBuf.segment().fill((byte) 0);
@@ -348,7 +394,7 @@ public final class CpuBackend implements ComputeBackend {
         }
 
         // Non-contiguous slices are materialized into an independent CPU buffer.
-        CpuBuffer outBuf = allocate(byteSize);
+        HostAccessibleStorage outBuf = allocateOutput(byteSize);
         long outIdx = 0;
         long totalOut = outShape.numel();
         long[] cursor = new long[rank];
@@ -430,7 +476,7 @@ public final class CpuBackend implements ComputeBackend {
         outDims[d1] = inDims[d0];
 
         Shape outShape = new Shape(outDims);
-        CpuBuffer outBuf = allocate(outShape.numel() * 4);
+        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
 
         // Compute strides for both input and output (row-major)
         long[] inStrides = new long[rank];
@@ -477,7 +523,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor relu(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.relu(seg(a), o.segment(), n);
         return out(s, o);
     }
@@ -486,7 +532,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor sigmoid(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.sigmoid(seg(a), o.segment(), n);
         return out(s, o);
     }
@@ -495,7 +541,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor tanh(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.tanh(seg(a), o.segment(), n);
         return out(s, o);
     }
@@ -504,7 +550,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor log(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.log(seg(a), o.segment(), n);
         return out(s, o);
     }
@@ -513,7 +559,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor exp(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.exp(seg(a), o.segment(), n);
         return out(s, o);
     }
@@ -522,7 +568,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor silu(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.silu(seg(a), o.segment(), n);
         return out(s, o);
     }
@@ -531,7 +577,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor gelu(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.gelu(seg(a), o.segment(), n);
         return out(s, o);
     }
@@ -547,7 +593,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor softmax(Tensor a, int dim) {
         Shape shape = a.shape();
         long n = shape.numel();
-        CpuBuffer outBuf = allocate(n * 4);
+        HostAccessibleStorage outBuf = allocateOutput(n * 4);
         MemorySegment src = seg(a);
 
         // Flatten to 2D: (batchRows, rowLen) where softmax is over rowLen
@@ -579,7 +625,7 @@ public final class CpuBackend implements ComputeBackend {
         for (long d : normalizedShape)
             hiddenDim *= (int) d;
 
-        CpuBuffer outBuf = allocate(n * 4);
+        HostAccessibleStorage outBuf = allocateOutput(n * 4);
         MemorySegment si = seg(input);
         MemorySegment so = outBuf.segment();
         MemorySegment sw = weight != null ? seg(weight) : null;
@@ -617,7 +663,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape shape = input.shape();
         long n = shape.numel();
         int hiddenDim = (int) weight.shape().dim(0);
-        CpuBuffer outBuf = allocate(n * 4);
+        HostAccessibleStorage outBuf = allocateOutput(n * 4);
         NormOps.rmsNorm(seg(input), seg(weight), outBuf.segment(), n, hiddenDim, eps);
         return out(shape, outBuf);
     }
@@ -638,7 +684,7 @@ public final class CpuBackend implements ComputeBackend {
         int channels = (int) shape.dim(1);
         long spatialSize = n / ((long) shape.dim(0) * channels);
 
-        CpuBuffer outBuf = allocate(n * 4);
+        HostAccessibleStorage outBuf = allocateOutput(n * 4);
         MemorySegment si = seg(input);
         MemorySegment so = outBuf.segment();
         MemorySegment smean = seg(runningMean);
@@ -671,7 +717,7 @@ public final class CpuBackend implements ComputeBackend {
     @Override
     public Tensor sum(Tensor a) {
         float total = CpuOps.reduceSum(seg(a), a.numel());
-        CpuBuffer o = allocate(4);
+        HostAccessibleStorage o = allocateOutput(4);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, total);
         return out(new Shape(1), o);
     }
@@ -684,7 +730,7 @@ public final class CpuBackend implements ComputeBackend {
     @Override
     public Tensor mean(Tensor a) {
         float total = CpuOps.reduceSum(seg(a), a.numel());
-        CpuBuffer o = allocate(4);
+        HostAccessibleStorage o = allocateOutput(4);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, total / a.numel());
         return out(new Shape(1), o);
     }
@@ -697,7 +743,7 @@ public final class CpuBackend implements ComputeBackend {
     @Override
     public Tensor max(Tensor a) {
         float best = CpuOps.reduceMax(seg(a), a.numel());
-        CpuBuffer o = allocate(4);
+        HostAccessibleStorage o = allocateOutput(4);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, best);
         return out(new Shape(1), o);
     }
@@ -719,7 +765,7 @@ public final class CpuBackend implements ComputeBackend {
             outDims[outIdx++] = (d == dim) ? 1 : inDims[d];
         }
         Shape outShape = new Shape(outDims);
-        CpuBuffer outBuf = allocate(outShape.numel() * 4);
+        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
         MemorySegment src = seg(a);
         MemorySegment dst = outBuf.segment();
 
@@ -756,7 +802,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor pow(Tensor a, float exponent) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         MemorySegment src = seg(a), dst = o.segment();
         for (long i = 0; i < n; i++)
             CpuOps.setF(dst, i, (float) Math.pow(CpuOps.getF(src, i), exponent));
@@ -767,7 +813,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor abs(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         MemorySegment src = seg(a), dst = o.segment();
         for (long i = 0; i < n; i++)
             CpuOps.setF(dst, i, Math.abs(CpuOps.getF(src, i)));
@@ -778,7 +824,7 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor sqrt(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         MemorySegment src = seg(a), dst = o.segment();
         for (long i = 0; i < n; i++)
             CpuOps.setF(dst, i, (float) Math.sqrt(CpuOps.getF(src, i)));
@@ -788,7 +834,7 @@ public final class CpuBackend implements ComputeBackend {
     @Override
     public Tensor zerosLike(Tensor a) {
         Shape s = a.shape();
-        CpuBuffer o = allocate(s.numel() * 4);
+        HostAccessibleStorage o = allocateOutput(s.numel() * 4);
         o.segment().fill((byte) 0);
         return out(s, o);
     }
@@ -799,7 +845,7 @@ public final class CpuBackend implements ComputeBackend {
             return a;
 
         long n = a.numel();
-        CpuBuffer outBuf = allocate(dtype.memoryFootprintBytes(n));
+        HostAccessibleStorage outBuf = allocateOutput(dtype.memoryFootprintBytes(n));
 
         if (a.dtype() == DType.F32 && dtype == DType.Q8_0) {
             tech.kayys.aljabr.backend.cpu.ops.QuantizeOps.quantizeQ8_0(seg(a), outBuf.segment(), n);
@@ -831,7 +877,7 @@ public final class CpuBackend implements ComputeBackend {
             return input;
         Shape s = input.shape();
         long n = s.numel();
-        CpuBuffer o = allocate(n * 4);
+        HostAccessibleStorage o = allocateOutput(n * 4);
         CpuOps.dropout(seg(input), o.segment(), n, p, ThreadLocalRandom.current().nextLong());
         return out(s, o);
     }
@@ -852,7 +898,7 @@ public final class CpuBackend implements ComputeBackend {
             loss -= sp.get(ValueLayout.JAVA_FLOAT, (i * numClasses + classIdx) * 4L);
         }
         loss /= batchSize;
-        CpuBuffer o = allocate(4);
+        HostAccessibleStorage o = allocateOutput(4);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, loss);
         return out(new Shape(1), o);
     }
@@ -870,7 +916,7 @@ public final class CpuBackend implements ComputeBackend {
             loss -= t * (float) Math.log(p) + (1 - t) * (float) Math.log(1 - p);
         }
         loss /= n;
-        CpuBuffer o = allocate(4);
+        HostAccessibleStorage o = allocateOutput(4);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, loss);
         return out(new Shape(1), o);
     }
@@ -909,7 +955,7 @@ public final class CpuBackend implements ComputeBackend {
                 || additiveMask.shape().dim(1)!=keyLength))
             throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] on this backend");
         Shape outputShape=new Shape(batch,heads,queryLength,headDim);
-        CpuBuffer output=allocate(Math.multiplyExact(outputShape.numel(),Float.BYTES));
+        HostAccessibleStorage output=allocateOutput(Math.multiplyExact(outputShape.numel(),Float.BYTES));
         MemorySegment q=seg(Q), k=seg(K), v=seg(V), mask=additiveMask==null?null:seg(additiveMask), out=output.segment();
         float scale=(float)(1.0/Math.sqrt(headDim));
         for (long b = 0; b < batch; b++) {
@@ -989,7 +1035,7 @@ public final class CpuBackend implements ComputeBackend {
         long outW = (W + 2L * padding - dilation * (kW - 1) - 1) / stride + 1;
 
         Shape outShape = new Shape(N, Cout, outH, outW);
-        CpuBuffer outBuf = allocate(outShape.numel() * 4);
+        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
         outBuf.segment().fill((byte) 0);
 
         MemorySegment si = seg(input);
@@ -1050,7 +1096,7 @@ public final class CpuBackend implements ComputeBackend {
         }
 
         Shape outputShape = new Shape(batch, channels, outputH, outputW);
-        CpuBuffer output = allocate(Math.multiplyExact(outputShape.numel(), Float.BYTES));
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(outputShape.numel(), Float.BYTES));
         MemorySegment source = seg(input);
         MemorySegment destination = output.segment();
 
@@ -1081,7 +1127,7 @@ public final class CpuBackend implements ComputeBackend {
         long outW = (W + 2L * padding - kernelSize) / stride + 1;
 
         Shape outShape = new Shape(N, C, outH, outW);
-        CpuBuffer outBuf = allocate(outShape.numel() * 4);
+        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
         MemorySegment si = seg(input);
         MemorySegment so = outBuf.segment();
 
@@ -1119,7 +1165,7 @@ public final class CpuBackend implements ComputeBackend {
         long W = input.shape().dim(3);
 
         Shape outShape = new Shape(N, C, outputH, outputW);
-        CpuBuffer outBuf = allocate(outShape.numel() * 4);
+        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
         MemorySegment si = seg(input);
         MemorySegment so = outBuf.segment();
 
@@ -1163,7 +1209,7 @@ public final class CpuBackend implements ComputeBackend {
         outputDims[inputDims.length] = embeddingDim;
 
         long numTokens = input.numel();
-        CpuBuffer outBuf = allocate(numTokens * embeddingDim * 4);
+        HostAccessibleStorage outBuf = allocateOutput(numTokens * embeddingDim * 4);
         MemorySegment sw = seg(weight);
         MemorySegment si = seg(input);
         MemorySegment so = outBuf.segment();
