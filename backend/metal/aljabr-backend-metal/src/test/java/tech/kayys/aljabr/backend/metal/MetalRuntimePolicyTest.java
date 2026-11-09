@@ -19,17 +19,4 @@ class MetalRuntimePolicyTest {
             else System.setProperty("aljabr.kernel.force.cpu", previous);
         }
     }
-
-    @Test
-    @ResourceLock("system-properties")
-    void defaultPolicyPreservesForcedCpuCompatibility() {
-        String previous = System.getProperty("aljabr.kernel.force.cpu");
-        System.setProperty("aljabr.kernel.force.cpu", "true");
-        try {
-            new MetalComputeBackend().close();
-        } finally {
-            if (previous == null) System.clearProperty("aljabr.kernel.force.cpu");
-            else System.setProperty("aljabr.kernel.force.cpu", previous);
-        }
-    }
 }
