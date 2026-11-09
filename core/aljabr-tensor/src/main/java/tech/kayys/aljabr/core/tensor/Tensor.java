@@ -103,6 +103,8 @@ public interface Tensor {
     default void release() {
     }
 
+    /** @deprecated Use {@link #randn(ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     static Tensor randn(long... shape) {
         return TensorFactory.randn(shape);
     }
@@ -111,6 +113,8 @@ public interface Tensor {
         return TensorFactory.randn(backend, shape);
     }
 
+    /** @deprecated Use {@link #zeros(ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     static Tensor zeros(long... shape) {
         return TensorFactory.zeros(shape);
     }
@@ -119,6 +123,8 @@ public interface Tensor {
         return TensorFactory.zeros(backend, shape);
     }
 
+    /** @deprecated Use {@link #ones(ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     static Tensor ones(long... shape) {
         return TensorFactory.ones(shape);
     }
@@ -127,6 +133,8 @@ public interface Tensor {
         return TensorFactory.ones(backend, shape);
     }
 
+    /** @deprecated Use {@link #full(float, ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     static Tensor full(float value, long... shape) {
         return TensorFactory.full(value, shape);
     }
@@ -135,6 +143,8 @@ public interface Tensor {
         return TensorFactory.full(value, backend, shape);
     }
 
+    /** @deprecated Use {@link #of(float[], ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     static Tensor of(float[] data, long... shape) {
         return TensorFactory.of(data, shape);
     }
