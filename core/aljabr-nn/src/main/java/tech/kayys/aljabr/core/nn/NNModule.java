@@ -264,11 +264,7 @@ public abstract class NNModule implements AutoCloseable {
                 throw new IllegalArgumentException("DType mismatch for state " + entry.getKey()
                         + ": expected " + dst.dtype() + " but got " + src.dtype());
             }
-            long requiredBytes = dst.dtype().memoryFootprintBytes(dst.numel());
-            if (src.storage().sizeBytes() < requiredBytes || dst.storage().sizeBytes() < requiredBytes) {
-                throw new IllegalArgumentException("Insufficient storage for state " + entry.getKey()
-                        + "; required " + requiredBytes + " bytes");
-            }
+            dst.backend().validateCopyInto(dst, src);
         }
 
         for (Map.Entry<String, Tensor> entry : supplied.entrySet()) {
