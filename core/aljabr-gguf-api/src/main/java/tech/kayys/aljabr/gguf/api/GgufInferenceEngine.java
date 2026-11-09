@@ -88,21 +88,13 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         activeCount.incrementAndGet();
         totalCount.incrementAndGet();
         try {
-            GgufBackend backend = backends.get(modelId);
-            if (backend == null) {
-                if (backends.size() == 1) {
-                    backend = backends.values().iterator().next();
-                } else {
-                    throw new InferenceException("No GGUF model loaded with id: " + modelId + ". Loaded models: " + backends.keySet());
-                }
-            }
-            return backend.execute(request);
-        } catch (Exception e) {
+            return backendFor(modelId).execute(request);
+        } catch (Exception error) {
             failedCount.incrementAndGet();
-            if (e instanceof InferenceException ie) {
-                throw ie;
+            if (error instanceof InferenceException inferenceException) {
+                throw inferenceException;
             }
-            throw new InferenceException("GGUF inference failed: " + e.getMessage(), e);
+            throw new InferenceException("GGUF inference failed: " + error.getMessage(), error);
         } finally {
             activeCount.decrementAndGet();
         }
@@ -119,19 +111,36 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
 
     @Override
     public Multi<StreamingInferenceChunk> streamExecute(String modelId, InferenceRequest request) {
-        InferenceResponse response = execute(modelId, request);
-        return Multi.createFrom().item(
-                StreamingInferenceChunk.finalChunk(
-                        request.getRequestId(),
-                        0,
-                        response.getContent()
-                )
-        );
+        return Multi.createFrom().deferred(() -> {
+            activeCount.incrementAndGet();
+            totalCount.incrementAndGet();
+            try {
+                return backendFor(modelId).stream(request)
+                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+            } catch (Exception error) {
+                failedCount.incrementAndGet();
+                activeCount.decrementAndGet();
+                return Multi.createFrom().failure(error);
+            }
+        });
     }
 
     @Override
     public Uni<EmbeddingResponse> executeEmbedding(String modelId, EmbeddingRequest request) {
-        return Uni.createFrom().failure(new UnsupportedOperationException("Embeddings not yet supported by GgufInferenceEngine"));
+        return Uni.createFrom().deferred(() -> {
+            activeCount.incrementAndGet();
+            totalCount.incrementAndGet();
+            try {
+                return backendFor(modelId).embed(request)
+                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+            } catch (Exception error) {
+                failedCount.incrementAndGet();
+                activeCount.decrementAndGet();
+                return Uni.createFrom().failure(error);
+            }
+        });
     }
 
     @Override
@@ -176,6 +185,18 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         backends.values().forEach(GgufBackend::close);
         backends.clear();
         initialized = false;
+    }
+
+    private GgufBackend backendFor(String modelId) {
+        GgufBackend backend = backends.get(modelId);
+        if (backend == null) {
+            if (backends.size() == 1) {
+                return backends.values().iterator().next();
+            }
+            throw new InferenceException(
+                    "No GGUF model loaded with id: " + modelId + ". Loaded models: " + backends.keySet());
+        }
+        return backend;
     }
 
     private GgufBackendProvider selectProvider(Path modelPath, GgufBackendSelection selection) {
