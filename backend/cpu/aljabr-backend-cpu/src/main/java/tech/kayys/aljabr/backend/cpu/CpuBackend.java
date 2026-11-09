@@ -955,7 +955,7 @@ public final class CpuBackend implements ComputeBackend {
                 || additiveMask.shape().dim(1)!=keyLength))
             throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] on this backend");
         Shape outputShape=new Shape(batch,heads,queryLength,headDim);
-        CpuBuffer output=allocate(Math.multiplyExact(outputShape.numel(),Float.BYTES));
+        HostAccessibleStorage output=allocateOutput(Math.multiplyExact(outputShape.numel(),Float.BYTES));
         MemorySegment q=seg(Q), k=seg(K), v=seg(V), mask=additiveMask==null?null:seg(additiveMask), out=output.segment();
         float scale=(float)(1.0/Math.sqrt(headDim));
         for (long b = 0; b < batch; b++) {
