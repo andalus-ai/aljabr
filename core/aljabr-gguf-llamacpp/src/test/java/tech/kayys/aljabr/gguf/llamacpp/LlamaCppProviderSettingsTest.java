@@ -21,19 +21,19 @@ class LlamaCppProviderSettingsTest {
 
     @Test
     void mapsRuntimeConfigurationOverrides() {
-        LlamaCppProviderSettings settings = LlamaCppProviderSettings.from(Map.of(
-                "gpuEnabled", true,
-                "nGpuLayers", -1,
-                "nThreads", 6,
-                "nCtx", 8192,
-                "nBatch", 256,
-                "useMmap", false,
-                "coalesceEnabled", true,
-                "coalesceWindowMs", 5,
-                "coalesceMaxBatch", 12,
-                "coalesceMaxQueue", 96,
-                "maxConcurrentRequests", 4,
-                "timeout", "PT45S"));
+        LlamaCppProviderSettings settings = LlamaCppProviderSettings.from(Map.ofEntries(
+                Map.entry("gpuEnabled", true),
+                Map.entry("nGpuLayers", -1),
+                Map.entry("nThreads", 6),
+                Map.entry("nCtx", 8192),
+                Map.entry("nBatch", 256),
+                Map.entry("useMmap", false),
+                Map.entry("coalesceEnabled", true),
+                Map.entry("coalesceWindowMs", 5),
+                Map.entry("coalesceMaxBatch", 12),
+                Map.entry("coalesceMaxQueue", 96),
+                Map.entry("maxConcurrentRequests", 4),
+                Map.entry("timeout", "PT45S")));
 
         assertTrue(settings.gpuEnabled());
         assertEquals(-1, settings.gpuLayers());
