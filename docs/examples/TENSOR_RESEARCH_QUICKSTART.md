@@ -22,31 +22,31 @@ public final class TensorResearchQuickstart {
         try (ComputeRuntime runtime = ComputeRuntime.open("cpu", "cpu-default")) {
             var backend = runtime.backend();
             Tensor inputs = TensorFactory.of(new float[] {
-            1.0f, 2.0f,
-            3.0f, 4.0f
-        }, backend, 2, 2);
+                1.0f, 2.0f,
+                3.0f, 4.0f
+            }, backend, 2, 2);
+            Tensor weights = null;
+            Tensor predictions = null;
+            Tensor mean = null;
+            try {
+                weights = TensorFactory.of(new float[] {
+                    0.5f, 1.0f,
+                    1.5f, 2.0f
+                }, backend, 2, 2);
 
-        Tensor weights = TensorFactory.of(new float[] {
-            0.5f, 1.0f,
-            1.5f, 2.0f
-        }, backend, 2, 2);
+                // [2, 2] x [2, 2] -> [2, 2]
+                predictions = inputs.matmul(weights);
+                mean = predictions.mean();
 
-        Tensor predictions = null;
-        Tensor mean = null;
-        try {
-            // [2, 2] x [2, 2] -> [2, 2]
-            predictions = inputs.matmul(weights);
-            mean = predictions.mean();
-
-            System.out.println("shape = " + predictions.shape());
-            System.out.println("values = " + Arrays.toString(predictions.toFloatArray()));
-            System.out.println("mean = " + mean.item());
-        } finally {
-            if (mean != null) mean.release();
-            if (predictions != null) predictions.release();
-            weights.release();
-            inputs.release();
-        }
+                System.out.println("shape = " + predictions.shape());
+                System.out.println("values = " + Arrays.toString(predictions.toFloatArray()));
+                System.out.println("mean = " + mean.item());
+            } finally {
+                if (mean != null) mean.release();
+                if (predictions != null) predictions.release();
+                if (weights != null) weights.release();
+                inputs.release();
+            }
         }
     }
 }

@@ -27,6 +27,7 @@ class TensorOpsTest {
             Tensor result = TensorOps.cat(List.of(a, b), 0);
             try {
                 assertThat(result.shape().dims()).containsExactly(3, 2);
+                assertThat(result.backend()).isSameAs(backend);
                 assertThat(result.toFloatArray()).containsExactly(1, 2, 3, 4, 5, 6);
             } finally {
                 result.release();
@@ -45,6 +46,7 @@ class TensorOpsTest {
             Tensor result = TensorOps.cat(List.of(a, b), -1);
             try {
                 assertThat(result.shape().dims()).containsExactly(2, 4);
+                assertThat(result.backend()).isSameAs(backend);
                 assertThat(result.toFloatArray()).containsExactly(1, 2, 5, 6, 3, 4, 7, 8);
             } finally {
                 result.release();
@@ -82,6 +84,7 @@ class TensorOpsTest {
             Tensor result = TensorOps.einsum("ij,jk->ik", a, b);
             try {
                 assertThat(result.shape().dims()).containsExactly(2, 2);
+                assertThat(result.backend()).isSameAs(backend);
                 assertThat(result.toFloatArray()).containsExactly(19, 22, 43, 50);
             } finally {
                 result.release();
@@ -142,6 +145,35 @@ class TensorOpsTest {
             matrix.release();
             left.release();
             right.release();
+        }
+    }
+
+
+    @Test
+    void catRejectsOperandsFromDifferentBackendInstances() {
+        Tensor a = tensor(new float[] { 1, 2 }, 1, 2);
+        Tensor b = TensorFactory.of(new float[] { 3, 4 }, new CpuBackend(), 1, 2);
+        try {
+            assertThatThrownBy(() -> TensorOps.cat(List.of(a, b), 0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("compute backend mismatch");
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+    @Test
+    void einsumRejectsOperandsFromDifferentBackendInstances() {
+        Tensor a = tensor(new float[] { 1, 2 }, 2);
+        Tensor b = TensorFactory.of(new float[] { 3, 4 }, new CpuBackend(), 2);
+        try {
+            assertThatThrownBy(() -> TensorOps.einsum("i,i->", a, b))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("same compute backend instance");
+        } finally {
+            a.release();
+            b.release();
         }
     }
 
