@@ -84,6 +84,36 @@ class CpuBatchedAttentionTest {
     }
 
     @Test
+    void singleExpOnlineSoftmaxHandlesRepeatedRunningMaximumUpdates() {
+        CpuBackend backend = new CpuBackend();
+        float[] logits = {0f, 2f, 1f, 3f, -1f};
+        float[] values = {1f, 2f, 3f, 4f, 5f};
+        Tensor query = TensorFactory.of(new float[] {1f}, backend, 1, 1, 1, 1);
+        Tensor key = TensorFactory.of(logits, backend, 1, 1, logits.length, 1);
+        Tensor value = TensorFactory.of(values, backend, 1, 1, values.length, 1);
+        Tensor output = null;
+        try {
+            output = backend.attention(query, key, value);
+            double maximum = Double.NEGATIVE_INFINITY;
+            for (float logit : logits) maximum = Math.max(maximum, logit);
+            double denominator = 0d;
+            double weighted = 0d;
+            for (int i = 0; i < logits.length; i++) {
+                double weight = Math.exp(logits[i] - maximum);
+                denominator += weight;
+                weighted += weight * values[i];
+            }
+            assertArrayEquals(new float[] {(float) (weighted / denominator)},
+                    output.toFloatArray(), 1e-6f);
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+        }
+    }
+
+    @Test
     void onlineSoftmaxMatchesStableReferenceForLongerKeySequence() {
         CpuBackend backend = new CpuBackend();
         float[] qValues = {0.7f, -0.3f};
