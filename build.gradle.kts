@@ -70,6 +70,8 @@ subprojects {
         // Tensor tests load the CPU backend reflectively at runtime; that backend
         // uses the incubating Vector API even though tensor main sources do not.
         ":core:aljabr-tensor",
+        // NN tests exercise the CPU backend directly; it requires the incubating Vector API.
+        ":core:aljabr-nn",
         ":core:aljabr-gguf-core",
         ":core:aljabr-safetensor-core",
         // Model-common tests execute Whisper through the CPU backend, which uses Vector API.
