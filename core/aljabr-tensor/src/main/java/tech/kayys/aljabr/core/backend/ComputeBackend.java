@@ -113,6 +113,18 @@ public interface ComputeBackend {
     }
 
     // ── Shape manipulation ────────────────────────────────────────────
+    /**
+     * Concatenates tensors along an existing dimension.
+     *
+     * <p>The default is intentionally unsupported; a backend must provide a
+     * storage-aware implementation rather than forcing tensors through host
+     * arrays.</p>
+     */
+    default Tensor cat(List<Tensor> tensors, int axis) {
+        throw new UnsupportedOperationException(
+                "Tensor concatenation is not supported by backend " + getClass().getName());
+    }
+
     Tensor reshape(Tensor a, long... newShape);
 
     Tensor slice(Tensor a, long[] offsets, long[] sizes);
