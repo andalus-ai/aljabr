@@ -13,10 +13,15 @@ try (ComputeRuntime runtime = ComputeRuntime.open()) {
 }
 ```
 
-Select a provider explicitly by its stable provider id:
+Select a provider explicitly by its stable provider id and, when needed, a backend id:
 
 ```java
 try (ComputeRuntime runtime = ComputeRuntime.open("andalus/cpu")) {
+    Tensor input = Tensor.ones(runtime.backend(), 4);
+}
+
+// When a provider exposes multiple backends, choose the stable backend id:
+try (ComputeRuntime runtime = ComputeRuntime.open("andalus/cpu", "cpu-default")) {
     Tensor input = Tensor.ones(runtime.backend(), 4);
 }
 ```

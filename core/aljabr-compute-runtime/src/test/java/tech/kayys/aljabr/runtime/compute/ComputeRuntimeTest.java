@@ -20,6 +20,7 @@ class ComputeRuntimeTest {
         ComputeRuntime runtime = ComputeRuntime.open("andalus/cpu");
         try {
             assertEquals("andalus/cpu", runtime.providerId());
+            assertEquals("cpu-default", runtime.backendId());
             assertEquals("cpu:0", runtime.device().deviceId());
             assertEquals("tech.kayys.aljabr.backend.cpu.CpuBackend",
                     runtime.backend().getClass().getName());
@@ -36,7 +37,7 @@ class ComputeRuntimeTest {
     @Test
     void selectsTheOnlyBackendWhenNoBackendIdIsSpecified() {
         ComputeBackend backend = backendStub();
-        assertEquals(backend, ComputeRuntime.selectBackend(Map.of("provider-default", backend), null));
+        assertEquals(backend, ComputeRuntime.selectBackend(Map.of("provider-default", backend), null).backend());
     }
 
     @Test
@@ -49,7 +50,7 @@ class ComputeRuntimeTest {
                         Map.of("fast-kernel", first, "portable-kernel", second), null));
         assertTrue(failure.getMessage().contains("select one"));
         assertEquals(first, ComputeRuntime.selectBackend(
-                Map.of("fast-kernel", first, "portable-kernel", second), "fast-kernel"));
+                Map.of("fast-kernel", first, "portable-kernel", second), "fast-kernel").backend());
     }
 
     @Test
