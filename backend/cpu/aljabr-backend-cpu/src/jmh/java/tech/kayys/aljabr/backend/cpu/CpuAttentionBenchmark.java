@@ -28,7 +28,7 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
  */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.Throughput)
-@OutputTimeUnit(TimeUnit.OPERATIONS)
+@OutputTimeUnit(TimeUnit.SECONDS)
 @Warmup(iterations = 5, time = 1)
 @Measurement(iterations = 8, time = 1)
 @Fork(2)
