@@ -69,6 +69,37 @@ class ExplicitBackendModuleTest {
     }
 
     @Test
+    void explicitSequentialAndTransformerContainersPropagateBackendOwnership() {
+        CpuBackend backend = new CpuBackend();
+        Sequential sequential = new Sequential(backend, new Linear(backend, 8, 8));
+        TransformerEncoderLayer encoder = new TransformerEncoderLayer(backend, 8, 2, 16, 0.1f);
+        TransformerDecoderLayer decoder = new TransformerDecoderLayer(backend, 8, 2, 16, 0.1f);
+        TransformerEncoder encoderModel = TransformerEncoder.builder(backend).nLayers(2).dModel(8).build();
+        try {
+            assertEquals(backend, sequential.computeBackend());
+            assertEquals(backend, encoder.computeBackend());
+            assertEquals(backend, decoder.computeBackend());
+            assertEquals(backend, encoderModel.computeBackend());
+            for (NNModule module : List.of(sequential, encoder, decoder)) {
+                module.stateDict().values().forEach(tensor -> assertEquals(backend, tensor.backend()));
+            }
+        } finally {
+            sequential.close();
+            encoder.close();
+            decoder.close();
+            encoderModel.close();
+        }
+    }
+
+    @Test
+    void explicitContainerRejectsSubmoduleWithDifferentBackend() {
+        CpuBackend owner = new CpuBackend();
+        CpuBackend other = new CpuBackend();
+        assertThrows(IllegalArgumentException.class,
+                () -> new Sequential(owner, new Linear(other, 4, 4)));
+    }
+
+    @Test
     void loraParametersShareTheBaseLinearBackend() {
         CpuBackend backend = new CpuBackend();
         Linear base = new Linear(backend, 8, 4);

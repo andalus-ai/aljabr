@@ -1,25 +1,44 @@
 package tech.kayys.aljabr.core.nn;
 
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
+
 /**
- * 
- * Core class for kayys module.
- *
- * <p>Key functionality:
- * <ul>
- * <li>Provides core class operations
- * </ul>
- *
- * @author bhangun
- * @since 0.1.0
+ * Transformer encoder API placeholder.
  */
 public class TransformerEncoder extends NNModule {
+
+    /** @deprecated Use {@link #builder(ComputeBackend)}. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static Builder builder() {
-        return new Builder();
+        return new Builder(null);
     }
-    
+
+    public static Builder builder(ComputeBackend backend) {
+        return new Builder(backend);
+    }
+
+    /** @deprecated Use {@link #TransformerEncoder(ComputeBackend)}. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
+    public TransformerEncoder() {
+        super();
+    }
+
+    public TransformerEncoder(ComputeBackend backend) {
+        super(backend);
+    }
+
     public static class Builder {
-        public TransformerEncoder build() { return new TransformerEncoder(); }
+        private final ComputeBackend backend;
+
+        private Builder(ComputeBackend backend) {
+            this.backend = backend;
+        }
+
+        public TransformerEncoder build() {
+            return new TransformerEncoder(backend);
+        }
+
         public Builder nLayers(int n) { return this; }
         public Builder dModel(int d) { return this; }
         public Builder numHeads(int h) { return this; }
@@ -29,9 +48,10 @@ public class TransformerEncoder extends NNModule {
         public Builder nHeads(int d) { return this; }
         public Builder maxSeqLen(int d) { return this; }
     }
-    
+
     @Override
     public Tensor forward(Tensor input) {
+        validateInputBackend(input);
         return input;
     }
 }
