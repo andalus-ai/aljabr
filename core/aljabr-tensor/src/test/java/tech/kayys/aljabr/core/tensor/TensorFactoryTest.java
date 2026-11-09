@@ -205,13 +205,17 @@ class TensorFactoryTest {
     }
 
     @Test
-    void automaticBackendSelectionUsesCpuWhenMetalIsUnavailableAndDoesNotRequireHat() {
-        Tensor tensor = TensorFactory.zeros(1);
-        try {
-            assertEquals("tech.kayys.aljabr.backend.cpu.CpuBackend", tensor.backend().getClass().getName());
-        } finally {
-            tensor.release();
-        }
+    void deprecatedConvenienceFactoryRequiresAnExplicitBackend() {
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class, () -> TensorFactory.zeros(1));
+        assertTrue(failure.getMessage().contains("pass it to the TensorFactory overload"));
+    }
+
+    @Test
+    void deprecatedConvenienceFactoryStillValidatesShapeBeforeBackendRequirement() {
+        assertThrows(IllegalArgumentException.class, () -> TensorFactory.zeros(Long.MAX_VALUE));
+        assertThrows(IllegalArgumentException.class, () -> TensorFactory.ones(Long.MAX_VALUE));
+        assertThrows(IllegalArgumentException.class, () -> TensorFactory.randn(Long.MAX_VALUE));
     }
 
     private static ComputeBackend cpuBackend() {
