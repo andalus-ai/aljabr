@@ -11,37 +11,59 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Pure-Java CPU backend for the Aljabr compute engine.
  *
- * <p>
- * All pointwise operations delegate to {@link CpuOps} which uses the JDK
- * Incubator Vector API ({@code jdk.incubator.vector}) for SIMD acceleration.
- * On ARM Apple-Silicon this maps to 128-bit NEON; on x86-64 with AVX-512 to
- * 512-bit lanes.
- *
- * <p>
- * An optional {@link OffHeapBufferPool} can be supplied to recycle
- * off-heap memory across inference steps and reduce GC pressure.
+ * <p>All pointwise operations delegate to {@link CpuOps}, which uses the JDK
+ * Incubator Vector API where available. An optional {@link OffHeapBufferPool}
+ * recycles off-heap memory across execution steps.</p>
  */
 public final class CpuBackend implements ComputeBackend {
 
+    /** Defines whether this backend is responsible for closing an injected pool. */
+    public enum PoolOwnership { BORROWED, OWNED }
+
     private final OffHeapBufferPool pool;
+    private final PoolOwnership poolOwnership;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     public CpuBackend() {
-        this(null);
+        this(null, PoolOwnership.BORROWED);
     }
 
+    /** Injects a shared pool; the caller retains responsibility for closing it. */
     public CpuBackend(OffHeapBufferPool pool) {
+        this(pool, PoolOwnership.BORROWED);
+    }
+
+    /** Injects a pool with an explicit lifecycle ownership policy. */
+    public CpuBackend(OffHeapBufferPool pool, PoolOwnership poolOwnership) {
         this.pool = pool;
+        this.poolOwnership = Objects.requireNonNull(poolOwnership, "poolOwnership");
+        if (pool == null && poolOwnership == PoolOwnership.OWNED) {
+            throw new IllegalArgumentException("An owned pool must not be null");
+        }
+    }
+
+    @Override
+    public void close() {
+        if (closed.compareAndSet(false, true)
+                && pool != null && poolOwnership == PoolOwnership.OWNED) {
+            pool.close();
+        }
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     @Override
     public CpuBuffer allocate(long byteSize) {
+        if (closed.get()) {
+            throw new IllegalStateException("CPU backend is closed");
+        }
         if (pool != null) {
             return new CpuBuffer(pool.acquire(byteSize), pool.arena(), pool);
         }
@@ -59,7 +81,6 @@ public final class CpuBackend implements ComputeBackend {
     private DefaultTensor out(Shape shape, CpuBuffer buf) {
         return new DefaultTensor(shape, DType.F32, DeviceType.CPU, buf, this);
     }
-
     // ── Arithmetic ────────────────────────────────────────────────────────────
 
     @Override

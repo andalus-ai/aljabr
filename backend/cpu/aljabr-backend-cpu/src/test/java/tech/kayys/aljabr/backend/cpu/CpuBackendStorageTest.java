@@ -223,4 +223,41 @@ class CpuBackendStorageTest {
         }
         assertEquals(0, integerStorage.references());
     }
+    @Test
+    void ownedPoolClosesWithBackendButOutstandingTensorLeaseRemainsValid() {
+        tech.kayys.aljabr.core.memory.OffHeapBufferPool pool =
+                new tech.kayys.aljabr.core.memory.OffHeapBufferPool();
+        CpuBackend owned = new CpuBackend(pool, CpuBackend.PoolOwnership.OWNED);
+        CpuBuffer lease = owned.allocate(16);
+
+        owned.close();
+        owned.close();
+
+        assertTrue(pool.isClosed());
+        assertTrue(lease.segment().scope().isAlive());
+        assertThrows(IllegalStateException.class, () -> owned.allocate(16));
+
+        lease.release();
+        assertFalse(pool.arena().scope().isAlive());
+    }
+
+    @Test
+    void borrowedPoolIsNotClosedByBackend() {
+        tech.kayys.aljabr.core.memory.OffHeapBufferPool pool =
+                new tech.kayys.aljabr.core.memory.OffHeapBufferPool();
+        CpuBackend borrowed = new CpuBackend(pool);
+
+        CpuBuffer lease = borrowed.allocate(16);
+        borrowed.close();
+
+        assertFalse(pool.isClosed());
+        assertTrue(lease.segment().scope().isAlive());
+        assertThrows(IllegalStateException.class, () -> borrowed.allocate(16));
+
+        lease.release();
+        MemorySegment next = pool.acquire(16);
+        pool.release(next);
+        pool.close();
+    }
+
 }
