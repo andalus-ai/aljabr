@@ -67,6 +67,25 @@ class CpuBatchedAttentionTest {
     }
 
     @Test
+    void causalAttentionAlignsShortQueryToEndOfCachedKeySequence() {
+        CpuBackend backend = new CpuBackend();
+        Tensor query = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor key = TensorFactory.of(new float[4], backend, 1, 1, 4, 1);
+        Tensor value = TensorFactory.of(new float[] {1f, 3f, 5f, 7f}, backend, 1, 1, 4, 1);
+        Tensor output = null;
+        try {
+            output = backend.attention(query, key, value, null, true);
+            // Bottom-right causal alignment: q0 sees keys 0..2; q1 sees keys 0..3.
+            assertArrayEquals(new float[] {3f, 4f}, output.toFloatArray(), 1e-6f);
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+        }
+    }
+
+    @Test
     void returnsZeroWhenEveryKeyIsMasked() {
         CpuBackend backend = new CpuBackend();
         Tensor query = TensorFactory.of(new float[1], backend, 1, 1, 1, 1);

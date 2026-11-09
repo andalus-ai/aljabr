@@ -979,7 +979,8 @@ public final class CpuBackend implements ComputeBackend {
                             throw new IllegalArgumentException(
                                     "attention mask values must not be NaN or positive infinity");
                         }
-                        if ((causal && ki > qi) || additive == Float.NEGATIVE_INFINITY) {
+                        long causalLimit = keyLength - queryLength + qi;
+                        if ((causal && ki > causalLimit) || additive == Float.NEGATIVE_INFINITY) {
                             continue;
                         }
 
