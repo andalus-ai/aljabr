@@ -47,6 +47,9 @@ public final class TensorOps {
             if (tensors[i].dtype() != DType.F32 || tensors[i].device() != DeviceType.CPU) {
                 throw new UnsupportedOperationException("einsum currently supports F32 CPU tensors only");
             }
+            if (i > 0 && tensors[i].backend() != tensors[0].backend()) {
+                throw new IllegalArgumentException("all einsum operands must use the same compute backend instance");
+            }
         }
 
         String normalized = equation.replaceAll("\\s+", "");
@@ -160,7 +163,7 @@ public final class TensorOps {
             }
             output[Math.toIntExact(outputOffset)] += product;
         }
-        return Tensor.of(output, outputDims);
+        return TensorFactory.of(output, tensors[0].backend(), outputDims);
     }
 
     private static int labelSlot(char label) {
@@ -215,6 +218,9 @@ public final class TensorOps {
             if (tensor.dtype() != first.dtype() || tensor.device() != first.device()) {
                 throw new IllegalArgumentException("dtype/device mismatch at tensor " + i);
             }
+            if (tensor.backend() != first.backend()) {
+                throw new IllegalArgumentException("compute backend mismatch at tensor " + i);
+            }
             for (int d = 0; d < rank; d++) {
                 if (d != axis && tensor.shape().dim(d) != first.shape().dim(d)) {
                     throw new IllegalArgumentException("shape mismatch at tensor " + i + " dimension " + d
@@ -263,6 +269,6 @@ public final class TensorOps {
                 destination += blockLength;
             }
         }
-        return Tensor.of(output, outputDims);
+        return TensorFactory.of(output, first.backend(), outputDims);
     }
 }
