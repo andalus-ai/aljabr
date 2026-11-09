@@ -25,6 +25,8 @@ sourceSets {
             include("tech/kayys/aljabr/backend/metal/MetalComputeProvider.java")
             include("tech/kayys/aljabr/backend/metal/MetalRuntimePolicy.java")
             include("tech/kayys/aljabr/backend/metal/MetalFallbackPolicy.java")
+            include("tech/kayys/aljabr/backend/metal/MetalExecutionEvent.java")
+            include("tech/kayys/aljabr/backend/metal/MetalExecutionObserver.java")
         }
         resources {
             // src/main/resources is already part of Gradle's default source set.
