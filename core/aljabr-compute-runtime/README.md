@@ -31,3 +31,8 @@ Keep it open while tensors using its backend are in use; close it when that
 work is complete. Tensor storage remains governed by the tensor factory and
 backend implementation. This initial runtime exposes one selected backend;
 multi-device scheduling and per-operation dispatch are separate concerns.
+
+
+## Backend ownership migration
+
+Backend-less `Tensor` and `TensorFactory` convenience methods are deprecated for removal in the next breaking API release. They currently use a process-wide compatibility selector and cannot express provider/session ownership. New code should open a `ComputeRuntime`, pass `runtime.backend()` to the explicit-backend tensor factories, and keep the runtime open for the full lifetime of tensors using that backend. This staged deprecation preserves source compatibility while internal call sites and examples migrate; the legacy selector is not removed in this change.

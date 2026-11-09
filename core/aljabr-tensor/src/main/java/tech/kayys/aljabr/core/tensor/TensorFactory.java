@@ -17,6 +17,8 @@ public final class TensorFactory {
     private TensorFactory() {
     }
 
+    /** @deprecated Use {@link #randn(ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor randn(long... shape) {
         long n = numel(shape);
         float[] data = new float[arrayLength(n)];
@@ -36,6 +38,8 @@ public final class TensorFactory {
         return of(data, backend, shape);
     }
 
+    /** @deprecated Use {@link #zeros(ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor zeros(long... shape) {
         long n = numel(shape);
         return of(new float[arrayLength(n)], shape);
@@ -47,6 +51,8 @@ public final class TensorFactory {
         return of(new float[arrayLength(n)], backend, shape);
     }
 
+    /** @deprecated Use {@link #ones(ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor ones(long... shape) {
         long n = numel(shape);
         float[] data = new float[arrayLength(n)];
@@ -66,6 +72,8 @@ public final class TensorFactory {
         return of(data, backend, shape);
     }
 
+    /** @deprecated Use {@link #full(float, ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor full(float value, long... shape) {
         long n = numel(shape);
         float[] data = new float[arrayLength(n)];
@@ -85,6 +93,8 @@ public final class TensorFactory {
         return of(data, backend, shape);
     }
 
+    /** @deprecated Use {@link #of(float[], ComputeBackend, long...)} with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor of(float[] data, long... shape) {
         return of(data, findDefaultBackend(), shape);
     }
@@ -116,6 +126,8 @@ public final class TensorFactory {
      * <p>The source segment remains owned by the caller. The returned tensor
      * owns its allocated storage.</p>
      */
+    /** @deprecated Use the explicit-backend overload with an owned runtime backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public static Tensor ofQuantized(java.lang.foreign.MemorySegment data, DType dtype, long... shape) {
         return ofQuantized(data, findDefaultBackend(), dtype, shape);
     }
