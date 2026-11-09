@@ -1,10 +1,12 @@
 package tech.kayys.aljabr.core.nn;
 
+import java.util.Objects;
+
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
 
 /**
  * Embedding layer — a lookup table for fixed-size vectors.
- * @author bhangun
  */
 public class Embedding extends NNModule {
 
@@ -12,43 +14,47 @@ public class Embedding extends NNModule {
     private final long embeddingDim;
     private final long paddingIdx;
 
+    /** @deprecated Use the constructor that accepts an explicit compute backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public Embedding(long numEmbeddings, long embeddingDim, long paddingIdx) {
+        this(null, numEmbeddings, embeddingDim, paddingIdx);
+    }
+
+    public Embedding(ComputeBackend backend, long numEmbeddings, long embeddingDim, long paddingIdx) {
+        super(backend);
         this.numEmbeddings = numEmbeddings;
         this.embeddingDim = embeddingDim;
         this.paddingIdx = paddingIdx;
-
-        Tensor weight = Tensor.randn(numEmbeddings, embeddingDim);
-        registerParameter("weight", weight);
+        registerParameter("weight", randomNormal(numEmbeddings, embeddingDim));
     }
 
     public Embedding(Tensor weight) {
+        super(Objects.requireNonNull(weight, "weight must not be null").backend());
         this.numEmbeddings = weight.shape().dim(0);
         this.embeddingDim = weight.shape().dim(1);
         this.paddingIdx = -1;
         registerParameter("weight", weight);
     }
 
+    /** @deprecated Use {@link #Embedding(ComputeBackend, long, long)}. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public Embedding(long numEmbeddings, long embeddingDim) {
-        this(numEmbeddings, embeddingDim, -1);
+        this(null, numEmbeddings, embeddingDim, -1);
+    }
+
+    public Embedding(ComputeBackend backend, long numEmbeddings, long embeddingDim) {
+        this(backend, numEmbeddings, embeddingDim, -1);
     }
 
     @Override
     public Tensor forward(Tensor input) {
-        Tensor weight = parameters.get("weight");
-        return input.embedding(weight, paddingIdx);
+        validateInputBackend(input);
+        return input.embedding(parameters.get("weight"), paddingIdx);
     }
 
-    public long numEmbeddings() {
-        return numEmbeddings;
-    }
-
-    public long embeddingDim() {
-        return embeddingDim;
-    }
-
-    public long paddingIdx() {
-        return paddingIdx;
-    }
+    public long numEmbeddings() { return numEmbeddings; }
+    public long embeddingDim() { return embeddingDim; }
+    public long paddingIdx() { return paddingIdx; }
 
     @Override
     public String toString() {

@@ -1,17 +1,10 @@
 package tech.kayys.aljabr.core.nn;
 
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
+
 /**
- * 
- * Core class for kayys module.
- *
- * <p>Key functionality:
- * <ul>
- * <li>Provides core class operations
- * </ul>
- *
- * @author bhangun
- * @since 0.1.0
+ * One-dimensional convolution layer.
  */
 public class Conv1d extends NNModule {
     private final long inChannels;
@@ -21,7 +14,15 @@ public class Conv1d extends NNModule {
     private final int padding;
     private final boolean hasBias;
 
+    /** @deprecated Use the constructor that accepts an explicit compute backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public Conv1d(long inChannels, long outChannels, long kernelSize, int stride, int padding) {
+        this(null, inChannels, outChannels, kernelSize, stride, padding);
+    }
+
+    public Conv1d(ComputeBackend backend, long inChannels, long outChannels,
+            long kernelSize, int stride, int padding) {
+        super(backend);
         this.inChannels = inChannels;
         this.outChannels = outChannels;
         this.kernelSize = kernelSize;
@@ -29,23 +30,18 @@ public class Conv1d extends NNModule {
         this.padding = padding;
         this.hasBias = true;
 
-        Tensor weight = Tensor.randn(outChannels, inChannels, kernelSize);
-        registerParameter("weight", weight);
-
-        Tensor biasParam = Tensor.zeros(outChannels);
-        registerParameter("bias", biasParam);
+        registerParameter("weight", randomNormal(outChannels, inChannels, kernelSize));
+        registerParameter("bias", zeros(outChannels));
     }
 
     @Override
     public Tensor forward(Tensor input) {
-        // Placeholder implementation for 1D convolution
-        Tensor weight = parameters.get("weight");
-        Tensor bias = parameters.get("bias");
-        // In real implementation this would call input.conv1d(weight, bias, stride, padding)
-        // For now, return a tensor with the expected output shape
+        validateInputBackend(input);
+        // Placeholder implementation for 1D convolution. Keep output allocation
+        // on the same backend as the module parameters.
         long batch = input.shape().dim(0);
         long length = input.shape().dim(2);
         long outLength = (length + 2 * padding - kernelSize) / stride + 1;
-        return Tensor.zeros(batch, outChannels, outLength);
+        return zeros(batch, outChannels, outLength);
     }
 }

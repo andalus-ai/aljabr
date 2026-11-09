@@ -1,51 +1,48 @@
 package tech.kayys.aljabr.core.nn;
 
+import java.util.Objects;
+
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
-import tech.kayys.aljabr.core.tensor.TensorFactory;
+
 /**
- * 
- * Core class for kayys module.
- *
- * <p>Key functionality:
- * <ul>
- * <li>Provides core class operations
- * </ul>
- *
- * @author bhangun
- * @since 0.1.0
+ * Root Mean Square normalization layer.
  */
 public class RMSNorm extends NNModule {
     private final int dim;
     private final float eps;
 
+    /** @deprecated Use the constructor that accepts an explicit compute backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public RMSNorm(int dim, float eps) {
-        this.dim = dim;
-        this.eps = eps;
-
-        // Initialize weight to ones
-        Tensor weight = TensorFactory.ones(dim);
-        registerParameter("weight", weight);
+        this(null, dim, eps);
     }
 
-    // Constructor used when loading pre-trained weights
+    public RMSNorm(ComputeBackend backend, int dim, float eps) {
+        super(backend);
+        this.dim = dim;
+        this.eps = eps;
+        registerParameter("weight", ones(dim));
+    }
+
     public RMSNorm(Tensor weight, float eps) {
-        this.dim = (int) weight.shape().dim(0);
+        super(Objects.requireNonNull(weight, "weight must not be null").backend());
+        this.dim = Math.toIntExact(weight.shape().dim(0));
         this.eps = eps;
         registerParameter("weight", weight);
     }
 
     @Override
     public Tensor forward(Tensor input) {
-        // RMSNorm(x) = (x / RMS(x)) * weight
-        // RMS(x) = sqrt(mean(x^2) + eps)
+        validateInputBackend(input);
         Tensor weight = parameters.get("weight");
-
-        // square -> mean over last dim -> add eps -> sqrt
         Tensor x2 = input.mul(input);
-        Tensor mean_x2 = x2.mean(-1, true);
-        Tensor rms = mean_x2.add(eps).pow(0.5f);
-
+        Tensor meanX2 = x2.mean(-1, true);
+        Tensor rms = meanX2.add(eps).pow(0.5f);
         Tensor normalized = input.div(rms);
         return normalized.mul(weight);
     }
+
+    public int dim() { return dim; }
+    public float eps() { return eps; }
 }
