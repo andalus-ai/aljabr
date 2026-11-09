@@ -19,6 +19,7 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
 public abstract class NNModule implements AutoCloseable {
 
     protected final Map<String, Tensor> parameters = new LinkedHashMap<>();
+    private final Map<String, Parameter> parameterObjects = new LinkedHashMap<>();
     protected final Map<String, Tensor> buffers = new LinkedHashMap<>();
     protected final Map<String, NNModule> submodules = new LinkedHashMap<>();
     protected boolean training = true;
@@ -72,6 +73,12 @@ public abstract class NNModule implements AutoCloseable {
         Objects.requireNonNull(param, "Parameter must not be null");
         validateOwnedTensor(name, param);
         parameters.put(name, param);
+        Parameter registered = parameterObjects.get(name);
+        if (registered == null) {
+            parameterObjects.put(name, new Parameter(name, param));
+        } else {
+            registered.replaceTensor(param);
+        }
     }
 
     public Map<String, Tensor> parameters() {
@@ -145,7 +152,11 @@ public abstract class NNModule implements AutoCloseable {
     }
 
     public NNModule to(DeviceType device) {
-        parameters.replaceAll((name, param) -> param.to(device));
+        parameters.replaceAll((name, param) -> {
+            Tensor moved = param.to(device);
+            parameterObjects.get(name).replaceTensor(moved);
+            return moved;
+        });
         buffers.replaceAll((name, buf) -> buf.to(device));
         submodules.values().forEach(m -> m.to(device));
         return this;
@@ -171,6 +182,46 @@ public abstract class NNModule implements AutoCloseable {
         submodules.forEach((name, module) -> module.namedParameters()
                 .forEach((pName, param) -> result.put(name + "." + pName, param)));
         return Collections.unmodifiableMap(result);
+    }
+
+    /**
+     * Returns registered parameter handles, including child modules, using
+     * fully qualified names. The returned map is an immutable snapshot.
+     *
+     * <p>{@link #namedParameters()} remains available as the tensor-oriented
+     * compatibility API.</p>
+     */
+    public Map<String, Parameter> namedParameterObjects() {
+        Map<String, Parameter> result = new LinkedHashMap<>(parameterObjects);
+        submodules.forEach((name, module) -> module.namedParameterObjects()
+                .forEach((parameterName, parameter) ->
+                        result.put(name + "." + parameterName, parameter)));
+        return Collections.unmodifiableMap(result);
+    }
+
+    /** Returns unique parameter handles in module traversal order. */
+    public List<Parameter> parameterObjects() {
+        java.util.Set<Parameter> seen =
+                Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        List<Parameter> result = new ArrayList<>();
+        for (Parameter parameter : parameterObjects.values()) {
+            if (seen.add(parameter)) {
+                result.add(parameter);
+            }
+        }
+        for (NNModule module : submodules.values()) {
+            for (Parameter parameter : module.parameterObjects()) {
+                if (seen.add(parameter)) {
+                    result.add(parameter);
+                }
+            }
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    /** Returns parameters whose underlying tensors currently require gradients. */
+    public List<Parameter> trainableParameterObjects() {
+        return parameterObjects().stream().filter(Parameter::isTrainable).toList();
     }
 
     public Map<String, NNModule> children() {
