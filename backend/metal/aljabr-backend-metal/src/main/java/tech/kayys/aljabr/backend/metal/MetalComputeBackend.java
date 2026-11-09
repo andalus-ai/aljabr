@@ -264,9 +264,15 @@ public class MetalComputeBackend implements ComputeBackend {
             Function<HostAccessibleStorage, Tensor> resultFactory) {
         AtomicBoolean nativeDispatchSucceeded = new AtomicBoolean();
         Tensor result = dispatchOutput(output, () -> {
-            int status = dispatch.getAsInt();
-            nativeDispatchSucceeded.set(status == 0);
-            return status;
+            try {
+                int status = dispatch.getAsInt();
+                nativeDispatchSucceeded.set(status == 0);
+                return status;
+            } catch (RuntimeException | Error dispatchFailure) {
+                reportExecution(new MetalExecutionEvent(operation, MetalExecutionEvent.ExecutionPath.REJECTED,
+                        "Native Metal dispatch threw " + dispatchFailure.getClass().getSimpleName()));
+                throw dispatchFailure;
+            }
         }, fallback, resultFactory);
         if (nativeDispatchSucceeded.get()) {
             reportExecution(new MetalExecutionEvent(operation, MetalExecutionEvent.ExecutionPath.METAL_NATIVE,
