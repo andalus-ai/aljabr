@@ -91,17 +91,7 @@ public class MetalComputeBackend implements ComputeBackend {
      * transfer operations are implemented.</p>
      */
     static MemorySegment metalSegment(Tensor tensor) {
-        if (!(tensor instanceof DefaultTensor defaultTensor)) {
-            throw new IllegalArgumentException("Metal FFM dispatch only supports DefaultTensor storage");
-        }
-        try {
-            return defaultTensor.hostStorage().segment();
-        } catch (UnsupportedOperationException failure) {
-            throw new UnsupportedOperationException(
-                    "Metal FFM dispatch requires host-accessible storage; opaque device-local storage "
-                            + "requires a Metal-native binding path",
-                    failure);
-        }
+        return MetalTensorStorageAccess.segment(tensor);
     }
 
     private long byteSize(DType dtype) {
@@ -119,7 +109,7 @@ public class MetalComputeBackend implements ComputeBackend {
      * represented as device-local Metal memory; a native device allocator
      * requires a separate TensorStorage implementation and binding contract.
      */
-    private HostAccessibleStorage allocate(long sizeBytes) {
+    private HostAccessibleStorage allocateHostStorage(long sizeBytes) {
         return new CpuBuffer(sizeBytes);
     }
 
@@ -193,7 +183,7 @@ public class MetalComputeBackend implements ComputeBackend {
         Shape shapeC = new Shape(M, N);
         long sizeBytes = shapeC.numel() * byteSize(a.dtype());
 
-        HostAccessibleStorage bufferC = allocate(sizeBytes);
+        HostAccessibleStorage bufferC = allocateHostStorage(sizeBytes);
         int status = metalBinding.matmul(bufferC.segment(), segment(a), segment(b), M, K, N, 1.0f,
                 0.0f);
         if (status != 0) {
