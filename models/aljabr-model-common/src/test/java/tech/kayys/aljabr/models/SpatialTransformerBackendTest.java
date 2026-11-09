@@ -71,6 +71,26 @@ class SpatialTransformerBackendTest {
     }
 
     @Test
+    void projectsContextFromConfiguredDimensionIntoAttentionInnerDimension() {
+        CpuBackend backend = new CpuBackend();
+        try (SpatialTransformer transformer = new SpatialTransformer(backend, 32, 2, 8, 12)) {
+            Tensor input = TensorFactory.of(new float[32], backend, 1, 32, 1, 1);
+            Tensor context = TensorFactory.of(new float[36], backend, 1, 3, 12);
+            Tensor output = null;
+            try {
+                assertThat(transformer.children()).containsKey("context_projection");
+                output = transformer.forward(input, context);
+                assertThat(output.shape().dims()).containsExactly(1L, 32L, 1L, 1L);
+                assertThat(output.backend()).isSameAs(backend);
+            } finally {
+                if (output != null) output.release();
+                context.release();
+                input.release();
+            }
+        }
+    }
+
+    @Test
     void rejectsInvalidArchitectureDimensions() {
         CpuBackend backend = new CpuBackend();
         assertThatThrownBy(() -> new SpatialTransformer(backend, 30, 2, 8, 12))
