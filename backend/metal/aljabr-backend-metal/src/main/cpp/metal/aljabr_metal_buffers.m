@@ -1,9 +1,9 @@
 /**
  * aljabr_metal_buffers.m — shared Metal buffer helpers.
  *
- * Buffer cache uses CFMutableDictionaryRef with NULL key callbacks so raw
- * void* pointers are stored as opaque identity keys — no ObjC messaging on
- * the key, no ARC bridge-cast UB.
+ * Model-weight buffers use a CFMutableDictionaryRef cache. Ordinary tensor
+ * pointer wrappers are scoped to individual synchronous dispatches so cached
+ * Metal objects cannot outlive their Java FFM arena-backed storage.
  */
 
 #import "aljabr_metal_buffers.h"
@@ -25,21 +25,14 @@ static size_t g_swiglu_combined_scratch_capacity = 0;
 @implementation AljabrCachedBuffer
 @end
 
-/* CFDictionary with NULL key callbacks: keys compared by pointer identity,
-   no retain/release on keys.  Values use kCFTypeDictionaryValueCallBacks so
-   the MTLBuffer objects are retained properly. */
-static CFMutableDictionaryRef g_ptr_buffer_cache = NULL;
+/* Ordinary tensor pointers are dispatch-scoped. Model weights use a separate
+   cache because their backing storage has an explicit model lifetime. */
 static CFMutableDictionaryRef g_weight_cache = NULL;
 static dispatch_once_t g_cache_once;
 static os_unfair_lock g_cache_lock = OS_UNFAIR_LOCK_INIT;
 
 static void _ensure_cache(void) {
   dispatch_once(&g_cache_once, ^{
-    /* NULL key callbacks = pointer-identity keys, no memory management */
-    g_ptr_buffer_cache = CFDictionaryCreateMutable(
-        kCFAllocatorDefault, 0,
-        NULL,                          /* key callbacks: NULL = identity */
-        &kCFTypeDictionaryValueCallBacks); /* value callbacks: retain/release */
     g_weight_cache = CFDictionaryCreateMutable(
         kCFAllocatorDefault, 0,
         NULL,
@@ -48,42 +41,28 @@ static void _ensure_cache(void) {
 }
 
 id<MTLBuffer> aljabr_metal_wrap_ptr(void *ptr, size_t bytes) {
-  if (ptr == NULL || bytes == 0)
+  if (ptr == NULL || bytes == 0 || g_device == nil)
     return nil;
-  if (aljabr_metal_env_truthy("ALJABR_METAL_DISABLE_BUFFER_CACHE")) {
-    return [g_device newBufferWithBytesNoCopy:ptr
-                                       length:bytes
-                                      options:MTLResourceStorageModeShared
-                                  deallocator:nil];
-  }
-  _ensure_cache();
-  os_unfair_lock_lock(&g_cache_lock);
-  id<MTLBuffer> cached = (__bridge id<MTLBuffer>)CFDictionaryGetValue(g_ptr_buffer_cache, ptr);
-  if (cached != nil && cached.length >= bytes) {
-    os_unfair_lock_unlock(&g_cache_lock);
-    return cached;
-  }
-  os_unfair_lock_unlock(&g_cache_lock);
 
-  /* Allocate outside the lock — newBufferWithBytesNoCopy is thread-safe */
+  /*
+   * Tensor storage is owned by Java FFM arenas. A process-wide cache keyed by
+   * raw pointers can outlive the arena and leave an MTLBuffer referencing
+   * released memory (or a later allocation reusing the same address).
+   *
+   * Current Metal entry points submit and wait for their command buffers before
+   * returning, so this per-dispatch wrapper remains valid for the complete GPU
+   * use interval. Keep the model/weight cache separate: those buffers have an
+   * explicit model lifetime and are not ordinary tensor storage.
+   */
   id<MTLBuffer> wrapped = [g_device newBufferWithBytesNoCopy:ptr
                                                       length:bytes
                                                      options:MTLResourceStorageModeShared
                                                  deallocator:nil];
   if (wrapped == nil) {
-    /* If pointer or length is not page-aligned, fall back to copy buffer */
+    /* No-copy Metal buffers require page-aligned pointer and length. */
     wrapped = [g_device newBufferWithBytes:ptr
                                     length:bytes
                                    options:MTLResourceStorageModeShared];
-  }
-  if (wrapped != nil) {
-    os_unfair_lock_lock(&g_cache_lock);
-    /* Check again in case another thread raced us */
-    id<MTLBuffer> existing = (__bridge id<MTLBuffer>)CFDictionaryGetValue(g_ptr_buffer_cache, ptr);
-    if (existing == nil || existing.length < bytes) {
-      CFDictionarySetValue(g_ptr_buffer_cache, ptr, (__bridge CFTypeRef)wrapped);
-    }
-    os_unfair_lock_unlock(&g_cache_lock);
   }
   return wrapped;
 }
