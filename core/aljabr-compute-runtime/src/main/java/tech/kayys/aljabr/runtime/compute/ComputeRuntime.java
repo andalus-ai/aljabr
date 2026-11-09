@@ -32,6 +32,7 @@ public final class ComputeRuntime implements AutoCloseable {
     private final List<AljabrProvider> ownedProviders;
     private final ProviderSession session;
     private final ComputeBackend backend;
+    private final String backendId;
     private final DeviceDescriptor device;
     private volatile boolean closed;
 
@@ -39,10 +40,12 @@ public final class ComputeRuntime implements AutoCloseable {
             List<AljabrProvider> ownedProviders,
             ProviderSession session,
             ComputeBackend backend,
+            String backendId,
             DeviceDescriptor device) {
         this.ownedProviders = List.copyOf(ownedProviders);
         this.session = session;
         this.backend = backend;
+        this.backendId = backendId;
         this.device = device;
     }
 
@@ -152,8 +155,9 @@ public final class ComputeRuntime implements AutoCloseable {
                 try {
                     openedSession = candidate.provider().openSession(candidate.device());
                     Map<String, ComputeBackend> backends = openedSession.computeBackends();
-                    ComputeBackend backend = selectBackend(backends, requestedBackend);
-                    return new ComputeRuntime(owned, openedSession, backend, candidate.device());
+                    BackendSelection selected = selectBackend(backends, requestedBackend);
+                    return new ComputeRuntime(owned, openedSession, selected.backend(),
+                            selected.backendId(), candidate.device());
                 } catch (ProviderException | RuntimeException | LinkageError failure) {
                     if (openedSession != null) {
                         try {
@@ -193,6 +197,12 @@ public final class ComputeRuntime implements AutoCloseable {
         return device.providerId();
     }
 
+    /** Stable provider-defined identifier of the selected compute backend. */
+    public String backendId() {
+        ensureOpen();
+        return backendId;
+    }
+
     @Override
     public synchronized void close() {
         if (closed) {
@@ -221,7 +231,7 @@ public final class ComputeRuntime implements AutoCloseable {
         }
     }
 
-    static ComputeBackend selectBackend(Map<String, ComputeBackend> backends, String requestedBackend) {
+    static BackendSelection selectBackend(Map<String, ComputeBackend> backends, String requestedBackend) {
         Objects.requireNonNull(backends, "backends");
         if (backends.isEmpty()) {
             throw new IllegalStateException("Provider session exposes no compute backends");
@@ -232,13 +242,14 @@ public final class ComputeRuntime implements AutoCloseable {
                 throw new IllegalStateException("Requested compute backend '" + requestedBackend
                         + "' is unavailable; available backends: " + backends.keySet());
             }
-            return selected;
+            return new BackendSelection(requestedBackend, selected);
         }
         if (backends.size() != 1) {
             throw new IllegalStateException("Provider session exposes multiple compute backends "
                     + backends.keySet() + "; select one by its provider-defined backend id");
         }
-        return backends.values().iterator().next();
+        Map.Entry<String, ComputeBackend> only = backends.entrySet().iterator().next();
+        return new BackendSelection(only.getKey(), only.getValue());
     }
 
     private void ensureOpen() {
@@ -268,6 +279,9 @@ public final class ComputeRuntime implements AutoCloseable {
                 primary.addSuppressed(closeFailure);
             }
         }
+    }
+
+    record BackendSelection(String backendId, ComputeBackend backend) {
     }
 
     private record Candidate(ComputeProvider provider, DeviceDescriptor device) {
