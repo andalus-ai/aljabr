@@ -14,15 +14,14 @@ class ParameterTest {
             assertThat(weight).isNotNull();
             assertThat(weight.name()).isEqualTo("weight");
             assertThat(weight.tensor()).isSameAs(layer.parameters().get("weight"));
-            assertThat(weight.requiresGrad()).isFalse();
-
-            weight.setRequiresGrad(true);
+            assertThat(weight.requiresGrad()).isTrue();
 
             assertThat(layer.parameters().get("weight").requiresGrad()).isTrue();
             assertThat(layer.trainableParameterObjects()).contains(weight);
 
             weight.setRequiresGrad(false);
 
+            assertThat(layer.parameters().get("weight").requiresGrad()).isFalse();
             assertThat(layer.trainableParameterObjects()).doesNotContain(weight);
         }
     }
