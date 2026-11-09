@@ -201,17 +201,17 @@ public abstract class NNModule implements AutoCloseable {
 
     /** Returns unique parameter handles in module traversal order. */
     public List<Parameter> parameterObjects() {
-        java.util.Set<Parameter> seen =
+        java.util.Set<Tensor> seen =
                 Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         List<Parameter> result = new ArrayList<>();
         for (Parameter parameter : parameterObjects.values()) {
-            if (seen.add(parameter)) {
+            if (seen.add(parameter.tensor())) {
                 result.add(parameter);
             }
         }
         for (NNModule module : submodules.values()) {
             for (Parameter parameter : module.parameterObjects()) {
-                if (seen.add(parameter)) {
+                if (seen.add(parameter.tensor())) {
                     result.add(parameter);
                 }
             }
