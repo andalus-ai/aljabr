@@ -1499,8 +1499,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
     uint32_t kk = (uint32_t)K;
     uint32_t batch32 = (uint32_t)batchSize;
 
-    BOOL use_b4 = (batch32 > 1 && batch32 <= kMaxCorrectnessValidatedQ4KB4BatchSize);
-    AljabrQ4KDispatchMode q4kMode = use_b4 ? ALJABR_Q4K_DISPATCH_B4 : ALJABR_Q4K_DISPATCH_AUTO;
+    // The Q4_K B4 path fails the mixed triple-output equivalence check even
+    // at small batches. Keep this API on the validated MR4 path until B4 has
+    // independent triple-batch correctness coverage. Single-row dispatch
+    // retains the normal AUTO selection.
+    AljabrQ4KDispatchMode q4kMode =
+        batch32 > 1 ? ALJABR_Q4K_DISPATCH_MR4 : ALJABR_Q4K_DISPATCH_AUTO;
 
     BOOL encoded0 = encode_matvec_sub_with_mode(enc, pipelines, bufC0, bufA, B0, kk,
                                                 (uint32_t)N0, type0, batch32, q4kMode);
