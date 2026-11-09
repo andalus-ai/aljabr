@@ -15,8 +15,8 @@ import tech.kayys.aljabr.core.nn.Linear;
  * Spatial transformer block for diffusion models.
  *
  * <p>This class owns its parameters and child modules on one explicit compute
- * backend. The current MultiheadAttention implementation remains a simplified
- * projection path; this class does not claim complete cross-attention semantics.</p>
+ * backend. Context features are projected to the transformer inner dimension
+ * before cross-attention.</p>
  */
 public class SpatialTransformer extends NNModule {
 
@@ -32,6 +32,7 @@ public class SpatialTransformer extends NNModule {
     private final MultiheadAttention selfAttn;
     private final LayerNorm norm2;
     private final MultiheadAttention crossAttn;
+    private final Linear contextProjection;
     private final LayerNorm norm3;
     private final Linear ff1;
     private final Linear ff2;
@@ -70,6 +71,7 @@ public class SpatialTransformer extends NNModule {
 
         this.norm2 = register("norm2", new LayerNorm(backend, innerDim));
         this.crossAttn = register("attn2", new MultiheadAttention(backend, innerDim, numHeads));
+        this.contextProjection = register("context_projection", new Linear(backend, contextDim, innerDim));
 
         this.norm3 = register("norm3", new LayerNorm(backend, innerDim));
         this.ff1 = register("ff_net_primary", new Linear(backend, innerDim, innerDim * 4L));
@@ -127,7 +129,16 @@ public class SpatialTransformer extends NNModule {
             residual = x;
             x = norm2.forward(x.reshape(batch * height * width, innerDim))
                     .reshape(batch, height * width, innerDim);
-            x = crossAttn.forward(x, context, context, null).add(residual);
+            Tensor projectedContext = context.reshape(batch * context.shape().dim(1), contextDim);
+            Tensor contextFeatures = null;
+            try {
+                contextFeatures = contextProjection.forward(projectedContext)
+                        .reshape(batch, context.shape().dim(1), innerDim);
+                x = crossAttn.forward(x, contextFeatures, contextFeatures, null).add(residual);
+            } finally {
+                projectedContext.release();
+                if (contextFeatures != null) contextFeatures.release();
+            }
         }
 
         residual = x;
