@@ -18,8 +18,8 @@ repositories {
 }
 
 dependencies {
-    api(project(":core:aljabr-spi-inference"))
-    api(project(":core:aljabr-spi-model"))
+    api(project(":spi:aljabr-spi-inference"))
+    api(project(":spi:aljabr-spi-model"))
     api("io.smallrye.reactive:mutiny:2.5.5")
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
 
