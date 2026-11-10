@@ -22,7 +22,6 @@ int aljabr_metal_set_mps_matvec_max_inner(int max_inner);
 int aljabr_metal_set_mps_matvec_max_output(int max_output);
 int aljabr_metal_set_mps_matvec_autotune_max_output(int max_output);
 
-void *aljabr_metal_alloc(size_t bytes, size_t align);
 
 int aljabr_metal_argmax_f32(const void *logits, int n, int reject0,
                                  int reject1, int reject2, int reject3,
