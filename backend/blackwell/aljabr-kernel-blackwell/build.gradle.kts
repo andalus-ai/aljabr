@@ -18,7 +18,7 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(group = "io.quarkus", name = "quarkus-arc")
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
     testImplementation(group = "org.assertj", name = "assertj-core")
