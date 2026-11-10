@@ -69,11 +69,11 @@ subprojects {
         ":backend:cpu:aljabr-backend-cpu",
         // Tensor tests load the CPU backend reflectively at runtime; that backend
         // uses the incubating Vector API even though tensor main sources do not.
-        ":core:aljabr-tensor",
+        ":plugins:ml:aljabr-tensor",
         // NN tests exercise the CPU backend directly; it requires the incubating Vector API.
-        ":core:aljabr-nn",
-        ":core:aljabr-gguf-core",
-        ":core:aljabr-safetensor-core",
+        ":plugins:ml:aljabr-nn",
+        ":engine:gguf:aljabr-gguf-core",
+        ":engine:safetensor:aljabr-safetensor-core",
         // Model-common tests execute Whisper through the CPU backend, which uses Vector API.
         ":models:aljabr-model-common"
     )
@@ -187,19 +187,19 @@ subprojects {
                     substitute(module(moduleNotation)).using(project(projectPath))
                 }
             }
-            safeSubstitute("tech.kayys.aljabr:aljabr-spi-model", ":core:aljabr-spi-model")
-            safeSubstitute("tech.kayys.aljabr:aljabr-spi-tokenizer", ":core:aljabr-spi-tokenizer")
-            safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:aljabr-tensor")
+            safeSubstitute("tech.kayys.aljabr:aljabr-spi-model", ":spi:aljabr-spi-model")
+            safeSubstitute("tech.kayys.aljabr:aljabr-spi-tokenizer", ":spi:aljabr-spi-tokenizer")
+            safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":plugins:ml:aljabr-tensor")
             safeSubstitute("tech.kayys.aljabr:aljabr-error-code", ":core:aljabr-error-code")
             safeSubstitute("tech.kayys.aljabr:aljabr-tokenizer-core", ":core:aljabr-tokenizer-core")
-            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-api", ":core:aljabr-safetensor-api")
-            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-core", ":core:aljabr-safetensor-core")
-            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-loader", ":core:aljabr-safetensor-loader")
-            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-spi", ":core:aljabr-safetensor-spi")
-            safeSubstitute("tech.kayys.aljabr:aljabr-nn", ":core:aljabr-nn")
-            safeSubstitute("tech.kayys.aljabr:aljabr-3d", ":core:aljabr-3d")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-api", ":engine:safetensor:aljabr-safetensor-api")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-core", ":engine:safetensor:aljabr-safetensor-core")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-loader", ":engine:safetensor:aljabr-safetensor-loader")
+            safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-spi", ":engine:safetensor:aljabr-safetensor-spi")
+            safeSubstitute("tech.kayys.aljabr:aljabr-nn", ":plugins:ml:aljabr-nn")
+            safeSubstitute("tech.kayys.aljabr:aljabr-3d", ":plugins:ml:aljabr-3d")
             safeSubstitute("tech.kayys.aljabr:aljabr-core", ":core:aljabr-core")
-            safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:aljabr-tensor")
+            safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":plugins:ml:aljabr-tensor")
         }
         resolutionStrategy.eachDependency {
             if (requested.group == "io.quarkus" && requested.version.isNullOrBlank()) {

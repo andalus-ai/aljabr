@@ -18,9 +18,9 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":core:aljabr-safetensor-api"))
-    implementation(project(":core:aljabr-safetensor-spi"))
-    implementation(project(":core:aljabr-spi-tokenizer"))
+    implementation(project(":engine:safetensor:aljabr-safetensor-api"))
+    implementation(project(":engine:safetensor:aljabr-safetensor-spi"))
+    implementation(project(":spi:aljabr-spi-tokenizer"))
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation("com.google.code.gson:gson:2.10.1")
@@ -28,7 +28,7 @@ dependencies {
     implementation("jakarta.inject:jakarta.inject-api:2.0.1")
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")
 
-    testImplementation(project(":core:aljabr-spi-model"))
+    testImplementation(project(":spi:aljabr-spi-model"))
 }
 
 publishing {
