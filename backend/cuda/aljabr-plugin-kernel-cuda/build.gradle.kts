@@ -18,7 +18,7 @@ repositories {
 }
 
 dependencies {
-   // implementation(project(":core:plugin:aljabr-plugin-kernel-core"))
+    api(project(":spi:aljabr-spi-plugin"))
     implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":backend:cuda:aljabr-kernel-cuda"))
     compileOnly(group = "org.jboss.logging", name = "jboss-logging")
