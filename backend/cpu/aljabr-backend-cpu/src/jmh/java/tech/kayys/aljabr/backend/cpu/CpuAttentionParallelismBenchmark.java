@@ -115,13 +115,13 @@ public class CpuAttentionParallelismBenchmark {
     @Benchmark
     public void serialBackendAttention() {
         Tensor output = backend.attention(query, key, value);
-        outputStorage.release();
+        output.release();
     }
 
     @Benchmark
     public void parallelCandidateAttention() {
         Tensor output = parallelCandidate();
-        outputStorage.release();
+        output.release();
     }
 
     private Tensor parallelCandidate() {
