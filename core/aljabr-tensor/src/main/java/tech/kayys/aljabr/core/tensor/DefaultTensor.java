@@ -399,6 +399,11 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public void backward() {
+        if (requiresGrad) {
+            throw new UnsupportedOperationException(
+                    "Automatic differentiation is not available for DefaultTensor. "
+                            + "Use a tensor implementation with an autograd engine.");
+        }
     }
 
     @Override
