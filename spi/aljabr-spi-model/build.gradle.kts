@@ -5,7 +5,7 @@ plugins {
 dependencies {
    // api(project(":spi:aljabr-spi"))
 
-    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-tensor"))
     api(project(":core:aljabr-error-code"))
     implementation("io.smallrye.reactive:mutiny:2.5.5")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")

@@ -4,5 +4,5 @@ plugins {
 }
 
 dependencies {
-    api(project(":core:aljabr-spi-core"))
+    api(project(":spi:aljabr-spi-core"))
 }
