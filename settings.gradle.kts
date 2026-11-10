@@ -1,11 +1,21 @@
 rootProject.name = "aljabr"
 
-fun includeProjectsUnder(rootPath: String, prefix: String = rootPath.replace('/', ':')) {
+fun includeProjectsUnder(
+    rootPath: String,
+    prefix: String = rootPath.replace('/', ':'),
+    excludedRelativePaths: Set<String> = emptySet()
+) {
     val rootDir = file(rootPath)
     if (!rootDir.isDirectory) return
     rootDir.walkTopDown()
         .filter { it.isDirectory && it != rootDir }
         .filter { it.resolve("build.gradle.kts").isFile || it.resolve("build.gradle").isFile }
+        .filter {
+            val relative = it.relativeTo(rootDir).invariantSeparatorsPath
+            excludedRelativePaths.none { excluded ->
+                relative == excluded || relative.startsWith("$excluded/")
+            }
+        }
         .sortedBy { it.relativeTo(rootDir).invariantSeparatorsPath }
         .forEach { dir ->
             val relative = dir.relativeTo(rootDir).invariantSeparatorsPath
@@ -36,11 +46,9 @@ includeDirectProjectsUnder("spi")
 includeProjectsUnder("engine")
 includeProjectsUnder("plugins")
 
-// Hardware providers remain separate from the portable framework modules.
-include("backend:cpu:aljabr-backend-cpu")
-include("backend:cuda:aljabr-backend-cuda")
-include("backend:cuda:aljabr-kernel-cuda")
-include("backend:metal:aljabr-backend-metal")
+// Discover every regular hardware provider and kernel plugin. Experimental HAT
+// remains opt-in because it requires a separate Babylon JDK installation.
+includeProjectsUnder("backend", excludedRelativePaths = setOf("hat"))
 
 // Optional experimental Babylon HAT backend.
 val withHat = providers.gradleProperty("withHat").map(String::toBoolean).getOrElse(false)
