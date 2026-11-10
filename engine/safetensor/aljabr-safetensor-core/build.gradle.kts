@@ -18,8 +18,8 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":core:aljabr-safetensor-api"))
-    implementation(project(":core:aljabr-safetensor-spi"))
+    implementation(project(":engine:safetensor:aljabr-safetensor-api"))
+    implementation(project(":engine:safetensor:aljabr-safetensor-spi"))
     implementation(project(":spi:aljabr-spi-tokenizer"))
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")

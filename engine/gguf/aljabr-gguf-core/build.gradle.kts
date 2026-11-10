@@ -37,8 +37,8 @@ sourceSets {
 }
 
 dependencies {
-    api(project(":core:aljabr-nn"))
-    api(project(":core:aljabr-tensor"))
+    api(project(":plugins:ml:aljabr-nn"))
+    api(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":spi:aljabr-spi-model"))
     implementation("com.google.code.gson:gson:2.10.1")
     api(project(":spi:aljabr-spi-tokenizer"))

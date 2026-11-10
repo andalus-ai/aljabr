@@ -14,7 +14,7 @@ java {
 
 dependencies {
     // Inference contracts depend on tensor primitives and model metadata
-    api(project(":core:aljabr-tensor"))
+    api(project(":plugins:ml:aljabr-tensor"))
     api(project(":spi:aljabr-spi-model"))
     api(project(":core:aljabr-error-code"))
 

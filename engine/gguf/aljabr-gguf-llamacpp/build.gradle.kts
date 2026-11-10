@@ -19,8 +19,8 @@ repositories {
 
 dependencies {
     // Aljabr modules
-    api(project(":core:aljabr-gguf-api"))
-    api(project(":core:aljabr-gguf-core"))
+    api(project(":engine:gguf:aljabr-gguf-api"))
+    api(project(":engine:gguf:aljabr-gguf-core"))
     api(project(":spi:aljabr-spi-inference"))
     implementation(project(":spi:aljabr-spi-model"))
 

@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-tensor"))
     api(project(":spi:aljabr-spi-compute"))
     testImplementation(project(":spi:aljabr-spi-testkit"))
 }

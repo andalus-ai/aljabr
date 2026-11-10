@@ -18,7 +18,7 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":spi:aljabr-spi-model"))
+    api(project(":spi:aljabr-spi-model"))
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")
     implementation(group = "jakarta.inject", name = "jakarta.inject-api")
 }

@@ -14,7 +14,7 @@ java {
 
 dependencies {
     // Tokenizer SPI: depends on tensor types for encoding offsets/ids
-    api(project(":core:aljabr-tensor"))
+    api(project(":plugins:ml:aljabr-tensor"))
     api(project(":spi:aljabr-spi-model"))
 
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")

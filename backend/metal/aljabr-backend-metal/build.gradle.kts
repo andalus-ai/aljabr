@@ -40,7 +40,7 @@ sourceSets {
 
 dependencies {
     api(project(":spi:aljabr-spi-compute"))
-    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":backend:cpu:aljabr-backend-cpu"))
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api:4.1.0")

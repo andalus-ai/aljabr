@@ -3,10 +3,8 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":core:aljabr-numerics"))
+    implementation(project(":plugins:ml:aljabr-numerics"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 }
 
-tasks.test {
-    useJUnitPlatform()
-}
+tasks.test { useJUnitPlatform() }
