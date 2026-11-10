@@ -9,7 +9,7 @@ fun includeProjectsUnder(rootPath: String, prefix: String = rootPath.replace('/'
         .sortedBy { it.relativeTo(rootDir).invariantSeparatorsPath }
         .forEach { dir ->
             val relative = dir.relativeTo(rootDir).invariantSeparatorsPath
-            val path = "$prefix:${relative.replace('/', ':')}"
+            val path = ":$prefix:${relative.replace('/', ':')}"
             include(path)
             project(path).projectDir = dir
         }
@@ -22,7 +22,7 @@ fun includeDirectProjectsUnder(rootPath: String, prefix: String = rootPath.repla
         ?.filter { it.isDirectory && (it.resolve("build.gradle.kts").isFile || it.resolve("build.gradle").isFile) }
         ?.sortedBy { it.name }
         ?.forEach { dir ->
-            val path = "$prefix:${dir.name}"
+            val path = ":$prefix:${dir.name}"
             include(path)
             project(path).projectDir = dir
         }
