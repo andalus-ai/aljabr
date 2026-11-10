@@ -44,7 +44,18 @@ includeDirectProjectsUnder("spi")
 
 // Format engines and independently installable scientific/ML extensions.
 includeProjectsUnder("engine")
-includeProjectsUnder("plugins")
+
+// The legacy autograd integration still depends on IR and trainer API snapshot
+// artifacts that are not published or included as projects in this repository.
+// Keep it out of the default build until those dependencies are brought in-tree
+// or published; opt in explicitly when working on that integration.
+val withAutograd = providers.gradleProperty("withAutograd")
+    .map(String::toBoolean)
+    .getOrElse(false)
+includeProjectsUnder(
+    "plugins",
+    excludedRelativePaths = if (withAutograd) emptySet() else setOf("ml/autograd")
+)
 
 // Discover every regular hardware provider and kernel plugin. Experimental HAT
 // remains opt-in because it requires a separate Babylon JDK installation.
