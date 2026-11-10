@@ -49,4 +49,4 @@ jobs:
         uses: gradle/actions/wrapper-validation@v4
 
       - name: Run tensor and CPU backend tests
-        run: ./gradlew --no-daemon --stacktrace :core:aljabr-tensor:test :backend:cpu:aljabr-backend-cpu:test
+        run: ./gradlew --no-daemon --stacktrace :plugins:ml:aljabr-tensor:test :backend:cpu:aljabr-backend-cpu:test
