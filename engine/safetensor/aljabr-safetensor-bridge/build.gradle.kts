@@ -18,8 +18,8 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":core:aljabr-safetensor-core"))
-    implementation(project(":core:aljabr-safetensor-loader"))
+    implementation(project(":engine:safetensor:aljabr-safetensor-core"))
+    implementation(project(":engine:safetensor:aljabr-safetensor-loader"))
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api:4.0.1")
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")
 }
