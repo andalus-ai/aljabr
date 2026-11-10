@@ -18,8 +18,8 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":plugins:ml:aljabr-nn"))
-    implementation(project(":plugins:ml:aljabr-tensor"))
+    api(project(":plugins:ml:aljabr-nn"))
+    api(project(":plugins:ml:aljabr-tensor"))
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
 }
