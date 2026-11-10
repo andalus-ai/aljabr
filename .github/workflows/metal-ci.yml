@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "backend/metal/aljabr-backend-metal/**"
-      - "core/aljabr-gguf-java/**"
+      - "engine/gguf/aljabr-gguf-java/**"
       - ".github/workflows/metal-ci.yml"
       - "gradle/**"
       - "gradlew"
@@ -67,7 +67,7 @@ jobs:
           set -euo pipefail
           ./gradlew --no-daemon --stacktrace \
             :backend:metal:aljabr-backend-metal:test \
-            :core:aljabr-gguf-java:test
+            :engine:gguf:aljabr-gguf-java:test
 
       - name: Run opt-in triple-matvec benchmark
         if: github.event_name == 'workflow_dispatch' && inputs.run_benchmark
