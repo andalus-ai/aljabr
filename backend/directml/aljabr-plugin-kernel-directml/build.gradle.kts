@@ -7,9 +7,7 @@ group = "tech.kayys.aljabr"
 version = "0.1.0-SNAPSHOT"
 
 java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(25))
-    }
+    toolchain { languageVersion.set(JavaLanguageVersion.of(25)) }
 }
 
 repositories {
@@ -18,16 +16,11 @@ repositories {
 }
 
 dependencies {
+    api(project(":spi:aljabr-spi-plugin"))
     implementation("org.slf4j:slf4j-api:2.0.12")
 }
 
 publishing {
-    publications {
-        create<MavenPublication>("mavenJava") {
-            from(components["java"])
-        }
-    }
-    repositories {
-        mavenLocal()
-    }
+    publications { create<MavenPublication>("mavenJava") { from(components["java"]) } }
+    repositories { mavenLocal() }
 }
