@@ -19,7 +19,7 @@ repositories {
 
 dependencies {
     // ROCm backend: implements ComputeBackend from aljabr-tensor
-    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-tensor"))
     compileOnly(group = "org.jboss.logging", name = "jboss-logging")
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
 }

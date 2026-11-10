@@ -19,7 +19,7 @@ repositories {
 
 dependencies {
     implementation(project(":core:plugin:aljabr-plugin-kernel-core"))
-    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":backend:rocm:aljabr-kernel-rocm"))
     compileOnly(group = "org.jboss.logging", name = "jboss-logging")
 }
