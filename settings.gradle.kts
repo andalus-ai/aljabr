@@ -1,70 +1,54 @@
-rootProject.name = "aljabr-engine"
+rootProject.name = "aljabr"
 
-fun includeOptionalProject(projectPath: String, vararg candidatePaths: String) {
-    val projectDir = candidatePaths
-        .map { file(it) }
-        .firstOrNull { candidate ->
-            candidate.resolve("build.gradle.kts").isFile || candidate.resolve("build.gradle").isFile
+fun includeProjectsUnder(rootPath: String, prefix: String = rootPath.replace('/', ':')) {
+    val rootDir = file(rootPath)
+    if (!rootDir.isDirectory) return
+    rootDir.walkTopDown()
+        .filter { it.isDirectory && it != rootDir }
+        .filter { it.resolve("build.gradle.kts").isFile || it.resolve("build.gradle").isFile }
+        .sortedBy { it.relativeTo(rootDir).invariantSeparatorsPath }
+        .forEach { dir ->
+            val relative = dir.relativeTo(rootDir).invariantSeparatorsPath
+            val path = "$prefix:${relative.replace('/', ':')}"
+            include(path)
+            project(path).projectDir = dir
         }
-        ?: return
-
-    include(projectPath)
-    project(":$projectPath").projectDir = projectDir
 }
 
-includeOptionalProject("core:aljabr-core", "core/aljabr-core")
-
-// Autograd is training-only; exclude from foundational builds
-// Legacy autograd sources depend on IR/trainer snapshot artifacts that are not
-// part of this repository's current source tree. Keep excluded by default, but
-// allow maintainers to explicitly probe the integration while migrating it.
-val withLegacyAutograd = providers.gradleProperty("withLegacyAutograd")
-    .map { it.toBoolean() }
-    .getOrElse(false)
-if (withLegacyAutograd) {
-    include("core:autograd")
+fun includeDirectProjectsUnder(rootPath: String, prefix: String = rootPath.replace('/', ':')) {
+    val rootDir = file(rootPath)
+    if (!rootDir.isDirectory) return
+    rootDir.listFiles()
+        ?.filter { it.isDirectory && (it.resolve("build.gradle.kts").isFile || it.resolve("build.gradle").isFile) }
+        ?.sortedBy { it.name }
+        ?.forEach { dir ->
+            val path = "$prefix:${dir.name}"
+            include(path)
+            project(path).projectDir = dir
+        }
 }
 
-include("core:aljabr-numerics")
-include("core:aljabr-linear-algebra")
-include("core:aljabr-tensor")
-include("core:aljabr-compute-runtime")
-include("core:aljabr-core")
-include("core:aljabr-error-code")
-include("core:aljabr-nn")
+// Foundational contracts and runtime.
+includeDirectProjectsUnder("core")
+includeDirectProjectsUnder("spi")
 
-include("core:aljabr-spi-core")
-include("core:aljabr-spi-compute")
-include("core:aljabr-spi-testkit")
-include("core:aljabr-spi-model")
-// New SPI modules — formalises Aljabr as the inference/serving framework layer
-// These will host contracts elevated from Aqli (Phase 2 source migration)
-include("core:aljabr-spi-inference")
-include("core:aljabr-spi-plugin")
-include("core:aljabr-spi-tokenizer")
-include("core:aljabr-3d")
+// Format engines and independently installable scientific/ML extensions.
+includeProjectsUnder("engine")
+includeProjectsUnder("plugins")
 
-//include("backend:blackwell:aljabr-kernel-blackwell")
-
+// Hardware providers remain separate from the portable framework modules.
 include("backend:cpu:aljabr-backend-cpu")
 include("backend:cuda:aljabr-backend-cuda")
 include("backend:cuda:aljabr-kernel-cuda")
-//include("backend:cuda:aljabr-plugin-kernel-cuda")
-//include("backend:directml:aljabr-plugin-kernel-directml")
-// HAT requires a separate Babylon JDK 26 distribution with incubator APIs.
-// Keep this experimental backend out of default builds unless explicitly enabled.
-val withHat = providers.gradleProperty("withHat")
-    .map { it.toBoolean() }
-    .getOrElse(false)
+include("backend:metal:aljabr-backend-metal")
+
+// Optional experimental Babylon HAT backend.
+val withHat = providers.gradleProperty("withHat").map(String::toBoolean).getOrElse(false)
 val babylonJdkHome = providers.gradleProperty("babylonJdkPath")
-    .orElse(providers.environmentVariable("BABYLON_JDK_HOME"))
-    .orNull
+    .orElse(providers.environmentVariable("BABYLON_JDK_HOME")).orNull
 if (withHat) {
     if (babylonJdkHome.isNullOrBlank()) {
-        throw GradleException(
-            "withHat=true requires -PbabylonJdkPath=/path/to/babylon-jdk-26 " +
-                "or BABYLON_JDK_HOME pointing to a Babylon JDK 26 installation"
-        )
+        throw GradleException("withHat=true requires -PbabylonJdkPath or BABYLON_JDK_HOME")
     }
     val babylonJdk = file(babylonJdkHome)
     if (!babylonJdk.resolve("bin/javac").isFile || !babylonJdk.resolve("bin/java").isFile) {
@@ -72,42 +56,13 @@ if (withHat) {
     }
     include("backend:hat:aljabr-backend-hat")
 }
-include("backend:metal:aljabr-backend-metal")
-//include("backend:metal:aljabr-mlx-binding")
 
-//include("backend:rocm:aljabr-kernel-rocm")
-//include("backend:rocm:aljabr-plugin-kernel-rocm")
-
-// Dynamically include model family projects under models/
-file("models")
-    .listFiles { candidate ->
-        candidate.isDirectory &&
-                candidate.name.startsWith("aljabr-model-") &&
-                (candidate.resolve("build.gradle.kts").isFile || candidate.resolve("build.gradle").isFile)
-    }
-    ?.sortedBy { it.name }
-    ?.forEach { modelProject ->
-        include("models:${modelProject.name}")
-        project(":models:${modelProject.name}").projectDir = modelProject
-    }
-
-// GGUF Suite: aljabr-gguf-api, aljabr-gguf-llamacpp, aljabr-gguf-core, aljabr-gguf-java
-include("core:aljabr-gguf-api")
-include("core:aljabr-gguf-llamacpp")
-include("core:aljabr-gguf-core")
-include("core:aljabr-gguf-java")
-
-include("core:aljabr-rocksdb")
-include("core:aljabr-helixdb")
-
-// ── Optional SafeTensors integration modules ────────────────────────────────
-includeOptionalProject("core:aljabr-safetensor-api",          "core/aljabr-safetensor-api")
-includeOptionalProject("core:aljabr-safetensor-spi",          "core/aljabr-safetensor-spi")
-includeOptionalProject("core:aljabr-safetensor-core",         "core/aljabr-safetensor-core")
-includeOptionalProject("core:aljabr-safetensor-loader",       "core/aljabr-safetensor-loader")
-includeOptionalProject("core:aljabr-safetensor-bridge",       "core/aljabr-safetensor-bridge")
-includeOptionalProject("core:aljabr-safetensor-quantization", "core/aljabr-safetensor-quantization")
-includeOptionalProject("core:aljabr-gguf-bridge",             "core/aljabr-gguf-bridge")
-includeOptionalProject("core:aljabr-gguf-fast-bridge",        "core/aljabr-gguf-fast-bridge")
-includeOptionalProject("core:aljabr-gguf-converter",          "core/aljabr-gguf-converter")
-includeOptionalProject("core:aljabr-gguf-converter-java",     "core/aljabr-gguf-converter-java")
+// Model family modules remain discoverable without coupling them to core.
+file("models").listFiles { dir ->
+    dir.isDirectory && dir.name.startsWith("aljabr-model-") &&
+        (dir.resolve("build.gradle.kts").isFile || dir.resolve("build.gradle").isFile)
+}?.sortedBy { it.name }?.forEach { dir ->
+    val path = ":models:${dir.name}"
+    include(path)
+    project(path).projectDir = dir
+}
