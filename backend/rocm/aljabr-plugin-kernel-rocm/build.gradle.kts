@@ -7,9 +7,7 @@ group = "tech.kayys.aljabr"
 version = "0.1.0-SNAPSHOT"
 
 java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(25))
-    }
+    toolchain { languageVersion.set(JavaLanguageVersion.of(25)) }
 }
 
 repositories {
@@ -18,19 +16,13 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":core:plugin:aljabr-plugin-kernel-core"))
+    api(project(":spi:aljabr-spi-plugin"))
     implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":backend:rocm:aljabr-kernel-rocm"))
     compileOnly(group = "org.jboss.logging", name = "jboss-logging")
 }
 
 publishing {
-    publications {
-        create<MavenPublication>("mavenJava") {
-            from(components["java"])
-        }
-    }
-    repositories {
-        mavenLocal()
-    }
+    publications { create<MavenPublication>("mavenJava") { from(components["java"]) } }
+    repositories { mavenLocal() }
 }
