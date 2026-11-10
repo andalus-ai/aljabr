@@ -211,6 +211,7 @@ subprojects {
             // Model-format engines.
             safeSubstitute("tech.kayys.aljabr:aljabr-gguf-api", ":engine:gguf:aljabr-gguf-api")
             safeSubstitute("tech.kayys.aljabr:aljabr-gguf-core", ":engine:gguf:aljabr-gguf-core")
+            safeSubstitute("tech.kayys.aljabr:aljabr-gguf-java", ":engine:gguf:aljabr-gguf-java")
             safeSubstitute("tech.kayys.aljabr:aljabr-gguf-converter", ":engine:gguf:aljabr-gguf-converter")
             safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-api", ":engine:safetensor:aljabr-safetensor-api")
             safeSubstitute("tech.kayys.aljabr:aljabr-safetensor-core", ":engine:safetensor:aljabr-safetensor-core")
