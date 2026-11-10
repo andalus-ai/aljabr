@@ -19,7 +19,7 @@ From the Aljabr repository root, publish the SPI artifact to the local Maven
 repository:
 
 ```bash
-./gradlew :core:aljabr-spi-core:publishToMavenLocal
+./gradlew :spi:aljabr-spi-core:publishToMavenLocal
 ```
 
 Then build and run this independent fixture:

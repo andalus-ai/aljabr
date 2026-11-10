@@ -187,8 +187,8 @@ subprojects {
                     substitute(module(moduleNotation)).using(project(projectPath))
                 }
             }
-            safeSubstitute("tech.kayys.aljabr:aljabr-spi-model", ":core:aljabr-spi-model")
-            safeSubstitute("tech.kayys.aljabr:aljabr-spi-tokenizer", ":core:aljabr-spi-tokenizer")
+            safeSubstitute("tech.kayys.aljabr:aljabr-spi-model", ":spi:aljabr-spi-model")
+            safeSubstitute("tech.kayys.aljabr:aljabr-spi-tokenizer", ":spi:aljabr-spi-tokenizer")
             safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":core:aljabr-tensor")
             safeSubstitute("tech.kayys.aljabr:aljabr-error-code", ":core:aljabr-error-code")
             safeSubstitute("tech.kayys.aljabr:aljabr-tokenizer-core", ":core:aljabr-tokenizer-core")

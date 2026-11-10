@@ -45,12 +45,12 @@ The following inventory is derived from the current `settings.gradle.kts`. It re
 - `:core:aljabr-core`
 - `:core:aljabr-error-code`
 - `:core:aljabr-nn`
-- `:core:aljabr-spi-core`
-- `:core:aljabr-spi-testkit`
-- `:core:aljabr-spi-model`
-- `:core:aljabr-spi-inference`
-- `:core:aljabr-spi-plugin`
-- `:core:aljabr-spi-tokenizer`
+- `:spi:aljabr-spi-core`
+- `:spi:aljabr-spi-testkit`
+- `:spi:aljabr-spi-model`
+- `:spi:aljabr-spi-inference`
+- `:spi:aljabr-spi-plugin`
+- `:spi:aljabr-spi-tokenizer`
 - `:core:aljabr-3d`
 - `:backend:cpu:aljabr-backend-cpu`
 - `:backend:cuda:aljabr-backend-cuda`
@@ -123,13 +123,13 @@ The new `aljabr-spi-core` build file repeats Java 25 toolchain and JUnit/test co
 ### 4.3 Dependency boundary checks still required
 
 Generate dependency reports for at least:
-- `:core:aljabr-spi-core:dependencies`
+- `:spi:aljabr-spi-core:dependencies`
 - `:core:aljabr-numerics:dependencies`
 - `:core:aljabr-linear-algebra:dependencies`
 - `:core:aljabr-tensor:dependencies`
 - `:backend:cpu:aljabr-backend-cpu:dependencies`
-- `:core:aljabr-spi-model:dependencies`
-- `:core:aljabr-spi-plugin:dependencies`
+- `:spi:aljabr-spi-model:dependencies`
+- `:spi:aljabr-spi-plugin:dependencies`
 
 Acceptance: a consumer of `aljabr-spi-core` must not resolve Mutiny, CDI, logging implementations, accelerator SDKs, model-format libraries or product/runtime dependencies.
 

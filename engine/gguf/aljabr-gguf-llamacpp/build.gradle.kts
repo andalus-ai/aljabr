@@ -21,8 +21,8 @@ dependencies {
     // Aljabr modules
     api(project(":core:aljabr-gguf-api"))
     api(project(":core:aljabr-gguf-core"))
-    api(project(":core:aljabr-spi-inference"))
-    implementation(project(":core:aljabr-spi-model"))
+    api(project(":spi:aljabr-spi-inference"))
+    implementation(project(":spi:aljabr-spi-model"))
 
     // Logging
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")

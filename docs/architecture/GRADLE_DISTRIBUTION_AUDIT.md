@@ -30,7 +30,7 @@ The following are directly visible in the inspected module build files:
 | `:core:aljabr-numerics` | None declared | JUnit Jupiter |
 | `:core:aljabr-linear-algebra` | `:core:aljabr-numerics` as `implementation` | JUnit Jupiter |
 | `:core:aljabr-tensor` | None declared in its build file | `:core:aljabr-core` as `testImplementation`; CPU backend as `testRuntimeOnly` |
-| `:core:aljabr-core` | `:core:aljabr-tensor` and `:core:aljabr-spi-model` as `api` | JUnit Jupiter |
+| `:core:aljabr-core` | `:core:aljabr-tensor` and `:spi:aljabr-spi-model` as `api` | JUnit Jupiter |
 | `:core:aljabr-nn` | `:core:aljabr-tensor` as `implementation` | Root test conventions apply |
 | `:backend:cpu:aljabr-backend-cpu` | `:core:aljabr-tensor` as `implementation` | No extra runtime project dependency declared in inspected file |
 

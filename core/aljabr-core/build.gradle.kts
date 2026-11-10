@@ -17,7 +17,7 @@ dependencies {
     // Removed orphaned dependencies that were causing build failures
 
     // SPIs that consumers may need to implement or call
-    api(project(":core:aljabr-spi-model"))
+    api(project(":spi:aljabr-spi-model"))
 
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))

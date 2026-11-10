@@ -1,6 +1,6 @@
-# Aljabr SafeTensor Runner v2
+# Aljabr SafeTensor
 
-**Enhanced SafeTensor inference engine with TTS, RAG, and zero-downtime hot-swap support**
+**SafeTensor inference engine with TTS, RAG, and zero-downtime hot-swap support**
 
 ---
 

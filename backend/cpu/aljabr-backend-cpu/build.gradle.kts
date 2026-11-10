@@ -4,8 +4,8 @@ plugins {
 
 dependencies {
     implementation(project(":core:aljabr-tensor"))
-    api(project(":core:aljabr-spi-compute"))
-    testImplementation(project(":core:aljabr-spi-testkit"))
+    api(project(":spi:aljabr-spi-compute"))
+    testImplementation(project(":spi:aljabr-spi-testkit"))
 }
 
 val jmh by sourceSets.creating {

@@ -20,9 +20,9 @@ repositories {
 dependencies {
     implementation(project(":core:aljabr-gguf-api"))
     implementation(project(":core:aljabr-gguf-core"))
-    implementation(project(":core:aljabr-spi-model"))
-    implementation(project(":core:aljabr-spi-tokenizer"))
-    implementation(project(":core:aljabr-spi-inference"))
+    implementation(project(":spi:aljabr-spi-model"))
+    implementation(project(":spi:aljabr-spi-tokenizer"))
+    implementation(project(":spi:aljabr-spi-inference"))
 
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
     testRuntimeOnly(group = "org.junit.platform", name = "junit-platform-launcher")
