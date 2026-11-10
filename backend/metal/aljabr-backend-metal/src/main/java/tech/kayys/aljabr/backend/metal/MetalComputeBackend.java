@@ -346,7 +346,7 @@ public class MetalComputeBackend implements ComputeBackend {
             return new OperationSupportDescriptor(operation, OperationSupport.UNKNOWN, null);
         }
         if (fallbackPolicy == MetalFallbackPolicy.ALLOW_CPU_FALLBACK) {
-            return new OperationSupportDescriptor(operation, OperationSupport.DELEGATED, "cpu");
+            return new OperationSupportDescriptor(operation, OperationSupport.DELEGATED, "cpu-default");
         }
         return new OperationSupportDescriptor(operation, OperationSupport.UNSUPPORTED, null);
     }
