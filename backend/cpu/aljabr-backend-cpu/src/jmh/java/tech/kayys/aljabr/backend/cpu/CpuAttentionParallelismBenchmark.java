@@ -8,6 +8,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.openjdk.jmh.annotations.Benchmark;
@@ -142,10 +143,8 @@ public class CpuAttentionParallelismBenchmark {
         }
 
         try {
-            for (var ignored : executor.invokeAll(tasks)) {
-                // invokeAll waits for every group; get propagates worker failures.
-            }
-            for (var future : executor.invokeAll(List.of(() -> null))) {
+            List<Future<Void>> futures = executor.invokeAll(tasks);
+            for (Future<Void> future : futures) {
                 future.get();
             }
         } catch (InterruptedException e) {
