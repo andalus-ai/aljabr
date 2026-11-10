@@ -57,6 +57,8 @@ final class JavaGgufBackend implements GgufBackend {
                 || System.getenv("AQLI_DEBUG") != null;
     }
 
+    private final Path modelPath;
+    private final Path promptCacheDir;
     private final GGUFModel model;
     private final GgufRuntimeProfile profile;
     private final GgufRuntimeProbe.PreparedMatrixCacheDecision preparedCacheDecision;
@@ -64,20 +66,6 @@ final class JavaGgufBackend implements GgufBackend {
     private final GgufDecodeStep decodeStep;
     private final GGUFTokenizer tokenizer;
     private final KVCache sharedCache;
-
-    private static final class PromptCacheEntry {
-        final int[] tokens;
-        final float[][] k;
-        final float[][] v;
-        final float[] logits;
-
-        PromptCacheEntry(int[] tokens, float[][] k, float[][] v, float[] logits) {
-            this.tokens = tokens;
-            this.k = k;
-            this.v = v;
-            this.logits = logits;
-        }
-    }
 
     private final Object promptCacheLock = new Object();
     private PromptCacheEntry cachedPrompt = null;
@@ -108,6 +96,8 @@ final class JavaGgufBackend implements GgufBackend {
 
     JavaGgufBackend(Path modelPath) throws Exception {
         long startNanos = System.nanoTime();
+        this.modelPath = modelPath;
+        this.promptCacheDir = GgufPromptCacheDiskStorage.getCacheDir();
         this.model = loadModel(modelPath);
         long loadMillis = Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
         this.profile = GgufRuntimeProfile.fromModel(model, Files.size(modelPath), loadMillis);
@@ -209,9 +199,19 @@ final class JavaGgufBackend implements GgufBackend {
                 }
 
                 PromptCacheEntry hit = null;
+                boolean fromDisk = false;
                 synchronized (promptCacheLock) {
                     if (cachedPrompt != null && Arrays.equals(cachedPrompt.tokens, tokenIds)) {
                         hit = cachedPrompt;
+                    }
+                }
+                if (hit == null) {
+                    hit = GgufPromptCacheDiskStorage.loadFromDisk(promptCacheDir, modelPath, tokenIds);
+                    if (hit != null) {
+                        fromDisk = true;
+                        synchronized (promptCacheLock) {
+                            cachedPrompt = hit;
+                        }
                     }
                 }
 
@@ -229,7 +229,7 @@ final class JavaGgufBackend implements GgufBackend {
                     // previous prefill/decode and were never overwritten), skip the
                     // 170-270 ms syncMetalCache round-trip. The decode step only writes
                     // at positions >= seqLen, so the prefix is always preserved.
-                    boolean skipSync = metalKvPrefixValid
+                    boolean skipSync = !fromDisk && metalKvPrefixValid
                             && metalKvPrefixTokenCount == tokenIds.length;
                     if (!skipSync) {
                         decodeStep.syncMetalCache(tokenIds.length, cache);
@@ -240,7 +240,8 @@ final class JavaGgufBackend implements GgufBackend {
                     pos = tokenIds.length;
                     prefillMs = Math.max(1, System.currentTimeMillis() - t0);
                     if (isVerbose()) {
-                        System.err.printf("[java-engine] Prompt prefix cache HIT: %d tokens restored in %d ms (Metal sync: %s)%n",
+                        System.err.printf("[java-engine] Prompt prefix cache %s: %d tokens restored in %d ms (Metal sync: %s)%n",
+                                fromDisk ? "DISK-HIT" : "MEMORY-HIT",
                                 tokenIds.length, prefillMs, skipSync ? "SKIPPED" : "done");
                     }
                 } else {
@@ -265,9 +266,11 @@ final class JavaGgufBackend implements GgufBackend {
                             System.arraycopy(cache.kLayer(l), 0, snapK[l], 0, count);
                             System.arraycopy(cache.vLayer(l), 0, snapV[l], 0, count);
                         }
+                        PromptCacheEntry entry = new PromptCacheEntry(tokenIds.clone(), snapK, snapV, logits.clone());
                         synchronized (promptCacheLock) {
-                            cachedPrompt = new PromptCacheEntry(tokenIds.clone(), snapK, snapV, logits.clone());
+                            cachedPrompt = entry;
                         }
+                        GgufPromptCacheDiskStorage.saveToDiskAsync(promptCacheDir, modelPath, entry);
                     } catch (Throwable ignored) {
                     }
 
