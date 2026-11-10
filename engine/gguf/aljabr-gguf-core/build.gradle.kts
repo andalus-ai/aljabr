@@ -37,11 +37,11 @@ sourceSets {
 }
 
 dependencies {
-    api(project(":core:aljabr-nn"))
-    api(project(":core:aljabr-tensor"))
-    implementation(project(":core:aljabr-spi-model"))
+    api(project(":plugins:ml:aljabr-nn"))
+    api(project(":plugins:ml:aljabr-tensor"))
+    implementation(project(":spi:aljabr-spi-model"))
     implementation("com.google.code.gson:gson:2.10.1")
-    api(project(":core:aljabr-spi-tokenizer"))
+    api(project(":spi:aljabr-spi-tokenizer"))
     implementation("io.quarkus:quarkus-core:3.32.2")
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")
     testImplementation("org.junit.jupiter:junit-jupiter")

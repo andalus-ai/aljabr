@@ -3,8 +3,6 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":core:aljabr-tensor"))
-
-    // NN tests construct tensors through TensorFactory; make the CPU provider available at test runtime.
+    implementation(project(":plugins:ml:aljabr-tensor"))
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
 }

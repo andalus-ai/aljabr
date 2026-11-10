@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    api(project(":core:aljabr-spi-compute"))
+    api(project(":spi:aljabr-spi-compute"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly(project(":backend:cpu:aljabr-backend-cpu"))
