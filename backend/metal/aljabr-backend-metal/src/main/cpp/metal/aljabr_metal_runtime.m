@@ -20,15 +20,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static NSMutableArray<id<MTLBuffer>> *g_external_allocations = nil;
-
-static NSMutableArray<id<MTLBuffer>> *retained_external_allocations(void) {
-  if (g_external_allocations == nil) {
-    g_external_allocations = [[NSMutableArray alloc] init];
-  }
-  return g_external_allocations;
-}
-
 int aljabr_metal_init(void) {
   if (g_initialized)
     return 0;
@@ -75,21 +66,6 @@ int aljabr_metal_set_mps_matvec_max_output(int max_output) {
 
 int aljabr_metal_set_mps_matvec_autotune_max_output(int max_output) {
   return aljabr_metal_mps_matvec_set_autotune_max_output(max_output);
-}
-
-void *aljabr_metal_alloc(size_t bytes, size_t align) {
-  (void)align;
-  if (!g_device || bytes == 0)
-    return NULL;
-  id<MTLBuffer> buf =
-      [g_device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
-  if (buf == nil)
-    return NULL;
-  NSMutableArray<id<MTLBuffer>> *allocations = retained_external_allocations();
-  @synchronized(allocations) {
-    [allocations addObject:buf];
-  }
-  return [buf contents];
 }
 
 static inline BOOL aljabr_metal_argmax_rejected(int id, int reject0,
