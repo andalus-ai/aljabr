@@ -54,7 +54,6 @@ public class MetalBinding {
 
     private static final String FN_INIT = "aljabr_metal_init";
     private static final String FN_AVAIL_MEM = "aljabr_metal_available_memory";
-    private static final String FN_ALLOC = "aljabr_metal_alloc";
     private static final String FN_ARGMAX_F32 = "aljabr_metal_argmax_f32";
     private static final String FN_MATMUL = "aljabr_metal_matmul";
     private static final String FN_MATMUL_TB = "aljabr_metal_matmul_tb";
@@ -1678,10 +1677,6 @@ public class MetalBinding {
 
         // long aljabr_metal_available_memory()
         bind(FN_AVAIL_MEM, FunctionDescriptor.of(ValueLayout.JAVA_LONG));
-
-        // void* aljabr_metal_alloc(size_t bytes, size_t align)
-        bind(FN_ALLOC, FunctionDescriptor.of(ValueLayout.ADDRESS,
-                ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG));
 
         bind(FN_ARGMAX_F32, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS,
