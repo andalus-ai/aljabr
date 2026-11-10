@@ -312,7 +312,7 @@ public class MetalComputeBackend implements ComputeBackend {
 
         String dtype = constraints.getOrDefault("dtype", "").trim().toLowerCase();
         String supportKernel = switch (operation) {
-            case "matmul" -> {
+            case "tensor.matmul" -> {
                 String inputDtype = constraints.getOrDefault("inputDtype", dtype).trim().toLowerCase();
                 String weightDtype = constraints.getOrDefault("weightDtype", dtype).trim().toLowerCase();
                 if (!"f32".equals(inputDtype)) {
@@ -325,8 +325,17 @@ public class MetalComputeBackend implements ComputeBackend {
                     default -> null;
                 };
             }
-            case "attention", "softmax", "silu", "gelu", "layerNorm", "rmsNorm", "applyRoPE" ->
-                    "f32".equals(dtype) ? operation : null;
+            case "tensor.attention", "tensor.softmax", "tensor.silu", "tensor.gelu",
+                    "tensor.layer_norm", "tensor.rms_norm", "tensor.rope" ->
+                    "f32".equals(dtype) ? switch (operation) {
+                        case "tensor.attention" -> "attention";
+                        case "tensor.softmax" -> "softmax";
+                        case "tensor.silu" -> "silu";
+                        case "tensor.gelu" -> "gelu";
+                        case "tensor.layer_norm" -> "layerNorm";
+                        case "tensor.rms_norm" -> "rmsNorm";
+                        default -> "applyRoPE";
+                    } : null;
             default -> null;
         };
         if (supportKernel != null && metalBinding.supportsNativeOperation(supportKernel)) {
@@ -344,14 +353,17 @@ public class MetalComputeBackend implements ComputeBackend {
 
     private static boolean isKnownOperation(String operation) {
         return Set.of(
-                "add", "sub", "mul", "div", "addScalar", "matmul", "reshape",
-                "attention", "softmax", "slice", "split", "pow", "mean", "abs",
-                "crossEntropy", "binaryCrossEntropy", "cast", "to", "zerosLike",
-                "sqrt", "relu", "sigmoid", "tanh", "log", "exp", "silu",
-                "flatten", "unsqueeze", "squeeze", "transpose", "gelu", "logSoftmax",
-                "sum", "max", "layerNorm", "rmsNorm", "batchNorm", "conv2d",
-                "upsampleNearest2d", "maxPool2d", "adaptiveAvgPool2d", "dropout",
-                "embedding", "applyRoPE", "cat").contains(operation);
+                "tensor.add", "tensor.sub", "tensor.mul", "tensor.div", "tensor.add_scalar",
+                "tensor.matmul", "tensor.reshape", "tensor.attention", "tensor.softmax",
+                "tensor.slice", "tensor.split", "tensor.pow", "tensor.mean", "tensor.abs",
+                "tensor.cross_entropy", "tensor.binary_cross_entropy", "tensor.cast", "tensor.to",
+                "tensor.zeros_like", "tensor.sqrt", "tensor.relu", "tensor.sigmoid", "tensor.tanh",
+                "tensor.log", "tensor.exp", "tensor.silu", "tensor.flatten", "tensor.unsqueeze",
+                "tensor.squeeze", "tensor.transpose", "tensor.gelu", "tensor.log_softmax",
+                "tensor.sum", "tensor.max", "tensor.layer_norm", "tensor.rms_norm",
+                "tensor.batch_norm", "tensor.conv2d", "tensor.upsample_nearest_2d",
+                "tensor.max_pool2d", "tensor.adaptive_avg_pool2d", "tensor.dropout",
+                "tensor.embedding", "tensor.rope", "tensor.cat").contains(operation);
     }
 
     @Override
