@@ -177,6 +177,31 @@ class DefaultTensorTest {
 
 
     @Test
+    void backwardFailsExplicitlyWhenGradientsAreRequired() {
+        CpuBuffer buffer = new CpuBuffer(Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, unusedBackend());
+        try {
+            tensor.setRequiresGrad(true);
+            UnsupportedOperationException error = assertThrows(UnsupportedOperationException.class, tensor::backward);
+            assertTrue(error.getMessage().contains("Automatic differentiation is not available"));
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void backwardIsNoOpWhenGradientsAreNotRequired() {
+        CpuBuffer buffer = new CpuBuffer(Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, unusedBackend());
+        try {
+            tensor.setRequiresGrad(false);
+            assertDoesNotThrow(tensor::backward);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
     void closeReleasesOwnedStorageExactlyOnceAndRejectsFurtherStorageAccess() {
         DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
         DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.METAL,
