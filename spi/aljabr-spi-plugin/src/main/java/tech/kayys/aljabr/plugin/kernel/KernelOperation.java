@@ -1,8 +1,6 @@
 package tech.kayys.aljabr.plugin.kernel;
 
-/**
- * SPI — represents a kernel operation to be dispatched to a hardware plugin.
- */
+/** Operation dispatched to a hardware kernel plugin. */
 public interface KernelOperation {
     String getName();
 }
