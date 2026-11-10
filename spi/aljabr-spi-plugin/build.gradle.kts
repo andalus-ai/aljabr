@@ -14,8 +14,8 @@ java {
 
 dependencies {
     // Plugin lifecycle contracts sit above model-level SPI and inference contracts
-    api(project(":core:aljabr-spi-model"))
-    api(project(":core:aljabr-spi-inference"))
+    api(project(":spi:aljabr-spi-model"))
+    api(project(":spi:aljabr-spi-inference"))
     api(project(":core:aljabr-error-code"))
 
     implementation("io.smallrye.reactive:mutiny:2.5.5")

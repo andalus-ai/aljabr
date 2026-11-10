@@ -9,6 +9,6 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.12")
 
     // Core tensor types
-    implementation(project(":core:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":core:aljabr-core"))
 }
