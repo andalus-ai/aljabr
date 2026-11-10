@@ -90,6 +90,17 @@ public interface Tensor extends AutoCloseable {
 
     float item();
 
+    /**
+     * Starts reverse-mode differentiation from this tensor.
+     *
+     * <p>Tensor implementations that do not provide an autograd engine must
+     * fail explicitly when gradients are required; silently accepting the
+     * call would make training appear to succeed without computing gradients.
+     * Calls on tensors that do not require gradients may be no-ops.</p>
+     *
+     * @throws UnsupportedOperationException when gradients are required but
+     *         this tensor implementation has no autograd support
+     */
     void backward();
 
     Tensor grad();
