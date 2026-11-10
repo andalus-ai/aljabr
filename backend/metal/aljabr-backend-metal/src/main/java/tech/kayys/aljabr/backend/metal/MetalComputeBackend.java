@@ -9,10 +9,14 @@ import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.memory.TensorStorage;
 import tech.kayys.aljabr.core.memory.TensorAllocator;
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
+import tech.kayys.aljabr.spi.provider.OperationSupport;
+import tech.kayys.aljabr.spi.provider.OperationSupportDescriptor;
 
 import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Objects;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -291,6 +295,75 @@ public class MetalComputeBackend implements ComputeBackend {
 
     private static MemorySegment optionalSegment(Tensor tensor) {
         return tensor == null ? MemorySegment.NULL : segment(tensor);
+    }
+
+    /**
+     * Conservative pre-execution support query used by the provider session.
+     * Only operations with a bound native entry point and recognized dtype
+     * constraints are reported as native; known CPU implementations are
+     * reported as delegated when fallback is permitted.
+     */
+    OperationSupportDescriptor operationSupport(String operationId, Map<String, String> constraints) {
+        Objects.requireNonNull(constraints, "constraints");
+        String operation = Objects.requireNonNull(operationId, "operationId").trim();
+        if (operation.isEmpty()) {
+            throw new IllegalArgumentException("operationId must not be blank");
+        }
+
+        String dtype = constraints.getOrDefault("dtype", "").trim().toLowerCase();
+        String supportKernel = switch (operation) {
+            case "tensor.matmul" -> {
+                String inputDtype = constraints.getOrDefault("inputDtype", dtype).trim().toLowerCase();
+                String weightDtype = constraints.getOrDefault("weightDtype", dtype).trim().toLowerCase();
+                if (!"f32".equals(inputDtype)) {
+                    yield null;
+                }
+                yield switch (weightDtype) {
+                    case "f32" -> "matmul";
+                    case "q4_k" -> "matmul.q4_k";
+                    case "q8_0" -> "matmul.q8_0";
+                    default -> null;
+                };
+            }
+            case "tensor.attention", "tensor.softmax", "tensor.silu", "tensor.gelu",
+                    "tensor.layer_norm", "tensor.rms_norm", "tensor.rope" ->
+                    "f32".equals(dtype) ? switch (operation) {
+                        case "tensor.attention" -> "attention";
+                        case "tensor.softmax" -> "softmax";
+                        case "tensor.silu" -> "silu";
+                        case "tensor.gelu" -> "gelu";
+                        case "tensor.layer_norm" -> "layerNorm";
+                        case "tensor.rms_norm" -> "rmsNorm";
+                        default -> "applyRoPE";
+                    } : null;
+            default -> null;
+        };
+        if (supportKernel != null && metalBinding.supportsNativeOperation(supportKernel)) {
+            return new OperationSupportDescriptor(operation, OperationSupport.NATIVE, null);
+        }
+
+        if (!isKnownOperation(operation)) {
+            return new OperationSupportDescriptor(operation, OperationSupport.UNKNOWN, null);
+        }
+        if (fallbackPolicy == MetalFallbackPolicy.ALLOW_CPU_FALLBACK) {
+            return new OperationSupportDescriptor(operation, OperationSupport.DELEGATED, "cpu-default");
+        }
+        return new OperationSupportDescriptor(operation, OperationSupport.UNSUPPORTED, null);
+    }
+
+    private static boolean isKnownOperation(String operation) {
+        return Set.of(
+                "tensor.add", "tensor.sub", "tensor.mul", "tensor.div", "tensor.add_scalar",
+                "tensor.matmul", "tensor.reshape", "tensor.attention", "tensor.softmax",
+                "tensor.slice", "tensor.split", "tensor.pow", "tensor.mean", "tensor.abs",
+                "tensor.cross_entropy", "tensor.binary_cross_entropy", "tensor.cast", "tensor.to",
+                "tensor.zeros_like", "tensor.sqrt", "tensor.relu", "tensor.sigmoid", "tensor.tanh",
+                "tensor.log", "tensor.exp", "tensor.silu", "tensor.flatten", "tensor.unsqueeze",
+                "tensor.squeeze", "tensor.transpose", "tensor.gelu", "tensor.log_softmax",
+                "tensor.sum", "tensor.max", "tensor.layer_norm", "tensor.rms_norm",
+                "tensor.batch_norm", "tensor.conv2d", "tensor.upsample_nearest_2d",
+                "tensor.max_pool2d", "tensor.adaptive_avg_pool2d", "tensor.dropout",
+                "tensor.embedding", "tensor.rope", "tensor.cat").contains(operation);
     }
 
     @Override

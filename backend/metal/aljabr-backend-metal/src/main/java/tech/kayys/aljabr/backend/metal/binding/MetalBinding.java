@@ -263,6 +263,33 @@ public class MetalBinding {
         return nativeAvailable && runtimeInitialized && !runtimeCpuFallback;
     }
 
+    /**
+     * Reports whether the initialized native bridge exposes the dispatch entry point
+     * used by a Metal backend operation. This is a kernel-presence check, not a
+     * guarantee that every shape/layout accepted by the Java method is supported.
+     */
+    public boolean supportsNativeOperation(String operationId) {
+        if (!isRuntimeActive()) {
+            return false;
+        }
+        return switch (operationId) {
+            case "matmul" -> handles.containsKey(FN_MATMUL);
+            case "matmul.q4_k" -> handles.containsKey(FN_MATVEC_TB_Q4_K);
+            case "matmul.q8_0" -> handles.containsKey(FN_MATVEC_TB_Q8_0);
+            case "attention" -> handles.containsKey(FN_FLASH_ATTENTION)
+                    && handles.containsKey(FN_ATTENTION_GQA);
+            case "softmax" -> handles.containsKey(FN_SOFTMAX);
+            case "silu" -> handles.containsKey(FN_SILU);
+            case "gelu" -> handles.containsKey(FN_GELU);
+            case "layerNorm" -> handles.containsKey(FN_LAYERNORM)
+                    && handles.containsKey(FN_LAYERNORM_ROWS);
+            case "rmsNorm" -> handles.containsKey(FN_RMSNORM)
+                    && handles.containsKey(FN_RMSNORM_ROWS);
+            case "applyRoPE" -> handles.containsKey(FN_ROPE);
+            default -> false;
+        };
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /**

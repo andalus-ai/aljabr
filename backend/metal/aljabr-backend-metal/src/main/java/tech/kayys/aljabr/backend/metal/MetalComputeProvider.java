@@ -175,6 +175,19 @@ public final class MetalComputeProvider implements ComputeProvider {
         }
 
         @Override
+        public synchronized tech.kayys.aljabr.spi.provider.OperationSupportDescriptor operationSupport(
+                String operationId, Map<String, String> constraints) {
+            if (closed) {
+                throw new IllegalStateException("Metal provider session is closed");
+            }
+            ComputeBackend backend = backends.get(BACKEND_ID);
+            if (backend instanceof MetalComputeBackend metalBackend) {
+                return metalBackend.operationSupport(operationId, constraints);
+            }
+            return ProviderSession.super.operationSupport(operationId, constraints);
+        }
+
+        @Override
         public synchronized void close() throws ProviderException {
             if (closed) {
                 return;

@@ -84,6 +84,17 @@ class MetalComputeProviderTest {
     }
 
     @Test
+    void operationSupportRemainsUnknownForOpaqueThirdPartyBackend() throws Exception {
+        MetalComputeProvider provider = new MetalComputeProvider(() -> true, MetalComputeProviderTest::inertBackend);
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            var support = session.operationSupport("tensor.matmul", Map.of("dtype", "f32"));
+            assertEquals(tech.kayys.aljabr.spi.provider.OperationSupport.UNKNOWN, support.support());
+        }
+        provider.close();
+    }
+
+    @Test
     void providerRejectsUnsupportedPlatformAndForeignDevice() throws Exception {
         MetalComputeProvider unsupported = new MetalComputeProvider(() -> false, MetalComputeProviderTest::inertBackend);
         unsupported.initialize(new ProviderContext("test", Map.of()));
