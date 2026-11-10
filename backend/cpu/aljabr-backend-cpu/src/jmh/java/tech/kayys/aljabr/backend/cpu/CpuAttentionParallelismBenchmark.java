@@ -26,6 +26,10 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
+import tech.kayys.aljabr.core.tensor.DType;
+import tech.kayys.aljabr.core.tensor.DefaultTensor;
+import tech.kayys.aljabr.core.tensor.DeviceType;
+import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
 
@@ -75,10 +79,10 @@ public class CpuAttentionParallelismBenchmark {
 
     private void assertEquivalentOutputs() {
         Tensor expected = backend.attention(query, key, value);
-        HostAccessibleStorage actual = parallelCandidate();
+        Tensor actual = parallelCandidate();
         try {
             MemorySegment expectedSegment = CpuTensorStorageAccess.segment(expected);
-            MemorySegment actualSegment = actual.segment();
+            MemorySegment actualSegment = CpuTensorStorageAccess.segment(actual);
             long elements = expected.numel();
             for (long i = 0; i < elements; i++) {
                 float a = expectedSegment.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
@@ -111,26 +115,26 @@ public class CpuAttentionParallelismBenchmark {
     @Benchmark
     public void serialBackendAttention() {
         Tensor output = backend.attention(query, key, value);
-        output.release();
+        outputStorage.release();
     }
 
     @Benchmark
     public void parallelCandidateAttention() {
-        HostAccessibleStorage output = parallelCandidate();
-        output.release();
+        Tensor output = parallelCandidate();
+        outputStorage.release();
     }
 
-    private HostAccessibleStorage parallelCandidate() {
+    private Tensor parallelCandidate() {
         long queryLength = sequenceLength;
         long keyLength = sequenceLength;
         long headDim = headDimension;
         long totalElements = (long) batchHeads * queryLength * headDim;
-        HostAccessibleStorage output = (HostAccessibleStorage) backend.allocateStorage(
+        HostAccessibleStorage outputStorage = (HostAccessibleStorage) backend.allocateStorage(
                 Math.multiplyExact(totalElements, Float.BYTES));
         MemorySegment q = CpuTensorStorageAccess.segment(query);
         MemorySegment k = CpuTensorStorageAccess.segment(key);
         MemorySegment v = CpuTensorStorageAccess.segment(value);
-        MemorySegment out = output.segment();
+        MemorySegment out = outputStorage.segment();
         float scale = (float) (1.0 / Math.sqrt(headDim));
 
         List<Callable<Void>> tasks = new ArrayList<>(batchHeads);
@@ -149,16 +153,21 @@ public class CpuAttentionParallelismBenchmark {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            output.release();
+            outputStorage.release();
             throw new IllegalStateException("Interrupted while executing parallel attention", e);
         } catch (ExecutionException e) {
-            output.release();
+            outputStorage.release();
             throw new IllegalStateException("Parallel attention worker failed", e.getCause());
         } catch (RuntimeException | Error e) {
-            output.release();
+            outputStorage.release();
             throw e;
         }
-        return output;
+        return new DefaultTensor(
+                new Shape(1, batchHeads, sequenceLength, headDimension),
+                DType.F32,
+                DeviceType.CPU,
+                outputStorage,
+                backend);
     }
 
     private static void computeGroup(
