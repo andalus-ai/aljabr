@@ -958,80 +958,127 @@ public final class CpuBackend implements ComputeBackend {
         HostAccessibleStorage output=allocateOutput(Math.multiplyExact(outputShape.numel(),Float.BYTES));
         MemorySegment q=seg(Q), k=seg(K), v=seg(V), mask=additiveMask==null?null:seg(additiveMask), out=output.segment();
         float scale=(float)(1.0/Math.sqrt(headDim));
-        for (long b = 0; b < batch; b++) {
-            for (long h = 0; h < heads; h++) {
-                long qBase = (b * heads + h) * queryLength * headDim;
-                long kBase = (b * heads + h) * keyLength * headDim;
-                double[] weightedValues = new double[Math.toIntExact(headDim)];
-
-                for (long qi = 0; qi < queryLength; qi++) {
-                    java.util.Arrays.fill(weightedValues, 0d);
-                    float runningMax = Float.NEGATIVE_INFINITY;
-                    double denominator = 0d;
-
-                    // Online softmax: maintain a numerically stable running
-                    // normalization and weighted-value sum without storing
-                    // the query's full key-length score/probability vector.
-                    for (long ki = 0; ki < keyLength; ki++) {
-                        float additive = mask == null ? 0f
-                                : mask.get(ValueLayout.JAVA_FLOAT, (qi * keyLength + ki) * Float.BYTES);
-                        if (Float.isNaN(additive) || additive == Float.POSITIVE_INFINITY) {
-                            throw new IllegalArgumentException(
-                                    "attention mask values must not be NaN or positive infinity");
-                        }
-                        long causalLimit = keyLength - queryLength + qi;
-                        if ((causal && ki > causalLimit) || additive == Float.NEGATIVE_INFINITY) {
-                            continue;
-                        }
-
-                        float score = CpuAttentionOps.dot(
-                                q, (qBase + qi * headDim) * Float.BYTES,
-                                k, (kBase + ki * headDim) * Float.BYTES,
-                                Math.toIntExact(headDim)) * scale + additive;
-
-                        float nextMax;
-                        double previousScale;
-                        double currentScale;
-                        if (Float.isFinite(score)) {
-                            if (score > runningMax) {
-                                previousScale = Math.exp(runningMax - score);
-                                currentScale = 1d;
-                                nextMax = score;
-                            } else {
-                                previousScale = 1d;
-                                currentScale = Math.exp(score - runningMax);
-                                nextMax = runningMax;
-                            }
-                        } else {
-                            // Preserve the existing exceptional-value behavior.
-                            nextMax = Math.max(runningMax, score);
-                            previousScale = runningMax == Float.NEGATIVE_INFINITY
-                                    ? 0d : Math.exp(runningMax - nextMax);
-                            currentScale = Math.exp(score - nextMax);
-                        }
-                        denominator = denominator * previousScale + currentScale;
-
-                        for (long d = 0; d < headDim; d++) {
-                            float valueAtKey = v.get(ValueLayout.JAVA_FLOAT,
-                                    (kBase + ki * headDim + d) * Float.BYTES);
-                            weightedValues[Math.toIntExact(d)] =
-                                    weightedValues[Math.toIntExact(d)] * previousScale
-                                            + currentScale * valueAtKey;
-                        }
-                        runningMax = nextMax;
-                    }
-
-                    for (long d = 0; d < headDim; d++) {
-                        float result = denominator == 0d
-                                ? 0f
-                                : (float) (weightedValues[Math.toIntExact(d)] / denominator);
-                        out.set(ValueLayout.JAVA_FLOAT,
-                                (qBase + qi * headDim + d) * Float.BYTES, result);
-                    }
+        int groupCount = Math.toIntExact(Math.multiplyExact(batch, heads));
+        try {
+            if (shouldParallelizeAttention(groupCount, queryLength, keyLength, headDim)) {
+                // The common ForkJoinPool bounds CPU attention workers globally
+                // across backend instances and concurrent inference requests.
+                java.util.stream.IntStream.range(0, groupCount).parallel().forEach(group ->
+                        computeAttentionGroup(q, k, v, mask, out, group,
+                                queryLength, keyLength, headDim, scale, causal));
+            } else {
+                for (int group = 0; group < groupCount; group++) {
+                    computeAttentionGroup(q, k, v, mask, out, group,
+                            queryLength, keyLength, headDim, scale, causal);
                 }
             }
+            return out(outputShape, output);
+        } catch (RuntimeException | Error failure) {
+            output.release();
+            throw failure;
         }
-        return out(outputShape,output);
+    }
+
+
+    /**
+     * Avoid parallel scheduling for small attention workloads where task
+     * coordination costs more than processing independent batch/head groups.
+     */
+    private static boolean shouldParallelizeAttention(
+            int groupCount, long queryLength, long keyLength, long headDim) {
+        if (groupCount < 2) {
+            return false;
+        }
+        long work = groupCount;
+        for (long factor : new long[] {queryLength, keyLength, headDim}) {
+            if (factor != 0 && work > Long.MAX_VALUE / factor) {
+                return true;
+            }
+            work *= factor;
+        }
+        return work >= (1L << 18);
+    }
+
+    /** Computes one independent [batch, head] attention group. */
+    private static void computeAttentionGroup(
+            MemorySegment q,
+            MemorySegment k,
+            MemorySegment v,
+            MemorySegment mask,
+            MemorySegment out,
+            int group,
+            long queryLength,
+            long keyLength,
+            long headDim,
+            float scale,
+            boolean causal) {
+        long qBase = (long) group * queryLength * headDim;
+        long kBase = (long) group * keyLength * headDim;
+        double[] weightedValues = new double[Math.toIntExact(headDim)];
+
+        for (long qi = 0; qi < queryLength; qi++) {
+            java.util.Arrays.fill(weightedValues, 0d);
+            float runningMax = Float.NEGATIVE_INFINITY;
+            double denominator = 0d;
+
+            // Online softmax: keep only the running normalization and weighted
+            // value sum; no query-sized score/probability array is allocated.
+            for (long ki = 0; ki < keyLength; ki++) {
+                float additive = mask == null ? 0f
+                        : mask.get(ValueLayout.JAVA_FLOAT, (qi * keyLength + ki) * Float.BYTES);
+                if (Float.isNaN(additive) || additive == Float.POSITIVE_INFINITY) {
+                    throw new IllegalArgumentException(
+                            "attention mask values must not be NaN or positive infinity");
+                }
+                long causalLimit = keyLength - queryLength + qi;
+                if ((causal && ki > causalLimit) || additive == Float.NEGATIVE_INFINITY) {
+                    continue;
+                }
+
+                float score = CpuAttentionOps.dot(
+                        q, (qBase + qi * headDim) * Float.BYTES,
+                        k, (kBase + ki * headDim) * Float.BYTES,
+                        Math.toIntExact(headDim)) * scale + additive;
+
+                float nextMax;
+                double previousScale;
+                double currentScale;
+                if (Float.isFinite(score)) {
+                    if (score > runningMax) {
+                        previousScale = Math.exp(runningMax - score);
+                        currentScale = 1d;
+                        nextMax = score;
+                    } else {
+                        previousScale = 1d;
+                        currentScale = Math.exp(score - runningMax);
+                        nextMax = runningMax;
+                    }
+                } else {
+                    // Preserve the existing exceptional-value behavior.
+                    nextMax = Math.max(runningMax, score);
+                    previousScale = runningMax == Float.NEGATIVE_INFINITY
+                            ? 0d : Math.exp(runningMax - nextMax);
+                    currentScale = Math.exp(score - nextMax);
+                }
+                denominator = denominator * previousScale + currentScale;
+
+                for (long d = 0; d < headDim; d++) {
+                    float valueAtKey = v.get(ValueLayout.JAVA_FLOAT,
+                            (kBase + ki * headDim + d) * Float.BYTES);
+                    int index = Math.toIntExact(d);
+                    weightedValues[index] = weightedValues[index] * previousScale
+                            + currentScale * valueAtKey;
+                }
+                runningMax = nextMax;
+            }
+
+            for (long d = 0; d < headDim; d++) {
+                float result = denominator == 0d
+                        ? 0f : (float) (weightedValues[Math.toIntExact(d)] / denominator);
+                out.set(ValueLayout.JAVA_FLOAT,
+                        (qBase + qi * headDim + d) * Float.BYTES, result);
+            }
+        }
     }
 
     // ── Conv / Pool ───────────────────────────────────────────────────────────
