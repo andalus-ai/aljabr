@@ -580,6 +580,13 @@ public class LazyTensorTest {
         GraphNode n1 = GraphNode.constant(t1);
         LazyTensor lazy1 = new LazyTensor(n1, mockBackend);
 
+        Tensor arithmeticResult = lazy1.add(t2);
+        assertTrue(arithmeticResult instanceof LazyTensor);
+        assertTrue(((LazyTensor) arithmeticResult).getNode().hasBackwardFunction());
+
+        Tensor activationResult = lazy1.relu();
+        assertFalse(((LazyTensor) activationResult).getNode().hasBackwardFunction());
+
         Tensor result = lazy1.matmul(t2);
 
         // Assert that result is lazy and not yet evaluated
