@@ -88,11 +88,12 @@ class CpuBatchedAttentionTest {
     @Test
     void validatesAdditiveMaskEntriesEvenWhenCausalModeWouldSkipTheirKeys() {
         CpuBackend backend = new CpuBackend();
-        Tensor query = TensorFactory.of(new float[1], backend, 1, 1, 1, 1);
+        Tensor query = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
         Tensor key = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
         Tensor value = TensorFactory.of(new float[] {2f, 8f}, backend, 1, 1, 2, 1);
-        // For a single query over two cached keys, key 1 is causally excluded.
-        Tensor mask = TensorFactory.of(new float[] {0f, Float.NaN}, backend, 1, 2);
+        // Bottom-right causal alignment excludes key 1 for query 0.
+        Tensor mask = TensorFactory.of(
+                new float[] {0f, Float.NaN, 0f, 0f}, backend, 2, 2);
         try {
             assertThrows(IllegalArgumentException.class,
                     () -> backend.attention(query, key, value, mask, true));
