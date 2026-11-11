@@ -87,11 +87,21 @@ val withBlackwell = providers.gradleProperty("withBlackwell")
     .map(String::toBoolean)
     .getOrElse(false)
 
+// The older CUDA kernel-plugin module still bundles a pre-SPI ComputeBackend
+// and implements a retired KernelPlugin lifecycle. The newer
+// aljabr-backend-cuda project remains included; only this unported integration
+// is opt-in until it is migrated to the current compute and plugin contracts.
+// Use -PwithLegacyCudaKernelPlugin=true to include it explicitly.
+val withLegacyCudaKernelPlugin = providers.gradleProperty("withLegacyCudaKernelPlugin")
+    .map(String::toBoolean)
+    .getOrElse(false)
+
 // Discover regular hardware providers and kernel plugins. Experimental HAT
 // remains opt-in because it requires a separate Babylon JDK installation.
 val excludedBackendPaths = buildSet {
     add("hat")
     if (!withBlackwell) add("blackwell")
+    if (!withLegacyCudaKernelPlugin) add("cuda/aljabr-plugin-kernel-cuda")
 }
 includeProjectsUnder("backend", excludedRelativePaths = excludedBackendPaths)
 
