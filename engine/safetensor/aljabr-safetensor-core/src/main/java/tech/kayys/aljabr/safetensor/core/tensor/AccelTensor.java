@@ -135,7 +135,7 @@ public class AccelTensor implements AutoCloseable {
                 if (cached != null && !cached.isClosed()) {
                     return cached;
                 }
-                Arena f16Arena = Arena.ofAuto();
+                Arena f16Arena = Arena.ofShared();
                 long size = halfStorageByteSize();
                 long paddedSize = (size + 4095L) & ~4095L;
                 MemorySegment f16Seg = f16Arena.allocate(paddedSize + 4096L, 4096L);
@@ -180,7 +180,7 @@ public class AccelTensor implements AutoCloseable {
                 long n = numel();
                 long halfSize = n * 2L;
                 long paddedSize = (halfSize + 4095L) & ~4095L;
-                Arena f16Arena = Arena.ofAuto();
+                Arena f16Arena = Arena.ofShared();
                 MemorySegment f16Seg = f16Arena.allocate(paddedSize + 4096L, 4096L);
                 // Step 2: transcode F32 → F16
                 DequantizationKernel.transcodeF32ToF16(f32.dataPtr(), f16Seg, n);
@@ -226,7 +226,7 @@ public class AccelTensor implements AutoCloseable {
             long cols = shape[1];
             long size = halfStorageByteSize();
             long paddedSize = (size + 4095L) & ~4095L;
-            Arena f16Arena = Arena.ofAuto();
+            Arena f16Arena = Arena.ofShared();
             MemorySegment dst = f16Arena.allocate(paddedSize + 4096L, 4096L);
             MemorySegment src = dataPtr();
             for (long r = 0; r < rows; r++) {
@@ -364,7 +364,7 @@ public class AccelTensor implements AutoCloseable {
      */
     public static AccelTensor zeros(long... shape) {
         long n = numelOf(shape);
-        Arena arena = Arena.ofAuto();
+        Arena arena = Arena.ofShared();
         // Force page alignment (4096) to prevent SIMD/page-boundary SEGV
         long size = n * Float.BYTES;
         long paddedSize = (size + 4095) & ~4095;
@@ -394,7 +394,7 @@ public class AccelTensor implements AutoCloseable {
      */
     public static AccelTensor ones(long... shape) {
         long n = numelOf(shape);
-        Arena arena = Arena.ofAuto();
+        Arena arena = Arena.ofShared();
         MemorySegment seg = arena.allocate(n * Float.BYTES, 64);
         for (long i = 0; i < n; i++) {
             seg.setAtIndex(ValueLayout.JAVA_FLOAT, i, 1.0f);
@@ -411,7 +411,7 @@ public class AccelTensor implements AutoCloseable {
             throw new IllegalArgumentException(
                 "Data length " + data.length + " != shape numel " + n);
         }
-        Arena arena = Arena.ofAuto();
+        Arena arena = Arena.ofShared();
         MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_FLOAT, data);
         return new AccelTensor(seg, shape, contiguousStride(shape), 0, arena);
     }
@@ -423,7 +423,7 @@ public class AccelTensor implements AutoCloseable {
     public static AccelTensor fromByteArray(byte[] data, long... shape) {
         // For byte arrays, the element size depends on the quantType,
         // but the factory just allocates the raw bytes.
-        Arena arena = Arena.ofAuto();
+        Arena arena = Arena.ofShared();
         MemorySegment seg = arena.allocateFrom(ValueLayout.JAVA_BYTE, data);
         return new AccelTensor(seg, shape, contiguousStride(shape), 0, arena);
     }
@@ -458,7 +458,7 @@ public class AccelTensor implements AutoCloseable {
      */
     public static AccelTensor copyOf(MemorySegment source, long[] shape) {
         long n = numelOf(shape);
-        Arena arena = Arena.ofAuto();
+        Arena arena = Arena.ofShared();
         MemorySegment seg = arena.allocate(n * Float.BYTES, 64);
         MemorySegment.copy(source, 0, seg, 0, n * Float.BYTES);
         return new AccelTensor(seg, shape, contiguousStride(shape), 0, arena);
@@ -863,7 +863,7 @@ public class AccelTensor implements AutoCloseable {
         }
         
         long n = numel();
-        java.lang.foreign.Arena newArena = java.lang.foreign.Arena.ofAuto();
+        java.lang.foreign.Arena newArena = java.lang.foreign.Arena.ofShared();
         long elemBytes = elementByteSize();
         long paddedSize = (n * elemBytes + 31L) & ~31L;
         java.lang.foreign.MemorySegment newSeg = newArena.allocate(paddedSize + 4096L, 4096L);
@@ -1118,7 +1118,7 @@ public class AccelTensor implements AutoCloseable {
      */
     private AccelTensor materialize(long[] srcShape, long[] srcStride) {
         long n = numelOf(srcShape);
-        Arena newArena = Arena.ofAuto();
+        Arena newArena = Arena.ofShared();
         long requiredBytes = byteSizeForElements(n);
         long paddedSize = (requiredBytes + 4095L) & ~4095L;
         MemorySegment newSeg = newArena.allocate(paddedSize + 4096L, 4096L);
