@@ -954,9 +954,13 @@ public final class CpuBackend implements ComputeBackend {
                 || additiveMask.shape().rank()!=2 || additiveMask.shape().dim(0)!=queryLength
                 || additiveMask.shape().dim(1)!=keyLength))
             throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] on this backend");
+        MemorySegment mask = additiveMask == null ? null : seg(additiveMask);
+        if (mask != null) {
+            validateAttentionMask(mask, queryLength, keyLength);
+        }
         Shape outputShape=new Shape(batch,heads,queryLength,headDim);
         HostAccessibleStorage output=allocateOutput(Math.multiplyExact(outputShape.numel(),Float.BYTES));
-        MemorySegment q=seg(Q), k=seg(K), v=seg(V), mask=additiveMask==null?null:seg(additiveMask), out=output.segment();
+        MemorySegment q=seg(Q), k=seg(K), v=seg(V), out=output.segment();
         float scale=(float)(1.0/Math.sqrt(headDim));
         int groupCount = Math.toIntExact(Math.multiplyExact(batch, heads));
         try {
@@ -979,6 +983,23 @@ public final class CpuBackend implements ComputeBackend {
         }
     }
 
+
+    /**
+     * Validates a shared additive mask once before attention work is scheduled.
+     * The same mask is reused by every batch/head group, so validation must not
+     * be repeated in each group's query/key hot loop.
+     */
+    private static void validateAttentionMask(
+            MemorySegment mask, long queryLength, long keyLength) {
+        long elements = Math.multiplyExact(queryLength, keyLength);
+        for (long index = 0; index < elements; index++) {
+            float value = mask.get(ValueLayout.JAVA_FLOAT, index * Float.BYTES);
+            if (Float.isNaN(value) || value == Float.POSITIVE_INFINITY) {
+                throw new IllegalArgumentException(
+                        "attention mask values must not be NaN or positive infinity");
+            }
+        }
+    }
 
     /**
      * Avoid parallel scheduling for small attention workloads where task
@@ -1026,10 +1047,6 @@ public final class CpuBackend implements ComputeBackend {
             for (long ki = 0; ki < keyLength; ki++) {
                 float additive = mask == null ? 0f
                         : mask.get(ValueLayout.JAVA_FLOAT, (qi * keyLength + ki) * Float.BYTES);
-                if (Float.isNaN(additive) || additive == Float.POSITIVE_INFINITY) {
-                    throw new IllegalArgumentException(
-                            "attention mask values must not be NaN or positive infinity");
-                }
                 long causalLimit = keyLength - queryLength + qi;
                 if ((causal && ki > causalLimit) || additive == Float.NEGATIVE_INFINITY) {
                     continue;
