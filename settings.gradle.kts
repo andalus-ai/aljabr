@@ -74,9 +74,21 @@ includeProjectsUnder(
     excludedRelativePaths = if (withAutograd) emptySet() else setOf("ml/autograd")
 )
 
-// Discover every regular hardware provider and kernel plugin. Experimental HAT
+// The Blackwell runner still targets the pre-SPI runner/extension contracts and
+// cannot compile against the current module graph. Keep its sources available
+// for the ongoing port, but exclude it from the default build until that port is
+// complete. Use -PwithBlackwell=true to include it explicitly while migrating.
+val withBlackwell = providers.gradleProperty("withBlackwell")
+    .map(String::toBoolean)
+    .getOrElse(false)
+
+// Discover regular hardware providers and kernel plugins. Experimental HAT
 // remains opt-in because it requires a separate Babylon JDK installation.
-includeProjectsUnder("backend", excludedRelativePaths = setOf("hat"))
+val excludedBackendPaths = buildSet {
+    add("hat")
+    if (!withBlackwell) add("blackwell")
+}
+includeProjectsUnder("backend", excludedRelativePaths = excludedBackendPaths)
 
 // Optional experimental Babylon HAT backend.
 val withHat = providers.gradleProperty("withHat").map(String::toBoolean).getOrElse(false)
