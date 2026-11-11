@@ -14,7 +14,7 @@
 
 package tech.kayys.aljabr.plugin.core;
 
-import tech.kayys.aljabr.spi.plugin.aljabrPlugin;
+import tech.kayys.aljabr.spi.plugin.AljabrPlugin;
 import tech.kayys.aljabr.plugin.descriptor.PluginDescriptor;
 
 import java.io.File;
@@ -57,10 +57,10 @@ import org.jboss.logging.Logger;
  * 
  * <pre>{@code
  * JarPluginLoader loader = new JarPluginLoader();
- * List<aljabrPlugin> plugins = loader.loadFromDirectory(Paths.get("~/.aljabr/plugins"));
+ * List<AljabrPlugin> plugins = loader.loadFromDirectory(Paths.get("~/.aljabr/plugins"));
  * 
  * // Or load specific JAR
- * aljabrPlugin plugin = loader.loadFromJar(Paths.get("plugin.jar"));
+ * AljabrPlugin plugin = loader.loadFromJar(Paths.get("plugin.jar"));
  * 
  * // Unload plugin
  * loader.unload("plugin-id");
@@ -131,7 +131,7 @@ public class JarPluginLoader {
      *
      * @return List of loaded plugins
      */
-    public List<aljabrPlugin> loadAll() {
+    public List<AljabrPlugin> loadAll() {
         if (!Files.exists(pluginDirectory)) {
             LOG.infof("Plugin directory does not exist: %s", pluginDirectory);
             return Collections.emptyList();
@@ -140,7 +140,7 @@ public class JarPluginLoader {
         LOG.infof("Loading plugins from: %s", pluginDirectory);
 
         try {
-            List<aljabrPlugin> plugins = Files.walk(pluginDirectory, 1)
+            List<AljabrPlugin> plugins = Files.walk(pluginDirectory, 1)
                     .filter(Files::isRegularFile)
                     .filter(p -> p.toString().endsWith(".jar"))
                     .map(this::loadFromJar)
@@ -162,7 +162,7 @@ public class JarPluginLoader {
      * @param jarPath Path to JAR file
      * @return Loaded plugin or null if loading failed
      */
-    public aljabrPlugin loadFromJar(Path jarPath) {
+    public AljabrPlugin loadFromJar(Path jarPath) {
         if (!Files.exists(jarPath)) {
             LOG.warnf("JAR not found: %s", jarPath);
             return null;
@@ -201,7 +201,7 @@ public class JarPluginLoader {
             Class<?> pluginClass = handle.classLoader.loadClass(descriptor.mainClass());
 
             // Instantiate plugin
-            aljabrPlugin plugin = instantiatePlugin(pluginClass);
+            AljabrPlugin plugin = instantiatePlugin(pluginClass);
 
             // Store ClassLoader for later unloading
             loadedClassLoaders.put(plugin.id(), handle);
@@ -345,7 +345,7 @@ public class JarPluginLoader {
                             kind == StandardWatchEventKinds.ENTRY_MODIFY) {
                         // Reload plugin
                         Path fullPath = pluginDirectory.resolve(changedFile);
-                        aljabrPlugin plugin = loadFromJar(fullPath);
+                        AljabrPlugin plugin = loadFromJar(fullPath);
                         if (plugin != null) {
                             LOG.infof("Hot-reloaded plugin: %s", plugin.id());
                         }
@@ -397,11 +397,11 @@ public class JarPluginLoader {
     }
 
     @SuppressWarnings("unchecked")
-    private aljabrPlugin instantiatePlugin(Class<?> pluginClass) throws Exception {
+    private AljabrPlugin instantiatePlugin(Class<?> pluginClass) throws Exception {
         // Try to find no-arg constructor
         Constructor<?> constructor = pluginClass.getDeclaredConstructor();
         constructor.setAccessible(true);
-        return (aljabrPlugin) constructor.newInstance();
+        return (AljabrPlugin) constructor.newInstance();
     }
 
     /**
