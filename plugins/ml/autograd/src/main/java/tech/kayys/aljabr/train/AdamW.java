@@ -74,6 +74,7 @@ public final class AdamW implements Optimizer {
             if (gradient == null || !parameter.isTrainable()) {
                 continue;
             }
+            parameter.validateGradient(gradient);
 
             state.m.putIfAbsent(name, gradient.zerosLike());
             state.v.putIfAbsent(name, gradient.zerosLike());
