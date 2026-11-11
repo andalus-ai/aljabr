@@ -31,11 +31,12 @@ final class OperationBackwardFunctions {
     }
 
     private static Tensor[] add(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        return new Tensor[] { gradient, gradient };
+        // Each input receives an independently owned gradient tensor.
+        return new Tensor[] { gradient.add(0.0f), gradient.add(0.0f) };
     }
 
     private static Tensor[] subtract(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        return new Tensor[] { gradient, gradient.mul(-1.0f) };
+        return new Tensor[] { gradient.add(0.0f), gradient.mul(-1.0f) };
     }
 
     private static Tensor[] multiply(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
@@ -49,14 +50,33 @@ final class OperationBackwardFunctions {
         Tensor numerator = inputs.get(0);
         Tensor denominator = inputs.get(1);
         Tensor denominatorSquared = denominator.mul(denominator);
-        return new Tensor[] {
-                gradient.div(denominator),
-                gradient.mul(numerator).div(denominatorSquared).mul(-1.0f)
-        };
+        Tensor numeratorGradient = null;
+        Tensor denominatorNumerator = null;
+        Tensor denominatorQuotient = null;
+        try {
+            numeratorGradient = gradient.div(denominator);
+            denominatorNumerator = gradient.mul(numerator);
+            denominatorQuotient = denominatorNumerator.div(denominatorSquared);
+            Tensor denominatorGradient = denominatorQuotient.mul(-1.0f);
+            return new Tensor[] { numeratorGradient, denominatorGradient };
+        } catch (RuntimeException | Error failure) {
+            if (numeratorGradient != null) {
+                numeratorGradient.release();
+            }
+            throw failure;
+        } finally {
+            denominatorSquared.release();
+            if (denominatorNumerator != null) {
+                denominatorNumerator.release();
+            }
+            if (denominatorQuotient != null) {
+                denominatorQuotient.release();
+            }
+        }
     }
 
     private static Tensor[] addScalar(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        return new Tensor[] { gradient };
+        return new Tensor[] { gradient.add(0.0f) };
     }
 
     private static Tensor[] multiplyScalar(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
