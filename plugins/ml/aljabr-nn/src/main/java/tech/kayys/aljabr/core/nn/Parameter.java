@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.core.nn;
 
 import java.util.Objects;
+import java.util.function.Consumer;
 import tech.kayys.aljabr.core.tensor.Tensor;
 
 /**
@@ -15,10 +16,12 @@ public final class Parameter {
 
     private final String name;
     private volatile Tensor tensor;
+    private final Consumer<Tensor> updateListener;
 
-    Parameter(String name, Tensor tensor) {
+    Parameter(String name, Tensor tensor, Consumer<Tensor> updateListener) {
         this.name = Objects.requireNonNull(name, "name must not be null");
         this.tensor = Objects.requireNonNull(tensor, "tensor must not be null");
+        this.updateListener = Objects.requireNonNull(updateListener, "updateListener must not be null");
     }
 
     /** Local registration name within the owning module. */
@@ -79,6 +82,7 @@ public final class Parameter {
         }
         replacement.setRequiresGrad(current.requiresGrad());
         this.tensor = replacement;
+        updateListener.accept(replacement);
     }
 
     void replaceTensor(Tensor replacement) {
