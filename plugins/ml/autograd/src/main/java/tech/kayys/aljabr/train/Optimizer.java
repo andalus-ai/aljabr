@@ -1,7 +1,7 @@
 package tech.kayys.aljabr.train;
 
-import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.nn.Parameter;
+import tech.kayys.aljabr.core.tensor.Tensor;
 import java.util.Collection;
 import java.util.Map;
 
@@ -16,8 +16,8 @@ public interface Optimizer {
      * <p>This overload is only supported by implementations that can mutate
      * parameter storage. Aljabr's current {@link Tensor} arithmetic returns
      * new tensors and has no assignment operation, so implementations may
-     * throw {@link UnsupportedOperationException}. Prefer the named-map
-     * overload until a mutable parameter abstraction is available.
+     * throw {@link UnsupportedOperationException}. Prefer {@link #stepParameters(Map, Map)}
+     * when updating registered model parameters.
      *
      * @param params collection of parameter tensors to update
      */
