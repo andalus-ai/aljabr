@@ -33,6 +33,37 @@ class ParameterTest {
     }
 
     @Test
+    void updateTensorReplacesValueAndPreservesTrainability() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true)) {
+            Parameter weight = layer.namedParameterObjects().get("weight");
+            weight.setRequiresGrad(false);
+            var original = weight.tensor();
+            var replacement = original.zerosLike();
+
+            weight.updateTensor(replacement);
+
+            assertThat(weight.tensor()).isSameAs(replacement).isNotSameAs(original);
+            assertThat(weight.requiresGrad()).isFalse();
+            assertThat(layer.parameters().get("weight")).isSameAs(replacement);
+        }
+    }
+
+    @Test
+    void updateTensorRejectsIncompatibleShape() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true)) {
+            Parameter weight = layer.namedParameterObjects().get("weight");
+            var incompatible = tech.kayys.aljabr.core.tensor.TensorFactory.zeros(backend, 3, 2);
+
+            assertThat(org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class, () -> weight.updateTensor(incompatible)))
+                    .hasMessageContaining("shape cannot change");
+            incompatible.release();
+        }
+    }
+
+    @Test
     void parameterHandlesAreAvailableThroughQualifiedModuleNames() {
         CpuBackend backend = new CpuBackend();
         try (Sequential model = new Sequential(backend,
