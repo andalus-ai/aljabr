@@ -39,6 +39,10 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
  * across a persistent executor. The candidate deliberately includes task
  * submission and output allocation in each measured invocation.
  *
+ * <p>{@code candidateWorkerCount} configures only the benchmark-only executor.
+ * Production attention uses the JVM common pool and is unaffected by this
+ * parameter.</p>
+ *
  * <p>The serial reference remains independent of production scheduling, so
  * this benchmark stays meaningful after production attention is parallelized.</p>
  */
@@ -60,7 +64,7 @@ public class CpuAttentionParallelismBenchmark {
     public int headDimension;
 
     @Param({"1", "2", "4", "8"})
-    public int workerCount;
+    public int candidateWorkerCount;
 
     private CpuBackend backend;
     private Tensor query;
@@ -74,7 +78,7 @@ public class CpuAttentionParallelismBenchmark {
         query = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
         key = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
         value = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
-        executor = Executors.newFixedThreadPool(workerCount);
+        executor = Executors.newFixedThreadPool(candidateWorkerCount);
         assertEquivalentOutputs();
     }
 
