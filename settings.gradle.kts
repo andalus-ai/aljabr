@@ -89,9 +89,9 @@ val withLegacyCudaKernelPlugin = providers.gradleProperty("withLegacyCudaKernelP
     .map(String::toBoolean)
     .getOrElse(false)
 
-// The ROCm runner module still depends on retired runner/exception APIs and
+// The ROCm backend modules still depend on retired runner/exception APIs and
 // external Quarkus/MicroProfile contracts that are not part of the current
-// backend SPI. Keep this legacy integration opt-in while the port is pending.
+// backend SPI. Keep this legacy integration group opt-in while the port is pending.
 val withLegacyRocmKernel = providers.gradleProperty("withLegacyRocmKernel")
     .map(String::toBoolean)
     .getOrElse(false)
@@ -102,7 +102,7 @@ val excludedBackendPaths = buildSet {
     add("hat")
     if (!withBlackwell) add("blackwell")
     if (!withLegacyCudaKernelPlugin) add("cuda/aljabr-plugin-kernel-cuda")
-    if (!withLegacyRocmKernel) add("rocm/aljabr-kernel-rocm")
+    if (!withLegacyRocmKernel) add("rocm")
 }
 includeProjectsUnder("backend", excludedRelativePaths = excludedBackendPaths)
 
