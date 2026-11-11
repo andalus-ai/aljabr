@@ -1,0 +1,33 @@
+package tech.kayys.aljabr.core.tensor.autograd;
+
+import java.util.List;
+
+import tech.kayys.aljabr.core.tensor.Tensor;
+
+/**
+ * Computes the gradients contributed to an operation's inputs during reverse-mode
+ * differentiation.
+ *
+ * <p>The returned array is positional: entry {@code i} is the gradient for input
+ * {@code i}. An entry may be {@code null} when that input is non-differentiable
+ * or does not require a gradient. The array length must equal the number of
+ * inputs supplied to the function.</p>
+ *
+ * <p>This contract is deliberately expressed only in terms of {@link Tensor};
+ * implementations can use the tensor's backend without coupling the graph to a
+ * particular device, storage representation, or IR.</p>
+ */
+@FunctionalInterface
+public interface BackwardFunction {
+
+    /**
+     * Applies the local vector-Jacobian product for one recorded operation.
+     *
+     * @param output materialized forward output
+     * @param outputGradient gradient propagated from consumers
+     * @param inputs materialized operation inputs, in forward argument order
+     * @param arguments operation-specific forward arguments
+     * @return one gradient per input, with {@code null} for inputs that receive no gradient
+     */
+    Tensor[] apply(Tensor output, Tensor outputGradient, List<Tensor> inputs, Object[] arguments);
+}
