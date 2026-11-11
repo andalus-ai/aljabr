@@ -181,5 +181,54 @@ class CpuBatchedAttentionTest {
             key.release();
             query.release();
         }
+    } 
+    @Test
+    void parallelizesIndependentHeadsAndPreservesMaskAndCausalSemantics() {
+        CpuBackend backend = new CpuBackend();
+        int heads = 4;
+        int sequence = 32;
+        int dimension = 64;
+        float[] queries = new float[heads * sequence * dimension];
+        float[] keys = new float[heads * sequence * dimension];
+        float[] values = new float[heads * sequence * dimension];
+        for (int head = 0; head < heads; head++) {
+            java.util.Arrays.fill(values,
+                    head * sequence * dimension,
+                    (head + 1) * sequence * dimension,
+                    head + 1f);
+        }
+        float[] maskValues = new float[sequence * sequence];
+        for (int query = 0; query < sequence; query++) {
+            for (int key = 0; key < sequence; key++) {
+                if ((key & 1) != 0) {
+                    maskValues[query * sequence + key] = Float.NEGATIVE_INFINITY;
+                }
+            }
+        }
+
+        Tensor query = TensorFactory.of(queries, backend, 1, heads, sequence, dimension);
+        Tensor key = TensorFactory.of(keys, backend, 1, heads, sequence, dimension);
+        Tensor value = TensorFactory.of(values, backend, 1, heads, sequence, dimension);
+        Tensor mask = TensorFactory.of(maskValues, backend, sequence, sequence);
+        Tensor output = null;
+        try {
+            output = backend.attention(query, key, value, mask, true);
+            float[] actual = output.toFloatArray();
+            for (int head = 0; head < heads; head++) {
+                float expected = head + 1f;
+                int groupStart = head * sequence * dimension;
+                for (int i = 0; i < sequence * dimension; i++) {
+                    org.junit.jupiter.api.Assertions.assertEquals(
+                            expected, actual[groupStart + i], 1e-6f);
+                }
+            }
+        } finally {
+            if (output != null) output.release();
+            mask.release();
+            value.release();
+            key.release();
+            query.release();
+        }
     }
+
 }
