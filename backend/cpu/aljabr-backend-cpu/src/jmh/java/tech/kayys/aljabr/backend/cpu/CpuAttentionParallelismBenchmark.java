@@ -34,12 +34,13 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
 
 /**
- * Compares the production serial rank-4 attention path with a benchmark-only
- * candidate that partitions independent batch/head groups across a persistent
- * executor. The candidate deliberately includes task submission and output
- * allocation in each measured invocation.
+ * Compares an explicit serial reference, the production attention path, and a
+ * benchmark-only candidate that partitions independent batch/head groups
+ * across a persistent executor. The candidate deliberately includes task
+ * submission and output allocation in each measured invocation.
  *
- * <p>This benchmark does not change production backend scheduling.</p>
+ * <p>The serial reference remains independent of production scheduling, so
+ * this benchmark stays meaningful after production attention is parallelized.</p>
  */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.Throughput)
@@ -49,13 +50,13 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
 @Fork(2)
 public class CpuAttentionParallelismBenchmark {
 
-    @Param({"1", "8"})
+    @Param({"1", "2", "4", "8"})
     public int batchHeads;
 
-    @Param({"256", "1024"})
+    @Param({"16", "32", "64", "128", "256", "1024"})
     public int sequenceLength;
 
-    @Param({"64", "128"})
+    @Param({"32", "64", "128"})
     public int headDimension;
 
     @Param({"1", "2", "4", "8"})
@@ -78,25 +79,32 @@ public class CpuAttentionParallelismBenchmark {
     }
 
     private void assertEquivalentOutputs() {
-        Tensor expected = backend.attention(query, key, value);
-        Tensor actual = parallelCandidate();
+        Tensor expected = serialReference();
+        Tensor production = backend.attention(query, key, value);
+        Tensor candidate = parallelCandidate();
         try {
-            MemorySegment expectedSegment = CpuTensorStorageAccess.segment(expected);
-            MemorySegment actualSegment = CpuTensorStorageAccess.segment(actual);
-            long elements = expected.numel();
-            for (long i = 0; i < elements; i++) {
-                float a = expectedSegment.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
-                float b = actualSegment.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
-                float tolerance = Math.max(2.0e-6f, Math.abs(a) * 2.0e-5f);
-                if (!(Math.abs(a - b) <= tolerance)) {
-                    throw new IllegalStateException(
-                            "Parallel attention mismatch at element " + i
-                                    + ": serial=" + a + ", parallel=" + b);
-                }
-            }
+            assertEquivalent(expected, production, "production");
+            assertEquivalent(expected, candidate, "parallel candidate");
         } finally {
-            actual.release();
+            candidate.release();
+            production.release();
             expected.release();
+        }
+    }
+
+    private static void assertEquivalent(Tensor expected, Tensor actual, String label) {
+        MemorySegment expectedSegment = CpuTensorStorageAccess.segment(expected);
+        MemorySegment actualSegment = CpuTensorStorageAccess.segment(actual);
+        long elements = expected.numel();
+        for (long i = 0; i < elements; i++) {
+            float a = expectedSegment.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
+            float b = actualSegment.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
+            float tolerance = Math.max(2.0e-6f, Math.abs(a) * 2.0e-5f);
+            if (!(Math.abs(a - b) <= tolerance)) {
+                throw new IllegalStateException(
+                        label + " attention mismatch at element " + i
+                                + ": serial=" + a + ", actual=" + b);
+            }
         }
     }
 
@@ -113,7 +121,13 @@ public class CpuAttentionParallelismBenchmark {
     }
 
     @Benchmark
-    public void serialBackendAttention() {
+    public void serialReferenceAttention() {
+        Tensor output = serialReference();
+        output.release();
+    }
+
+    @Benchmark
+    public void productionBackendAttention() {
         Tensor output = backend.attention(query, key, value);
         output.release();
     }
@@ -122,6 +136,35 @@ public class CpuAttentionParallelismBenchmark {
     public void parallelCandidateAttention() {
         Tensor output = parallelCandidate();
         output.release();
+    }
+
+    private Tensor serialReference() {
+        long queryLength = sequenceLength;
+        long keyLength = sequenceLength;
+        long headDim = headDimension;
+        long totalElements = (long) batchHeads * queryLength * headDim;
+        HostAccessibleStorage outputStorage = (HostAccessibleStorage) backend.allocateStorage(
+                Math.multiplyExact(totalElements, Float.BYTES));
+        MemorySegment q = CpuTensorStorageAccess.segment(query);
+        MemorySegment k = CpuTensorStorageAccess.segment(key);
+        MemorySegment v = CpuTensorStorageAccess.segment(value);
+        MemorySegment out = outputStorage.segment();
+        float scale = (float) (1.0 / Math.sqrt(headDim));
+
+        try {
+            for (int group = 0; group < batchHeads; group++) {
+                computeGroup(q, k, v, out, group, queryLength, keyLength, headDim, scale);
+            }
+            return new DefaultTensor(
+                    new Shape(1, batchHeads, sequenceLength, headDimension),
+                    DType.F32,
+                    DeviceType.CPU,
+                    outputStorage,
+                    backend);
+        } catch (RuntimeException | Error failure) {
+            outputStorage.release();
+            throw failure;
+        }
     }
 
     private Tensor parallelCandidate() {
