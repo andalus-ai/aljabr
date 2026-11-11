@@ -57,9 +57,12 @@ includeProjectsUnder(
     excludedRelativePaths = if (withAutograd) emptySet() else setOf("ml/autograd")
 )
 
-// Discover every regular hardware provider and kernel plugin. Experimental HAT
-// remains opt-in because it requires a separate Babylon JDK installation.
-includeProjectsUnder("backend", excludedRelativePaths = setOf("hat"))
+// Discover hardware providers and kernel plugins that are integrated with the
+// current backend/SPI contracts. The legacy Blackwell runner still references
+// runner, extension, and KV-cache APIs that are not present in this repository;
+// keep it out of the default build until it is ported to the current contracts.
+// Experimental HAT remains opt-in because it requires a separate Babylon JDK.
+includeProjectsUnder("backend", excludedRelativePaths = setOf("hat", "blackwell"))
 
 // Optional experimental Babylon HAT backend.
 val withHat = providers.gradleProperty("withHat").map(String::toBoolean).getOrElse(false)
