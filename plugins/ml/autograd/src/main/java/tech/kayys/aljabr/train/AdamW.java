@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.train;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.nn.Parameter;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -50,6 +51,48 @@ public final class AdamW implements Optimizer {
         throw new UnsupportedOperationException(
                 "AdamW.step(Collection<Tensor>) cannot replace immutable tensor values; "
                         + "use step(Map<String, Tensor>, Map<String, Tensor>)");
+    }
+
+    @Override
+    public void stepParameters(Map<String, Parameter> params, Map<String, Tensor> grads) {
+        Objects.requireNonNull(params, "params");
+        Objects.requireNonNull(grads, "grads");
+
+        boolean hasGradient = params.entrySet().stream()
+                .anyMatch(entry -> entry.getValue() != null
+                        && entry.getValue().isTrainable()
+                        && grads.get(entry.getKey()) != null);
+        if (!hasGradient) {
+            return;
+        }
+        state.step++;
+
+        for (Map.Entry<String, Parameter> entry : params.entrySet()) {
+            String name = entry.getKey();
+            Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
+            Tensor gradient = grads.get(name);
+            if (gradient == null || !parameter.isTrainable()) {
+                continue;
+            }
+
+            state.m.putIfAbsent(name, gradient.zerosLike());
+            state.v.putIfAbsent(name, gradient.zerosLike());
+
+            Tensor m = state.m.get(name).mul(beta1).add(gradient.mul(1.0f - beta1));
+            Tensor v = state.v.get(name).mul(beta2).add(gradient.mul(gradient).mul(1.0f - beta2));
+            state.m.put(name, m);
+            state.v.put(name, v);
+
+            float bias1 = 1.0f - (float) Math.pow(beta1, state.step);
+            float bias2 = 1.0f - (float) Math.pow(beta2, state.step);
+            Tensor mHat = m.div(bias1);
+            Tensor vHat = v.div(bias2);
+            Tensor update = mHat.div(vHat.sqrt().add(eps));
+
+            Tensor current = parameter.tensor();
+            Tensor decayed = current.sub(current.mul(lr * weightDecay));
+            parameter.updateTensor(decayed.sub(update.mul(lr)));
+        }
     }
 
     @Override
