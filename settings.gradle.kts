@@ -25,11 +25,16 @@ fun includeProjectsUnder(
         }
 }
 
-fun includeDirectProjectsUnder(rootPath: String, prefix: String = rootPath.replace('/', ':')) {
+fun includeDirectProjectsUnder(
+    rootPath: String,
+    prefix: String = rootPath.replace('/', ':'),
+    excludedRelativePaths: Set<String> = emptySet()
+) {
     val rootDir = file(rootPath)
     if (!rootDir.isDirectory) return
     rootDir.listFiles()
         ?.filter { it.isDirectory && (it.resolve("build.gradle.kts").isFile || it.resolve("build.gradle").isFile) }
+        ?.filter { it.name !in excludedRelativePaths }
         ?.sortedBy { it.name }
         ?.forEach { dir ->
             val path = ":$prefix:${dir.name}"
@@ -39,7 +44,17 @@ fun includeDirectProjectsUnder(rootPath: String, prefix: String = rootPath.repla
 }
 
 // Foundational contracts and runtime.
-includeDirectProjectsUnder("core")
+// The plugin-core implementation still targets a removed node-plugin API and
+// an older plugin metadata contract. Keep it available for its ongoing port,
+// but do not make the legacy implementation part of the default core build.
+// Use -PwithLegacyPluginCore=true to include it explicitly.
+val withLegacyPluginCore = providers.gradleProperty("withLegacyPluginCore")
+    .map(String::toBoolean)
+    .getOrElse(false)
+includeDirectProjectsUnder(
+    "core",
+    excludedRelativePaths = if (withLegacyPluginCore) emptySet() else setOf("aljabr-plugin-core")
+)
 includeDirectProjectsUnder("spi")
 
 // Format engines and independently installable scientific/ML extensions.
