@@ -1,7 +1,7 @@
 package tech.kayys.aljabr.train;
 
-import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.nn.Parameter;
+import tech.kayys.aljabr.core.tensor.Tensor;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
