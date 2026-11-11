@@ -25,11 +25,16 @@ fun includeProjectsUnder(
         }
 }
 
-fun includeDirectProjectsUnder(rootPath: String, prefix: String = rootPath.replace('/', ':')) {
+fun includeDirectProjectsUnder(
+    rootPath: String,
+    prefix: String = rootPath.replace('/', ':'),
+    excludedRelativePaths: Set<String> = emptySet()
+) {
     val rootDir = file(rootPath)
     if (!rootDir.isDirectory) return
     rootDir.listFiles()
         ?.filter { it.isDirectory && (it.resolve("build.gradle.kts").isFile || it.resolve("build.gradle").isFile) }
+        ?.filter { it.name !in excludedRelativePaths }
         ?.sortedBy { it.name }
         ?.forEach { dir ->
             val path = ":$prefix:${dir.name}"
@@ -39,7 +44,17 @@ fun includeDirectProjectsUnder(rootPath: String, prefix: String = rootPath.repla
 }
 
 // Foundational contracts and runtime.
-includeDirectProjectsUnder("core")
+// The plugin-core implementation still targets a removed node-plugin API and
+// an older plugin metadata contract. Keep it available for its ongoing port,
+// but do not make the legacy implementation part of the default core build.
+// Use -PwithLegacyPluginCore=true to include it explicitly.
+val withLegacyPluginCore = providers.gradleProperty("withLegacyPluginCore")
+    .map(String::toBoolean)
+    .getOrElse(false)
+includeDirectProjectsUnder(
+    "core",
+    excludedRelativePaths = if (withLegacyPluginCore) emptySet() else setOf("aljabr-plugin-core")
+)
 includeDirectProjectsUnder("spi")
 
 // Format engines and independently installable scientific/ML extensions.
@@ -57,12 +72,21 @@ includeProjectsUnder(
     excludedRelativePaths = if (withAutograd) emptySet() else setOf("ml/autograd")
 )
 
-// Discover hardware providers and kernel plugins that are integrated with the
-// current backend/SPI contracts. The legacy Blackwell runner still references
-// runner, extension, and KV-cache APIs that are not present in this repository;
-// keep it out of the default build until it is ported to the current contracts.
-// Experimental HAT remains opt-in because it requires a separate Babylon JDK.
-includeProjectsUnder("backend", excludedRelativePaths = setOf("hat", "blackwell"))
+// The Blackwell runner still targets the pre-SPI runner/extension contracts and
+// cannot compile against the current module graph. Keep its sources available
+// for the ongoing port, but exclude it from the default build until that port is
+// complete. Use -PwithBlackwell=true to include it explicitly while migrating.
+val withBlackwell = providers.gradleProperty("withBlackwell")
+    .map(String::toBoolean)
+    .getOrElse(false)
+
+// Discover regular hardware providers and kernel plugins. Experimental HAT
+// remains opt-in because it requires a separate Babylon JDK installation.
+val excludedBackendPaths = buildSet {
+    add("hat")
+    if (!withBlackwell) add("blackwell")
+}
+includeProjectsUnder("backend", excludedRelativePaths = excludedBackendPaths)
 
 // Optional experimental Babylon HAT backend.
 val withHat = providers.gradleProperty("withHat").map(String::toBoolean).getOrElse(false)
