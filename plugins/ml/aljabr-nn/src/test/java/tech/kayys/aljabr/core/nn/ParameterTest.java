@@ -64,6 +64,19 @@ class ParameterTest {
     }
 
     @Test
+    void validateGradientRejectsIncompatibleShape() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true)) {
+            Parameter weight = layer.namedParameterObjects().get("weight");
+            var incompatible = tech.kayys.aljabr.core.tensor.TensorFactory.zeros(backend, 3, 2);
+            assertThat(org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class, () -> weight.validateGradient(incompatible)))
+                    .hasMessageContaining("gradient shape mismatch");
+            incompatible.release();
+        }
+    }
+
+    @Test
     void parameterHandlesAreAvailableThroughQualifiedModuleNames() {
         CpuBackend backend = new CpuBackend();
         try (Sequential model = new Sequential(backend,
