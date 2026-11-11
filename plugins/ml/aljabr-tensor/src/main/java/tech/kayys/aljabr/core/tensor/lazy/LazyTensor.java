@@ -148,7 +148,8 @@ public class LazyTensor implements Tensor {
         List<GraphNode> inputNodes = inputs.stream()
                 .map(t -> (t instanceof LazyTensor lt) ? lt.getNode() : GraphNode.constant(t))
                 .toList();
-        GraphNode newNode = new GraphNode(type, inputNodes, args, outShape, outDType);
+        GraphNode newNode = new GraphNode(type, inputNodes, args, outShape, outDType,
+                OperationBackwardFunctions.forOperation(type));
         return new LazyTensor(newNode, executionBackend);
     }
 
