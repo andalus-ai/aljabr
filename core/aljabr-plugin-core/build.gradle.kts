@@ -18,6 +18,7 @@ repositories {
 }
 
 dependencies {
+    api(project(":spi:aljabr-spi-plugin"))
     implementation(group = "io.quarkus", name = "quarkus-arc")
     implementation(group = "com.fasterxml.jackson.core", name = "jackson-databind")
     implementation(group = "org.slf4j", name = "slf4j-api")
