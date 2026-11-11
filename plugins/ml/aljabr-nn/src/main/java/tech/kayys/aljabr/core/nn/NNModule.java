@@ -81,7 +81,7 @@ public abstract class NNModule implements AutoCloseable {
         parameters.put(name, param);
         Parameter registered = parameterObjects.get(name);
         if (registered == null) {
-            parameterObjects.put(name, new Parameter(name, param));
+            parameterObjects.put(name, new Parameter(name, param, replacement -> parameters.put(name, replacement)));
         } else {
             registered.replaceTensor(param);
         }
