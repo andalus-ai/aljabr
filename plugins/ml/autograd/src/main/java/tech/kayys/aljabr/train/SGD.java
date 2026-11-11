@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.train;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.nn.Parameter;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -29,6 +30,24 @@ public final class SGD implements Optimizer {
         throw new UnsupportedOperationException(
                 "SGD.step(Collection<Tensor>) cannot replace immutable tensor values; "
                         + "use step(Map<String, Tensor>, Map<String, Tensor>)");
+    }
+
+    @Override
+    public void stepParameters(Map<String, Parameter> params, Map<String, Tensor> grads) {
+        Objects.requireNonNull(params, "params");
+        Objects.requireNonNull(grads, "grads");
+
+        for (Map.Entry<String, Parameter> entry : params.entrySet()) {
+            String name = entry.getKey();
+            Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
+            Tensor gradient = grads.get(name);
+            if (gradient == null || !parameter.isTrainable()) {
+                continue;
+            }
+            Tensor current = parameter.tensor();
+            Tensor updated = current.sub(gradient.mul(lr));
+            parameter.updateTensor(updated);
+        }
     }
 
     @Override
