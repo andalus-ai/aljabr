@@ -1041,14 +1041,19 @@ public final class CpuBackend implements ComputeBackend {
             java.util.Arrays.fill(weightedValues, 0d);
             float runningMax = Float.NEGATIVE_INFINITY;
             double denominator = 0d;
+            long causalLimit = keyLength - queryLength + qi;
+            long maskRowOffset = qi * keyLength * Float.BYTES;
 
             // Online softmax: keep only the running normalization and weighted
             // value sum; no query-sized score/probability array is allocated.
             for (long ki = 0; ki < keyLength; ki++) {
+                // Causal exclusions do not need an additive-mask memory read.
+                if (causal && ki > causalLimit) {
+                    continue;
+                }
                 float additive = mask == null ? 0f
-                        : mask.get(ValueLayout.JAVA_FLOAT, (qi * keyLength + ki) * Float.BYTES);
-                long causalLimit = keyLength - queryLength + qi;
-                if ((causal && ki > causalLimit) || additive == Float.NEGATIVE_INFINITY) {
+                        : mask.get(ValueLayout.JAVA_FLOAT, maskRowOffset + ki * Float.BYTES);
+                if (additive == Float.NEGATIVE_INFINITY) {
                     continue;
                 }
 

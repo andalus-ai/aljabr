@@ -59,6 +59,7 @@ public class CpuAttentionBenchmark {
                 new float[Math.multiplyExact(sequenceLength, sequenceLength)],
                 backend, sequenceLength, sequenceLength);
         assertMaskedAndUnmaskedOutputsMatch();
+        assertCausalMaskedAndUnmaskedOutputsMatch();
     }
 
     private void assertMaskedAndUnmaskedOutputsMatch() {
@@ -72,6 +73,26 @@ public class CpuAttentionBenchmark {
                 if (!(Math.abs(expected[i] - actual[i]) <= tolerance)) {
                     throw new IllegalStateException(
                             "masked attention mismatch at element " + i
+                                    + ": unmasked=" + expected[i] + ", masked=" + actual[i]);
+                }
+            }
+        } finally {
+            masked.release();
+            unmasked.release();
+        }
+    }
+
+    private void assertCausalMaskedAndUnmaskedOutputsMatch() {
+        Tensor unmasked = backend.attention(query, key, value, null, true);
+        Tensor masked = backend.attention(query, key, value, additiveMask, true);
+        try {
+            float[] expected = unmasked.toFloatArray();
+            float[] actual = masked.toFloatArray();
+            for (int i = 0; i < expected.length; i++) {
+                float tolerance = Math.max(2.0e-6f, Math.abs(expected[i]) * 2.0e-5f);
+                if (!(Math.abs(expected[i] - actual[i]) <= tolerance)) {
+                    throw new IllegalStateException(
+                            "causal masked attention mismatch at element " + i
                                     + ": unmasked=" + expected[i] + ", masked=" + actual[i]);
                 }
             }
@@ -104,6 +125,22 @@ public class CpuAttentionBenchmark {
     @Benchmark
     public void additiveMaskAttention() {
         Tensor output = backend.attention(query, key, value, additiveMask, false);
+        output.release();
+    }
+
+    @Benchmark
+    public void causalAttention() {
+        Tensor output = backend.attention(query, key, value, null, true);
+        output.release();
+    }
+
+    /**
+     * Measures causal attention with an additive mask. Causally excluded keys
+     * should not require a mask read in the query/key loop.
+     */
+    @Benchmark
+    public void causalAdditiveMaskAttention() {
+        Tensor output = backend.attention(query, key, value, additiveMask, true);
         output.release();
     }
 }
