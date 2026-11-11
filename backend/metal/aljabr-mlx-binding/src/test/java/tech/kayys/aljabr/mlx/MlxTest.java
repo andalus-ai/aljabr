@@ -5,18 +5,24 @@ import tech.kayys.aljabr.mlx.binding.MlxBinding;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 public class MlxTest {
 
     @Test
     public void testMatmul() {
-        // Path to the built dylib
+        // MLX is an Apple-platform native dependency. Keep the integration test
+        // out of Linux/Windows CI, and skip when the native bridge was not built.
+        assumeTrue(System.getProperty("os.name").toLowerCase().contains("mac"),
+                "MLX native integration test requires macOS");
         Path libPath = Paths.get("build/native/lib/libaljabr_mlx_bridge.dylib").toAbsolutePath();
+        assumeTrue(Files.isRegularFile(libPath),
+                () -> "MLX native bridge has not been built: " + libPath);
         MlxBinding.load(libPath);
         MlxBinding.init();
 
