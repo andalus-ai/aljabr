@@ -66,23 +66,33 @@ public final class Parameter {
     public void updateTensor(Tensor replacement) {
         Objects.requireNonNull(replacement, "replacement must not be null");
         Tensor current = tensor;
-        if (!java.util.Arrays.equals(current.shape().dims(), replacement.shape().dims())) {
-            throw new IllegalArgumentException("Parameter shape cannot change from "
-                    + current.shape() + " to " + replacement.shape());
-        }
-        if (current.dtype() != replacement.dtype()) {
-            throw new IllegalArgumentException("Parameter dtype cannot change from "
-                    + current.dtype() + " to " + replacement.dtype());
-        }
-        if (current.backend() != replacement.backend()) {
-            throw new IllegalArgumentException("Parameter backend cannot change during an optimizer update");
-        }
-        if (current.device() != replacement.device()) {
-            throw new IllegalArgumentException("Parameter device cannot change during an optimizer update");
-        }
+        validateCompatibleValue(current, replacement, "replacement");
         replacement.setRequiresGrad(current.requiresGrad());
         this.tensor = replacement;
         updateListener.accept(replacement);
+    }
+
+    /** Validates that a gradient is compatible with this parameter. */
+    public void validateGradient(Tensor gradient) {
+        Objects.requireNonNull(gradient, "gradient must not be null");
+        validateCompatibleValue(tensor, gradient, "gradient");
+    }
+
+    private static void validateCompatibleValue(Tensor parameter, Tensor value, String role) {
+        if (!java.util.Arrays.equals(parameter.shape().dims(), value.shape().dims())) {
+            throw new IllegalArgumentException("Parameter " + role + " shape mismatch: expected "
+                    + parameter.shape() + " but got " + value.shape());
+        }
+        if (parameter.dtype() != value.dtype()) {
+            throw new IllegalArgumentException("Parameter " + role + " dtype mismatch: expected "
+                    + parameter.dtype() + " but got " + value.dtype());
+        }
+        if (parameter.backend() != value.backend()) {
+            throw new IllegalArgumentException("Parameter " + role + " must use the same compute backend");
+        }
+        if (parameter.device() != value.device()) {
+            throw new IllegalArgumentException("Parameter " + role + " must use the same device");
+        }
     }
 
     void replaceTensor(Tensor replacement) {
