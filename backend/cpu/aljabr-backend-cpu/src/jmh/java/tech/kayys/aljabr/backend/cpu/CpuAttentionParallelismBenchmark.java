@@ -50,13 +50,13 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
 @Fork(2)
 public class CpuAttentionParallelismBenchmark {
 
-    @Param({"1", "2", "4", "8"})
+    @Param({"1", "8"})
     public int batchHeads;
 
-    @Param({"16", "32", "64", "128", "256", "1024"})
+    @Param({"256", "1024"})
     public int sequenceLength;
 
-    @Param({"32", "64", "128"})
+    @Param({"64", "128"})
     public int headDimension;
 
     @Param({"1", "2", "4", "8"})
