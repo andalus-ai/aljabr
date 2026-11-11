@@ -3,6 +3,7 @@ package tech.kayys.aljabr.core.tensor.lazy;
 import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.autograd.BackwardFunction;
 
 import java.util.List;
 
@@ -24,12 +25,34 @@ public class GraphNode {
     // Cached materialized tensor to avoid re-evaluation.
     private Tensor materializedData;
 
+    // Optional operation-specific derivative. The execution engine owns traversal
+    // and gradient accumulation; nodes only describe their local derivative.
+    private final BackwardFunction backwardFunction;
+
     public GraphNode(OpType op, List<GraphNode> inputs, Object[] args, Shape outputShape, DType outputDType) {
+        this(op, inputs, args, outputShape, outputDType, null);
+    }
+
+    public GraphNode(OpType op, List<GraphNode> inputs, Object[] args, Shape outputShape, DType outputDType,
+            BackwardFunction backwardFunction) {
         this.op = op;
         this.inputs = inputs;
         this.args = args;
         this.outputShape = outputShape;
         this.outputDType = outputDType;
+        this.backwardFunction = backwardFunction;
+    }
+
+    /**
+     * Returns the local derivative rule for this operation, or {@code null}
+     * when no derivative has been registered.
+     */
+    public BackwardFunction getBackwardFunction() {
+        return backwardFunction;
+    }
+
+    public boolean hasBackwardFunction() {
+        return backwardFunction != null;
     }
 
     public static GraphNode constant(Tensor data) {
