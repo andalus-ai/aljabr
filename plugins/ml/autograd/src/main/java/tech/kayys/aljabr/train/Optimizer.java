@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.train;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.nn.Parameter;
 import java.util.Collection;
 import java.util.Map;
 
@@ -31,5 +32,20 @@ public interface Optimizer {
      */
     default void step(Map<String, Tensor> params, Map<String, Tensor> grads) {
         throw new UnsupportedOperationException("Named-parameter updates are not implemented by this optimizer");
+    }
+
+    /**
+     * Updates registered model parameters through stable parameter handles.
+     *
+     * <p>Unlike the tensor-map compatibility overload, this API updates the
+     * live value held by each {@link Parameter}; callers do not need to copy
+     * updated map entries back into their module.</p>
+     *
+     * @param params named parameter handles, typically from
+     *        {@code NNModule.namedParameterObjects()}
+     * @param grads gradients keyed by the same fully qualified parameter names
+     */
+    default void stepParameters(Map<String, Parameter> params, Map<String, Tensor> grads) {
+        throw new UnsupportedOperationException("Parameter-handle updates are not implemented by this optimizer");
     }
 }
