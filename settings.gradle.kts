@@ -43,6 +43,13 @@ fun includeDirectProjectsUnder(
         }
 }
 
+// The plugin-core implementation still targets retired lowercase plugin and
+// node SPI contracts. Keep it available for migration, but do not let this
+// legacy module break the default foundational build.
+val withLegacyPluginCore = providers.gradleProperty("withLegacyPluginCore")
+    .map(String::toBoolean)
+    .getOrElse(false)
+
 // Foundational contracts and runtime.
 // The plugin-core implementation still targets a removed node-plugin API and
 // an older plugin metadata contract. Keep it available for its ongoing port,
