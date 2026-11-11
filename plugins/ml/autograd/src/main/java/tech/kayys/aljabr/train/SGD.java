@@ -44,6 +44,7 @@ public final class SGD implements Optimizer {
             if (gradient == null || !parameter.isTrainable()) {
                 continue;
             }
+            parameter.validateGradient(gradient);
             Tensor current = parameter.tensor();
             Tensor updated = current.sub(gradient.mul(lr));
             parameter.updateTensor(updated);
