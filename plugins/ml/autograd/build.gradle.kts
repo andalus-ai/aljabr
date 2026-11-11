@@ -10,5 +10,8 @@ dependencies {
 
     // Core tensor types
     implementation(project(":plugins:ml:aljabr-tensor"))
+    implementation(project(":plugins:ml:aljabr-nn"))
     implementation(project(":core:aljabr-core"))
+
+    testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
 }
