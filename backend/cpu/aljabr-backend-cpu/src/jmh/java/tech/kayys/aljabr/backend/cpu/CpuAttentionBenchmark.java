@@ -47,6 +47,7 @@ public class CpuAttentionBenchmark {
     private Tensor query;
     private Tensor key;
     private Tensor value;
+    private Tensor additiveMask;
 
     @Setup(Level.Trial)
     public void setUp() {
@@ -54,10 +55,35 @@ public class CpuAttentionBenchmark {
         query = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
         key = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
         value = TensorFactory.randn(backend, 1, batchHeads, sequenceLength, headDimension);
+        additiveMask = TensorFactory.of(
+                new float[Math.multiplyExact(sequenceLength, sequenceLength)],
+                backend, sequenceLength, sequenceLength);
+        assertMaskedAndUnmaskedOutputsMatch();
+    }
+
+    private void assertMaskedAndUnmaskedOutputsMatch() {
+        Tensor unmasked = backend.attention(query, key, value);
+        Tensor masked = backend.attention(query, key, value, additiveMask, false);
+        try {
+            float[] expected = unmasked.toFloatArray();
+            float[] actual = masked.toFloatArray();
+            for (int i = 0; i < expected.length; i++) {
+                float tolerance = Math.max(2.0e-6f, Math.abs(expected[i]) * 2.0e-5f);
+                if (!(Math.abs(expected[i] - actual[i]) <= tolerance)) {
+                    throw new IllegalStateException(
+                            "masked attention mismatch at element " + i
+                                    + ": unmasked=" + expected[i] + ", masked=" + actual[i]);
+                }
+            }
+        } finally {
+            masked.release();
+            unmasked.release();
+        }
     }
 
     @TearDown(Level.Trial)
     public void tearDown() {
+        if (additiveMask != null) additiveMask.release();
         if (value != null) value.release();
         if (key != null) key.release();
         if (query != null) query.release();
@@ -67,6 +93,17 @@ public class CpuAttentionBenchmark {
     @Benchmark
     public void scaledDotProductAttention() {
         Tensor output = backend.attention(query, key, value);
+        output.release();
+    }
+
+    /**
+     * Measures the complete valid additive-mask path, including the one-time
+     * mask validation scan and per-query/key mask reads. The mask contains
+     * zeros, so its numerical result must match unmasked attention.
+     */
+    @Benchmark
+    public void additiveMaskAttention() {
+        Tensor output = backend.attention(query, key, value, additiveMask, false);
         output.release();
     }
 }
