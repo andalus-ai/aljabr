@@ -58,7 +58,7 @@ class ParameterTest {
 
             assertThat(org.junit.jupiter.api.Assertions.assertThrows(
                     IllegalArgumentException.class, () -> weight.updateTensor(incompatible)))
-                    .hasMessageContaining("shape cannot change");
+                    .hasMessageContaining("shape mismatch");
             incompatible.release();
         }
     }
