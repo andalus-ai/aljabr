@@ -6,14 +6,18 @@ on:
       - "core/**"
       - "backend/**"
       - "models/**"
+      - "engine/**"
+      - "plugins/**"
+      - "spi/**"
+      - "examples/**"
       - "buildSrc/**"
       - "gradle/**"
       - "scripts/**"
+      - ".github/workflows/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradlew"
-      - ".github/workflows/ci.yml"
   push:
     branches:
       - main
@@ -22,14 +26,18 @@ on:
       - "core/**"
       - "backend/**"
       - "models/**"
+      - "engine/**"
+      - "plugins/**"
+      - "spi/**"
+      - "examples/**"
       - "buildSrc/**"
       - "gradle/**"
       - "scripts/**"
+      - ".github/workflows/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradlew"
-      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 jobs:
