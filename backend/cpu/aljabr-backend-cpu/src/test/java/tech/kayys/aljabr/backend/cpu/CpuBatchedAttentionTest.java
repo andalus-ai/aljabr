@@ -86,6 +86,26 @@ class CpuBatchedAttentionTest {
     }
 
     @Test
+    void validatesAdditiveMaskEntriesEvenWhenCausalModeWouldSkipTheirKeys() {
+        CpuBackend backend = new CpuBackend();
+        Tensor query = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor key = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor value = TensorFactory.of(new float[] {2f, 8f}, backend, 1, 1, 2, 1);
+        // Bottom-right causal alignment excludes key 1 for query 0.
+        Tensor mask = TensorFactory.of(
+                new float[] {0f, Float.NaN, 0f, 0f}, backend, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.attention(query, key, value, mask, true));
+        } finally {
+            mask.release();
+            value.release();
+            key.release();
+            query.release();
+        }
+    }
+
+    @Test
     void rejectsNaNInAdditiveMaskBeforeAttentionExecution() {
         CpuBackend backend = new CpuBackend();
         Tensor query = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
