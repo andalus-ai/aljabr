@@ -175,22 +175,22 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor reshape(long... newShape) {
-        return backend.reshape(this, newShape);
+        return record(OpType.RESHAPE, new Tensor[] { this }, new Object[] { newShape.clone() }, backend.reshape(this, newShape));
     }
 
     @Override
     public Tensor softmax() {
-        return backend.softmax(this);
+        return record(OpType.SOFTMAX, new Tensor[] { this }, new Object[0], backend.softmax(this));
     }
 
     @Override
     public Tensor slice(long[] offsets, long[] sizes) {
-        return backend.slice(this, offsets, sizes);
+        return record(OpType.SLICE, new Tensor[] { this }, new Object[] { offsets.clone(), sizes.clone() }, backend.slice(this, offsets, sizes));
     }
 
     @Override
     public Tensor pow(float exponent) {
-        return backend.pow(this, exponent);
+        return record(OpType.POW, new Tensor[] { this }, new Object[] { exponent }, backend.pow(this, exponent));
     }
 
     @Override
@@ -200,112 +200,112 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor abs() {
-        return backend.abs(this);
+        return record(OpType.ABS, new Tensor[] { this }, new Object[0], backend.abs(this));
     }
 
     @Override
     public Tensor crossEntropy(Tensor t) {
-        return backend.crossEntropy(this, t);
+        return record(OpType.CROSS_ENTROPY, new Tensor[] { this, t }, new Object[0], backend.crossEntropy(this, t));
     }
 
     @Override
     public Tensor binaryCrossEntropy(Tensor t) {
-        return backend.binaryCrossEntropy(this, t);
+        return record(OpType.BINARY_CROSS_ENTROPY, new Tensor[] { this, t }, new Object[0], backend.binaryCrossEntropy(this, t));
     }
 
     @Override
     public Tensor cast(DType dtype) {
-        return backend.cast(this, dtype);
+        return record(OpType.CAST, new Tensor[] { this }, new Object[] { dtype }, backend.cast(this, dtype));
     }
 
     @Override
     public Tensor to(DeviceType device) {
-        return backend.to(this, device);
+        return record(OpType.TO, new Tensor[] { this }, new Object[] { device }, backend.to(this, device));
     }
 
     @Override
     public Tensor zerosLike() {
-        return backend.zerosLike(this);
+        return record(OpType.ZEROS_LIKE, new Tensor[] { this }, new Object[0], backend.zerosLike(this));
     }
 
     @Override
     public Tensor sqrt() {
-        return backend.sqrt(this);
+        return record(OpType.SQRT, new Tensor[] { this }, new Object[0], backend.sqrt(this));
     }
 
     @Override
     public Tensor relu() {
-        return backend.relu(this);
+        return record(OpType.RELU, new Tensor[] { this }, new Object[0], backend.relu(this));
     }
 
     @Override
     public Tensor gelu() {
-        return backend.gelu(this);
+        return record(OpType.GELU, new Tensor[] { this }, new Object[0], backend.gelu(this));
     }
 
     @Override
     public Tensor sigmoid() {
-        return backend.sigmoid(this);
+        return record(OpType.SIGMOID, new Tensor[] { this }, new Object[0], backend.sigmoid(this));
     }
 
     @Override
     public Tensor tanh() {
-        return backend.tanh(this);
+        return record(OpType.TANH, new Tensor[] { this }, new Object[0], backend.tanh(this));
     }
 
     @Override
     public Tensor log() {
-        return backend.log(this);
+        return record(OpType.LOG, new Tensor[] { this }, new Object[0], backend.log(this));
     }
 
     @Override
     public Tensor exp() {
-        return backend.exp(this);
+        return record(OpType.EXP, new Tensor[] { this }, new Object[0], backend.exp(this));
     }
 
     @Override
     public Tensor silu() {
-        return backend.silu(this);
+        return record(OpType.SILU, new Tensor[] { this }, new Object[0], backend.silu(this));
     }
 
     @Override
     public Tensor flatten() {
-        return backend.flatten(this);
+        return record(OpType.FLATTEN, new Tensor[] { this }, new Object[0], backend.flatten(this));
     }
 
     @Override
     public Tensor unsqueeze(int dim) {
-        return backend.unsqueeze(this, dim);
+        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim }, backend.unsqueeze(this, dim));
     }
 
     @Override
     public Tensor squeeze() {
-        return backend.squeeze(this);
+        return record(OpType.SQUEEZE, new Tensor[] { this }, new Object[0], backend.squeeze(this));
     }
 
     @Override
     public Tensor transpose() {
-        return backend.transpose(this);
+        return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[0], backend.transpose(this));
     }
 
     @Override
     public Tensor transpose(int d0, int d1) {
-        return backend.transpose(this, d0, d1);
+        return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[] { d0, d1 }, backend.transpose(this, d0, d1));
     }
 
     @Override
     public Tensor softmax(int dim) {
-        return backend.softmax(this, dim);
+        return record(OpType.SOFTMAX, new Tensor[] { this }, new Object[] { dim }, backend.softmax(this, dim));
     }
 
     @Override
     public Tensor logSoftmax(int dim) {
-        return backend.logSoftmax(this, dim);
+        return record(OpType.LOG_SOFTMAX, new Tensor[] { this }, new Object[] { dim }, backend.logSoftmax(this, dim));
     }
 
     @Override
     public Tensor mean(int dim, boolean keepDim) {
-        return backend.mean(this, dim, keepDim);
+        return record(OpType.MEAN, new Tensor[] { this }, new Object[] { dim, keepDim }, backend.mean(this, dim, keepDim));
     }
 
     @Override
@@ -315,63 +315,66 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor sum(int dim, boolean keepDim) {
-        return backend.sum(this, dim, keepDim);
+        return record(OpType.SUM, new Tensor[] { this }, new Object[] { dim, keepDim }, backend.sum(this, dim, keepDim));
     }
 
     @Override
     public java.util.List<Tensor> split(int axis, int parts) {
+        if (requiresGrad()) {
+            throw new UnsupportedOperationException("Autograd for split is not implemented yet");
+        }
         return backend.split(this, axis, parts);
     }
 
     @Override
     public Tensor layerNorm(long[] normalizedShape, Tensor weight, Tensor bias, float eps) {
-        return backend.layerNorm(this, normalizedShape, weight, bias, eps);
+        return record(OpType.LAYER_NORM, new Tensor[] { this, weight, bias }, new Object[] { normalizedShape.clone(), eps }, backend.layerNorm(this, normalizedShape, weight, bias, eps));
     }
 
     @Override
     public Tensor rmsNorm(Tensor weight, float eps) {
-        return backend.rmsNorm(this, weight, eps);
+        return record(OpType.RMS_NORM, new Tensor[] { this, weight }, new Object[] { eps }, backend.rmsNorm(this, weight, eps));
     }
 
     @Override
     public Tensor batchNorm(Tensor weight, Tensor bias, Tensor runningMean, Tensor runningVar, boolean training,
             float momentum, float eps) {
-        return backend.batchNorm(this, weight, bias, runningMean, runningVar, training, momentum, eps);
+        return record(OpType.BATCH_NORM, new Tensor[] { this, weight, bias, runningMean, runningVar }, new Object[] { training, momentum, eps }, backend.batchNorm(this, weight, bias, runningMean, runningVar, training, momentum, eps));
     }
 
     @Override
     public Tensor conv2d(Tensor weight, Tensor bias, int stride, int padding, int dilation, int groups) {
-        return backend.conv2d(this, weight, bias, stride, padding, dilation, groups);
+        return record(OpType.CONV2D, new Tensor[] { this, weight, bias }, new Object[] { stride, padding, dilation, groups }, backend.conv2d(this, weight, bias, stride, padding, dilation, groups));
     }
 
     @Override
     public Tensor maxPool2d(int kernelSize, int stride, int padding) {
-        return backend.maxPool2d(this, kernelSize, stride, padding);
+        return record(OpType.MAX_POOL_2D, new Tensor[] { this }, new Object[] { kernelSize, stride, padding }, backend.maxPool2d(this, kernelSize, stride, padding));
     }
 
     @Override
     public Tensor adaptiveAvgPool2d(int outputH, int outputW) {
-        return backend.adaptiveAvgPool2d(this, outputH, outputW);
+        return record(OpType.ADAPTIVE_AVG_POOL_2D, new Tensor[] { this }, new Object[] { outputH, outputW }, backend.adaptiveAvgPool2d(this, outputH, outputW));
     }
 
     @Override
     public Tensor dropout(float p, boolean training) {
-        return backend.dropout(this, p, training);
+        return record(OpType.DROPOUT, new Tensor[] { this }, new Object[] { p, training }, backend.dropout(this, p, training));
     }
 
     @Override
     public Tensor attention(Tensor K, Tensor V) {
-        return backend.attention(this, K, V);
+        return record(OpType.ATTENTION, new Tensor[] { this, K, V }, new Object[0], backend.attention(this, K, V));
     }
 
     @Override
     public Tensor embedding(Tensor weight, long paddingIdx) {
-        return backend.embedding(weight, this, paddingIdx);
+        return record(OpType.EMBEDDING, new Tensor[] { this, weight }, new Object[] { paddingIdx }, backend.embedding(weight, this, paddingIdx));
     }
 
     @Override
     public Tensor applyRoPE(int posOffset, float freqBase, boolean isNeox) {
-        return backend.applyRoPE(this, posOffset, freqBase, isNeox);
+        return record(OpType.ROPE, new Tensor[] { this }, new Object[] { posOffset, freqBase, isNeox }, backend.applyRoPE(this, posOffset, freqBase, isNeox));
     }
 
     @Override
@@ -448,7 +451,7 @@ public final class DefaultTensor implements Tensor {
     private Tensor record(OpType operation, Tensor[] inputs, Object[] arguments, Tensor result) {
         if (!AutogradContext.isRecordingEnabled()
                 || result == null
-                || java.util.Arrays.stream(inputs).noneMatch(Tensor::requiresGrad)) {
+                || java.util.Arrays.stream(inputs).filter(Objects::nonNull).noneMatch(Tensor::requiresGrad)) {
             return result;
         }
         if (!(result instanceof DefaultTensor eagerResult)) {
@@ -458,6 +461,7 @@ public final class DefaultTensor implements Tensor {
                             + result.getClass().getName());
         }
         java.util.List<GraphNode> inputNodes = java.util.Arrays.stream(inputs)
+                .filter(Objects::nonNull)
                 .map(input -> input instanceof DefaultTensor eager && eager.autogradNode != null
                         ? eager.autogradNode
                         : GraphNode.constant(input))
