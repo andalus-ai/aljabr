@@ -115,4 +115,59 @@ class OperationBackwardFunctionsTest {
             }
         }
     }
+    @Test
+    void commonUnaryRulesProduceExpectedVectorJacobianProducts() {
+        Tensor input = tensor(2f);
+        Tensor gradient = tensor(1f);
+        Tensor sigmoidOutput = input.sigmoid();
+        Tensor tanhOutput = input.tanh();
+        Tensor expOutput = input.exp();
+        Tensor logOutput = input.log();
+        Tensor powOutput = input.pow(3f);
+        Tensor sqrtOutput = input.sqrt();
+        Tensor[] sigmoid = null;
+        Tensor[] tanh = null;
+        Tensor[] exp = null;
+        Tensor[] log = null;
+        Tensor[] pow = null;
+        Tensor[] sqrt = null;
+        try {
+            sigmoid = OperationBackwardFunctions.forOperation(OpType.SIGMOID)
+                    .apply(sigmoidOutput, gradient, List.of(input), new Object[0]);
+            tanh = OperationBackwardFunctions.forOperation(OpType.TANH)
+                    .apply(tanhOutput, gradient, List.of(input), new Object[0]);
+            exp = OperationBackwardFunctions.forOperation(OpType.EXP)
+                    .apply(expOutput, gradient, List.of(input), new Object[0]);
+            log = OperationBackwardFunctions.forOperation(OpType.LOG)
+                    .apply(logOutput, gradient, List.of(input), new Object[0]);
+            pow = OperationBackwardFunctions.forOperation(OpType.POW)
+                    .apply(powOutput, gradient, List.of(input), new Object[] { 3f });
+            sqrt = OperationBackwardFunctions.forOperation(OpType.SQRT)
+                    .apply(sqrtOutput, gradient, List.of(input), new Object[0]);
+
+            assertGradient(sigmoid[0], sigmoidOutput.item() * (1f - sigmoidOutput.item()));
+            assertGradient(tanh[0], 1f - tanhOutput.item() * tanhOutput.item());
+            assertGradient(exp[0], expOutput.item());
+            assertGradient(log[0], 0.5f);
+            assertGradient(pow[0], 12f);
+            assertGradient(sqrt[0], 1f / (2f * sqrtOutput.item()));
+        } finally {
+            release(sigmoid);
+            release(tanh);
+            release(exp);
+            release(log);
+            release(pow);
+            release(sqrt);
+            sigmoidOutput.release();
+            tanhOutput.release();
+            expOutput.release();
+            logOutput.release();
+            powOutput.release();
+            sqrtOutput.release();
+            input.release();
+            gradient.release();
+            backend.close();
+        }
+    }
+
 }
