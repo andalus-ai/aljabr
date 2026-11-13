@@ -111,4 +111,23 @@ class DefaultTensorAutogradTest {
             backend.close();
         }
     }
+    @Test
+    void eagerUnsupportedOperationDoesNotSilentlyDetachGradientGraph() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { -1.0f, 2.0f }, backend, 2);
+        x.setRequiresGrad(true);
+        Tensor activated = x.relu();
+        Tensor loss = activated.mean();
+
+        try {
+            assertEquals(true, loss.requiresGrad());
+            assertThrows(UnsupportedOperationException.class, loss::backward);
+        } finally {
+            loss.release();
+            activated.release();
+            x.release();
+            backend.close();
+        }
+    }
+
 }
