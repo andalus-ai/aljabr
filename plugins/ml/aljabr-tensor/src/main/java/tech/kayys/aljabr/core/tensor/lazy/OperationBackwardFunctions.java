@@ -8,9 +8,9 @@ import tech.kayys.aljabr.core.tensor.autograd.BackwardFunction;
 /**
  * Supplies local vector-Jacobian products for arithmetic graph operations.
  *
- * <p>Rules are intentionally limited to operations whose current Tensor API
- * expresses the derivative without introducing backend-specific behavior or
- * assumptions about broadcasting. Unsupported operations remain unregistered.</p>
+ * <p>Rules use backend-neutral Tensor operations. Binary arithmetic VJPs
+ * reduce broadcasted contributions to each operand's original shape, while
+ * unsupported operations remain unregistered.</p>
  */
 public final class OperationBackwardFunctions {
 
