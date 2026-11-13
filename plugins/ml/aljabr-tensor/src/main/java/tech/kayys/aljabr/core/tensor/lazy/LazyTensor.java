@@ -141,7 +141,7 @@ public class LazyTensor implements Tensor {
         Tensor output = eval();
         if (output.numel() != 1) {
             throw new UnsupportedOperationException(
-                    "Implicit backward() requires a scalar output; provide an explicit output gradient "
+                    "Implicit backward() requires a scalar output; use backward(Tensor outputGradient) "
                             + "for non-scalar tensors");
         }
 
@@ -149,13 +149,24 @@ public class LazyTensor implements Tensor {
         Tensor seed = null;
         try {
             seed = zero.add(1.0f);
-            executor.backward(node, seed);
+            backward(seed);
         } finally {
             zero.release();
             if (seed != null) {
                 seed.release();
             }
         }
+    }
+
+    @Override
+    public void backward(Tensor outputGradient) {
+        ensureOpen();
+        java.util.Objects.requireNonNull(outputGradient, "outputGradient");
+        if (!node.requiresGrad()) {
+            return;
+        }
+        eval();
+        executor.backward(node, outputGradient);
     }
 
     @Override
