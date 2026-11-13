@@ -488,6 +488,18 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
+    public Tensor upsampleNearest2d(int outputH, int outputW) {
+        long[] dimensions = shape().dims();
+        if (dimensions.length < 2) {
+            throw new IllegalArgumentException("upsampleNearest2d requires at least 2D input");
+        }
+        dimensions[dimensions.length - 2] = outputH;
+        dimensions[dimensions.length - 1] = outputW;
+        return op(OpType.UPSAMPLE_NEAREST_2D, List.of(this), new Object[] { outputH, outputW },
+                new Shape(dimensions), dtype());
+    }
+
+    @Override
     public Tensor applyRoPE(int posOffset, float freqBase, boolean isNeox) {
         return op(OpType.ROPE, List.of(this), new Object[] { posOffset, freqBase, isNeox }, this.shape(), this.dtype());
     }
