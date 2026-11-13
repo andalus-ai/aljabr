@@ -59,6 +59,10 @@ public final class OperationBackwardFunctions {
     }
 
     private static Tensor[] mean(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        if (arguments.length != 0) {
+            throw new UnsupportedOperationException(
+                    "Autograd for dimension-wise mean is not implemented yet");
+        }
         Tensor input = inputs.get(0);
         Tensor ones = input.zerosLike().add(1.0f);
         Tensor scaled = gradient.div((float) input.numel());
@@ -71,6 +75,10 @@ public final class OperationBackwardFunctions {
     }
 
     private static Tensor[] sum(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        if (arguments.length != 0) {
+            throw new UnsupportedOperationException(
+                    "Autograd for dimension-wise sum is not implemented yet");
+        }
         Tensor ones = inputs.get(0).zerosLike().add(1.0f);
         try {
             return new Tensor[] { gradient.mul(ones) };
