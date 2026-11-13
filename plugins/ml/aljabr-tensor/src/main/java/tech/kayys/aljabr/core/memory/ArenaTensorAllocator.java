@@ -2,7 +2,6 @@ package tech.kayys.aljabr.core.memory;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.util.Objects;
 
 /**
  * Host-memory {@link TensorAllocator} that gives each allocation its own
@@ -18,7 +17,7 @@ public final class ArenaTensorAllocator implements TensorAllocator {
     public static final ArenaTensorAllocator INSTANCE = new ArenaTensorAllocator();
 
     @Override
-    public TensorStorage allocate(long sizeBytes) {
+    public ArenaTensorStorage allocate(long sizeBytes) {
         return allocate(sizeBytes, 1L);
     }
 
