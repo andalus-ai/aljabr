@@ -184,28 +184,30 @@ public final class OperationBackwardFunctions {
         Tensor numerator = inputs.get(0);
         Tensor denominator = inputs.get(1);
         Tensor denominatorSquared = denominator.mul(denominator);
+        Tensor numeratorFull = null;
         Tensor numeratorGradient = null;
         Tensor denominatorNumerator = null;
         Tensor denominatorQuotient = null;
+        Tensor denominatorNegative = null;
+        Tensor denominatorGradient = null;
         try {
-            numeratorGradient = gradient.div(denominator);
+            numeratorFull = gradient.div(denominator);
+            numeratorGradient = reduceToInputShape(numeratorFull, numerator);
             denominatorNumerator = gradient.mul(numerator);
             denominatorQuotient = denominatorNumerator.div(denominatorSquared);
-            Tensor denominatorGradient = denominatorQuotient.mul(-1.0f);
+            denominatorNegative = denominatorQuotient.mul(-1.0f);
+            denominatorGradient = reduceToInputShape(denominatorNegative, denominator);
             return new Tensor[] { numeratorGradient, denominatorGradient };
         } catch (RuntimeException | Error failure) {
-            if (numeratorGradient != null) {
-                numeratorGradient.release();
-            }
+            if (numeratorGradient != null) numeratorGradient.release();
+            if (denominatorGradient != null) denominatorGradient.release();
             throw failure;
         } finally {
             denominatorSquared.release();
-            if (denominatorNumerator != null) {
-                denominatorNumerator.release();
-            }
-            if (denominatorQuotient != null) {
-                denominatorQuotient.release();
-            }
+            if (numeratorFull != null) numeratorFull.release();
+            if (denominatorNumerator != null) denominatorNumerator.release();
+            if (denominatorQuotient != null) denominatorQuotient.release();
+            if (denominatorNegative != null) denominatorNegative.release();
         }
     }
 
