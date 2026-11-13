@@ -31,6 +31,24 @@ public class LazyTensor implements Tensor {
         this.executor = new GraphExecutor(executionBackend);
     }
 
+    /**
+     * Wraps an existing eager tensor as a graph leaf. The wrapper borrows the
+     * tensor; closing the wrapper does not release the caller-owned leaf.
+     *
+     * <p>Enable differentiation on the eager tensor before wrapping it:</p>
+     * <pre>{@code
+     * Tensor weights = TensorFactory.randn(backend, 4, 2);
+     * weights.setRequiresGrad(true);
+     * Tensor loss = LazyTensor.of(weights).mul(weights).mean();
+     * }</pre>
+     */
+    public static LazyTensor of(Tensor tensor) {
+        if (tensor == null) {
+            throw new NullPointerException("tensor must not be null");
+        }
+        return new LazyTensor(GraphNode.constant(tensor), tensor.backend());
+    }
+
     public GraphNode getNode() {
         return node;
     }
@@ -39,9 +57,11 @@ public class LazyTensor implements Tensor {
     public Tensor eval() {
         ensureOpen();
         if (!node.isEvaluated()) {
-            GraphNode optimized = GraphOptimizer.optimize(node);
-            executor.evaluate(optimized);
-            node.setMaterializedData(optimized.getMaterializedData());
+            // Graph rewrites are not yet required to preserve VJP metadata.
+            // Keep differentiable graphs structurally intact until that contract exists.
+            GraphNode executable = node.requiresGrad() ? node : GraphOptimizer.optimize(node);
+            executor.evaluate(executable);
+            node.setMaterializedData(executable.getMaterializedData());
         }
         return node.getMaterializedData();
     }
@@ -113,7 +133,40 @@ public class LazyTensor implements Tensor {
 
     @Override
     public void backward() {
-        eval().backward();
+        ensureOpen();
+        if (!node.requiresGrad()) {
+            return;
+        }
+
+        Tensor output = eval();
+        if (output.numel() != 1) {
+            throw new UnsupportedOperationException(
+                    "Implicit backward() requires a scalar output; use backward(Tensor outputGradient) "
+                            + "for non-scalar tensors");
+        }
+
+        Tensor zero = output.zerosLike();
+        Tensor seed = null;
+        try {
+            seed = zero.add(1.0f);
+            backward(seed);
+        } finally {
+            zero.release();
+            if (seed != null) {
+                seed.release();
+            }
+        }
+    }
+
+    @Override
+    public void backward(Tensor outputGradient) {
+        ensureOpen();
+        java.util.Objects.requireNonNull(outputGradient, "outputGradient");
+        if (!node.requiresGrad()) {
+            return;
+        }
+        eval();
+        executor.backward(node, outputGradient);
     }
 
     @Override
@@ -128,12 +181,18 @@ public class LazyTensor implements Tensor {
 
     @Override
     public boolean requiresGrad() {
-        return eval().requiresGrad();
+        ensureOpen();
+        return node.requiresGrad();
     }
 
     @Override
     public void setRequiresGrad(boolean requiresGrad) {
-        eval().setRequiresGrad(requiresGrad);
+        ensureOpen();
+        if (node.getOp() != OpType.CONSTANT) {
+            throw new IllegalStateException(
+                    "requiresGrad can only be enabled on a graph leaf, not an operation result");
+        }
+        node.getMaterializedData().setRequiresGrad(requiresGrad);
     }
 
     @Override

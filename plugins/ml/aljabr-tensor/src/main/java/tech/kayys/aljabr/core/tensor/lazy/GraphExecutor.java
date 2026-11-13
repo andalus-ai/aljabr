@@ -40,6 +40,144 @@ public class GraphExecutor {
         return root.getMaterializedData();
     }
 
+    /**
+     * Executes reverse-mode differentiation for a materialized graph.
+     *
+     * <p>The supplied output gradient is borrowed. Gradients accumulated on
+     * differentiable CONSTANT leaves become owned by those leaf tensors.
+     * Intermediate gradient tensors are released by this executor.</p>
+     *
+     * @throws IllegalArgumentException when the seed shape does not match the output
+     * @throws UnsupportedOperationException when a differentiable operation has no VJP
+     */
+    public void backward(GraphNode root, Tensor outputGradient) {
+        if (!root.requiresGrad()) {
+            return;
+        }
+        if (!root.getOutputShape().equals(outputGradient.shape())) {
+            throw new IllegalArgumentException("Output gradient shape " + outputGradient.shape()
+                    + " does not match graph output shape " + root.getOutputShape());
+        }
+        if (!root.isEvaluated()) {
+            evaluate(root);
+        }
+
+        List<GraphNode> topoOrder = new ArrayList<>();
+        buildTopoOrder(root, new HashSet<>(), topoOrder);
+        java.util.IdentityHashMap<GraphNode, Tensor> gradients = new java.util.IdentityHashMap<>();
+        gradients.put(root, outputGradient.add(0.0f));
+
+        try {
+            for (int index = topoOrder.size() - 1; index >= 0; index--) {
+                GraphNode node = topoOrder.get(index);
+                Tensor gradient = gradients.remove(node);
+                if (gradient == null) {
+                    continue;
+                }
+
+                if (node.getOp() == OpType.CONSTANT) {
+                    Tensor leaf = node.getMaterializedData();
+                    if (leaf != null && leaf.requiresGrad()) {
+                        Tensor previous = leaf.grad();
+                        if (previous == null) {
+                            // Transfer ownership of the accumulated gradient to the leaf.
+                            leaf.setGrad(gradient);
+                        } else {
+                            Tensor accumulated = previous.add(gradient);
+                            leaf.setGrad(accumulated);
+                            previous.release();
+                            gradient.release();
+                        }
+                    } else {
+                        gradient.release();
+                    }
+                    continue;
+                }
+
+                if (!node.requiresGrad()) {
+                    gradient.release();
+                    continue;
+                }
+
+                if (!node.hasBackwardFunction()) {
+                    gradient.release();
+                    throw new UnsupportedOperationException(
+                            "No autograd rule registered for operation " + node.getOp());
+                }
+
+                List<Tensor> inputValues = node.getInputs().stream()
+                        .map(GraphNode::getMaterializedData)
+                        .toList();
+                Tensor[] inputGradients = node.getBackwardFunction().apply(
+                        node.getMaterializedData(), gradient, inputValues, node.getArgs());
+                if (inputGradients == null || inputGradients.length != node.getInputs().size()) {
+                    release(inputGradients);
+                    gradient.release();
+                    throw new IllegalStateException("Backward rule for " + node.getOp()
+                            + " must return one gradient slot per input");
+                }
+
+                // Validate every returned shape before transferring ownership of any
+                // contribution into the graph accumulator. This deliberately rejects
+                // broadcast gradients until reduce-to-input-shape VJPs are implemented.
+                for (int i = 0; i < inputGradients.length; i++) {
+                    Tensor contribution = inputGradients[i];
+                    if (contribution != null
+                            && !node.getInputs().get(i).getOutputShape().equals(contribution.shape())) {
+                        release(inputGradients);
+                        gradient.release();
+                        throw new IllegalArgumentException("Backward rule for " + node.getOp()
+                                + " returned gradient shape " + contribution.shape()
+                                + " for input shape " + node.getInputs().get(i).getOutputShape()
+                                + "; broadcasting gradients are not yet supported");
+                    }
+                }
+
+                for (int i = 0; i < inputGradients.length; i++) {
+                    Tensor contribution = inputGradients[i];
+                    GraphNode input = node.getInputs().get(i);
+                    if (contribution == null) {
+                        continue;
+                    }
+                    if (input.requiresGrad()) {
+                        accumulate(gradients, input, contribution);
+                    } else {
+                        contribution.release();
+                    }
+                }
+                gradient.release();
+            }
+        } finally {
+            gradients.values().forEach(Tensor::release);
+            gradients.clear();
+        }
+    }
+
+    private static void accumulate(
+            java.util.IdentityHashMap<GraphNode, Tensor> gradients,
+            GraphNode node,
+            Tensor contribution) {
+        Tensor previous = gradients.get(node);
+        if (previous == null) {
+            gradients.put(node, contribution);
+            return;
+        }
+        Tensor accumulated = previous.add(contribution);
+        previous.release();
+        contribution.release();
+        gradients.put(node, accumulated);
+    }
+
+    private static void release(Tensor[] tensors) {
+        if (tensors != null) {
+            for (Tensor tensor : tensors) {
+                if (tensor != null) {
+                    tensor.release();
+                }
+            }
+        }
+    }
+
     private void buildTopoOrder(GraphNode node, Set<GraphNode> visited, List<GraphNode> topoOrder) {
         if (visited.contains(node))
             return;
