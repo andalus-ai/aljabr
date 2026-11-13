@@ -2,6 +2,7 @@ package tech.kayys.aljabr.core.tensor.lazy;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -67,8 +68,9 @@ public class GraphExecutor {
         java.util.IdentityHashMap<GraphNode, Tensor> gradients = new java.util.IdentityHashMap<>();
         gradients.put(root, outputGradient.add(0.0f));
 
-        try {
-            for (int index = topoOrder.size() - 1; index >= 0; index--) {
+        try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
+            try {
+                for (int index = topoOrder.size() - 1; index >= 0; index--) {
                 GraphNode node = topoOrder.get(index);
                 Tensor gradient = gradients.remove(node);
                 if (gradient == null) {
@@ -145,11 +147,12 @@ public class GraphExecutor {
                         contribution.release();
                     }
                 }
-                gradient.release();
+                    gradient.release();
+                }
+            } finally {
+                gradients.values().forEach(Tensor::release);
+                gradients.clear();
             }
-        } finally {
-            gradients.values().forEach(Tensor::release);
-            gradients.clear();
         }
     }
 
