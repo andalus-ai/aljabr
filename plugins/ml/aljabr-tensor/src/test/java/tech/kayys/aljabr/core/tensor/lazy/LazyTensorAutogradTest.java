@@ -16,7 +16,7 @@ class LazyTensorAutogradTest {
         CpuBackend backend = new CpuBackend();
         Tensor leafValue = TensorFactory.of(new float[] { 3.0f }, backend, 1);
         leafValue.setRequiresGrad(true);
-        LazyTensor leaf = new LazyTensor(GraphNode.constant(leafValue), backend);
+        LazyTensor leaf = LazyTensor.of(leafValue);
         Tensor output = leaf.mul(leaf).add(leaf);
 
         try {
