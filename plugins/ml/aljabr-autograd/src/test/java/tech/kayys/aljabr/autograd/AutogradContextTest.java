@@ -140,6 +140,22 @@ class AutogradContextTest {
         }
     }
 
+    @Test
+    void transposeBackpropagatesThroughInversePermutation() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f, 5f, 6f }, backend, 2, 3);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable x = context.variable(input);
+            x.transpose(0, 1).mul(x.transpose(0, 1)).sum().backward();
+
+            assertArrayEquals(new float[] { 2f, 4f, 6f, 8f, 10f, 12f },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            input.release();
+            backend.close();
+        }
+    }
+
     private static float meanSquare(CpuBackend backend, float[] values) {
         Tensor input = TensorFactory.of(values, backend, values.length);
         Tensor squared = null;

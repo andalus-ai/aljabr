@@ -179,7 +179,7 @@ public final class Variable {
         if (value.shape().rank() != 2) {
             throw new UnsupportedOperationException("Autograd transpose currently supports rank-two tensors only");
         }
-        Tensor result = context.own(value.transpose(dim0, dim1));
+        Tensor result = value.transpose(dim0, dim1);
         return unaryWithResult("transpose", result,
                 gradient -> new Tensor[] { requiresGrad ? context.own(gradient.transpose(dim0, dim1)) : null });
     }
