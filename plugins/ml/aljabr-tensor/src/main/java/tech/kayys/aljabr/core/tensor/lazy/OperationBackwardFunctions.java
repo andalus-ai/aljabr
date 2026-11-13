@@ -27,6 +27,8 @@ public final class OperationBackwardFunctions {
             case MUL_SCALAR -> OperationBackwardFunctions::multiplyScalar;
             case DIV_SCALAR -> OperationBackwardFunctions::divideScalar;
             case MATMUL -> OperationBackwardFunctions::matmul;
+            case RESHAPE, FLATTEN, UNSQUEEZE, SQUEEZE -> OperationBackwardFunctions::restoreInputShape;
+            case TRANSPOSE -> OperationBackwardFunctions::transpose;
             case MEAN -> OperationBackwardFunctions::mean;
             case SUM -> OperationBackwardFunctions::sum;
             case SIGMOID -> OperationBackwardFunctions::sigmoid;
@@ -37,6 +39,25 @@ public final class OperationBackwardFunctions {
             case SQRT -> OperationBackwardFunctions::sqrt;
             default -> null;
         };
+    }
+
+    /**
+     * Reshape-like operations preserve element order, so their VJP restores
+     * the exact shape of the original input. This also avoids squeeze's
+     * all-singleton-dimensions behavior when undoing a single unsqueeze.
+     */
+    private static Tensor[] restoreInputShape(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        return new Tensor[] { gradient.reshape(inputs.get(0).shape().dims()) };
+    }
+
+    /** A dimension swap is its own inverse, including non-terminal axes. */
+    private static Tensor[] transpose(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        if (arguments.length == 0) {
+            return new Tensor[] { gradient.transpose() };
+        }
+        return new Tensor[] { gradient.transpose((int) arguments[0], (int) arguments[1]) };
     }
 
     private static Tensor[] matmul(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
