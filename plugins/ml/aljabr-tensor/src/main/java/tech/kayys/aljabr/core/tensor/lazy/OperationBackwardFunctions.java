@@ -12,12 +12,12 @@ import tech.kayys.aljabr.core.tensor.autograd.BackwardFunction;
  * expresses the derivative without introducing backend-specific behavior or
  * assumptions about broadcasting. Unsupported operations remain unregistered.</p>
  */
-final class OperationBackwardFunctions {
+public final class OperationBackwardFunctions {
 
     private OperationBackwardFunctions() {
     }
 
-    static BackwardFunction forOperation(OpType operation) {
+    public static BackwardFunction forOperation(OpType operation) {
         return switch (operation) {
             case ADD -> OperationBackwardFunctions::add;
             case SUB -> OperationBackwardFunctions::subtract;
