@@ -205,3 +205,32 @@ For parallel PRs:
 - Keep commits focused and messages descriptive. Do not merge or change the default branch unless explicitly requested.
 - Ask the maintainer to run local tests only when the result depends on their Apple Silicon/Metal hardware or other unavailable local environment; complete code inspection, implementation, documentation, and CI-oriented work autonomously first.
 - Never report a test, build, benchmark, or hardware validation as passing unless its output was observed.
+
+## Developer experience and extension ecosystem
+
+Aljabr is a Java-native computational framework for research, development, education and production use. Its intended breadth is comparable to foundational parts of NumPy, SciPy, PyTorch and the surrounding scientific Python ecosystem, without promising Python API compatibility.
+
+- Keep the same public Java APIs usable from ordinary Java applications, Gradle/Maven projects, JBang scripts and JShell. Add Jupyter integration where it can reuse the same API; do not create a notebook-only programming model.
+- Provide small, executable examples for numerical computing, tensors, linear algebra, statistics, classical ML, neural networks and model execution. Examples must state which artifacts/providers they require.
+- Treat JDK 25 as the currently documented project baseline unless a reviewed decision changes it. Verify each downstream artifact's actual bytecode/runtime requirements; do not promise compatibility with older JDKs without testing.
+- Use the Java Vector API for optional CPU SIMD implementations. It is an implementation detail behind stable Aljabr contracts, not a required dependency of core consumers. Since it is incubating in the documented JDK 25 baseline, isolate its module/compiler/runtime flags to modules that use it.
+- Use FFM for optional native memory and ABI integration where appropriate. Keep layouts, arenas/scopes, handles, alignment, native access permissions and cleanup behind well-defined adapters. FFM use must not force unrelated numerical or statistics consumers to load native libraries. Avoid introducing new JNI dependencies unless an ADR explains why.
+- Keep a portable scalar/reference implementation wherever practical. Optimized Vector API, parallel, FFM/native and accelerator paths must pass the same applicable correctness/conformance tests before performance claims are made.
+- Separate numerical dtype from storage encoding and quantization format. Define promotion, accumulation precision, casting, overflow and tolerance behavior independently of backend implementation.
+- A DataFrame/Series and tabular-data API is a valuable independent data-science extension, not part of the minimal tensor core. It may integrate with Aljabr tensors through explicit conversions/adapters. Keep CSV/JSON/Parquet/Arrow/SQL connectors and large data engines optional; do not make tensor or statistics consumers depend on them.
+- DataFrame operations (selection, filtering, joins, grouping, aggregation, missing values, reshape and window operations) belong to the tabular-data layer. General probability, inference tests and distributions belong to statistical computing. ML feature transforms/pipelines belong to the ML/data-preparation layer. Avoid duplicating algorithms across these boundaries.
+- Do not create a repository or Gradle project for every named Python analogue. Prefer cohesive, independently consumable artifacts and split only when API ownership, dependency isolation, maintainers and tests justify it.
+- External libraries may be integrated behind Aljabr-owned adapters after license, JDK, numerical behavior, dependency and native-runtime review. Do not recreate mature libraries solely to imitate Python package names.
+
+## Capability and roadmap status language
+
+Use explicit status for roadmap and documentation claims:
+- **Target:** intended architecture; not implementation evidence.
+- **Planned:** accepted work with no implementation yet.
+- **In progress:** implementation exists but acceptance criteria are incomplete.
+- **Implemented:** code exists and focused tests pass.
+- **Validated:** relevant conformance and compatibility tests pass in the stated environment.
+- **Stable:** public compatibility and support policy are established.
+- **Optimized:** benchmark evidence shows an improvement under documented conditions.
+
+Never equate source presence, Gradle inclusion, provider declaration, or a passing compilation with a validated capability. Keep capability inventories dated and distinguish source inspection from executed tests.
