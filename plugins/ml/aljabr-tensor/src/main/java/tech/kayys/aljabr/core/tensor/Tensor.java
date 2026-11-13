@@ -103,6 +103,20 @@ public interface Tensor extends AutoCloseable {
      */
     void backward();
 
+    /**
+     * Starts reverse-mode differentiation with an explicit output gradient.
+     * This is required for non-scalar outputs. The supplied gradient is
+     * borrowed and must have the same shape as this tensor.
+     *
+     * @param outputGradient incoming gradient for this tensor
+     * @throws UnsupportedOperationException when this implementation does not
+     *         provide reverse-mode differentiation
+     */
+    default void backward(Tensor outputGradient) {
+        throw new UnsupportedOperationException(
+                "Explicit-gradient backward is not supported by " + getClass().getName());
+    }
+
     Tensor grad();
 
     void setGrad(Tensor grad);
