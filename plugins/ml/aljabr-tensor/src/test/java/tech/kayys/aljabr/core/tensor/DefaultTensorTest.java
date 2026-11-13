@@ -9,6 +9,7 @@ import java.lang.reflect.Proxy;
 import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.memory.CpuBuffer;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.memory.TensorStorage;
@@ -177,15 +178,17 @@ class DefaultTensorTest {
 
 
     @Test
-    void backwardFailsExplicitlyWhenGradientsAreRequired() {
+    void backwardPopulatesUnitGradientForDifferentiableScalarLeaf() {
+        CpuBackend backend = new CpuBackend();
         CpuBuffer buffer = new CpuBuffer(Float.BYTES);
-        DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, unusedBackend());
+        DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, backend);
         try {
             tensor.setRequiresGrad(true);
-            UnsupportedOperationException error = assertThrows(UnsupportedOperationException.class, tensor::backward);
-            assertTrue(error.getMessage().contains("Automatic differentiation is not available"));
+            tensor.backward();
+            assertEquals(1.0f, tensor.grad().item(), 1.0e-6f);
         } finally {
             tensor.release();
+            backend.close();
         }
     }
 
