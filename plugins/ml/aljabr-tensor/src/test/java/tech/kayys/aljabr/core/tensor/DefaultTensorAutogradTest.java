@@ -157,4 +157,49 @@ class DefaultTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void eagerDimensionWiseMeanRestoresReducedAxisDuringBackward() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor rowMeans = x.mean(1, false);
+        Tensor seed = TensorFactory.of(new float[] { 1, 4 }, backend, 2);
+        try {
+            rowMeans.backward(seed);
+            assertArrayEquals(
+                    new float[] { 1f / 3f, 1f / 3f, 1f / 3f, 4f / 3f, 4f / 3f, 4f / 3f },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            rowMeans.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerBroadcastAdditionReducesGradientToEachInputShape() {
+        CpuBackend backend = new CpuBackend();
+        Tensor matrix = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        Tensor bias = TensorFactory.of(new float[] { 10, 20, 30 }, backend, 3);
+        matrix.setRequiresGrad(true);
+        bias.setRequiresGrad(true);
+        Tensor sum = matrix.add(bias);
+        Tensor loss = sum.sum();
+        try {
+            loss.backward();
+            assertArrayEquals(new float[] { 1, 1, 1, 1, 1, 1 },
+                    matrix.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 2, 2, 2 },
+                    bias.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            sum.release();
+            matrix.release();
+            bias.release();
+            backend.close();
+        }
+    }
+
 }
