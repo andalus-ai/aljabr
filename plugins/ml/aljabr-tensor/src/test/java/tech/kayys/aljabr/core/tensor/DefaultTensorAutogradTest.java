@@ -98,3 +98,35 @@ class DefaultTensorAutogradTest {
         }
     }
 
+    @Test
+    void eagerMatmulAndMeanPropagateGradientsToBothMatrices() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, backend, 2, 2);
+        Tensor weight = TensorFactory.of(new float[] { 2.0f, 3.0f }, backend, 2, 1);
+        input.setRequiresGrad(true);
+        weight.setRequiresGrad(true);
+        Tensor product = input.matmul(weight);
+        Tensor loss = product.mean();
+
+        try {
+            assertEquals(8.5f, loss.item(), 1.0e-6f);
+            loss.backward();
+            assertArrayEquals(new float[] { 1.0f, 1.5f, 1.0f, 1.5f },
+                    input.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 2.0f, 3.0f },
+                    weight.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            product.release();
+            if (input.grad() != null) {
+                input.grad().release();
+            }
+            if (weight.grad() != null) {
+                weight.grad().release();
+            }
+            input.release();
+            weight.release();
+            backend.close();
+        }
+    }
+
