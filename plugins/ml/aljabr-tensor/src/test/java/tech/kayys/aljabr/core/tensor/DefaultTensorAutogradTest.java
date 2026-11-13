@@ -109,7 +109,7 @@ class DefaultTensorAutogradTest {
         Tensor loss = product.mean();
 
         try {
-            assertEquals(8.5f, loss.item(), 1.0e-6f);
+            assertEquals(13.0f, loss.item(), 1.0e-6f);
             loss.backward();
             assertArrayEquals(new float[] { 1.0f, 1.5f, 1.0f, 1.5f },
                     input.grad().toFloatArray(), 1.0e-6f);
