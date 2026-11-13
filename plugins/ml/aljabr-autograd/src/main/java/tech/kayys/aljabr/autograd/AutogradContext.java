@@ -65,6 +65,41 @@ public final class AutogradContext implements AutoCloseable {
     }
 
     void backward(Variable output) {
+        validateOutput(output);
+        if (!output.requiresGrad()) {
+            return;
+        }
+        if (output.value().numel() != 1) {
+            throw new IllegalArgumentException(
+                    "Implicit backward requires a scalar output; use backward(Tensor outputGradient) for non-scalar outputs");
+        }
+        Tensor seed = own(TensorFactory.ones(output.value().backend(), output.value().shape().dims()));
+        runBackward(output, seed);
+    }
+
+    void backward(Variable output, Tensor outputGradient) {
+        validateOutput(output);
+        Objects.requireNonNull(outputGradient, "outputGradient must not be null");
+        if (!output.requiresGrad()) {
+            return;
+        }
+        if (outputGradient.backend() != output.value().backend()) {
+            throw new IllegalArgumentException("Output gradient must use the same backend instance as the output");
+        }
+        if (outputGradient.dtype() != tech.kayys.aljabr.core.tensor.DType.F32) {
+            throw new IllegalArgumentException("Initial autograd prototype supports F32 output gradients only");
+        }
+        if (!java.util.Arrays.equals(outputGradient.shape().dims(), output.value().shape().dims())) {
+            throw new IllegalArgumentException("Output gradient shape mismatch: expected "
+                    + output.value().shape() + " but got " + outputGradient.shape());
+        }
+
+        // Copy the caller's seed so the context owns a stable value for the full backward pass.
+        Tensor seed = own(outputGradient.add(0.0f));
+        runBackward(output, seed);
+    }
+
+    private void validateOutput(Variable output) {
         ensureOpen();
         Objects.requireNonNull(output, "output must not be null");
         if (output.context() != this) {
@@ -73,17 +108,10 @@ public final class AutogradContext implements AutoCloseable {
         if (backwardCompleted) {
             throw new IllegalStateException("This autograd context has already run backward");
         }
-        if (!output.requiresGrad()) {
-            backwardCompleted = true;
-            return;
-        }
-        if (output.value().numel() != 1) {
-            throw new IllegalArgumentException(
-                    "Implicit backward requires a scalar output; provide an explicit upstream gradient in a future API");
-        }
-        backwardCompleted = true;
+    }
 
-        Tensor seed = own(TensorFactory.ones(output.value().backend(), output.value().shape().dims()));
+    private void runBackward(Variable output, Tensor seed) {
+        backwardCompleted = true;
         gradients.put(output, seed);
 
         List<Variable> order = new ArrayList<>();
@@ -106,16 +134,22 @@ public final class AutogradContext implements AutoCloseable {
 
             Tensor[] contributions = current.backwardRule().apply(outputGradient);
             if (contributions.length != current.parents().size()) {
+                for (Tensor contribution : contributions) {
+                    if (contribution != null) {
+                        own(contribution);
+                    }
+                }
                 throw new IllegalStateException("Backward rule for " + current.operationName()
                         + " returned " + contributions.length + " gradients for "
                         + current.parents().size() + " inputs");
             }
             for (int i = 0; i < contributions.length; i++) {
                 Tensor contribution = contributions[i];
-                Variable parent = current.parents().get(i);
                 if (contribution == null) {
                     continue;
                 }
+                own(contribution);
+                Variable parent = current.parents().get(i);
                 if (!parent.requiresGrad()) {
                     throw new IllegalStateException("Backward rule produced a gradient for a non-trainable input");
                 }
@@ -123,7 +157,6 @@ public final class AutogradContext implements AutoCloseable {
                     throw new IllegalStateException("Gradient shape mismatch for " + current.operationName()
                             + ": expected " + parent.value().shape() + " but got " + contribution.shape());
                 }
-                own(contribution);
                 Tensor previous = gradients.get(parent);
                 gradients.put(parent, previous == null ? contribution : own(previous.add(contribution)));
             }
