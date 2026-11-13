@@ -100,7 +100,7 @@ Use the status terms from AGENTS.md: Target, Planned, In progress, Implemented, 
 ## 9. Related documents
 
 - [Contributor instructions](../AGENTS.md)
-- [Framework architecture](architecture/FRAMEWORK_ARCHITECTURE.md)
+- [Unified computational architecture and roadmap](architecture/ALJABR_UNIFIED_ARCHITECTURE.md)\n- [Framework architecture](architecture/FRAMEWORK_ARCHITECTURE.md)
 - [Computational framework scope](architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md)
 - [Modular distribution](architecture/MODULAR_DISTRIBUTION.md)
 - [Computational capability inventory](architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md)
