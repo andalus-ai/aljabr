@@ -66,87 +66,89 @@ public class GraphExecutor {
         List<GraphNode> topoOrder = new ArrayList<>();
         buildTopoOrder(root, new HashSet<>(), topoOrder);
         java.util.IdentityHashMap<GraphNode, Tensor> gradients = new java.util.IdentityHashMap<>();
-        gradients.put(root, outputGradient.add(0.0f));
 
         try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
+            gradients.put(root, outputGradient.add(0.0f));
             try {
                 for (int index = topoOrder.size() - 1; index >= 0; index--) {
-                GraphNode node = topoOrder.get(index);
-                Tensor gradient = gradients.remove(node);
-                if (gradient == null) {
-                    continue;
-                }
-
-                if (node.getOp() == OpType.CONSTANT) {
-                    Tensor leaf = node.getMaterializedData();
-                    if (leaf != null && leaf.requiresGrad()) {
-                        Tensor previous = leaf.grad();
-                        if (previous == null) {
-                            // Transfer ownership of the accumulated gradient to the leaf.
-                            leaf.setGrad(gradient);
-                        } else {
-                            Tensor accumulated = previous.add(gradient);
-                            leaf.setGrad(accumulated);
-                            previous.release();
-                            gradient.release();
-                        }
-                    } else {
-                        gradient.release();
-                    }
-                    continue;
-                }
-
-                if (!node.requiresGrad()) {
-                    gradient.release();
-                    continue;
-                }
-
-                if (!node.hasBackwardFunction()) {
-                    gradient.release();
-                    throw new UnsupportedOperationException(
-                            "No autograd rule registered for operation " + node.getOp());
-                }
-
-                List<Tensor> inputValues = node.getInputs().stream()
-                        .map(GraphNode::getMaterializedData)
-                        .toList();
-                Tensor[] inputGradients = node.getBackwardFunction().apply(
-                        node.getMaterializedData(), gradient, inputValues, node.getArgs());
-                if (inputGradients == null || inputGradients.length != node.getInputs().size()) {
-                    release(inputGradients);
-                    gradient.release();
-                    throw new IllegalStateException("Backward rule for " + node.getOp()
-                            + " must return one gradient slot per input");
-                }
-
-                // Validate every returned shape before transferring ownership of any
-                // contribution into the graph accumulator. This deliberately rejects
-                // broadcast gradients until reduce-to-input-shape VJPs are implemented.
-                for (int i = 0; i < inputGradients.length; i++) {
-                    Tensor contribution = inputGradients[i];
-                    if (contribution != null
-                            && !node.getInputs().get(i).getOutputShape().equals(contribution.shape())) {
-                        release(inputGradients);
-                        gradient.release();
-                        throw new IllegalArgumentException("Backward rule for " + node.getOp()
-                                + " returned gradient shape " + contribution.shape()
-                                + " for input shape " + node.getInputs().get(i).getOutputShape()
-                                + "; broadcasting gradients are not yet supported");
-                    }
-                }
-
-                for (int i = 0; i < inputGradients.length; i++) {
-                    Tensor contribution = inputGradients[i];
-                    GraphNode input = node.getInputs().get(i);
-                    if (contribution == null) {
+                    GraphNode node = topoOrder.get(index);
+                    Tensor gradient = gradients.remove(node);
+                    if (gradient == null) {
                         continue;
                     }
-                    if (input.requiresGrad()) {
-                        accumulate(gradients, input, contribution);
-                    } else {
-                        contribution.release();
+
+                    if (node.getOp() == OpType.CONSTANT) {
+                        Tensor leaf = node.getMaterializedData();
+                        if (leaf != null && leaf.requiresGrad()) {
+                            Tensor previous = leaf.grad();
+                            if (previous == null) {
+                                leaf.setGrad(gradient);
+                            } else {
+                                Tensor accumulated = previous.add(gradient);
+                                leaf.setGrad(accumulated);
+                                previous.release();
+                                gradient.release();
+                            }
+                        } else {
+                            gradient.release();
+                        }
+                        continue;
                     }
-                }
+
+                    if (!node.requiresGrad()) {
+                        gradient.release();
+                        continue;
+                    }
+                    if (!node.hasBackwardFunction()) {
+                        gradient.release();
+                        throw new UnsupportedOperationException(
+                                "No autograd rule registered for operation " + node.getOp());
+                    }
+
+                    List<Tensor> inputValues = node.getInputs().stream()
+                            .map(GraphNode::getMaterializedData)
+                            .toList();
+                    Tensor[] inputGradients;
+                    try {
+                        inputGradients = node.getBackwardFunction().apply(
+                                node.getMaterializedData(), gradient, inputValues, node.getArgs());
+                    } catch (RuntimeException | Error failure) {
+                        gradient.release();
+                        throw failure;
+                    }
+                    if (inputGradients == null || inputGradients.length != node.getInputs().size()) {
+                        release(inputGradients);
+                        gradient.release();
+                        throw new IllegalStateException("Backward rule for " + node.getOp()
+                                + " must return one gradient slot per input");
+                    }
+
+                    // Reject incompatible contributions before transferring any ownership.
+                    for (int i = 0; i < inputGradients.length; i++) {
+                        Tensor contribution = inputGradients[i];
+                        if (contribution != null
+                                && !node.getInputs().get(i).getOutputShape().equals(contribution.shape())) {
+                            release(inputGradients);
+                            gradient.release();
+                            throw new IllegalArgumentException("Backward rule for " + node.getOp()
+                                    + " returned gradient shape " + contribution.shape()
+                                    + " for input shape " + node.getInputs().get(i).getOutputShape()
+                                    + "; broadcasting gradients are not yet supported");
+                        }
+                    }
+
+                    for (int i = 0; i < inputGradients.length; i++) {
+                        Tensor contribution = inputGradients[i];
+                        GraphNode input = node.getInputs().get(i);
+                        if (contribution == null) {
+                            continue;
+                        }
+                        if (input.requiresGrad()) {
+                            accumulate(gradients, input, contribution);
+                        } else {
+                            contribution.release();
+                        }
+                    }
                     gradient.release();
                 }
             } finally {
