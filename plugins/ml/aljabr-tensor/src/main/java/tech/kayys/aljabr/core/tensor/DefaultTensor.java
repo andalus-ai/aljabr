@@ -8,6 +8,11 @@ import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.Buffer;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.memory.TensorStorage;
+import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
+import tech.kayys.aljabr.core.tensor.lazy.GraphExecutor;
+import tech.kayys.aljabr.core.tensor.lazy.GraphNode;
+import tech.kayys.aljabr.core.tensor.lazy.OpType;
+import tech.kayys.aljabr.core.tensor.lazy.OperationBackwardFunctions;
 
 /**
  * Default eager tensor backed by backend-neutral {@link TensorStorage}.
@@ -29,6 +34,7 @@ public final class DefaultTensor implements Tensor {
     private final ComputeBackend backend;
     private Tensor grad;
     private boolean requiresGrad;
+    private GraphNode autogradNode;
     private final AtomicBoolean released = new AtomicBoolean();
 
     /**
@@ -129,42 +135,42 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor add(Tensor other) {
-        return backend.add(this, other);
+        return record(OpType.ADD, new Tensor[] { this, other }, new Object[0], backend.add(this, other));
     }
 
     @Override
     public Tensor sub(Tensor other) {
-        return backend.sub(this, other);
+        return record(OpType.SUB, new Tensor[] { this, other }, new Object[0], backend.sub(this, other));
     }
 
     @Override
     public Tensor mul(Tensor other) {
-        return backend.mul(this, other);
+        return record(OpType.MUL, new Tensor[] { this, other }, new Object[0], backend.mul(this, other));
     }
 
     @Override
     public Tensor mul(float scalar) {
-        return backend.mul(this, scalar);
+        return record(OpType.MUL_SCALAR, new Tensor[] { this }, new Object[] { scalar }, backend.mul(this, scalar));
     }
 
     @Override
     public Tensor div(float scalar) {
-        return backend.div(this, scalar);
+        return record(OpType.DIV_SCALAR, new Tensor[] { this }, new Object[] { scalar }, backend.div(this, scalar));
     }
 
     @Override
     public Tensor div(Tensor other) {
-        return backend.div(this, other);
+        return record(OpType.DIV, new Tensor[] { this, other }, new Object[0], backend.div(this, other));
     }
 
     @Override
     public Tensor add(float scalar) {
-        return backend.addScalar(this, scalar);
+        return record(OpType.ADD_SCALAR, new Tensor[] { this }, new Object[] { scalar }, backend.addScalar(this, scalar));
     }
 
     @Override
     public Tensor matmul(Tensor other) {
-        return backend.matmul(this, other);
+        return record(OpType.MATMUL, new Tensor[] { this, other }, new Object[0], backend.matmul(this, other));
     }
 
     @Override
@@ -189,7 +195,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor mean() {
-        return backend.mean(this);
+        return record(OpType.MEAN, new Tensor[] { this }, new Object[0], backend.mean(this));
     }
 
     @Override
@@ -304,7 +310,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor sum() {
-        return backend.sum(this);
+        return record(OpType.SUM, new Tensor[] { this }, new Object[0], backend.sum(this));
     }
 
     @Override
@@ -399,11 +405,73 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public void backward() {
-        if (requiresGrad) {
-            throw new UnsupportedOperationException(
-                    "Automatic differentiation is not available for DefaultTensor. "
-                            + "Use a tensor implementation with an autograd engine.");
+        ensureOpen();
+        if (!requiresGrad()) {
+            return;
         }
+        if (numel() != 1) {
+            throw new UnsupportedOperationException(
+                    "Implicit backward() requires a scalar output; use backward(Tensor outputGradient) "
+                            + "for non-scalar tensors");
+        }
+        Tensor zero = zerosLike();
+        Tensor seed = null;
+        try {
+            seed = zero.add(1.0f);
+            backward(seed);
+        } finally {
+            zero.release();
+            if (seed != null) {
+                seed.release();
+            }
+        }
+    }
+
+    @Override
+    public void backward(Tensor outputGradient) {
+        ensureOpen();
+        Objects.requireNonNull(outputGradient, "outputGradient");
+        if (!requiresGrad()) {
+            return;
+        }
+        if (!shape.equals(outputGradient.shape())) {
+            throw new IllegalArgumentException("Output gradient shape " + outputGradient.shape()
+                    + " does not match tensor shape " + shape);
+        }
+        GraphNode root = autogradNode != null ? autogradNode : GraphNode.constant(this);
+        root.setMaterializedData(this);
+        try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
+            new GraphExecutor(backend).backward(root, outputGradient);
+        }
+    }
+
+    private Tensor record(OpType operation, Tensor[] inputs, Object[] arguments, Tensor result) {
+        if (!AutogradContext.isRecordingEnabled()
+                || result == null
+                || java.util.Arrays.stream(inputs).noneMatch(Tensor::requiresGrad)) {
+            return result;
+        }
+        if (!(result instanceof DefaultTensor eagerResult)) {
+            result.release();
+            throw new UnsupportedOperationException(
+                    "Autograd recording requires an eager DefaultTensor result; got "
+                            + result.getClass().getName());
+        }
+        java.util.List<GraphNode> inputNodes = java.util.Arrays.stream(inputs)
+                .map(input -> input instanceof DefaultTensor eager && eager.autogradNode != null
+                        ? eager.autogradNode
+                        : GraphNode.constant(input))
+                .toList();
+        GraphNode node = new GraphNode(operation, inputNodes, arguments, result.shape(), result.dtype(),
+                OperationBackwardFunctions.forOperation(operation));
+        node.setMaterializedData(result);
+        eagerResult.autogradNode = node;
+        return result;
+    }
+
+    /** Internal graph association used when an eager result feeds another operation. */
+    public GraphNode autogradNode() {
+        return autogradNode;
     }
 
     @Override
@@ -418,17 +486,25 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public boolean requiresGrad() {
-        return requiresGrad;
+        return requiresGrad || (autogradNode != null && autogradNode.requiresGrad());
     }
 
     @Override
     public void setRequiresGrad(boolean r) {
+        if (autogradNode != null && autogradNode.getOp() != OpType.CONSTANT) {
+            throw new IllegalStateException("requiresGrad can only be set on a leaf tensor");
+        }
         this.requiresGrad = r;
     }
 
     @Override
     public void release() {
         if (released.compareAndSet(false, true)) {
+            Tensor ownedGradient = grad;
+            grad = null;
+            if (ownedGradient != null && ownedGradient != this) {
+                ownedGradient.release();
+            }
             storage.release();
         }
     }
