@@ -170,7 +170,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor matmul(Tensor other) {
-        return backend.matmul(this, other);
+        return record(OpType.MATMUL, new Tensor[] { this, other }, new Object[0], backend.matmul(this, other));
     }
 
     @Override
@@ -195,7 +195,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor mean() {
-        return backend.mean(this);
+        return record(OpType.MEAN, new Tensor[] { this }, new Object[0], backend.mean(this));
     }
 
     @Override
@@ -310,7 +310,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor sum() {
-        return backend.sum(this);
+        return record(OpType.SUM, new Tensor[] { this }, new Object[0], backend.sum(this));
     }
 
     @Override
