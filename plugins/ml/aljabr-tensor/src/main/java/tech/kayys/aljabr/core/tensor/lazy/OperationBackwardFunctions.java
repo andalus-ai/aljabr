@@ -150,22 +150,47 @@ public final class OperationBackwardFunctions {
         return new Tensor[] { gradient.div((float) arguments[0]) };
     }
     private static Tensor[] sigmoid(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        Tensor oneMinusOutput = output.zerosLike().add(1.0f).sub(output);
+        Tensor zeros = output.zerosLike();
+        Tensor ones = null;
+        Tensor oneMinusOutput = null;
         try {
+            ones = zeros.add(1.0f);
+            oneMinusOutput = ones.sub(output);
             return new Tensor[] { gradient.mul(output).mul(oneMinusOutput) };
         } finally {
-            oneMinusOutput.release();
+            zeros.release();
+            if (ones != null) {
+                ones.release();
+            }
+            if (oneMinusOutput != null) {
+                oneMinusOutput.release();
+            }
         }
     }
 
     private static Tensor[] tanh(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
         Tensor squared = output.mul(output);
+        Tensor negativeSquared = null;
+        Tensor zeros = null;
         Tensor oneMinusSquared = null;
         try {
-            oneMinusSquared = squared.mul(-1.0f).add(1.0f);
+            negativeSquared = squared.mul(-1.0f);
+            zeros = output.zerosLike();
+            Tensor ones = zeros.add(1.0f);
+            try {
+                oneMinusSquared = ones.add(negativeSquared);
+            } finally {
+                ones.release();
+            }
             return new Tensor[] { gradient.mul(oneMinusSquared) };
         } finally {
             squared.release();
+            if (negativeSquared != null) {
+                negativeSquared.release();
+            }
+            if (zeros != null) {
+                zeros.release();
+            }
             if (oneMinusSquared != null) {
                 oneMinusSquared.release();
             }
