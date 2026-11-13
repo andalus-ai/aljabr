@@ -47,6 +47,22 @@ public final class Shape {
     }
 
     @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof Shape shape)) {
+            return false;
+        }
+        return Arrays.equals(dims, shape.dims);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(dims);
+    }
+
+    @Override
     public String toString() {
         return Arrays.toString(dims);
     }
