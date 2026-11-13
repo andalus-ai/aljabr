@@ -234,3 +234,15 @@ Use explicit status for roadmap and documentation claims:
 - **Optimized:** benchmark evidence shows an improvement under documented conditions.
 
 Never equate source presence, Gradle inclusion, provider declaration, or a passing compilation with a validated capability. Keep capability inventories dated and distinguish source inspection from executed tests.
+
+## Autograd and optimizer boundaries
+
+- Tensor autograd is a reusable numerical capability, not a training workflow. The target module is `:plugins:ml:aljabr-autograd` at `plugins/ml/aljabr-autograd`; keep the established Java package `tech.kayys.aljabr.autograd` unless a reviewed compatibility decision requires otherwise.
+- Do not treat the legacy `plugins/ml/autograd` project as a working tensor autograd engine. Its current graph engine operates on external IR graph types, has incomplete gradient rules, and is excluded from the default build due to unpublished IR/trainer snapshot dependencies. Audit actual consumers before migrating or removing legacy code.
+- The tensor module must not depend on the autograd implementation. Design a narrow, acyclic integration point for operation recording and backward execution. Keep backend implementation details, native memory types and accelerator-specific buffers out of autograd's public contracts.
+- Define graph ownership, saved-tensor lifetime, gradient accumulation, scalar/non-scalar backward seeding, no-grad scopes, broadcasting reduction, unsupported-operation behavior and repeated-backward semantics before broad implementation.
+- Validate every supported gradient rule with analytical tests and finite-difference checks. A forward operator existing does not imply its derivative is implemented. Missing rules must fail explicitly; never silently skip gradient propagation.
+- Optimizer algorithms are independent of graph construction and belong in a separately consumable `:plugins:ml:aljabr-optim` module after parameter update/resource ownership semantics are correct. Optimizers should consume gradients without requiring a dependency on the autograd engine.
+- Tafkir owns training workflow orchestration, datasets/pipelines, experiment lifecycle and fine-tuning. Do not put trainers or training loops in the autograd module.
+- Do not bulk-move the legacy autograd project. Audit trainers, data loaders, metrics, augmentation, model hub/export and IR graph differentiation independently; move each only to an established owning module with real consumers and tests.
+- See [ADR-0004: Tensor Autograd and Optimization Module Boundaries](docs/architecture/ADR-0004-AUTOGRAD-AND-OPTIMIZATION-BOUNDARIES.md) for the migration sequence and acceptance criteria.
