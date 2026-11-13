@@ -222,4 +222,49 @@ class DefaultTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void eagerTransposeBackwardAppliesTheInverseDimensionSwap() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor transposed = x.transpose(0, 1);
+        Tensor seed = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 3, 2);
+        try {
+            transposed.backward(seed);
+            assertArrayEquals(new float[] { 1, 3, 5, 2, 4, 6 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            transposed.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerReshapeFlattenUnsqueezeAndSqueezeRestoreOriginalShapeInBackward() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor reshaped = x.reshape(1, 2, 3);
+        Tensor flattened = reshaped.flatten();
+        Tensor squeezed = flattened.reshape(1, 6).squeeze();
+        Tensor expanded = squeezed.unsqueeze(0);
+        Tensor seed = TensorFactory.of(new float[] { 2, 3, 4, 5, 6, 7 }, backend, 1, 6);
+        try {
+            expanded.backward(seed);
+            assertArrayEquals(new float[] { 2, 3, 4, 5, 6, 7 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            expanded.release();
+            squeezed.release();
+            flattened.release();
+            reshaped.release();
+            x.release();
+            backend.close();
+        }
+    }
+
 }
