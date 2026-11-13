@@ -130,4 +130,96 @@ class DefaultTensorAutogradTest {
         }
     }
 
+    @Test
+    void eagerSigmoidAndTanhOperationsParticipateInTheSameAutogradGraph() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 0.0f, 1.0f }, backend, 2);
+        x.setRequiresGrad(true);
+        Tensor sigmoid = x.sigmoid();
+        Tensor loss = sigmoid.mean();
+
+        try {
+            loss.backward();
+            float sigmoidAtZero = 0.5f;
+            float sigmoidAtOne = (float) (1.0 / (1.0 + Math.exp(-1.0)));
+            assertArrayEquals(
+                    new float[] {
+                            sigmoidAtZero * (1.0f - sigmoidAtZero) / 2.0f,
+                            sigmoidAtOne * (1.0f - sigmoidAtOne) / 2.0f
+                    },
+                    x.grad().toFloatArray(),
+                    1.0e-6f);
+        } finally {
+            loss.release();
+            sigmoid.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+
+    @Test
+    void eagerDimensionWiseMeanRestoresReducedAxisDuringBackward() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor rowMeans = x.mean(1, false);
+        Tensor seed = TensorFactory.of(new float[] { 1, 4 }, backend, 2);
+        try {
+            rowMeans.backward(seed);
+            assertArrayEquals(
+                    new float[] { 1f / 3f, 1f / 3f, 1f / 3f, 4f / 3f, 4f / 3f, 4f / 3f },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            rowMeans.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerBroadcastAdditionReducesGradientToEachInputShape() {
+        CpuBackend backend = new CpuBackend();
+        Tensor matrix = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        Tensor bias = TensorFactory.of(new float[] { 10, 20, 30 }, backend, 3);
+        matrix.setRequiresGrad(true);
+        bias.setRequiresGrad(true);
+        Tensor sum = matrix.add(bias);
+        Tensor loss = sum.sum();
+        try {
+            loss.backward();
+            assertArrayEquals(new float[] { 1, 1, 1, 1, 1, 1 },
+                    matrix.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 2, 2, 2 },
+                    bias.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            sum.release();
+            matrix.release();
+            bias.release();
+            backend.close();
+        }
+    }
+
+
+    @Test
+    void eagerDimensionWiseSumSupportsKeepDimensionBackward() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor columnSums = x.sum(0, true);
+        Tensor seed = TensorFactory.of(new float[] { 2, 3, 4 }, backend, 1, 3);
+        try {
+            columnSums.backward(seed);
+            assertArrayEquals(new float[] { 2, 3, 4, 2, 3, 4 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            columnSums.release();
+            x.release();
+            backend.close();
+        }
+    }
+
 }
