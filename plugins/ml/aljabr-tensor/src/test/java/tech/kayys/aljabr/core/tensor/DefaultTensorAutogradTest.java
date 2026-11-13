@@ -75,3 +75,26 @@ class DefaultTensorAutogradTest {
         }
     }
 }
+    @Test
+    void eagerMeanPropagatesGradientAcrossAllElements() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1.0f, 2.0f }, backend, 2);
+        x.setRequiresGrad(true);
+        Tensor square = x.mul(x);
+        Tensor loss = square.mean();
+
+        try {
+            assertEquals(2.5f, loss.item(), 1.0e-6f);
+            loss.backward();
+            assertArrayEquals(new float[] { 1.0f, 2.0f }, x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            square.release();
+            if (x.grad() != null) {
+                x.grad().release();
+            }
+            x.release();
+            backend.close();
+        }
+    }
+
