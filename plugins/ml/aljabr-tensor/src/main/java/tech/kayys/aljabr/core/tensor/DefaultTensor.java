@@ -373,6 +373,12 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
+    public Tensor upsampleNearest2d(int outputH, int outputW) {
+        return record(OpType.UPSAMPLE_NEAREST_2D, new Tensor[] { this },
+                new Object[] { outputH, outputW }, backend.upsampleNearest2d(this, outputH, outputW));
+    }
+
+    @Override
     public Tensor applyRoPE(int posOffset, float freqBase, boolean isNeox) {
         return record(OpType.ROPE, new Tensor[] { this }, new Object[] { posOffset, freqBase, isNeox }, backend.applyRoPE(this, posOffset, freqBase, isNeox));
     }
