@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 [![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-Maven-8A2BE2.svg)](https://github.com/andalus-ai/aljabr/packages)
 
-Aljabr is a Java-first machine-learning engine and framework for research, development, education and application building. It provides reusable tensor and compute APIs, model abstractions, weight/format integrations, and hardware-backend interfaces.
+Aljabr is a Java-native computational framework for research, development, education and production: numerical computing, linear algebra, statistics, scientific computing, machine learning, deep learning and reusable model execution. It provides stable Java APIs and optional execution providers. Tabular data, domain algorithms and specialized integrations are independently selectable extensions, not mandatory core dependencies.
 
 If you are familiar with the Python ecosystem, Aljabr is **inspired by the framework role of PyTorch and the model/configuration ecosystem of Hugging Face Transformers**. It is not a drop-in replacement for their APIs, and the capabilities of each model, backend and module must be checked individually.
 
@@ -33,11 +33,11 @@ Aljabr must not depend on AQLI. Tafkir integration is optional and must not be r
 
 ## Design goals
 
-- **Java-first APIs:** JDK 25 is the documented baseline.
+- **Java-first APIs:** JDK 25 is the documented baseline; ordinary Java, Gradle/Maven, JBang and JShell are first-class entry points.
 - **Modular framework:** tensor, operator, model, format and backend capabilities are split into modules.
 - **Explicit capabilities:** model/backend compatibility should be discoverable and fail with actionable errors when unsupported.
 - **Resource safety:** memory, mapped files, native handles and device allocations need explicit ownership and lifecycle rules.
-- **Native interoperability:** prefer Java's Foreign Function & Memory (FFM) API for new native integration; do not add JNI dependencies without an explicit architectural decision.
+- **Native interoperability:** use Java Vector API for optional, measured CPU SIMD kernels and FFM for optional native integration. Isolate incubator/native flags and dependencies; do not require them for scalar/core consumers. Do not add JNI dependencies without an explicit architectural decision.
 - **Optional integrations:** native runtimes, accelerator backends, quantization integrations and training-related modules must not make unrelated core capabilities unusable.
 - **Reproducible engineering:** focused tests, clean dependency boundaries, published-artifact checks and performance evidence for optimizations.
 
@@ -161,11 +161,11 @@ Use `./gradlew projects` as the source of truth for the exact current Gradle mod
 
 ## Documentation
 
-- [Research and Training Readiness](docs/architecture/RESEARCH_TRAINING_READINESS.md) — audit of autograd build visibility, optimizer behavior, and the executable Java training milestone.
+- [Developer Guide](docs/DEVELOPER_GUIDE.md) — contributor and extension-author guidance.\n- [Research and Training Readiness](docs/architecture/RESEARCH_TRAINING_READINESS.md) — audit of autograd build visibility, optimizer behavior, and the executable Java training milestone.
 - [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — module layers, tensor/model execution sequences and validation.
 - [ADR-0001: Backend Discovery, Configuration, and Profiling Ownership](docs/architecture/ADR-0001-BACKEND-OWNERSHIP.md) — Aljabr/AQLI responsibilities, provider readiness, fallback, profiling and packaging boundaries.
 - [Unified Computational Architecture](docs/architecture/ALJABR_UNIFIED_ARCHITECTURE.md) — authoritative mission, ecosystem boundaries, modularity constraints, public API principles and delivery roadmap.
-- [Computational Framework Scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md) — target mathematical, statistical, scientific-computing, ML and NLP capability map and ecosystem ownership boundaries.
+- [Unified Computational Architecture](docs/architecture/ALJABR_UNIFIED_ARCHITECTURE.md) — authoritative mission, boundaries, extension strategy and roadmap.\n- [Computational Framework Scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md) — target mathematical, statistical, scientific-computing, ML and NLP capability map and ecosystem ownership boundaries.
 - [Computational Capability Inventory](docs/architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md) — source-level snapshot of existing modules, implementation evidence, gaps and recommended module boundaries.
 - [Modular Distribution Architecture](docs/architecture/MODULAR_DISTRIBUTION.md) — artifact selection, BOM semantics, provider boundaries, runtime packaging and consumer profiles.
 - [Gradle Distribution Audit](docs/architecture/GRADLE_DISTRIBUTION_AUDIT.md) — static audit of project inclusion, compiler flags, Jandex, publication metadata and dependency-resolution policy.
