@@ -151,6 +151,42 @@ public final class Variable {
         }, "matmul");
     }
 
+
+    /** Rank-two transpose with the inverse transpose as its vector-Jacobian product. */
+    public Variable transpose(int dim0, int dim1) {
+        context.ensureOpen();
+        if (value.shape().rank() != 2) {
+            throw new UnsupportedOperationException("Autograd transpose currently supports rank-two tensors only");
+        }
+        Tensor result = context.own(value.transpose(dim0, dim1));
+        return unaryWithResult("transpose", result,
+                gradient -> new Tensor[] { requiresGrad ? context.own(gradient.transpose(dim0, dim1)) : null });
+    }
+
+    /**
+     * Adds a rank-one feature bias to each row of a rank-two value.
+     * The bias gradient is reduced over the batch dimension.
+     */
+    public Variable addBias(Variable bias) {
+        requireCompatibleContext(bias);
+        if (value.shape().rank() != 2 || bias.value.shape().rank() != 1
+                || value.shape().dim(1) != bias.value.shape().dim(0)) {
+            throw new UnsupportedOperationException(
+                    "Autograd addBias requires [batch, features] plus [features]");
+        }
+        Tensor result = context.own(value.add(bias.value));
+        return new Variable(context, result, requiresGrad || bias.requiresGrad,
+                List.of(this, bias), gradient -> new Tensor[] {
+                    requiresGrad ? context.own(gradient.add(0.0f)) : null,
+                    bias.requiresGrad ? context.own(gradient.sum(0, false)) : null
+                }, "addBias");
+    }
+
+    private Variable unaryWithResult(String name, Tensor result, BackwardRule rule) {
+        context.ensureOpen();
+        return new Variable(context, context.own(result), requiresGrad, List.of(this), rule, name);
+    }
+
     public Variable sum() {
         context.ensureOpen();
         return unary("sum", value.sum(), gradient -> {
