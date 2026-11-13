@@ -39,9 +39,11 @@ public class LazyTensor implements Tensor {
     public Tensor eval() {
         ensureOpen();
         if (!node.isEvaluated()) {
-            GraphNode optimized = GraphOptimizer.optimize(node);
-            executor.evaluate(optimized);
-            node.setMaterializedData(optimized.getMaterializedData());
+            // Graph rewrites are not yet required to preserve VJP metadata.
+            // Keep differentiable graphs structurally intact until that contract exists.
+            GraphNode executable = node.requiresGrad() ? node : GraphOptimizer.optimize(node);
+            executor.evaluate(executable);
+            node.setMaterializedData(executable.getMaterializedData());
         }
         return node.getMaterializedData();
     }
@@ -113,7 +115,29 @@ public class LazyTensor implements Tensor {
 
     @Override
     public void backward() {
-        eval().backward();
+        ensureOpen();
+        if (!node.requiresGrad()) {
+            return;
+        }
+
+        Tensor output = eval();
+        if (output.numel() != 1) {
+            throw new UnsupportedOperationException(
+                    "Implicit backward() requires a scalar output; provide an explicit output gradient "
+                            + "for non-scalar tensors");
+        }
+
+        Tensor zero = output.zerosLike();
+        Tensor seed = null;
+        try {
+            seed = zero.add(1.0f);
+            executor.backward(node, seed);
+        } finally {
+            zero.release();
+            if (seed != null) {
+                seed.release();
+            }
+        }
     }
 
     @Override
@@ -128,12 +152,18 @@ public class LazyTensor implements Tensor {
 
     @Override
     public boolean requiresGrad() {
-        return eval().requiresGrad();
+        ensureOpen();
+        return node.requiresGrad();
     }
 
     @Override
     public void setRequiresGrad(boolean requiresGrad) {
-        eval().setRequiresGrad(requiresGrad);
+        ensureOpen();
+        if (node.getOp() != OpType.CONSTANT) {
+            throw new IllegalStateException(
+                    "requiresGrad can only be enabled on a graph leaf, not an operation result");
+        }
+        node.getMaterializedData().setRequiresGrad(requiresGrad);
     }
 
     @Override
