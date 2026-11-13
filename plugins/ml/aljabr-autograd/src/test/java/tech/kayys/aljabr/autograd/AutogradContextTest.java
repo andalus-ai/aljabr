@@ -46,6 +46,25 @@ class AutogradContextTest {
     }
 
     @Test
+    void computesBothInputGradientsForDivision() {
+        CpuBackend backend = new CpuBackend();
+        Tensor numerator = TensorFactory.of(new float[] { 6f, 8f }, backend, 2);
+        Tensor denominator = TensorFactory.of(new float[] { 2f, 4f }, backend, 2);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable x = context.variable(numerator);
+            Variable y = context.variable(denominator);
+            x.div(y).sum().backward();
+
+            assertArrayEquals(new float[] { 0.5f, 0.25f }, x.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { -1.5f, -0.5f }, y.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            numerator.release();
+            denominator.release();
+            backend.close();
+        }
+    }
+
+    @Test
     void computesMatrixMultiplicationGradients() {
         CpuBackend backend = new CpuBackend();
         Tensor left = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
