@@ -1,6 +1,8 @@
 package tech.kayys.aljabr.core.tensor;
 
 import java.util.Random;
+import java.util.Objects;
+import java.util.random.RandomGenerator;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.TensorStorage;
@@ -25,12 +27,38 @@ public final class TensorFactory {
         throw implicitBackendSelectionRemoved();
     }
 
-    /** Creates a random tensor using an explicitly owned compute backend. */
+    /**
+     * Creates a normally distributed tensor using the factory's default
+     * random generator. This overload is convenient for exploratory use;
+     * use the overload accepting a {@link RandomGenerator} when reproducible
+     * experiments or independent random streams are required.
+     */
     public static Tensor randn(ComputeBackend backend, long... shape) {
+        return randn(backend, RNG, shape);
+    }
+
+    /**
+     * Creates a normally distributed tensor using an explicit random generator.
+     *
+     * <p>The caller owns the generator and therefore controls its seed, state,
+     * and stream partitioning. Aljabr does not retain or mutate a global seed.
+     * The generator is consumed once per element in row-major order.</p>
+     *
+     * @param backend compute backend that owns the resulting tensor storage
+     * @param randomGenerator caller-owned source of random values
+     * @param shape tensor dimensions
+     * @return a tensor whose elements follow the generator's Gaussian distribution
+     */
+    public static Tensor randn(
+            ComputeBackend backend,
+            RandomGenerator randomGenerator,
+            long... shape) {
+        Objects.requireNonNull(backend, "backend must not be null");
+        Objects.requireNonNull(randomGenerator, "randomGenerator must not be null");
         long n = numel(shape);
         float[] data = new float[arrayLength(n)];
-        for (int i = 0; i < n; i++) {
-            data[i] = (float) RNG.nextGaussian();
+        for (int i = 0; i < data.length; i++) {
+            data[i] = (float) randomGenerator.nextGaussian();
         }
         return of(data, backend, shape);
     }
