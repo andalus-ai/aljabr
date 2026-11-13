@@ -108,16 +108,19 @@ public final class Variable {
     }
 
     public Variable add(float scalar) {
+        context.ensureOpen();
         return unary("addScalar", value.add(scalar),
                 gradient -> new Tensor[] { requiresGrad ? context.own(gradient.add(0.0f)) : null });
     }
 
     public Variable mul(float scalar) {
+        context.ensureOpen();
         return unary("multiplyScalar", value.mul(scalar),
                 gradient -> new Tensor[] { requiresGrad ? context.own(gradient.mul(scalar)) : null });
     }
 
     public Variable div(float scalar) {
+        context.ensureOpen();
         if (scalar == 0.0f) {
             throw new IllegalArgumentException("Scalar divisor must not be zero");
         }
@@ -149,6 +152,7 @@ public final class Variable {
     }
 
     public Variable sum() {
+        context.ensureOpen();
         return unary("sum", value.sum(), gradient -> {
             if (!requiresGrad) {
                 return new Tensor[] { null };
@@ -159,6 +163,7 @@ public final class Variable {
     }
 
     public Variable mean() {
+        context.ensureOpen();
         return unary("mean", value.mean(), gradient -> {
             if (!requiresGrad) {
                 return new Tensor[] { null };
