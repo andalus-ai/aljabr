@@ -4,15 +4,26 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Proxy;
 
 import org.junit.jupiter.api.Test;
 
-import tech.kayys.aljabr.core.memory.CpuBuffer;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
+import tech.kayys.aljabr.core.memory.CpuBuffer;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.memory.TensorStorage;
 
 class DefaultTensorTest {
+    private static ComputeBackend unusedBackend() {
+        return (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    throw new UnsupportedOperationException("Backend operations are not used by this test");
+                });
+    }
+
     private static final class HostOnlyStorage implements HostAccessibleStorage {
         private final Arena arena = Arena.ofShared();
         private final MemorySegment segment;
