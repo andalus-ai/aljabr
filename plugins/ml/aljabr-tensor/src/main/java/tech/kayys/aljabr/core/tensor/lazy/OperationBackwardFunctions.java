@@ -65,48 +65,119 @@ public final class OperationBackwardFunctions {
     }
 
     private static Tensor[] mean(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        if (arguments.length != 0) {
-            throw new UnsupportedOperationException(
-                    "Autograd for dimension-wise mean is not implemented yet");
-        }
         Tensor input = inputs.get(0);
-        Tensor ones = input.zerosLike().add(1.0f);
-        Tensor scaled = gradient.div((float) input.numel());
+        Tensor expanded = expandReductionGradient(gradient, input, arguments);
+        long reductionSize = arguments.length == 0
+                ? input.numel()
+                : input.shape().dim(normalizeDimension((int) arguments[0], input.shape().rank()));
         try {
-            return new Tensor[] { scaled.mul(ones) };
+            return new Tensor[] { expanded.div((float) reductionSize) };
         } finally {
-            ones.release();
-            scaled.release();
+            expanded.release();
         }
     }
 
     private static Tensor[] sum(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        if (arguments.length != 0) {
-            throw new UnsupportedOperationException(
-                    "Autograd for dimension-wise sum is not implemented yet");
-        }
-        Tensor ones = inputs.get(0).zerosLike().add(1.0f);
+        return new Tensor[] { expandReductionGradient(gradient, inputs.get(0), arguments) };
+    }
+
+    private static Tensor expandReductionGradient(Tensor gradient, Tensor input, Object[] arguments) {
+        Tensor expanded = gradient;
+        boolean ownsExpanded = false;
         try {
-            return new Tensor[] { gradient.mul(ones) };
+            if (arguments.length != 0 && !(boolean) arguments[1]) {
+                expanded = gradient.unsqueeze((int) arguments[0]);
+                ownsExpanded = true;
+            }
+            Tensor ones = input.zerosLike().add(1.0f);
+            try {
+                return expanded.mul(ones);
+            } finally {
+                ones.release();
+            }
         } finally {
-            ones.release();
+            if (ownsExpanded) expanded.release();
+        }
+    }
+
+    private static int normalizeDimension(int dimension, int rank) {
+        int normalized = dimension < 0 ? rank + dimension : dimension;
+        if (normalized < 0 || normalized >= rank) {
+            throw new IllegalArgumentException("Reduction dimension " + dimension
+                    + " is out of range for rank " + rank);
+        }
+        return normalized;
+    }
+
+    private static Tensor reduceToInputShape(Tensor gradient, Tensor input) {
+        long[] inputDims = input.shape().dims();
+        long[] gradientDims = gradient.shape().dims();
+        if (java.util.Arrays.equals(inputDims, gradientDims)) return gradient.add(0.0f);
+        if (inputDims.length > gradientDims.length) {
+            throw new IllegalArgumentException("Cannot reduce gradient shape " + gradient.shape()
+                    + " to input shape " + input.shape());
+        }
+        Tensor reduced = gradient;
+        boolean ownsReduced = false;
+        try {
+            int leading = gradientDims.length - inputDims.length;
+            for (int i = 0; i < leading; i++) {
+                Tensor next = reduced.sum(0, false);
+                if (ownsReduced) reduced.release();
+                reduced = next;
+                ownsReduced = true;
+            }
+            long[] currentDims = reduced.shape().dims();
+            for (int axis = 0; axis < inputDims.length; axis++) {
+                if (inputDims[axis] == currentDims[axis]) continue;
+                if (inputDims[axis] != 1 || currentDims[axis] < 1) {
+                    throw new IllegalArgumentException("Gradient shape " + gradient.shape()
+                            + " is not broadcast-compatible with input shape " + input.shape());
+                }
+                Tensor next = reduced.sum(axis, true);
+                if (ownsReduced) reduced.release();
+                reduced = next;
+                ownsReduced = true;
+                currentDims = reduced.shape().dims();
+            }
+            return reduced.reshape(inputDims);
+        } finally {
+            if (ownsReduced) reduced.release();
         }
     }
 
     private static Tensor[] add(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        // Each input receives an independently owned gradient tensor.
-        return new Tensor[] { gradient.add(0.0f), gradient.add(0.0f) };
+        return new Tensor[] {
+                reduceToInputShape(gradient, inputs.get(0)),
+                reduceToInputShape(gradient, inputs.get(1))
+        };
     }
 
     private static Tensor[] subtract(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        return new Tensor[] { gradient.add(0.0f), gradient.mul(-1.0f) };
+        Tensor negative = gradient.mul(-1.0f);
+        try {
+            return new Tensor[] {
+                    reduceToInputShape(gradient, inputs.get(0)),
+                    reduceToInputShape(negative, inputs.get(1))
+            };
+        } finally {
+            negative.release();
+        }
     }
 
     private static Tensor[] multiply(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
-        return new Tensor[] {
-                gradient.mul(inputs.get(1)),
-                gradient.mul(inputs.get(0))
-        };
+        Tensor leftFull = gradient.mul(inputs.get(1));
+        Tensor rightFull = null;
+        try {
+            rightFull = gradient.mul(inputs.get(0));
+            return new Tensor[] {
+                    reduceToInputShape(leftFull, inputs.get(0)),
+                    reduceToInputShape(rightFull, inputs.get(1))
+            };
+        } finally {
+            leftFull.release();
+            if (rightFull != null) rightFull.release();
+        }
     }
 
     private static Tensor[] divide(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
