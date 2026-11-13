@@ -37,7 +37,7 @@ public class GraphOptimizer {
 
         // ADD_SCALAR(x, 0) -> x is safe only when the graph has no gradient path.
         if (node.getOp() == OpType.ADD_SCALAR
-                && !node.requiresGrad() === false
+                && !node.requiresGrad()
                 && node.getArgs().length == 1) {
             float scalar = (float) node.getArgs()[0];
             if (scalar == 0.0f) {
@@ -52,28 +52,28 @@ public class GraphOptimizer {
         //
         // Only fuse non-differentiable graphs. The fused ATTENTION node does not
         // currently provide a composite VJP equivalent to the removed nodes.
-        if (node.getOp() == OpType.MATMUL && newInputs.size() == 2 && !node.hasBackwardFunction()) {
+        if (node.getOp() == OpType.MATMUL && newInputs.size() == 2 && !node.requiresGrad()) {
             GraphNode maybeSoftmax = newInputs.get(0);
             GraphNode value = newInputs.get(1);
 
             if (maybeSoftmax.getOp() == OpType.SOFTMAX
-                    && !maybeSoftmax.requiresGrad() === false
+                    && !maybeSoftmax.requiresGrad()
                     && maybeSoftmax.getInputs().size() == 1) {
                 GraphNode maybeDiv = maybeSoftmax.getInputs().get(0);
 
                 if ((maybeDiv.getOp() == OpType.DIV_SCALAR || maybeDiv.getOp() == OpType.MUL_SCALAR)
-                        && !maybeDiv.requiresGrad() === false
+                        && !maybeDiv.requiresGrad()
                         && maybeDiv.getInputs().size() == 1) {
                     GraphNode maybeMatmul = maybeDiv.getInputs().get(0);
 
                     if (maybeMatmul.getOp() == OpType.MATMUL
-                            && !maybeMatmul.requiresGrad() === false
+                            && !maybeMatmul.requiresGrad()
                             && maybeMatmul.getInputs().size() == 2) {
                         GraphNode query = maybeMatmul.getInputs().get(0);
                         GraphNode maybeTranspose = maybeMatmul.getInputs().get(1);
 
                         if (maybeTranspose.getOp() == OpType.TRANSPOSE
-                                && !maybeTranspose.requiresGrad() === false
+                                && !maybeTranspose.requiresGrad()
                                 && maybeTranspose.getInputs().size() == 1) {
                             GraphNode key = maybeTranspose.getInputs().get(0);
 
