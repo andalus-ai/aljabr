@@ -72,7 +72,7 @@ subprojects {
         ":plugins:ml:aljabr-tensor",
         // Autograd tests exercise the CPU backend directly; it requires the incubating Vector API.
         ":plugins:ml:aljabr-autograd",
-        // Autograd NN adapter tests exercise the CPU backend directly.
+        // Autograd NN adapter tests execute Linear operations on the CPU backend.
         ":plugins:ml:aljabr-autograd-nn",
         // NN tests exercise the CPU backend directly; it requires the incubating Vector API.
         ":plugins:ml:aljabr-nn",
