@@ -235,3 +235,41 @@ The repository already contains several extension patterns: `aljabr-spi-plugin` 
 In particular, the current `AljabrPlugin` contract imports Mutiny and its module exposes inference/model SPIs plus CDI and logging dependencies. It is therefore inference-oriented and heavier than the minimal extension contract described above. The model-family registry is domain-specific and should remain so; it is not a universal provider registry. The CUDA plugin artifact's service descriptor for `ComputeBackend` demonstrates externalizable provider discovery, while its implementation dependencies remain provider-specific.
 
 The next implementation step is not to replace all existing plugin systems at once. First define a small, stable computational provider contract and conformance kit; then adapt one existing provider (preferably the pure Java CPU/reference provider) and one optional accelerated provider. Migrate model-family and inference plugins only if a concrete benefit justifies it, preserving compatibility during any transition.
+
+## 12. DataFrame and data-science extension direction
+
+A Pandas-like DataFrame/Series capability belongs in the Aljabr ecosystem as an independently selectable tabular-data extension, not in the minimal tensor/numerics core.
+
+The extension may own typed columns, indexes/schema, filtering, projection, sorting, grouping, aggregation, joins, concatenation, pivot/reshape, missing-value handling and window operations. CSV/JSON readers may be lightweight optional modules; Parquet, Arrow, SQL and large data-engine integrations remain opt-in.
+
+Boundary rules:
+- DataFrame owns tabular semantics; Aljabr tensor owns N-dimensional numerical computation.
+- Conversion between DataFrame columns and tensors is explicit and documents copying/aliasing, dtype, layout, null handling and resource ownership.
+- Statistics owns probability, distributions, estimation and inference tests; do not duplicate these inside DataFrame.
+- Classical ML owns feature transforms, preprocessing pipelines and estimators.
+- Arrow may provide an interoperability/low-copy boundary but must not become a mandatory core dependency.
+
+Do not create a separate repository or Gradle project solely to imitate Pandas. First establish a real consumer, cohesive API, independent tests and minimal dependency graph. Existing Java data libraries may be adapted after license, JDK, semantic and dependency review.
+
+## 13. Java-native performance policy
+
+Java Vector API and FFM are strategic implementation technologies, not mandatory dependencies of the Aljabr programming model.
+
+- Keep scalar/reference CPU implementations available as portable correctness baselines.
+- Isolate Vector API implementation classes and JDK 25 incubator flags to modules that actually use them. Use SIMD for operations where correctness tests and representative benchmarks demonstrate benefit.
+- Use FFM behind narrow adapters for native libraries, memory and ABI integration. Define arena/scope ownership, alignment, lifetime, thread access, native error translation and cleanup.
+- Do not let native access or optional accelerator SDKs enter minimal numerics, statistics or DataFrame consumers.
+- Metal, CUDA, HAT, Vulkan, OpenCL and future accelerators remain optional capability providers; support and parity are operator-, dtype-, shape- and platform-specific.
+- Benchmark only after correctness conformance, and report JDK, OS, hardware, dtype, shapes, warmup, repetitions and measurement method.
+
+## 14. Research, education and developer experience
+
+Aljabr should offer a progressive Java learning and research path: numerical computing and linear algebra; statistics and data analysis; classical ML; autograd and neural networks; reusable model execution; and scientific/domain extensions.
+
+Ordinary Java applications and Gradle/Maven projects are first-class. JBang should make small experiments easy to run and promote into projects. JShell should use the same published APIs. Jupyter integration should reuse those APIs through an established Java kernel where practical; a custom notebook-only runtime is not a prerequisite.
+
+Examples and tutorials must contain tested dependency coordinates, prerequisites, deterministic fixtures, expected output and limitations. The Java API is primary; Python interoperability is optional rather than required.
+
+## 15. Contributor and extension-author guidance
+
+See [Developer Guide](../DEVELOPER_GUIDE.md) for source inspection, dependency direction, API design, numerical correctness, Vector API/FFM policy, extension criteria, examples and validation/reporting requirements. Root AGENTS.md remains the authoritative coding-agent instruction file.
