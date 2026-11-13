@@ -267,4 +267,25 @@ class DefaultTensorAutogradTest {
         }
     }
 
+    @Test
+    void eagerSliceBackwardScattersGradientIntoTheOriginalCoordinates() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(
+                new float[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }, backend, 3, 4);
+        x.setRequiresGrad(true);
+        Tensor sliced = x.slice(new long[] { 1, 1 }, new long[] { 2, 2 });
+        Tensor seed = TensorFactory.of(new float[] { 10, 20, 30, 40 }, backend, 2, 2);
+        try {
+            sliced.backward(seed);
+            assertArrayEquals(
+                    new float[] { 0, 0, 0, 0, 0, 10, 20, 0, 0, 30, 40, 0 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            sliced.release();
+            x.release();
+            backend.close();
+        }
+    }
+
 }
