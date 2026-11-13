@@ -70,11 +70,32 @@ public final class Variable {
     }
 
     public Variable add(Variable other) {
-        return binary(other, "add", (left, right) -> left.add(right),
-                gradient -> new Tensor[] {
-                        requiresGrad ? context.own(gradient.add(0.0f)) : null,
-                        other.requiresGrad ? context.own(gradient.add(0.0f)) : null
-                });
+        requireCompatibleContext(other);
+        if (java.util.Arrays.equals(value.shape().dims(), other.value.shape().dims())) {
+            return binary(other, "add", Tensor::add,
+                    gradient -> new Tensor[] {
+                            requiresGrad ? context.own(gradient.add(0.0f)) : null,
+                            other.requiresGrad ? context.own(gradient.add(0.0f)) : null
+                    });
+        }
+
+        // The first NN adapter needs the common [batch, features] + [features]
+        // bias case. Other broadcast patterns remain explicitly unsupported.
+        if (value.shape().rank() == 2
+                && other.value.shape().rank() == 1
+                && value.shape().dim(1) == other.value.shape().dim(0)) {
+            Tensor result = context.own(value.add(other.value));
+            boolean track = requiresGrad || other.requiresGrad;
+            return new Variable(context, result, track, List.of(this, other), gradient -> {
+                Tensor leftGradient = requiresGrad ? context.own(gradient.add(0.0f)) : null;
+                Tensor rightGradient = other.requiresGrad
+                        ? context.own(gradient.sum(0, false))
+                        : null;
+                return new Tensor[] { leftGradient, rightGradient };
+            }, "addRowVector");
+        }
+        throw new UnsupportedOperationException(
+                "Autograd add supports equal shapes and [batch, features] + [features]; other broadcasting is not implemented");
     }
 
     public Variable sub(Variable other) {
@@ -149,6 +170,42 @@ public final class Variable {
             }
             return new Tensor[] { leftGradient, rightGradient };
         }, "matmul");
+    }
+
+
+    /** Rank-two transpose with the inverse transpose as its vector-Jacobian product. */
+    public Variable transpose(int dim0, int dim1) {
+        context.ensureOpen();
+        if (value.shape().rank() != 2) {
+            throw new UnsupportedOperationException("Autograd transpose currently supports rank-two tensors only");
+        }
+        Tensor result = value.transpose(dim0, dim1);
+        return unaryWithResult("transpose", result,
+                gradient -> new Tensor[] { requiresGrad ? context.own(gradient.transpose(dim0, dim1)) : null });
+    }
+
+    /**
+     * Adds a rank-one feature bias to each row of a rank-two value.
+     * The bias gradient is reduced over the batch dimension.
+     */
+    public Variable addBias(Variable bias) {
+        requireCompatibleContext(bias);
+        if (value.shape().rank() != 2 || bias.value.shape().rank() != 1
+                || value.shape().dim(1) != bias.value.shape().dim(0)) {
+            throw new UnsupportedOperationException(
+                    "Autograd addBias requires [batch, features] plus [features]");
+        }
+        Tensor result = context.own(value.add(bias.value));
+        return new Variable(context, result, requiresGrad || bias.requiresGrad,
+                List.of(this, bias), gradient -> new Tensor[] {
+                    requiresGrad ? context.own(gradient.add(0.0f)) : null,
+                    bias.requiresGrad ? context.own(gradient.sum(0, false)) : null
+                }, "addBias");
+    }
+
+    private Variable unaryWithResult(String name, Tensor result, BackwardRule rule) {
+        context.ensureOpen();
+        return new Variable(context, context.own(result), requiresGrad, List.of(this), rule, name);
     }
 
     public Variable sum() {

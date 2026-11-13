@@ -195,7 +195,9 @@ class DefaultTensorTest {
         DefaultTensor tensor = new DefaultTensor(new Shape(1), DType.F32, DeviceType.CPU, buffer, unusedBackend());
         try {
             tensor.setRequiresGrad(false);
-            assertDoesNotThrow(tensor::backward);
+            assertDoesNotThrow(() -> {
+                tensor.backward();
+            });
         } finally {
             tensor.release();
         }
