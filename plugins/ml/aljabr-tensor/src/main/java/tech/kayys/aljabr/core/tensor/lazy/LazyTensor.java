@@ -31,6 +31,24 @@ public class LazyTensor implements Tensor {
         this.executor = new GraphExecutor(executionBackend);
     }
 
+    /**
+     * Wraps an existing eager tensor as a graph leaf. The wrapper borrows the
+     * tensor; closing the wrapper does not release the caller-owned leaf.
+     *
+     * <p>Enable differentiation on the eager tensor before wrapping it:</p>
+     * <pre>{@code
+     * Tensor weights = TensorFactory.randn(backend, 4, 2);
+     * weights.setRequiresGrad(true);
+     * Tensor loss = LazyTensor.of(weights).mul(weights).mean();
+     * }</pre>
+     */
+    public static LazyTensor of(Tensor tensor) {
+        if (tensor == null) {
+            throw new NullPointerException("tensor must not be null");
+        }
+        return new LazyTensor(GraphNode.constant(tensor), tensor.backend());
+    }
+
     public GraphNode getNode() {
         return node;
     }
