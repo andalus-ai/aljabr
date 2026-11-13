@@ -33,8 +33,8 @@ try (AutogradContext context = new AutogradContext()) {
 - Elementwise binary operations require identical shapes. Broadcasting and its
   backward reduction are not implemented.
 - Matrix multiplication currently supports rank-two inputs.
-- Implicit backward is supported only for scalar outputs.
-- A context runs backward at most once.
+- Implicit `backward()` is supported only for scalar outputs. Non-scalar outputs\n  accept an explicit F32 upstream gradient with matching shape and backend; the\n  context copies and owns the supplied gradient.
+- A context runs a successful backward pass at most once. Invalid output-gradient\n  metadata and no-gradient no-op calls do not consume the context.
 - Gradients returned by `Variable.grad()` are borrowed from the context and
   must not be released independently.
 - The context is single-use and not thread-safe. Do not share it across threads.
