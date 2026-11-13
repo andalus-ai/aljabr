@@ -3,6 +3,7 @@ package tech.kayys.aljabr.autograd;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.Test;
 
@@ -94,12 +95,54 @@ class AutogradContextTest {
     }
 
     @Test
+    void meanSquareGradientMatchesFiniteDifferences() {
+        CpuBackend backend = new CpuBackend();
+        float[] values = { 1.25f, -0.75f };
+        Tensor input = TensorFactory.of(values, backend, 2);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable x = context.variable(input);
+            x.mul(x).mean().backward();
+
+            float epsilon = 1.0e-3f;
+            for (int i = 0; i < values.length; i++) {
+                float original = values[i];
+                values[i] = original + epsilon;
+                float upper = meanSquare(backend, values);
+                values[i] = original - epsilon;
+                float lower = meanSquare(backend, values);
+                values[i] = original;
+
+                float numerical = (upper - lower) / (2.0f * epsilon);
+                assertEquals(numerical, x.grad().toFloatArray()[i], 2.0e-3f);
+            }
+        } finally {
+            input.release();
+            backend.close();
+        }
+    }
+
+    private static float meanSquare(CpuBackend backend, float[] values) {
+        Tensor input = TensorFactory.of(values, backend, values.length);
+        Tensor squared = null;
+        Tensor mean = null;
+        try {
+            squared = input.mul(input);
+            mean = squared.mean();
+            return mean.item();
+        } finally {
+            if (mean != null) mean.release();
+            if (squared != null) squared.release();
+            input.release();
+        }
+    }
+
+    @Test
     void gradientIsAvailableOnlyAfterBackward() {
         CpuBackend backend = new CpuBackend();
         Tensor input = TensorFactory.of(new float[] { 1f, 2f }, backend, 2);
         try (AutogradContext context = new AutogradContext()) {
             Variable x = context.variable(input);
-            assertEquals(null, x.grad());
+            assertNull(x.grad());
         } finally {
             input.release();
             backend.close();
