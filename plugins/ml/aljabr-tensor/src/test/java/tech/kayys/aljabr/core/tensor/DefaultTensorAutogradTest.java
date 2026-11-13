@@ -202,4 +202,24 @@ class DefaultTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void eagerDimensionWiseSumSupportsKeepDimensionBackward() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor columnSums = x.sum(0, true);
+        Tensor seed = TensorFactory.of(new float[] { 2, 3, 4 }, backend, 1, 3);
+        try {
+            columnSums.backward(seed);
+            assertArrayEquals(new float[] { 2, 3, 4, 2, 3, 4 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            columnSums.release();
+            x.release();
+            backend.close();
+        }
+    }
+
 }
