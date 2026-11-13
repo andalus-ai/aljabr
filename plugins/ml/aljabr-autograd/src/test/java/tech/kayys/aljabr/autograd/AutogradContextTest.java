@@ -142,10 +142,14 @@ class AutogradContextTest {
             Variable output = x.mul(2f);
 
             output.backward(seed);
+            seed.release();
+            seed = null;
 
             assertArrayEquals(new float[] { 6f, 8f }, x.grad().toFloatArray(), 1.0e-6f);
         } finally {
-            seed.release();
+            if (seed != null) {
+                seed.release();
+            }
             input.release();
             backend.close();
         }
