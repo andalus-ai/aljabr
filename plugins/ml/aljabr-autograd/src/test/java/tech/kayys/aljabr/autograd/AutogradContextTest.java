@@ -114,6 +114,24 @@ class AutogradContextTest {
     }
 
     @Test
+    void invalidNonScalarBackwardDoesNotConsumeContext() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 1f, 2f }, backend, 2);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable x = context.variable(input);
+            Variable nonScalar = x.mul(2f);
+
+            assertThrows(IllegalArgumentException.class, nonScalar::backward);
+
+            x.sum().backward();
+            assertArrayEquals(new float[] { 1f, 1f }, x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
     void meanSquareGradientMatchesFiniteDifferences() {
         CpuBackend backend = new CpuBackend();
         float[] values = { 1.25f, -0.75f };
