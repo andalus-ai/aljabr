@@ -70,6 +70,8 @@ subprojects {
         // Tensor tests load the CPU backend reflectively at runtime; that backend
         // uses the incubating Vector API even though tensor main sources do not.
         ":plugins:ml:aljabr-tensor",
+        // Autograd tests exercise the CPU backend directly; it requires the incubating Vector API.
+        ":plugins:ml:aljabr-autograd",
         // NN tests exercise the CPU backend directly; it requires the incubating Vector API.
         ":plugins:ml:aljabr-nn",
         ":engine:gguf:aljabr-gguf-core",
