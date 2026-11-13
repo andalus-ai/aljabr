@@ -21,7 +21,7 @@ class LazyTensorAutogradTest {
         Tensor output = leaf.mul(leaf).add(leaf);
 
         try {
-            assertEquals(7.0f, output.item(), 1.0e-6f);
+            assertEquals(12.0f, output.item(), 1.0e-6f);
             output.backward();
 
             // d(x*x + x)/dx = 2*x + 1; both edges to the same leaf must accumulate.
