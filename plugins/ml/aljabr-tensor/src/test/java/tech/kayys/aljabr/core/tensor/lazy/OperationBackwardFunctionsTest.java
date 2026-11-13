@@ -25,11 +25,13 @@ class OperationBackwardFunctionsTest {
 
     @Test
     void addReturnsIndependentCopiesOfIncomingGradient() {
+        Tensor left = tensor(2f, 4f);
+        Tensor right = tensor(3f, 5f);
         Tensor gradient = tensor(10f, 20f);
         Tensor[] result = null;
         try {
             result = OperationBackwardFunctions.forOperation(OpType.ADD)
-                    .apply(null, gradient, List.of(), new Object[0]);
+                    .apply(null, gradient, List.of(left, right), new Object[0]);
 
             assertGradient(result[0], 10f, 20f);
             assertGradient(result[1], 10f, 20f);
@@ -41,6 +43,8 @@ class OperationBackwardFunctionsTest {
                 result[0].release();
                 result[1].release();
             }
+            left.release();
+            right.release();
             gradient.release();
             backend.close();
         }
