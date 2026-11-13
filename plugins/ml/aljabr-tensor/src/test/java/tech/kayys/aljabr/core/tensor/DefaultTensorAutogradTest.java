@@ -130,4 +130,31 @@ class DefaultTensorAutogradTest {
         }
     }
 
+    @Test
+    void eagerSigmoidAndTanhOperationsParticipateInTheSameAutogradGraph() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 0.0f, 1.0f }, backend, 2);
+        x.setRequiresGrad(true);
+        Tensor sigmoid = x.sigmoid();
+        Tensor loss = sigmoid.mean();
+
+        try {
+            loss.backward();
+            float sigmoidAtZero = 0.5f;
+            float sigmoidAtOne = (float) (1.0 / (1.0 + Math.exp(-1.0)));
+            assertArrayEquals(
+                    new float[] {
+                            sigmoidAtZero * (1.0f - sigmoidAtZero) / 2.0f,
+                            sigmoidAtOne * (1.0f - sigmoidAtOne) / 2.0f
+                    },
+                    x.grad().toFloatArray(),
+                    1.0e-6f);
+        } finally {
+            loss.release();
+            sigmoid.release();
+            x.release();
+            backend.close();
+        }
+    }
+
 }
