@@ -73,14 +73,15 @@ public final class AutogradContext implements AutoCloseable {
         if (backwardCompleted) {
             throw new IllegalStateException("This autograd context has already run backward");
         }
-        backwardCompleted = true;
         if (!output.requiresGrad()) {
+            backwardCompleted = true;
             return;
         }
         if (output.value().numel() != 1) {
             throw new IllegalArgumentException(
                     "Implicit backward requires a scalar output; provide an explicit upstream gradient in a future API");
         }
+        backwardCompleted = true;
 
         Tensor seed = own(TensorFactory.ones(output.value().backend(), output.value().shape().dims()));
         gradients.put(output, seed);

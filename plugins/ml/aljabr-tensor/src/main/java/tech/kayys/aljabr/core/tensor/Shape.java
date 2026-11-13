@@ -48,7 +48,13 @@ public final class Shape {
 
     @Override
     public boolean equals(Object other) {
-        return this == other || other instanceof Shape shape && Arrays.equals(dims, shape.dims);
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof Shape shape)) {
+            return false;
+        }
+        return Arrays.equals(dims, shape.dims);
     }
 
     @Override

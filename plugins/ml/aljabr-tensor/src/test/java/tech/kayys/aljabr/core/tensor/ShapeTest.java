@@ -29,6 +29,18 @@ class ShapeTest {
     }
 
     @Test
+    void comparesDimensionsByValue() {
+        Shape first = new Shape(2, 3, 4);
+        Shape same = new Shape(2, 3, 4);
+        Shape different = new Shape(2, 4, 3);
+
+        assertEquals(first, same);
+        assertEquals(first.hashCode(), same.hashCode());
+        assertNotEquals(first, different);
+        assertNotEquals(first, new Shape(2, 3));
+    }
+
+    @Test
     void acceptsZeroSizedDimensionsAndScalarShape() {
         assertEquals(0, new Shape(2, 0, 3).numel());
         assertEquals(1, new Shape().numel());
