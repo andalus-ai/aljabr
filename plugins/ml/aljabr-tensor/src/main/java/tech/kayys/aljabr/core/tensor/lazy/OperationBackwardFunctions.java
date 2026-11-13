@@ -29,6 +29,12 @@ public final class OperationBackwardFunctions {
             case MATMUL -> OperationBackwardFunctions::matmul;
             case MEAN -> OperationBackwardFunctions::mean;
             case SUM -> OperationBackwardFunctions::sum;
+            case SIGMOID -> OperationBackwardFunctions::sigmoid;
+            case TANH -> OperationBackwardFunctions::tanh;
+            case EXP -> OperationBackwardFunctions::exp;
+            case LOG -> OperationBackwardFunctions::log;
+            case POW -> OperationBackwardFunctions::pow;
+            case SQRT -> OperationBackwardFunctions::sqrt;
             default -> null;
         };
     }
@@ -143,4 +149,59 @@ public final class OperationBackwardFunctions {
     private static Tensor[] divideScalar(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
         return new Tensor[] { gradient.div((float) arguments[0]) };
     }
+    private static Tensor[] sigmoid(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor oneMinusOutput = output.zerosLike().add(1.0f).sub(output);
+        try {
+            return new Tensor[] { gradient.mul(output).mul(oneMinusOutput) };
+        } finally {
+            oneMinusOutput.release();
+        }
+    }
+
+    private static Tensor[] tanh(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor squared = output.mul(output);
+        Tensor oneMinusSquared = null;
+        try {
+            oneMinusSquared = squared.mul(-1.0f).add(1.0f);
+            return new Tensor[] { gradient.mul(oneMinusSquared) };
+        } finally {
+            squared.release();
+            if (oneMinusSquared != null) {
+                oneMinusSquared.release();
+            }
+        }
+    }
+
+    private static Tensor[] exp(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        return new Tensor[] { gradient.mul(output) };
+    }
+
+    private static Tensor[] log(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        return new Tensor[] { gradient.div(inputs.get(0)) };
+    }
+
+    private static Tensor[] pow(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        float exponent = (float) arguments[0];
+        Tensor powered = inputs.get(0).pow(exponent - 1.0f);
+        try {
+            Tensor scaled = powered.mul(exponent);
+            try {
+                return new Tensor[] { gradient.mul(scaled) };
+            } finally {
+                scaled.release();
+            }
+        } finally {
+            powered.release();
+        }
+    }
+
+    private static Tensor[] sqrt(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor denominator = output.mul(2.0f);
+        try {
+            return new Tensor[] { gradient.div(denominator) };
+        } finally {
+            denominator.release();
+        }
+    }
+
 }
