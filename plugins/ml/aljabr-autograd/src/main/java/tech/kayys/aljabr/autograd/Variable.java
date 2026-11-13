@@ -175,8 +175,7 @@ public final class Variable {
     /** Transposes two dimensions and records the inverse transpose for backward. */
     public Variable transpose(int dim0, int dim1) {
         context.ensureOpen();
-        Tensor result = context.own(value.transpose(dim0, dim1));
-        return unary("transpose", result,
+        return unary("transpose", value.transpose(dim0, dim1),
                 gradient -> new Tensor[] {
                         requiresGrad ? context.own(gradient.transpose(dim0, dim1)) : null
                 });
