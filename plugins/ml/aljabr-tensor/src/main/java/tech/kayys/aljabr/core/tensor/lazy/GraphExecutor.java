@@ -288,6 +288,8 @@ public class GraphExecutor {
                 backend.maxPool2d(inputs.get(0).getMaterializedData(), (int) args[0], (int) args[1], (int) args[2]);
             case ADAPTIVE_AVG_POOL_2D ->
                 backend.adaptiveAvgPool2d(inputs.get(0).getMaterializedData(), (int) args[0], (int) args[1]);
+            case UPSAMPLE_NEAREST_2D ->
+                backend.upsampleNearest2d(inputs.get(0).getMaterializedData(), (int) args[0], (int) args[1]);
             case DROPOUT -> backend.dropout(inputs.get(0).getMaterializedData(), (float) args[0], (boolean) args[1]);
             case EMBEDDING -> backend.embedding(inputs.get(1).getMaterializedData(),
                     inputs.get(0).getMaterializedData(), (long) args[0]);
