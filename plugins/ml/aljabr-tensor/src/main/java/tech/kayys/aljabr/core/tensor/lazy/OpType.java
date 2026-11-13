@@ -61,6 +61,7 @@ public enum OpType {
     CONV2D,
     MAX_POOL_2D,
     ADAPTIVE_AVG_POOL_2D,
+    UPSAMPLE_NEAREST_2D,
     DROPOUT,
     EMBEDDING,
     ROPE,
