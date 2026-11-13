@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.core.tensor.lazy;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -67,4 +68,24 @@ class LazyTensorAutogradTest {
             backend.close();
         }
     }
+    @Test
+    void explicitOutputGradientSupportsNonScalarResults() {
+        CpuBackend backend = new CpuBackend();
+        Tensor leafValue = TensorFactory.of(new float[] { 1.0f, 2.0f }, backend, 2);
+        leafValue.setRequiresGrad(true);
+        LazyTensor leaf = LazyTensor.of(leafValue);
+        Tensor output = leaf.mul(2.0f);
+        Tensor seed = TensorFactory.of(new float[] { 3.0f, 4.0f }, backend, 2);
+
+        try {
+            output.backward(seed);
+            assertArrayEquals(new float[] { 6.0f, 8.0f }, leaf.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            output.release();
+            leafValue.release();
+            backend.close();
+        }
+    }
+
 }
