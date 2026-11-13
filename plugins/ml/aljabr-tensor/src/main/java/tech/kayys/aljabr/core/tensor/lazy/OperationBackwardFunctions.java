@@ -42,11 +42,16 @@ public final class OperationBackwardFunctions {
         }
         Tensor rightTranspose = right.transpose();
         Tensor leftTranspose = left.transpose();
+        Tensor leftGradient = null;
         try {
-            return new Tensor[] {
-                    gradient.matmul(rightTranspose),
-                    leftTranspose.matmul(gradient)
-            };
+            leftGradient = gradient.matmul(rightTranspose);
+            Tensor rightGradient = leftTranspose.matmul(gradient);
+            return new Tensor[] { leftGradient, rightGradient };
+        } catch (RuntimeException | Error failure) {
+            if (leftGradient != null) {
+                leftGradient.release();
+            }
+            throw failure;
         } finally {
             rightTranspose.release();
             leftTranspose.release();
