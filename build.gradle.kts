@@ -72,6 +72,8 @@ subprojects {
         ":plugins:ml:aljabr-tensor",
         // Autograd tests exercise the CPU backend directly; it requires the incubating Vector API.
         ":plugins:ml:aljabr-autograd",
+        // Autograd NN adapter tests exercise the CPU backend directly.
+        ":plugins:ml:aljabr-autograd-nn",
         // NN tests exercise the CPU backend directly; it requires the incubating Vector API.
         ":plugins:ml:aljabr-nn",
         ":engine:gguf:aljabr-gguf-core",
@@ -206,6 +208,8 @@ subprojects {
             // Independently installable ML extensions.
             safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":plugins:ml:aljabr-tensor")
             safeSubstitute("tech.kayys.aljabr:aljabr-nn", ":plugins:ml:aljabr-nn")
+            safeSubstitute("tech.kayys.aljabr:aljabr-autograd", ":plugins:ml:aljabr-autograd")
+            safeSubstitute("tech.kayys.aljabr:aljabr-autograd-nn", ":plugins:ml:aljabr-autograd-nn")
             safeSubstitute("tech.kayys.aljabr:aljabr-numerics", ":plugins:ml:aljabr-numerics")
             safeSubstitute("tech.kayys.aljabr:aljabr-linear-algebra", ":plugins:ml:aljabr-linear-algebra")
             safeSubstitute("tech.kayys.aljabr:aljabr-3d", ":plugins:ml:aljabr-3d")
