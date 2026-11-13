@@ -18,6 +18,47 @@ import tech.kayys.aljabr.core.memory.TensorStorage;
 
 class TensorFactoryTest {
     @Test
+    void explicitRandomGeneratorMakesTensorInitializationReproducible() {
+        ComputeBackend backend = cpuBackend();
+        Tensor first = TensorFactory.randn(backend, new java.util.Random(42L), 4, 5);
+        Tensor second = TensorFactory.randn(backend, new java.util.Random(42L), 4, 5);
+        try {
+            assertArrayEquals(first.toFloatArray(), second.toFloatArray(), 0f);
+        } finally {
+            first.release();
+            second.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void explicitRandomGeneratorUsesIndependentCallerOwnedStreams() {
+        ComputeBackend backend = cpuBackend();
+        java.util.Random firstStream = new java.util.Random(7L);
+        java.util.Random secondStream = new java.util.Random(8L);
+        Tensor first = TensorFactory.randn(backend, firstStream, 8);
+        Tensor second = TensorFactory.randn(backend, secondStream, 8);
+        try {
+            assertFalse(java.util.Arrays.equals(first.toFloatArray(), second.toFloatArray()));
+        } finally {
+            first.release();
+            second.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void explicitRandomGeneratorRejectsNullGeneratorBeforeAllocation() {
+        ComputeBackend backend = cpuBackend();
+        try {
+            assertThrows(NullPointerException.class,
+                    () -> TensorFactory.randn(backend, null, 2, 2));
+        } finally {
+            backend.close();
+        }
+    }
+
+    @Test
     void rejectsShapesTooLargeForJavaArraysBeforeAllocation() {
         assertThrows(IllegalArgumentException.class, () -> TensorFactory.zeros(Long.MAX_VALUE));
         assertThrows(IllegalArgumentException.class, () -> TensorFactory.ones(Long.MAX_VALUE));
