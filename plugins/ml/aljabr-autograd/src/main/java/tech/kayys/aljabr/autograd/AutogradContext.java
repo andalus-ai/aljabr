@@ -20,7 +20,7 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
  * and remain valid until {@link #close()}.</p>
  *
  * <p>This initial implementation is deliberately single-use and thread-confined.
- * It supports scalar-output reverse-mode differentiation without broadcasting.</p>
+ * It supports scalar and explicitly seeded reverse-mode differentiation without broadcasting.</p>
  */
 public final class AutogradContext implements AutoCloseable {
 
