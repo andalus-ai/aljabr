@@ -117,6 +117,22 @@ public class GraphExecutor {
                             + " must return one gradient slot per input");
                 }
 
+                // Validate every returned shape before transferring ownership of any
+                // contribution into the graph accumulator. This deliberately rejects
+                // broadcast gradients until reduce-to-input-shape VJPs are implemented.
+                for (int i = 0; i < inputGradients.length; i++) {
+                    Tensor contribution = inputGradients[i];
+                    if (contribution != null
+                            && !node.getInputs().get(i).getOutputShape().equals(contribution.shape())) {
+                        release(inputGradients);
+                        gradient.release();
+                        throw new IllegalArgumentException("Backward rule for " + node.getOp()
+                                + " returned gradient shape " + contribution.shape()
+                                + " for input shape " + node.getInputs().get(i).getOutputShape()
+                                + "; broadcasting gradients are not yet supported");
+                    }
+                }
+
                 for (int i = 0; i < inputGradients.length; i++) {
                     Tensor contribution = inputGradients[i];
                     GraphNode input = node.getInputs().get(i);
