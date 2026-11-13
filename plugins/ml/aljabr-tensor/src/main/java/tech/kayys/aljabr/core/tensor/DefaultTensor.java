@@ -500,6 +500,11 @@ public final class DefaultTensor implements Tensor {
     @Override
     public void release() {
         if (released.compareAndSet(false, true)) {
+            Tensor ownedGradient = grad;
+            grad = null;
+            if (ownedGradient != null && ownedGradient != this) {
+                ownedGradient.release();
+            }
             storage.release();
         }
     }
