@@ -244,3 +244,48 @@ Examples of capability dimensions:
 ## 12. Status and change control
 
 This document states the target boundary. Mark each capability as planned, in progress, blocked or verified in implementation-specific tracking. Do not claim that a backend, model family, format or optimization is supported based only on a class name or a diagram. Changes to public APIs, resource ownership or dependency direction should include an ADR or an equivalent decision record and focused tests.
+
+## 13. Java-native developer and research experience
+
+The framework has one public programming model across ordinary Java applications, Gradle/Maven projects, JBang scripts and JShell. Jupyter integration is a distribution/documentation concern and must reuse those same APIs.
+
+The target experience includes:
+- Direct tensor, numerical and linear-algebra experimentation without loading AQLI or model-format integrations.
+- Optional statistics, DataFrame, classical-ML and scientific-computing artifacts selected independently.
+- Reusable model and neural-network APIs for research and education.
+- Explicit provider/device selection and diagnostics for reproducibility.
+- Small executable examples with tested dependency coordinates and expected output.
+
+Do not promise exact source/API parity with Python libraries. Aim for equivalent conceptual workflows adapted to Java's type system, resource model and ecosystem.
+
+## 14. Vector API and FFM boundaries
+
+The portable CPU implementation defines correctness semantics. Vector API and FFM are optional implementation mechanisms:
+
+- Keep Java Vector API code and incubator flags in the CPU acceleration module(s) that actually use them. Do not require every Aljabr consumer to add jdk.incubator.vector.
+- Use Vector API only where representative benchmarks show benefit; maintain scalar reference kernels and shared conformance tests.
+- Keep FFM layouts, native handles, arenas/scopes, native access and ABI details behind narrow native-integration modules.
+- Define ownership, lifetime, alignment, thread access, failure and shutdown behavior for native memory.
+- Missing native libraries or accelerator runtimes must not break unrelated CPU-only APIs.
+- JNI is not the default for new integrations; document and justify exceptions.
+- Provider selection must report actual placement and must not label CPU-backed storage as Metal/CUDA memory.
+
+## 15. DataFrame and scientific extension boundaries
+
+A Pandas-like DataFrame/Series API is a separate tabular-data capability. It may depend on minimal numerical contracts and optionally integrate with Aljabr tensors, but tensor consumers must not acquire DataFrame dependencies.
+
+DataFrame owns tabular operations and I/O adapters. Statistics owns probability and statistical inference. Classical ML owns feature transforms and estimator pipelines. Scientific extensions own domain algorithms. Keep Arrow/Parquet/SQL connectors optional and make tensor conversion semantics explicit.
+
+Do not create every proposed domain as a separate repository or Gradle project in advance. Module boundaries must follow demonstrated API cohesion, dependency isolation, ownership and tests.
+
+## 16. Research and education acceptance profile
+
+A capability is not research-ready merely because it has a public class. Relevant acceptance evidence should include:
+- Documented mathematical and numerical semantics, assumptions and limitations.
+- Deterministic reference tests and numerical tolerance criteria.
+- Reproducible examples with known expected outputs.
+- CPU reference execution and capability reporting for optional providers.
+- Resource ownership and cleanup tests.
+- JBang or ordinary Java examples for beginner-facing workflows.
+- JShell compatibility where the API and lifecycle permit it.
+- Clear distinction between implemented, validated, stable and optimized status.

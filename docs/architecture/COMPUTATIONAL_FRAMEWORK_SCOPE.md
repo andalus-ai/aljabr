@@ -243,3 +243,55 @@ Stages may overlap where dependencies permit, but deep-learning training claims 
 - [AQLI System Architecture](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/SYSTEM_ARCHITECTURE.md)
 - [Tafkir](https://github.com/andalus-ai/tafkir)
 - [Andalus Framework](https://github.com/andalus-ai/andalus-framework)
+
+## 12. Tabular data and DataFrame ecosystem
+
+Tabular data manipulation is part of the broader Aljabr ecosystem, but it is not part of the minimal tensor/numerics core. A Pandas-like DataFrame/Series API should be developed as an independently consumable data-science extension when its public contracts and real consumer requirements are established.
+
+Expected capability areas include:
+- Typed columns/series, row indexes and schema metadata.
+- Selection, filtering, projection, sorting and null/missing-value handling.
+- Grouping, aggregation, joins, concatenation, pivot/reshape and window operations.
+- CSV and JSON I/O, with Parquet, Arrow, SQL and other connectors as optional integrations.
+- Lazy or streaming execution only where semantics, resource lifecycle and performance are clearly specified.
+- Explicit conversion to/from Aljabr tensors for numerical ML workloads, including documented copy, layout, dtype and missing-value behavior.
+
+Boundary rules:
+- DataFrame owns tabular semantics and data manipulation; Aljabr tensor owns N-dimensional numerical computation.
+- Statistical algorithms and probability distributions belong to statistical-computing APIs, not duplicated inside DataFrame.
+- Feature encoding, scaling and leakage-aware ML pipelines belong to the classical-ML/data-preparation layer.
+- Arrow interoperability is a candidate zero/low-copy boundary, not a reason to require Arrow in core.
+- Existing Java data libraries may be integrated behind adapters after license, JDK, dependency and correctness review.
+
+Do not create a DataFrame project merely to match Pandas naming. Establish an independently useful API, ownership model, tests and minimal dependency graph first.
+
+## 13. Java-native performance and interoperability policy
+
+The portable Java implementation is the semantic reference. Accelerated implementations are optional and must be interchangeable through the public API and provider/capability contracts.
+
+- **Java Vector API:** use for measured CPU SIMD opportunities such as elementwise operations, reductions, activations and selected linear-algebra kernels. Keep incubator module flags and implementation classes isolated to the modules that use them under the current JDK 25 baseline.
+- **FFM API:** use for native libraries, native memory and ABI integration where it provides a clear benefit. Define arena/scope ownership, alignment, lifetime, thread access, error translation and shutdown explicitly.
+- **Scalar CPU:** retain a portable reference path for correctness, fallback and environments without optional acceleration.
+- **Accelerators:** Metal, CUDA, HAT, Vulkan, OpenCL and future providers remain optional, capability-gated implementations. Do not imply equal operator coverage across providers.
+- **Benchmarking:** establish correctness first; report JDK, OS, hardware, dtype, shapes, warmup, sample count and measurement method. Separate kernel microbenchmarks from end-to-end workloads.
+
+Vector API and FFM are implementation technologies, not mandatory dependencies or public programming-model requirements for every Aljabr consumer.
+
+## 14. Research, education and developer experience
+
+Aljabr should support a progressive learning and research path using one consistent Java API:
+1. Numerical values, arrays/tensors and linear algebra.
+2. Probability, statistics and data analysis.
+3. Classical ML, preprocessing and evaluation.
+4. Autograd, neural networks, losses and optimizers.
+5. Model architecture and model execution.
+6. Scientific and domain-specific extensions.
+
+Developer entry points:
+- Ordinary Java applications and standard Gradle/Maven projects are first-class.
+- JBang scripts should provide low-friction, single-file experimentation with documented dependency coordinates.
+- JShell should work with published APIs and ordinary classpaths/module paths.
+- Jupyter Java kernels may be documented/integrated where practical; notebooks must call the same library APIs.
+- Tutorials should include expected outputs, deterministic fixtures, prerequisites and tested commands.
+
+The API should remain Java-native. Python interoperability may be offered as an optional bridge, not a prerequisite for using the framework.
