@@ -70,11 +70,32 @@ public final class Variable {
     }
 
     public Variable add(Variable other) {
-        return binary(other, "add", (left, right) -> left.add(right),
-                gradient -> new Tensor[] {
-                        requiresGrad ? context.own(gradient.add(0.0f)) : null,
-                        other.requiresGrad ? context.own(gradient.add(0.0f)) : null
-                });
+        requireCompatibleContext(other);
+        if (java.util.Arrays.equals(value.shape().dims(), other.value.shape().dims())) {
+            return binary(other, "add", Tensor::add,
+                    gradient -> new Tensor[] {
+                            requiresGrad ? context.own(gradient.add(0.0f)) : null,
+                            other.requiresGrad ? context.own(gradient.add(0.0f)) : null
+                    });
+        }
+
+        // The first NN adapter needs the common [batch, features] + [features]
+        // bias case. Other broadcast patterns remain explicitly unsupported.
+        if (value.shape().rank() == 2
+                && other.value.shape().rank() == 1
+                && value.shape().dim(1) == other.value.shape().dim(0)) {
+            Tensor result = context.own(value.add(other.value));
+            boolean track = requiresGrad || other.requiresGrad;
+            return new Variable(context, result, track, List.of(this, other), gradient -> {
+                Tensor leftGradient = requiresGrad ? context.own(gradient.add(0.0f)) : null;
+                Tensor rightGradient = other.requiresGrad
+                        ? context.own(gradient.sum(0, false))
+                        : null;
+                return new Tensor[] { leftGradient, rightGradient };
+            }, "addRowVector");
+        }
+        throw new UnsupportedOperationException(
+                "Autograd add supports equal shapes and [batch, features] + [features]; other broadcasting is not implemented");
     }
 
     public Variable sub(Variable other) {

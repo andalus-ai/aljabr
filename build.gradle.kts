@@ -208,6 +208,8 @@ subprojects {
             // Independently installable ML extensions.
             safeSubstitute("tech.kayys.aljabr:aljabr-tensor", ":plugins:ml:aljabr-tensor")
             safeSubstitute("tech.kayys.aljabr:aljabr-nn", ":plugins:ml:aljabr-nn")
+            safeSubstitute("tech.kayys.aljabr:aljabr-autograd", ":plugins:ml:aljabr-autograd")
+            safeSubstitute("tech.kayys.aljabr:aljabr-autograd-nn", ":plugins:ml:aljabr-autograd-nn")
             safeSubstitute("tech.kayys.aljabr:aljabr-numerics", ":plugins:ml:aljabr-numerics")
             safeSubstitute("tech.kayys.aljabr:aljabr-linear-algebra", ":plugins:ml:aljabr-linear-algebra")
             safeSubstitute("tech.kayys.aljabr:aljabr-3d", ":plugins:ml:aljabr-3d")
