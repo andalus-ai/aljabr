@@ -12,12 +12,12 @@ import tech.kayys.aljabr.core.tensor.autograd.BackwardFunction;
  * expresses the derivative without introducing backend-specific behavior or
  * assumptions about broadcasting. Unsupported operations remain unregistered.</p>
  */
-final class OperationBackwardFunctions {
+public final class OperationBackwardFunctions {
 
     private OperationBackwardFunctions() {
     }
 
-    static BackwardFunction forOperation(OpType operation) {
+    public static BackwardFunction forOperation(OpType operation) {
         return switch (operation) {
             case ADD -> OperationBackwardFunctions::add;
             case SUB -> OperationBackwardFunctions::subtract;
@@ -26,8 +26,57 @@ final class OperationBackwardFunctions {
             case ADD_SCALAR -> OperationBackwardFunctions::addScalar;
             case MUL_SCALAR -> OperationBackwardFunctions::multiplyScalar;
             case DIV_SCALAR -> OperationBackwardFunctions::divideScalar;
+            case MATMUL -> OperationBackwardFunctions::matmul;
+            case MEAN -> OperationBackwardFunctions::mean;
+            case SUM -> OperationBackwardFunctions::sum;
             default -> null;
         };
+    }
+
+    private static Tensor[] matmul(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor left = inputs.get(0);
+        Tensor right = inputs.get(1);
+        if (left.shape().rank() != 2 || right.shape().rank() != 2 || gradient.shape().rank() != 2) {
+            throw new UnsupportedOperationException(
+                    "MATMUL autograd currently supports rank-2 matrices only");
+        }
+        Tensor rightTranspose = right.transpose();
+        Tensor leftTranspose = left.transpose();
+        Tensor leftGradient = null;
+        try {
+            leftGradient = gradient.matmul(rightTranspose);
+            Tensor rightGradient = leftTranspose.matmul(gradient);
+            return new Tensor[] { leftGradient, rightGradient };
+        } catch (RuntimeException | Error failure) {
+            if (leftGradient != null) {
+                leftGradient.release();
+            }
+            throw failure;
+        } finally {
+            rightTranspose.release();
+            leftTranspose.release();
+        }
+    }
+
+    private static Tensor[] mean(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor input = inputs.get(0);
+        Tensor ones = input.zerosLike().add(1.0f);
+        Tensor scaled = gradient.div((float) input.numel());
+        try {
+            return new Tensor[] { scaled.mul(ones) };
+        } finally {
+            ones.release();
+            scaled.release();
+        }
+    }
+
+    private static Tensor[] sum(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor ones = inputs.get(0).zerosLike().add(1.0f);
+        try {
+            return new Tensor[] { gradient.mul(ones) };
+        } finally {
+            ones.release();
+        }
     }
 
     private static Tensor[] add(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
