@@ -526,6 +526,50 @@ class DefaultTensorAutogradTest {
 
 
     @Test
+    void eagerBatchedMatmulBroadcastsAcrossMultipleBatchAxesAndReducesBothGradients() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[] {
+                1, 2, 3, 4,
+                2, 0, 0, 2
+        }, backend, 2, 1, 2, 2);
+        Tensor right = TensorFactory.of(new float[] {
+                1, 0, 0, 1,
+                2, 0, 0, 2,
+                3, 0, 0, 3
+        }, backend, 1, 3, 2, 2);
+        left.setRequiresGrad(true);
+        right.setRequiresGrad(true);
+        Tensor product = left.matmul(right);
+        Tensor loss = product.sum();
+        try {
+            assertArrayEquals(new float[] {
+                    1, 2, 3, 4,
+                    2, 4, 6, 8,
+                    3, 6, 9, 12,
+                    2, 0, 0, 2,
+                    4, 0, 0, 4,
+                    6, 0, 0, 6
+            }, product.toFloatArray(), 1.0e-6f);
+            loss.backward();
+            assertArrayEquals(new float[] {
+                    6, 6, 6, 6,
+                    6, 6, 6, 6
+            }, left.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] {
+                    6, 6, 8, 8,
+                    6, 6, 8, 8,
+                    6, 6, 8, 8
+            }, right.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            product.release();
+            right.release();
+            left.release();
+            backend.close();
+        }
+    }
+
+    @Test
     void eagerBatchedMatmulRejectsIncompatibleBatchDimensions() {
         CpuBackend backend = new CpuBackend();
         Tensor left = TensorFactory.of(new float[8], backend, 2, 2, 2);
