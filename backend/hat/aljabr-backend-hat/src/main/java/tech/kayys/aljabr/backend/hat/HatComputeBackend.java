@@ -38,8 +38,17 @@ public class HatComputeBackend implements ComputeBackend {
     private hat.Accelerator accelerator;
 
     public HatComputeBackend() {
+        this(new CpuBackend());
+    }
+
+    /**
+     * Creates a HAT backend using the supplied, explicitly owned CPU fallback.
+     * Provider sessions may expose this same fallback instance under its own
+     * backend id so operation-support metadata resolves to an actual backend.
+     */
+    public HatComputeBackend(CpuBackend cpuFallback) {
         LOG.info("Initializing HAT Compute Backend...");
-        this.cpuFallback = new CpuBackend();
+        this.cpuFallback = java.util.Objects.requireNonNull(cpuFallback, "cpuFallback");
         LOG.info("HAT Compute Backend initialized successfully with CPU fallback.");
     }
 
