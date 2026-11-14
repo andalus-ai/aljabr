@@ -152,37 +152,6 @@ public class GraphExecutor {
                         release(inputGradients);
                         gradient.release();
                     }
-                        throw new IllegalStateException("Backward rule for " + node.getOp()
-                                + " must return one gradient slot per input");
-                    }
-
-                    // Reject incompatible contributions before transferring any ownership.
-                    for (int i = 0; i < inputGradients.length; i++) {
-                        Tensor contribution = inputGradients[i];
-                        if (contribution != null
-                                && !node.getInputs().get(i).getOutputShape().equals(contribution.shape())) {
-                            release(inputGradients);
-                            gradient.release();
-                            throw new IllegalArgumentException("Backward rule for " + node.getOp()
-                                    + " returned gradient shape " + contribution.shape()
-                                    + " for input shape " + node.getInputs().get(i).getOutputShape()
-                                    + "; broadcasting gradients are not yet supported");
-                        }
-                    }
-
-                    for (int i = 0; i < inputGradients.length; i++) {
-                        Tensor contribution = inputGradients[i];
-                        GraphNode input = node.getInputs().get(i);
-                        if (contribution == null) {
-                            continue;
-                        }
-                        if (input.requiresGrad()) {
-                            accumulate(gradients, input, contribution);
-                        } else {
-                            contribution.release();
-                        }
-                    }
-                    gradient.release();
                 }
             } finally {
                 gradients.values().forEach(Tensor::release);
