@@ -30,6 +30,7 @@ public final class DifferentiableLinear {
 
     public DifferentiableLinear(Linear layer, AutogradContext context) {
         this.layer = Objects.requireNonNull(layer, "layer must not be null");
+        Objects.requireNonNull(context, "context must not be null");
         this.weightParameter = Objects.requireNonNull(
                 layer.namedParameterObjects().get("weight"), "Linear weight parameter is missing");
         this.weight = context.variable(weightParameter.tensor(), weightParameter.requiresGrad());
