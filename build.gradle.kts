@@ -74,6 +74,8 @@ subprojects {
         ":plugins:ml:aljabr-autograd",
         // Autograd NN adapter tests execute Linear operations on the CPU backend.
         ":plugins:ml:aljabr-autograd-nn",
+        // Optimizer tests execute tensor operations on the CPU backend, which requires the incubating Vector API.
+        ":plugins:ml:aljabr-optim",
         // NN tests exercise the CPU backend directly; it requires the incubating Vector API.
         ":plugins:ml:aljabr-nn",
         ":engine:gguf:aljabr-gguf-core",
