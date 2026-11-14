@@ -45,7 +45,10 @@ public final class HatComputeProvider implements ComputeProvider {
             "tensor.pow", "tensor.layer_norm", "tensor.rms_norm", "tensor.batch_norm",
             "tensor.conv2d", "tensor.max_pool2d", "tensor.adaptive_avg_pool2d",
             "tensor.dropout", "tensor.cross_entropy", "tensor.binary_cross_entropy",
-            "tensor.attention", "tensor.zeros_like", "tensor.cast", "tensor.to", "tensor.rope");
+            "tensor.attention", "tensor.zeros_like", "tensor.cast", "tensor.to");
+
+    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
+            "tensor.cat", "tensor.upsample_nearest2d", "tensor.attention.masked", "tensor.rope");
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
@@ -173,8 +176,7 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(
                         operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
-            if (Set.of("tensor.cat", "tensor.upsample_nearest2d", "tensor.attention.masked")
-                    .contains(operationId)) {
+            if (UNSUPPORTED_OPERATIONS.contains(operationId)) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
