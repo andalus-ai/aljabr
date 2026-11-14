@@ -86,7 +86,6 @@ public class GraphExecutor {
                             } else {
                                 Tensor accumulated = previous.add(gradient);
                                 leaf.setGrad(accumulated);
-                                previous.release();
                                 gradient.release();
                             }
                         } else {
