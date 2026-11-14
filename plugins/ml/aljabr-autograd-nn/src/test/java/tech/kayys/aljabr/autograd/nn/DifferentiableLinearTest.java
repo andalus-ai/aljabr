@@ -54,4 +54,48 @@ class DifferentiableLinearTest {
             inputValue.release();
         }
     }
+
+    @Test
+    void exposesValidatedParameterGradientsWithoutApplyingUpdates() {
+        CpuBackend backend = new CpuBackend();
+        Tensor weight = TensorFactory.of(new float[] { 1f, 2f }, backend, 1, 2);
+        Tensor inputValue = TensorFactory.of(new float[] { 3f, 4f }, backend, 1, 2);
+        try (Linear layer = new Linear(weight, null);
+             AutogradContext context = new AutogradContext()) {
+            Variable input = context.variable(inputValue);
+            DifferentiableLinear differentiable = new DifferentiableLinear(layer, context);
+
+            assertThat(differentiable.weightParameter())
+                    .isSameAs(layer.namedParameterObjects().get("weight"));
+            assertThat(differentiable.weightGradient()).isNull();
+
+            differentiable.forward(input).sum().backward();
+
+            assertThat(differentiable.weightGradient().toFloatArray()).containsExactly(3f, 4f);
+            assertThat(differentiable.biasGradient()).isNull();
+        } finally {
+            inputValue.release();
+        }
+    }
+
+    @Test
+    void rejectsUseAfterRegisteredParameterIsReplaced() {
+        CpuBackend backend = new CpuBackend();
+        Tensor weight = TensorFactory.of(new float[] { 1f, 2f }, backend, 1, 2);
+        Tensor inputValue = TensorFactory.of(new float[] { 3f, 4f }, backend, 1, 2);
+        try (Linear layer = new Linear(weight, null);
+             AutogradContext context = new AutogradContext()) {
+            Variable input = context.variable(inputValue);
+            DifferentiableLinear differentiable = new DifferentiableLinear(layer, context);
+            var parameter = differentiable.weightParameter();
+            Tensor replacement = weight.zerosLike();
+            parameter.updateTensor(replacement);
+
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalStateException.class, () -> differentiable.forward(input));
+        } finally {
+            inputValue.release();
+            weight.release(); // The module no longer owns the replaced tensor.
+        }
+    }
 }
