@@ -174,12 +174,13 @@ public final class OperationBackwardFunctions {
     private static Tensor[] matmul(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
         Tensor left = inputs.get(0);
         Tensor right = inputs.get(1);
-        if (left.shape().rank() != 2 || right.shape().rank() != 2 || gradient.shape().rank() != 2) {
+        int rank = left.shape().rank();
+        if (rank < 2 || right.shape().rank() != rank || gradient.shape().rank() != rank) {
             throw new UnsupportedOperationException(
-                    "MATMUL autograd currently supports rank-2 matrices only");
+                    "MATMUL autograd requires inputs and output gradient with matching rank >= 2");
         }
-        Tensor rightTranspose = right.transpose();
-        Tensor leftTranspose = left.transpose();
+        Tensor rightTranspose = right.transpose(rank - 2, rank - 1);
+        Tensor leftTranspose = left.transpose(rank - 2, rank - 1);
         Tensor leftGradient = null;
         try {
             leftGradient = gradient.matmul(rightTranspose);
