@@ -58,20 +58,11 @@ public final class AdamW implements Optimizer, AutoCloseable {
             return;
         }
 
-        for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
-            String name = entry.getKey();
-            Parameter parameter = entry.getValue();
-            if (gradients.get(name) != null && parameter.isTrainable()
-                    && state.parameterSnapshots.containsKey(name)
-                    && state.parameterSnapshots.get(name) != parameter.tensor()) {
-                state.resetParameter(name);
-            }
-        }
-
         try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
             Map<String, Tensor> nextFirst = new LinkedHashMap<>();
             Map<String, Tensor> nextSecond = new LinkedHashMap<>();
             Map<String, Tensor> updates = new LinkedHashMap<>();
+            Map<String, Long> nextSteps = new LinkedHashMap<>();
             try {
                 for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
                     String name = entry.getKey();
@@ -82,15 +73,20 @@ public final class AdamW implements Optimizer, AutoCloseable {
                     }
 
                     Tensor current = parameter.tensor();
-                    long nextStep = state.parameterSteps.getOrDefault(name, 0L) + 1L;
+                    boolean parameterReplaced = state.parameterSnapshots.containsKey(name)
+                            && state.parameterSnapshots.get(name) != current;
+                    long nextStep = parameterReplaced ? 1L : state.parameterSteps.getOrDefault(name, 0L) + 1L;
                     float correction1 = 1.0f - (float) Math.pow(beta1, nextStep);
                     float correction2 = 1.0f - (float) Math.pow(beta2, nextStep);
-                    Tensor first = updateFirstMoment(gradient, state.firstMoment.get(name));
-                    Tensor second = updateSecondMoment(gradient, state.secondMoment.get(name));
+                    Tensor previousFirst = parameterReplaced ? null : state.firstMoment.get(name);
+                    Tensor previousSecond = parameterReplaced ? null : state.secondMoment.get(name);
+                    Tensor first = updateFirstMoment(gradient, previousFirst);
+                    Tensor second = updateSecondMoment(gradient, previousSecond);
                     Tensor update = computeUpdate(current, first, second, correction1, correction2);
                     nextFirst.put(name, first);
                     nextSecond.put(name, second);
                     updates.put(name, update);
+                    nextSteps.put(name, nextStep);
                 }
 
                 // Commit state only after every parameter update has been computed.
@@ -105,7 +101,7 @@ public final class AdamW implements Optimizer, AutoCloseable {
                 updates.forEach((name, value) -> {
                     parameters.get(name).updateTensor(value);
                     state.parameterSnapshots.put(name, value);
-                    state.parameterSteps.merge(name, 1L, Long::sum);
+                    state.parameterSteps.put(name, nextSteps.get(name));
                 });
             } catch (RuntimeException | Error failure) {
                 nextFirst.forEach((name, value) -> {

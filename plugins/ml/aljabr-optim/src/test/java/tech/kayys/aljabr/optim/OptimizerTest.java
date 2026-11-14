@@ -76,22 +76,33 @@ class OptimizerTest {
     void adamWResetsMomentsWhenRegisteredParameterTensorIsReplaced() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, false);
-             AdamW optimizer = new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, 0.0f)) {
+             Linear referenceLayer = new Linear(backend, 2, 2, false);
+             AdamW optimizer = new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, 0.0f);
+             AdamW referenceOptimizer = new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, 0.0f)) {
             Parameter parameter = layer.namedParameterObjects().get("weight");
+            Parameter referenceParameter = referenceLayer.namedParameterObjects().get("weight");
             Tensor positiveGradient = TensorFactory.ones(backend, 2, 2);
-            optimizer.step(Map.of("weight", parameter), Map.of("weight", positiveGradient));
-
             Tensor replacement = TensorFactory.ones(backend, 2, 2);
-            parameter.updateTensor(replacement);
-            Tensor negativeGradient = TensorFactory.ones(backend, 2, 2).mul(-1.0f);
-            optimizer.step(Map.of("weight", parameter), Map.of("weight", negativeGradient));
+            Tensor negativeGradient = TensorFactory.full(-1.0f, backend, 2, 2);
+            Tensor referenceInitialValue = TensorFactory.ones(backend, 2, 2);
+            Tensor referenceGradient = TensorFactory.full(-1.0f, backend, 2, 2);
+            try {
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", positiveGradient));
 
-            // A fresh first moment for a negative gradient must move the parameter upward.
-            for (float value : parameter.tensor().toFloatArray()) {
-                assertThat(value).isGreaterThan(1.0f);
+                parameter.updateTensor(replacement);
+                referenceParameter.updateTensor(referenceInitialValue);
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", negativeGradient));
+                referenceOptimizer.step(
+                        Map.of("weight", referenceParameter), Map.of("weight", referenceGradient));
+
+                // Replacing a parameter must restart AdamW exactly like a fresh optimizer step.
+                assertThat(parameter.tensor().toFloatArray())
+                        .containsExactly(referenceParameter.tensor().toFloatArray());
+            } finally {
+                positiveGradient.release();
+                negativeGradient.release();
+                referenceGradient.release();
             }
-            positiveGradient.release();
-            negativeGradient.release();
         }
     }
 
