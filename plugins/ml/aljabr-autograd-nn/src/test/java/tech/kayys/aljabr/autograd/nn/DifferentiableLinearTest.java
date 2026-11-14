@@ -95,6 +95,7 @@ class DifferentiableLinearTest {
                     IllegalStateException.class, () -> differentiable.forward(input));
         } finally {
             inputValue.release();
+            weight.release(); // The module no longer owns the replaced tensor.
         }
     }
 }
