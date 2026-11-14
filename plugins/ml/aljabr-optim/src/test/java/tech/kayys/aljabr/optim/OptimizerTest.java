@@ -273,6 +273,29 @@ class OptimizerTest {
     }
 
     @Test
+    void adamWAppliesDecoupledWeightDecayWhenGradientIsZero() {
+        CpuBackend backend = new CpuBackend();
+        Tensor initial = TensorFactory.of(new float[] { 2.0f, -4.0f }, backend, 1, 2);
+        try (Linear layer = new Linear(initial, null);
+             AdamW optimizer = new AdamW(0.1f, 0.9f, 0.999f, 1.0e-8f, 0.2f)) {
+            Parameter parameter = layer.namedParameterObjects().get("weight");
+            Tensor zeroGradient = TensorFactory.zeros(backend, 1, 2);
+            try {
+                optimizer.step(
+                        Map.of("weight", parameter),
+                        Map.of("weight", zeroGradient));
+
+                // AdamW applies (1 - learningRate * weightDecay) independently of the gradient.
+                float[] actual = parameter.tensor().toFloatArray();
+                assertThat(actual[0]).isCloseTo(1.96f, offset(1.0e-6f));
+                assertThat(actual[1]).isCloseTo(-3.92f, offset(1.0e-6f));
+            } finally {
+                zeroGradient.release();
+            }
+        }
+    }
+
+    @Test
     void adamWValidatesEveryGradientBeforeUpdatingAnyParameter() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, true);
