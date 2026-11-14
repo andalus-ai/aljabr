@@ -404,4 +404,78 @@ class DefaultTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void eagerBatchedMatmulBroadcastsSingletonBatchAndReducesItsGradient() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, backend, 1, 2, 2);
+        Tensor right = TensorFactory.of(new float[] {
+                1, 0, 0, 1,
+                2, 1, 3, 4,
+                0, 2, 1, 0
+        }, backend, 3, 2, 2);
+        left.setRequiresGrad(true);
+        right.setRequiresGrad(true);
+        Tensor product = left.matmul(right);
+        Tensor loss = product.sum();
+        try {
+            assertArrayEquals(new float[] {
+                    1, 2, 3, 4,
+                    8, 9, 18, 19,
+                    2, 2, 4, 6
+            }, product.toFloatArray(), 1.0e-6f);
+            loss.backward();
+            assertArrayEquals(new float[] { 7, 8, 7, 8 },
+                    left.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] {
+                    4, 6, 4, 6,
+                    4, 6, 4, 6,
+                    4, 6, 4, 6
+            }, right.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            product.release();
+            right.release();
+            left.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerBatchedMatmulBroadcastsMissingLeadingBatchDimensions() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, backend, 2, 2);
+        Tensor right = TensorFactory.of(new float[] {
+                1, 0, 0, 1,
+                2, 1, 3, 4,
+                0, 2, 1, 0
+        }, backend, 3, 2, 2);
+        left.setRequiresGrad(true);
+        right.setRequiresGrad(true);
+        Tensor product = left.matmul(right);
+        Tensor loss = product.sum();
+        try {
+            assertArrayEquals(new float[] {
+                    1, 2, 3, 4,
+                    8, 9, 18, 19,
+                    2, 2, 4, 6
+            }, product.toFloatArray(), 1.0e-6f);
+            loss.backward();
+            assertArrayEquals(new float[] { 7, 8, 7, 8 },
+                    left.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] {
+                    4, 6, 4, 6,
+                    4, 6, 4, 6,
+                    4, 6, 4, 6
+            }, right.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            product.release();
+            right.release();
+            left.release();
+            backend.close();
+        }
+    }
+
+
 }
