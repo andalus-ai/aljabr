@@ -67,8 +67,18 @@ class HatComputeProviderTest {
             assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID, fallback.effectiveBackendId());
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(fallback.effectiveBackendId()));
-            assertEquals(OperationSupport.DELEGATED,
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.relu", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.relu", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.relu", Map.of("dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.embedding", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.cast", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.to", Map.of("dtype", "F32")).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.cat", Map.of()).support());
             assertEquals(OperationSupport.UNSUPPORTED,
