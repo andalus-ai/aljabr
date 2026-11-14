@@ -272,26 +272,59 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor matmul(Tensor a, Tensor b) {
         long[] shapeA = a.shape().dims();
         long[] shapeB = b.shape().dims();
-        if (shapeA.length < 2 || shapeB.length < 2)
+        if (shapeA.length < 2 || shapeB.length < 2) {
             throw new IllegalArgumentException("matmul requires at least 2D tensors");
+        }
+        if (a.dtype() != DType.F32 || b.dtype() != DType.F32) {
+            throw new UnsupportedOperationException("CPU matmul currently supports F32 tensors only");
+        }
+        if (shapeA.length != shapeB.length) {
+            throw new IllegalArgumentException("Batched matmul requires equal input ranks: "
+                    + shapeA.length + " != " + shapeB.length);
+        }
 
-        int m = (int) shapeA[shapeA.length - 2];
-        int k = (int) shapeA[shapeA.length - 1];
-        int k2 = (int) shapeB[shapeB.length - 2];
-        int n = (int) shapeB[shapeB.length - 1];
-        if (k != k2)
+        int rank = shapeA.length;
+        int m = Math.toIntExact(shapeA[rank - 2]);
+        int k = Math.toIntExact(shapeA[rank - 1]);
+        int k2 = Math.toIntExact(shapeB[rank - 2]);
+        int n = Math.toIntExact(shapeB[rank - 1]);
+        if (k != k2) {
             throw new IllegalArgumentException("Dimension mismatch: " + k + " != " + k2);
+        }
+
+        long batchCount = 1;
+        for (int dimension = 0; dimension < rank - 2; dimension++) {
+            if (shapeA[dimension] != shapeB[dimension]) {
+                throw new IllegalArgumentException(
+                        "CPU batched matmul requires matching batch dimensions; mismatch at dimension "
+                                + dimension + ": " + shapeA[dimension] + " != " + shapeB[dimension]);
+            }
+            batchCount = Math.multiplyExact(batchCount, shapeA[dimension]);
+        }
 
         long[] outDims = shapeA.clone();
-        outDims[outDims.length - 2] = m;
-        outDims[outDims.length - 1] = n;
+        outDims[rank - 2] = m;
+        outDims[rank - 1] = n;
         Shape outShape = new Shape(outDims);
-        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
+        HostAccessibleStorage outBuf = allocateOutput(
+                Math.multiplyExact(outShape.numel(), (long) Float.BYTES));
+        MemorySegment left = seg(a);
+        MemorySegment right = seg(b);
+        MemorySegment output = outBuf.segment();
+        long leftMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, k), Float.BYTES);
+        long rightMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) k, n), Float.BYTES);
+        long outputMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, n), Float.BYTES);
 
-        // Zero-init output
-        outBuf.segment().fill((byte) 0);
-
-        MatmulCpu.matmul(seg(a), seg(b), outBuf.segment(), m, n, k);
+        for (long batch = 0; batch < batchCount; batch++) {
+            long leftOffset = Math.multiplyExact(batch, leftMatrixBytes);
+            long rightOffset = Math.multiplyExact(batch, rightMatrixBytes);
+            long outputOffset = Math.multiplyExact(batch, outputMatrixBytes);
+            MatmulCpu.matmul(
+                    left.asSlice(leftOffset, leftMatrixBytes),
+                    right.asSlice(rightOffset, rightMatrixBytes),
+                    output.asSlice(outputOffset, outputMatrixBytes),
+                    m, n, k);
+        }
         return out(outShape, outBuf);
     }
 
