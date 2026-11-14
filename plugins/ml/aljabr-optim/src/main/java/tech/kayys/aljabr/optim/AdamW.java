@@ -57,6 +57,18 @@ public final class AdamW implements Optimizer, AutoCloseable {
             return;
         }
 
+        boolean parameterWasReplaced = parameters.entrySet().stream().anyMatch(entry -> {
+            String name = entry.getKey();
+            Parameter parameter = entry.getValue();
+            return gradients.get(name) != null && parameter.isTrainable()
+                    && state.parameterSnapshots.containsKey(name)
+                    && state.parameterSnapshots.get(name) != parameter.tensor();
+        });
+        if (parameterWasReplaced) {
+            // The bias-correction step and all moment histories must share one epoch.
+            state.clear();
+        }
+
         long nextStep = state.step + 1;
         Map<String, Tensor> nextFirst = new LinkedHashMap<>();
         Map<String, Tensor> nextSecond = new LinkedHashMap<>();
@@ -74,10 +86,8 @@ public final class AdamW implements Optimizer, AutoCloseable {
             }
 
             Tensor current = parameter.tensor();
-            boolean parameterWasReplaced = state.parameterSnapshots.containsKey(name)
-                    && state.parameterSnapshots.get(name) != current;
-            Tensor oldFirst = parameterWasReplaced ? null : state.firstMoment.get(name);
-            Tensor oldSecond = parameterWasReplaced ? null : state.secondMoment.get(name);
+            Tensor oldFirst = state.firstMoment.get(name);
+            Tensor oldSecond = state.secondMoment.get(name);
             Tensor first = (oldFirst == null ? gradient.zerosLike() : oldFirst.mul(beta1))
                     .add(gradient.mul(1.0f - beta1));
             Tensor second = (oldSecond == null ? gradient.zerosLike() : oldSecond.mul(beta2))
