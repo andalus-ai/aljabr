@@ -66,6 +66,7 @@ public class HatComputeBackendTest {
 
         assertNotNull(result);
         assertEquals(4, backend.numel(result));
+        assertEquals(backend, result.backend(), "HAT results must retain the explicitly selected backend");
 
         // Matrix multiply of [[2,2],[2,2]] x [[3,3],[3,3]] = [[12,12],[12,12]]
         float[] out = result.toFloatArray();
