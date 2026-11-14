@@ -86,6 +86,25 @@ class CpuBatchedAttentionTest {
     }
 
     @Test
+    void causalAttentionReturnsZeroForQueriesBeforeTheCachedKeyWindow() {
+        CpuBackend backend = new CpuBackend();
+        Tensor query = TensorFactory.of(new float[3], backend, 1, 1, 3, 1);
+        Tensor key = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor value = TensorFactory.of(new float[] {2f, 8f}, backend, 1, 1, 2, 1);
+        Tensor output = null;
+        try {
+            output = backend.attention(query, key, value, null, true);
+            // Bottom-right alignment gives q0 no visible keys, q1 key 0, and q2 keys 0..1.
+            assertArrayEquals(new float[] {0f, 2f, 5f}, output.toFloatArray(), 1e-6f);
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+        }
+    }
+
+    @Test
     void validatesAdditiveMaskEntriesEvenWhenCausalModeWouldSkipTheirKeys() {
         CpuBackend backend = new CpuBackend();
         Tensor query = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);

@@ -29,19 +29,31 @@ public final class SGD implements Optimizer {
 
         Map<String, Tensor> updates = new LinkedHashMap<>();
         try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
-        for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
-            String name = Objects.requireNonNull(entry.getKey(), "parameter name must not be null");
-            Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
-            Tensor gradient = gradients.get(name);
-            if (gradient == null || !parameter.isTrainable()) {
-                continue;
+            try {
+                for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
+                    String name = Objects.requireNonNull(entry.getKey(), "parameter name must not be null");
+                    Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
+                    Tensor gradient = gradients.get(name);
+                    if (gradient == null || !parameter.isTrainable()) {
+                        continue;
+                    }
+                    parameter.validateGradient(gradient);
+                    Tensor scaledGradient = gradient.mul(learningRate);
+                    try {
+                        updates.put(name, parameter.tensor().sub(scaledGradient));
+                    } finally {
+                        scaledGradient.release();
+                    }
+                }
+
+                // Validation and computation finish before any registered value changes.
+                updates.forEach((name, value) -> parameters.get(name).updateTensor(value));
+            } catch (RuntimeException | Error failure) {
+                updates.forEach((name, value) -> {
+                    if (parameters.get(name).tensor() != value) value.release();
+                });
+                throw failure;
             }
-            parameter.validateGradient(gradient);
-            Tensor current = parameter.tensor();
-            updates.put(name, current.sub(gradient.mul(learningRate)));
-        }
-        // Validation and computation finish before any registered value changes.
-        updates.forEach((name, value) -> parameters.get(name).updateTensor(value));
         }
     }
 
