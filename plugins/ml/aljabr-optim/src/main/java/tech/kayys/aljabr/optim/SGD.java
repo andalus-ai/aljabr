@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import tech.kayys.aljabr.core.nn.Parameter;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
 
 /** Stateless stochastic gradient descent. */
 public final class SGD implements Optimizer {
@@ -27,6 +28,7 @@ public final class SGD implements Optimizer {
         Objects.requireNonNull(gradients, "gradients must not be null");
 
         Map<String, Tensor> updates = new LinkedHashMap<>();
+        try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
         for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
             String name = Objects.requireNonNull(entry.getKey(), "parameter name must not be null");
             Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
@@ -40,6 +42,7 @@ public final class SGD implements Optimizer {
         }
         // Validation and computation finish before any registered value changes.
         updates.forEach((name, value) -> parameters.get(name).updateTensor(value));
+        }
     }
 
     @Override
