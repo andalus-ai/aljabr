@@ -217,6 +217,8 @@ public class GraphExecutor {
             // Shape
             case RESHAPE -> backend.reshape(inputs.get(0).getMaterializedData(), (long[]) args[0]);
             case SLICE -> backend.slice(inputs.get(0).getMaterializedData(), (long[]) args[0], (long[]) args[1]);
+            case CAT -> backend.cat(inputs.stream().map(GraphNode::getMaterializedData).toList(),
+                    (int) args[0]);
             case FLATTEN -> backend.flatten(inputs.get(0).getMaterializedData());
             case UNSQUEEZE -> backend.unsqueeze(inputs.get(0).getMaterializedData(), (int) args[0]);
             case SQUEEZE -> backend.squeeze(inputs.get(0).getMaterializedData());
