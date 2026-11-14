@@ -125,7 +125,6 @@ class OptimizerTest {
             assertThat(parameter.tensor().toFloatArray()[1]).isBetween(1.1999f, 1.2001f);
         } finally {
             input.release();
-            initialWeight.release();
         }
     }
 
