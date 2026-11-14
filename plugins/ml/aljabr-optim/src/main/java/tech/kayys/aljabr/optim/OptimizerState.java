@@ -8,6 +8,7 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 final class OptimizerState {
     final Map<String, Tensor> firstMoment = new HashMap<>();
     final Map<String, Tensor> secondMoment = new HashMap<>();
+    final Map<String, Tensor> parameterSnapshots = new HashMap<>();
     long step;
 
     void clear() {
@@ -15,6 +16,7 @@ final class OptimizerState {
         secondMoment.values().forEach(Tensor::release);
         firstMoment.clear();
         secondMoment.clear();
+        parameterSnapshots.clear();
         step = 0;
     }
 }
