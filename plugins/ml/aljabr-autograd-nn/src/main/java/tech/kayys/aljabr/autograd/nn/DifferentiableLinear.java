@@ -23,7 +23,6 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 public final class DifferentiableLinear {
 
     private final Linear layer;
-    private final AutogradContext context;
     private final Parameter weightParameter;
     private final Parameter biasParameter;
     private final Variable weight;
@@ -31,7 +30,6 @@ public final class DifferentiableLinear {
 
     public DifferentiableLinear(Linear layer, AutogradContext context) {
         this.layer = Objects.requireNonNull(layer, "layer must not be null");
-        this.context = Objects.requireNonNull(context, "context must not be null");
         this.weightParameter = Objects.requireNonNull(
                 layer.namedParameterObjects().get("weight"), "Linear weight parameter is missing");
         this.weight = context.variable(weightParameter.tensor(), weightParameter.requiresGrad());
@@ -108,7 +106,7 @@ public final class DifferentiableLinear {
     }
 
     private void ensureParameterSnapshotIsCurrent() {
-        context.ensureOpen();
+        weight.value(); // Also verifies that the owning autograd context is still open.
         if (weightParameter.tensor() != weight.value()) {
             throw new IllegalStateException(
                     "Linear weight parameter was replaced after the differentiable adapter was created");
