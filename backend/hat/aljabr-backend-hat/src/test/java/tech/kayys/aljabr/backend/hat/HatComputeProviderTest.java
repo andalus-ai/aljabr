@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Map;
 import java.util.ServiceLoader;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -37,8 +38,10 @@ class HatComputeProviderTest {
 
         provider.initialize(new ProviderContext("test", Map.of()));
         try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
-            assertEquals(HatComputeProvider.BACKEND_ID,
-                    session.computeBackends().keySet().iterator().next());
+            assertEquals(Set.of(
+                    HatComputeProvider.BACKEND_ID,
+                    HatComputeProvider.CPU_FALLBACK_BACKEND_ID),
+                    session.computeBackends().keySet());
             assertInstanceOf(HatComputeBackend.class,
                     session.computeBackends().get(HatComputeProvider.BACKEND_ID));
         }
