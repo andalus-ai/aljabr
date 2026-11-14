@@ -360,7 +360,7 @@ public final class CpuBackend implements ComputeBackend {
     private static long[] batchStrides(long[] shape) {
         int batchRank = shape.length - 2;
         long[] strides = new long[batchRank];
-        long stride = 1;
+        long stride = Math.multiplyExact(shape[batchRank], shape[batchRank + 1]);
         for (int axis = batchRank - 1; axis >= 0; axis--) {
             strides[axis] = stride;
             stride = Math.multiplyExact(stride, shape[axis]);
