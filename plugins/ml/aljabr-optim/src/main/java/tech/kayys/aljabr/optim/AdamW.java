@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import tech.kayys.aljabr.core.nn.Parameter;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
 
 /** Adam with decoupled weight decay. */
 public final class AdamW implements Optimizer, AutoCloseable {
@@ -67,6 +68,7 @@ public final class AdamW implements Optimizer, AutoCloseable {
             }
         }
 
+        try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
         Map<String, Tensor> nextFirst = new LinkedHashMap<>();
         Map<String, Tensor> nextSecond = new LinkedHashMap<>();
         Map<String, Tensor> nextSnapshots = new LinkedHashMap<>();
@@ -115,6 +117,7 @@ public final class AdamW implements Optimizer, AutoCloseable {
             state.parameterSnapshots.put(name, value);
             state.parameterSteps.merge(name, 1L, Long::sum);
         });
+        }
     }
 
     @Override
