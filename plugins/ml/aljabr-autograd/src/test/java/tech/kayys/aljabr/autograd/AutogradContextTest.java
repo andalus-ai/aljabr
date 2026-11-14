@@ -131,6 +131,72 @@ class AutogradContextTest {
         }
     }
 
+
+    @Test
+    void explicitUpstreamGradientSupportsNonScalarOutputsAndIsCopied() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 1f, 2f }, backend, 2);
+        Tensor seed = TensorFactory.of(new float[] { 3f, 4f }, backend, 2);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable x = context.variable(input);
+            Variable output = x.mul(2f);
+
+            output.backward(seed);
+            seed.release();
+            seed = null;
+
+            assertArrayEquals(new float[] { 6f, 8f }, x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            if (seed != null) {
+                seed.release();
+            }
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void invalidExplicitUpstreamGradientDoesNotConsumeContext() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 1f, 2f }, backend, 2);
+        Tensor invalidSeed = TensorFactory.of(new float[] { 1f }, backend, 1);
+        Tensor validSeed = TensorFactory.of(new float[] { 3f, 4f }, backend, 2);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable x = context.variable(input);
+            Variable output = x.mul(2f);
+
+            assertThrows(IllegalArgumentException.class, () -> output.backward(invalidSeed));
+            output.backward(validSeed);
+
+            assertArrayEquals(new float[] { 6f, 8f }, x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            invalidSeed.release();
+            validSeed.release();
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void nonDifferentiableBackwardDoesNotConsumeContext() {
+        CpuBackend backend = new CpuBackend();
+        Tensor constant = TensorFactory.of(new float[] { 5f }, backend, 1);
+        Tensor input = TensorFactory.of(new float[] { 1f, 2f }, backend, 2);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable noGrad = context.variable(constant, false);
+            Variable x = context.variable(input);
+
+            noGrad.backward();
+            x.sum().backward();
+
+            assertArrayEquals(new float[] { 1f, 1f }, x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            constant.release();
+            input.release();
+            backend.close();
+        }
+    }
+
     @Test
     void meanSquareGradientMatchesFiniteDifferences() {
         CpuBackend backend = new CpuBackend();

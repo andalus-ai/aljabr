@@ -69,6 +69,14 @@ public final class Variable {
         context.backward(this);
     }
 
+    /**
+     * Runs reverse-mode differentiation with a caller-supplied upstream gradient.
+     * The context copies the gradient and owns that copy until it is closed.
+     */
+    public void backward(Tensor outputGradient) {
+        context.backward(this, outputGradient);
+    }
+
     public Variable add(Variable other) {
         requireCompatibleContext(other);
         if (java.util.Arrays.equals(value.shape().dims(), other.value.shape().dims())) {
