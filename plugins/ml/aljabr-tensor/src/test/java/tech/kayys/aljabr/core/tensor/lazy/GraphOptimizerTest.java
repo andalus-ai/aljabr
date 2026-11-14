@@ -32,7 +32,7 @@ class GraphOptimizerTest {
 
     @Test
     void doesNotRemoveZeroScalarOperationWithExplicitBackwardRule() {
-        GraphNode input = node(OpType.RELU, List.of(), new Object[0], null);
+        GraphNode input = differentiableLeaf();
         BackwardFunction backward = (output, gradient, inputs, arguments) -> new Tensor[] { null };
         GraphNode addZero = node(OpType.ADD_SCALAR, List.of(input), new Object[] { 0.0f }, backward);
 
@@ -41,7 +41,7 @@ class GraphOptimizerTest {
 
     @Test
     void doesNotFuseAttentionPatternAcrossRegisteredBackwardRule() {
-        GraphNode query = node(OpType.RELU, List.of(), new Object[0], null);
+        GraphNode query = differentiableLeaf();
         GraphNode key = node(OpType.RELU, List.of(), new Object[0], null);
         GraphNode value = node(OpType.RELU, List.of(), new Object[0], null);
         GraphNode transpose = node(OpType.TRANSPOSE, List.of(key), new Object[0], null);
@@ -52,6 +52,16 @@ class GraphOptimizerTest {
         GraphNode root = node(OpType.MATMUL, List.of(probabilities, value), new Object[0], null);
 
         assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    private static GraphNode differentiableLeaf() {
+        Tensor value = new MockTensor(SHAPE, DType.F32) {
+            @Override
+            public boolean requiresGrad() {
+                return true;
+            }
+        };
+        return GraphNode.constant(value);
     }
 
     private static GraphNode node(OpType op, List<GraphNode> inputs, Object[] arguments,

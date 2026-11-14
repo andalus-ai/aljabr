@@ -8,7 +8,7 @@ import java.util.Map;
  *
  * <p>Graph rewrites must preserve the local derivative metadata of every
  * operation they retain. Rewrites that remove or fuse nodes are only valid
- * when they do not discard an explicitly registered backward rule.</p>
+ * when they do not remove a path needed by a differentiable graph.</p>
  *
  * @author bhangun
  */
@@ -35,10 +35,9 @@ public class GraphOptimizer {
                 .map(input -> optimizeNode(input, memo))
                 .toList();
 
-        // ADD_SCALAR(x, 0) -> x is only safe when no explicit derivative rule
-        // would be removed with the operation.
+        // ADD_SCALAR(x, 0) -> x is safe only when the graph has no gradient path.
         if (node.getOp() == OpType.ADD_SCALAR
-                && !node.hasBackwardFunction()
+                && !node.requiresGrad()
                 && node.getArgs().length == 1) {
             float scalar = (float) node.getArgs()[0];
             if (scalar == 0.0f) {
@@ -51,30 +50,30 @@ public class GraphOptimizer {
         // MATMUL(SOFTMAX(DIV_SCALAR(MATMUL(Q, TRANSPOSE(K)), scale)), V)
         // -> ATTENTION(Q, K, V)
         //
-        // Do not fuse across any node with an explicit backward rule: the
-        // fused ATTENTION node has no equivalent composite VJP registered.
-        if (node.getOp() == OpType.MATMUL && newInputs.size() == 2 && !node.hasBackwardFunction()) {
+        // Only fuse non-differentiable graphs. The fused ATTENTION node does not
+        // currently provide a composite VJP equivalent to the removed nodes.
+        if (node.getOp() == OpType.MATMUL && newInputs.size() == 2 && !node.requiresGrad()) {
             GraphNode maybeSoftmax = newInputs.get(0);
             GraphNode value = newInputs.get(1);
 
             if (maybeSoftmax.getOp() == OpType.SOFTMAX
-                    && !maybeSoftmax.hasBackwardFunction()
+                    && !maybeSoftmax.requiresGrad()
                     && maybeSoftmax.getInputs().size() == 1) {
                 GraphNode maybeDiv = maybeSoftmax.getInputs().get(0);
 
                 if ((maybeDiv.getOp() == OpType.DIV_SCALAR || maybeDiv.getOp() == OpType.MUL_SCALAR)
-                        && !maybeDiv.hasBackwardFunction()
+                        && !maybeDiv.requiresGrad()
                         && maybeDiv.getInputs().size() == 1) {
                     GraphNode maybeMatmul = maybeDiv.getInputs().get(0);
 
                     if (maybeMatmul.getOp() == OpType.MATMUL
-                            && !maybeMatmul.hasBackwardFunction()
+                            && !maybeMatmul.requiresGrad()
                             && maybeMatmul.getInputs().size() == 2) {
                         GraphNode query = maybeMatmul.getInputs().get(0);
                         GraphNode maybeTranspose = maybeMatmul.getInputs().get(1);
 
                         if (maybeTranspose.getOp() == OpType.TRANSPOSE
-                                && !maybeTranspose.hasBackwardFunction()
+                                && !maybeTranspose.requiresGrad()
                                 && maybeTranspose.getInputs().size() == 1) {
                             GraphNode key = maybeTranspose.getInputs().get(0);
 
