@@ -1,6 +1,9 @@
 package tech.kayys.aljabr.core.tensor.lazy;
 
+import java.util.ArrayList;
 import java.util.List;
+
+import tech.kayys.aljabr.core.tensor.TensorFactory;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.autograd.BackwardFunction;
@@ -27,6 +30,10 @@ public final class OperationBackwardFunctions {
             case MUL_SCALAR -> OperationBackwardFunctions::multiplyScalar;
             case DIV_SCALAR -> OperationBackwardFunctions::divideScalar;
             case MATMUL -> OperationBackwardFunctions::matmul;
+            case RESHAPE, FLATTEN, UNSQUEEZE, SQUEEZE -> OperationBackwardFunctions::restoreInputShape;
+            case TRANSPOSE -> OperationBackwardFunctions::transpose;
+            case SLICE -> OperationBackwardFunctions::slice;
+            case CAT -> OperationBackwardFunctions::cat;
             case MEAN -> OperationBackwardFunctions::mean;
             case SUM -> OperationBackwardFunctions::sum;
             case SIGMOID -> OperationBackwardFunctions::sigmoid;
@@ -37,6 +44,131 @@ public final class OperationBackwardFunctions {
             case SQRT -> OperationBackwardFunctions::sqrt;
             default -> null;
         };
+    }
+
+    /**
+     * Reshape-like operations preserve element order, so their VJP restores
+     * the exact shape of the original input. This also avoids squeeze's
+     * all-singleton-dimensions behavior when undoing a single unsqueeze.
+     */
+    private static Tensor[] restoreInputShape(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        return new Tensor[] { gradient.reshape(inputs.get(0).shape().dims()) };
+    }
+
+    /**
+     * Embeds a sliced gradient back into the input domain. Padding is expressed
+     * through backend concatenation so the VJP does not access host storage.
+     * Backends that support slicing but not concatenation must provide the
+     * corresponding backend capability before this VJP can execute.
+     */
+    private static Tensor[] slice(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor input = inputs.get(0);
+        long[] offsets = (long[]) arguments[0];
+        long[] sizes = (long[]) arguments[1];
+        if (offsets.length != input.shape().rank() || sizes.length != input.shape().rank()) {
+            throw new IllegalArgumentException("Slice VJP metadata rank does not match input rank");
+        }
+
+        Tensor current = gradient;
+        boolean ownsCurrent = false;
+        try {
+            for (int axis = 0; axis < offsets.length; axis++) {
+                long beforeSize = offsets[axis];
+                long afterSize = input.shape().dim(axis) - offsets[axis] - sizes[axis];
+                if (beforeSize == 0 && afterSize == 0) {
+                    continue;
+                }
+
+                long[] currentDims = current.shape().dims();
+                List<Tensor> pieces = new ArrayList<>(3);
+                Tensor before = null;
+                Tensor after = null;
+                Tensor expanded = null;
+                try {
+                    if (beforeSize > 0) {
+                        long[] paddingDims = currentDims.clone();
+                        paddingDims[axis] = beforeSize;
+                        before = TensorFactory.zeros(input.backend(), paddingDims);
+                        pieces.add(before);
+                    }
+                    pieces.add(current);
+                    if (afterSize > 0) {
+                        long[] paddingDims = currentDims.clone();
+                        paddingDims[axis] = afterSize;
+                        after = TensorFactory.zeros(input.backend(), paddingDims);
+                        pieces.add(after);
+                    }
+                    expanded = input.backend().cat(pieces, axis);
+                } finally {
+                    if (before != null) before.release();
+                    if (after != null) after.release();
+                }
+
+                if (ownsCurrent) current.release();
+                current = expanded;
+                ownsCurrent = true;
+            }
+
+            if (!ownsCurrent) {
+                return new Tensor[] { gradient.add(0.0f) };
+            }
+            Tensor result = current;
+            current = null;
+            ownsCurrent = false;
+            return new Tensor[] { result };
+        } finally {
+            if (ownsCurrent && current != null) current.release();
+        }
+    }
+
+
+    /**
+     * Routes each concatenated region of the upstream gradient to its source input.
+     * The returned array follows the graph node's input order.
+     */
+    private static Tensor[] cat(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        if (inputs.isEmpty()) {
+            throw new IllegalArgumentException("CAT VJP requires at least one input");
+        }
+        int axis = (int) arguments[0];
+        int rank = gradient.shape().rank();
+        int normalizedAxis = normalizeDimension(axis, rank);
+        Tensor[] gradients = new Tensor[inputs.size()];
+        long offset = 0;
+        try {
+            for (int index = 0; index < inputs.size(); index++) {
+                Tensor input = inputs.get(index);
+                if (input.shape().rank() != rank) {
+                    throw new IllegalArgumentException("CAT input rank does not match output rank");
+                }
+                long[] offsets = new long[rank];
+                long[] sizes = input.shape().dims();
+                offsets[normalizedAxis] = offset;
+                gradients[index] = gradient.slice(offsets, sizes);
+                offset = Math.addExact(offset, sizes[normalizedAxis]);
+            }
+            if (offset != gradient.shape().dim(normalizedAxis)) {
+                throw new IllegalArgumentException("CAT input dimensions do not cover output gradient");
+            }
+            return gradients;
+        } catch (RuntimeException | Error failure) {
+            for (Tensor value : gradients) {
+                if (value != null) value.release();
+            }
+            throw failure;
+        }
+    }
+
+    /** A dimension swap is its own inverse, including non-terminal axes. */
+    private static Tensor[] transpose(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        if (arguments.length == 0) {
+            return new Tensor[] { gradient.transpose() };
+        }
+        return new Tensor[] { gradient.transpose((int) arguments[0], (int) arguments[1]) };
     }
 
     private static Tensor[] matmul(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {

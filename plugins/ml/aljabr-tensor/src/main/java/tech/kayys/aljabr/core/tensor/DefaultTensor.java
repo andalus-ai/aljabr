@@ -318,12 +318,139 @@ public final class DefaultTensor implements Tensor {
         return record(OpType.SUM, new Tensor[] { this }, new Object[] { dim, keepDim }, backend.sum(this, dim, keepDim));
     }
 
+
+    /**
+     * Concatenates eager tensors and records a multi-input graph node when any
+     * source participates in autograd.
+     */
+    public static Tensor cat(java.util.List<Tensor> tensors, int axis) {
+        Objects.requireNonNull(tensors, "tensors must not be null");
+        if (tensors.isEmpty()) {
+            throw new IllegalArgumentException("At least one tensor is required for concatenation");
+        }
+        Tensor first = Objects.requireNonNull(tensors.get(0), "tensor must not be null");
+        if (!(first instanceof DefaultTensor firstEager)) {
+            throw new UnsupportedOperationException("Concatenation currently requires eager DefaultTensor inputs");
+        }
+        firstEager.ensureOpen();
+        int rank = first.shape().rank();
+        int normalizedAxis = axis < 0 ? rank + axis : axis;
+        if (normalizedAxis < 0 || normalizedAxis >= rank) {
+            throw new IllegalArgumentException(
+                    "Concatenation axis " + axis + " is out of range for tensor rank " + rank);
+        }
+
+        boolean requiresGrad = false;
+        for (Tensor tensor : tensors) {
+            Objects.requireNonNull(tensor, "tensor must not be null");
+            if (!(tensor instanceof DefaultTensor eager)) {
+                throw new UnsupportedOperationException(
+                        "Concatenation currently requires eager DefaultTensor inputs");
+            }
+            eager.ensureOpen();
+            if (tensor.backend() != first.backend()) {
+                throw new IllegalArgumentException("All concatenated tensors must use the same backend instance");
+            }
+            if (tensor.dtype() != first.dtype() || tensor.device() != first.device()) {
+                throw new IllegalArgumentException("All concatenated tensors must have the same dtype and device");
+            }
+            if (tensor.shape().rank() != rank) {
+                throw new IllegalArgumentException("All concatenated tensors must have the same rank");
+            }
+            for (int dimension = 0; dimension < rank; dimension++) {
+                if (dimension != normalizedAxis
+                        && tensor.shape().dim(dimension) != first.shape().dim(dimension)) {
+                    throw new IllegalArgumentException(
+                            "Concatenation dimensions must match outside axis " + normalizedAxis);
+                }
+            }
+            requiresGrad |= tensor.requiresGrad();
+        }
+
+        Tensor result = first.backend().cat(tensors, normalizedAxis);
+        if (!AutogradContext.isRecordingEnabled() || !requiresGrad) {
+            return result;
+        }
+        if (!(result instanceof DefaultTensor eagerResult)) {
+            result.release();
+            throw new UnsupportedOperationException(
+                    "Autograd recording requires an eager DefaultTensor concatenation result");
+        }
+        java.util.List<GraphNode> inputNodes = tensors.stream()
+                .map(tensor -> {
+                    DefaultTensor eager = (DefaultTensor) tensor;
+                    return eager.autogradNode != null ? eager.autogradNode : GraphNode.constant(tensor);
+                })
+                .toList();
+        GraphNode node = new GraphNode(
+                OpType.CAT,
+                inputNodes,
+                new Object[] { normalizedAxis },
+                eagerResult.shape(),
+                eagerResult.dtype(),
+                OperationBackwardFunctions.forOperation(OpType.CAT));
+        node.setMaterializedData(result);
+        eagerResult.autogradNode = node;
+        return result;
+    }
+
     @Override
     public java.util.List<Tensor> split(int axis, int parts) {
-        if (requiresGrad()) {
-            throw new UnsupportedOperationException("Autograd for split is not implemented yet");
+        ensureOpen();
+        int rank = shape.rank();
+        int normalizedAxis = axis < 0 ? rank + axis : axis;
+        if (normalizedAxis < 0 || normalizedAxis >= rank) {
+            throw new IllegalArgumentException(
+                    "Split axis " + axis + " is out of range for tensor rank " + rank);
         }
-        return backend.split(this, axis, parts);
+        if (parts <= 0 || shape.dim(normalizedAxis) % parts != 0) {
+            throw new IllegalArgumentException(
+                    "Split dimension " + shape.dim(normalizedAxis)
+                            + " must be evenly divisible by a positive part count; parts=" + parts);
+        }
+
+        java.util.List<Tensor> outputs = backend.split(this, normalizedAxis, parts);
+        if (!AutogradContext.isRecordingEnabled()
+                || !java.util.Arrays.stream(new Tensor[] { this }).anyMatch(Tensor::requiresGrad)) {
+            return outputs;
+        }
+
+        if (outputs.size() != parts) {
+            outputs.forEach(Tensor::release);
+            throw new IllegalStateException(
+                    "Backend returned " + outputs.size() + " split outputs; expected " + parts);
+        }
+        if (outputs.stream().anyMatch(output -> !(output instanceof DefaultTensor))) {
+            outputs.forEach(Tensor::release);
+            throw new UnsupportedOperationException(
+                    "Autograd recording requires eager DefaultTensor split outputs");
+        }
+
+        long chunkSize = shape.dim(normalizedAxis) / parts;
+        try {
+            for (int index = 0; index < outputs.size(); index++) {
+                Tensor output = outputs.get(index);
+                DefaultTensor eagerOutput = (DefaultTensor) output;
+                long[] offsets = new long[rank];
+                long[] sizes = shape.dims();
+                offsets[normalizedAxis] = Math.multiplyExact((long) index, chunkSize);
+                sizes[normalizedAxis] = chunkSize;
+                GraphNode inputNode = autogradNode != null ? autogradNode : GraphNode.constant(this);
+                GraphNode node = new GraphNode(
+                        OpType.SLICE,
+                        java.util.List.of(inputNode),
+                        new Object[] { offsets, sizes },
+                        eagerOutput.shape(),
+                        eagerOutput.dtype(),
+                        OperationBackwardFunctions.forOperation(OpType.SLICE));
+                node.setMaterializedData(output);
+                eagerOutput.autogradNode = node;
+            }
+            return outputs;
+        } catch (RuntimeException | Error failure) {
+            outputs.forEach(Tensor::release);
+            throw failure;
+        }
     }
 
     @Override

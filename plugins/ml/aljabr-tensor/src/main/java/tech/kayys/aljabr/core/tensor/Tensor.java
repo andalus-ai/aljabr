@@ -44,6 +44,16 @@ public interface Tensor extends AutoCloseable {
                 "Backing storage is not exposed by " + getClass().getName());
     }
 
+    /**
+     * Concatenates tensors along an existing dimension.
+     *
+     * <p>All inputs must use the same backend and have compatible non-concatenated
+     * dimensions. The first tensor determines the backend.</p>
+     */
+    static Tensor cat(java.util.List<Tensor> tensors, int axis) {
+        return DefaultTensor.cat(tensors, axis);
+    }
+
     Tensor add(Tensor other);
 
     Tensor sub(Tensor other);

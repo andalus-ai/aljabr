@@ -222,4 +222,154 @@ class DefaultTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void eagerTransposeBackwardAppliesTheInverseDimensionSwap() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor transposed = x.transpose(0, 1);
+        Tensor seed = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 3, 2);
+        try {
+            transposed.backward(seed);
+            assertArrayEquals(new float[] { 1, 3, 5, 2, 4, 6 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            transposed.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerReshapeFlattenUnsqueezeAndSqueezeRestoreOriginalShapeInBackward() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        Tensor reshaped = x.reshape(1, 2, 3);
+        Tensor flattened = reshaped.flatten();
+        Tensor squeezed = flattened.reshape(1, 6).squeeze();
+        Tensor expanded = squeezed.unsqueeze(0);
+        Tensor seed = TensorFactory.of(new float[] { 2, 3, 4, 5, 6, 7 }, backend, 1, 6);
+        try {
+            expanded.backward(seed);
+            assertArrayEquals(new float[] { 2, 3, 4, 5, 6, 7 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            expanded.release();
+            squeezed.release();
+            flattened.release();
+            reshaped.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerSliceBackwardScattersGradientIntoTheOriginalCoordinates() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(
+                new float[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }, backend, 3, 4);
+        x.setRequiresGrad(true);
+        Tensor sliced = x.slice(new long[] { 1, 1 }, new long[] { 2, 2 });
+        Tensor seed = TensorFactory.of(new float[] { 10, 20, 30, 40 }, backend, 2, 2);
+        try {
+            sliced.backward(seed);
+            assertArrayEquals(
+                    new float[] { 0, 0, 0, 0, 0, 10, 20, 0, 0, 30, 40, 0 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            sliced.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerSplitOutputsAccumulateTheirGradientsIntoTheSharedInput() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        java.util.List<Tensor> parts = x.split(1, 3);
+        Tensor firstLoss = parts.get(0).sum();
+        Tensor secondLoss = parts.get(1).sum();
+        Tensor thirdLoss = parts.get(2).sum();
+        Tensor partialLoss = firstLoss.add(secondLoss);
+        Tensor loss = partialLoss.add(thirdLoss);
+        try {
+            loss.backward();
+            assertArrayEquals(new float[] { 1, 1, 1, 1, 1, 1 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            partialLoss.release();
+            thirdLoss.release();
+            secondLoss.release();
+            firstLoss.release();
+            parts.forEach(Tensor::release);
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerSplitRejectsUnevenPartitionsInsteadOfDroppingElements() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5 }, backend, 5);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> x.split(0, 2));
+        } finally {
+            x.release();
+            backend.close();
+        }
+    }
+
+
+    @Test
+    void eagerConcatenationRoutesGradientSlicesToEveryInput() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, backend, 2, 2);
+        Tensor middle = TensorFactory.of(new float[] { 5, 6 }, backend, 2, 1);
+        Tensor right = TensorFactory.of(new float[] { 7, 8, 9, 10, 11, 12 }, backend, 2, 3);
+        left.setRequiresGrad(true);
+        middle.setRequiresGrad(true);
+        right.setRequiresGrad(true);
+        Tensor joined = Tensor.cat(java.util.List.of(left, middle, right), -1);
+        Tensor seed = TensorFactory.of(
+                new float[] { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120 },
+                backend, 2, 6);
+        try {
+            joined.backward(seed);
+            assertArrayEquals(new float[] { 10, 20, 70, 80 }, left.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 30, 90 }, middle.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 40, 50, 60, 100, 110, 120 },
+                    right.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            joined.release();
+            right.release();
+            middle.release();
+            left.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerConcatenationValidatesCompatibleShapes() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[] { 1, 2 }, backend, 1, 2);
+        Tensor right = TensorFactory.of(new float[] { 3, 4, 5, 6 }, backend, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> Tensor.cat(java.util.List.of(left, right), 1));
+        } finally {
+            right.release();
+            left.release();
+            backend.close();
+        }
+    }
+
 }
