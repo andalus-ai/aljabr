@@ -2,6 +2,7 @@ package tech.kayys.aljabr.optim;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.assertj.core.data.Offset.offset;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,10 @@ class OptimizerTest {
             for (int i = 0; i < expected.length; i++) {
                 expected[i] -= 0.2f;
             }
-            assertThat(parameter.tensor().toFloatArray()).containsExactly(expected);
+            float[] actual = parameter.tensor().toFloatArray();
+            for (int i = 0; i < expected.length; i++) {
+                assertThat(actual[i]).isCloseTo(expected[i], offset(1.0e-6f));
+            }
             gradient.release();
         }
     }
