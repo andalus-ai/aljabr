@@ -81,10 +81,10 @@ public final class AdamW implements Optimizer, AutoCloseable {
                     Tensor previousFirst = parameterReplaced ? null : state.firstMoment.get(name);
                     Tensor previousSecond = parameterReplaced ? null : state.secondMoment.get(name);
                     Tensor first = updateFirstMoment(gradient, previousFirst);
-                    Tensor second = updateSecondMoment(gradient, previousSecond);
-                    Tensor update = computeUpdate(current, first, second, correction1, correction2);
                     nextFirst.put(name, first);
+                    Tensor second = updateSecondMoment(gradient, previousSecond);
                     nextSecond.put(name, second);
+                    Tensor update = computeUpdate(current, first, second, correction1, correction2);
                     updates.put(name, update);
                     nextSteps.put(name, nextStep);
                 }
