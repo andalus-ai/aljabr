@@ -33,6 +33,7 @@ public final class OperationBackwardFunctions {
             case RESHAPE, FLATTEN, UNSQUEEZE, SQUEEZE -> OperationBackwardFunctions::restoreInputShape;
             case TRANSPOSE -> OperationBackwardFunctions::transpose;
             case SLICE -> OperationBackwardFunctions::slice;
+            case CAT -> OperationBackwardFunctions::cat;
             case MEAN -> OperationBackwardFunctions::mean;
             case SUM -> OperationBackwardFunctions::sum;
             case SIGMOID -> OperationBackwardFunctions::sigmoid;
@@ -119,6 +120,45 @@ public final class OperationBackwardFunctions {
             return new Tensor[] { result };
         } finally {
             if (ownsCurrent && current != null) current.release();
+        }
+    }
+
+
+    /**
+     * Routes each concatenated region of the upstream gradient to its source input.
+     * The returned array follows the graph node's input order.
+     */
+    private static Tensor[] cat(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        if (inputs.isEmpty()) {
+            throw new IllegalArgumentException("CAT VJP requires at least one input");
+        }
+        int axis = (int) arguments[0];
+        int rank = gradient.shape().rank();
+        int normalizedAxis = normalizeDimension(axis, rank);
+        Tensor[] gradients = new Tensor[inputs.size()];
+        long offset = 0;
+        try {
+            for (int index = 0; index < inputs.size(); index++) {
+                Tensor input = inputs.get(index);
+                if (input.shape().rank() != rank) {
+                    throw new IllegalArgumentException("CAT input rank does not match output rank");
+                }
+                long[] offsets = new long[rank];
+                long[] sizes = input.shape().dims();
+                offsets[normalizedAxis] = offset;
+                gradients[index] = gradient.slice(offsets, sizes);
+                offset = Math.addExact(offset, sizes[normalizedAxis]);
+            }
+            if (offset != gradient.shape().dim(normalizedAxis)) {
+                throw new IllegalArgumentException("CAT input dimensions do not cover output gradient");
+            }
+            return gradients;
+        } catch (RuntimeException | Error failure) {
+            for (Tensor value : gradients) {
+                if (value != null) value.release();
+            }
+            throw failure;
         }
     }
 
