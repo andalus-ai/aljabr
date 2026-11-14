@@ -45,8 +45,9 @@ public final class AdamW implements Optimizer, AutoCloseable {
 
         boolean hasGradient = false;
         for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
-            Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + entry.getKey());
-            Tensor gradient = gradients.get(entry.getKey());
+            String name = Objects.requireNonNull(entry.getKey(), "parameter name must not be null");
+            Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
+            Tensor gradient = gradients.get(name);
             if (gradient != null && parameter.isTrainable()) {
                 parameter.validateGradient(gradient);
                 hasGradient = true;
@@ -59,6 +60,7 @@ public final class AdamW implements Optimizer, AutoCloseable {
         long nextStep = state.step + 1;
         Map<String, Tensor> nextFirst = new LinkedHashMap<>();
         Map<String, Tensor> nextSecond = new LinkedHashMap<>();
+        Map<String, Tensor> nextSnapshots = new LinkedHashMap<>();
         Map<String, Tensor> updates = new LinkedHashMap<>();
         float correction1 = 1.0f - (float) Math.pow(beta1, nextStep);
         float correction2 = 1.0f - (float) Math.pow(beta2, nextStep);
@@ -71,8 +73,11 @@ public final class AdamW implements Optimizer, AutoCloseable {
                 continue;
             }
 
-            Tensor oldFirst = state.firstMoment.get(name);
-            Tensor oldSecond = state.secondMoment.get(name);
+            Tensor current = parameter.tensor();
+            boolean parameterWasReplaced = state.parameterSnapshots.containsKey(name)
+                    && state.parameterSnapshots.get(name) != current;
+            Tensor oldFirst = parameterWasReplaced ? null : state.firstMoment.get(name);
+            Tensor oldSecond = parameterWasReplaced ? null : state.secondMoment.get(name);
             Tensor first = (oldFirst == null ? gradient.zerosLike() : oldFirst.mul(beta1))
                     .add(gradient.mul(1.0f - beta1));
             Tensor second = (oldSecond == null ? gradient.zerosLike() : oldSecond.mul(beta2))
@@ -80,15 +85,15 @@ public final class AdamW implements Optimizer, AutoCloseable {
             Tensor firstHat = first.div(correction1);
             Tensor secondHat = second.div(correction2);
             Tensor adaptive = firstHat.div(secondHat.sqrt().add(epsilon));
-            Tensor current = parameter.tensor();
             Tensor decayed = current.sub(current.mul(learningRate * weightDecay));
 
             nextFirst.put(name, first);
             nextSecond.put(name, second);
+            nextSnapshots.put(name, current);
             updates.put(name, decayed.sub(adaptive.mul(learningRate)));
         }
 
-        // Publish new optimizer state and parameter values only after all updates compute.
+        // Commit the newly computed state only after every parameter update was computed.
         nextFirst.forEach((name, value) -> {
             Tensor old = state.firstMoment.put(name, value);
             if (old != null) old.release();
@@ -97,7 +102,15 @@ public final class AdamW implements Optimizer, AutoCloseable {
             Tensor old = state.secondMoment.put(name, value);
             if (old != null) old.release();
         });
-        updates.forEach((name, value) -> parameters.get(name).updateTensor(value));
+        nextSnapshots.forEach((name, value) -> {
+            if (state.parameterSnapshots.get(name) != value) {
+                state.parameterSnapshots.put(name, value);
+            }
+        });
+        updates.forEach((name, value) -> {
+            parameters.get(name).updateTensor(value);
+            state.parameterSnapshots.put(name, value);
+        });
         state.step = nextStep;
     }
 
