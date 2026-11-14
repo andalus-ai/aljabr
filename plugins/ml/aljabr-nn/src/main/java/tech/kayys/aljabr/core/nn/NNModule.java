@@ -212,9 +212,6 @@ public abstract class NNModule implements AutoCloseable {
             }
             Tensor zeroGradient = previousGradient.zerosLike();
             parameter.setGrad(zeroGradient);
-            if (previousGradient != zeroGradient) {
-                previousGradient.release();
-            }
         });
         submodules.values().forEach(NNModule::zeroGrad);
     }
