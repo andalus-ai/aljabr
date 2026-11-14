@@ -311,6 +311,7 @@ public final class CpuBackend implements ComputeBackend {
         MemorySegment left = seg(a);
         MemorySegment right = seg(b);
         MemorySegment output = outBuf.segment();
+        output.fill((byte) 0);
         long leftMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, k), Float.BYTES);
         long rightMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) k, n), Float.BYTES);
         long outputMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, n), Float.BYTES);
