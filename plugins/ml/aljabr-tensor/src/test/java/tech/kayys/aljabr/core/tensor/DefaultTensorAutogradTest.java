@@ -425,12 +425,12 @@ class DefaultTensorAutogradTest {
                     2, 2, 4, 6
             }, product.toFloatArray(), 1.0e-6f);
             loss.backward();
-            assertArrayEquals(new float[] { 7, 8, 7, 8 },
+            assertArrayEquals(new float[] { 6, 9, 6, 9 },
                     left.grad().toFloatArray(), 1.0e-6f);
             assertArrayEquals(new float[] {
-                    4, 6, 4, 6,
-                    4, 6, 4, 6,
-                    4, 6, 4, 6
+                    4, 4, 6, 6,
+                    4, 4, 6, 6,
+                    4, 4, 6, 6
             }, right.grad().toFloatArray(), 1.0e-6f);
         } finally {
             loss.release();
@@ -461,12 +461,12 @@ class DefaultTensorAutogradTest {
                     2, 2, 4, 6
             }, product.toFloatArray(), 1.0e-6f);
             loss.backward();
-            assertArrayEquals(new float[] { 7, 8, 7, 8 },
+            assertArrayEquals(new float[] { 6, 9, 6, 9 },
                     left.grad().toFloatArray(), 1.0e-6f);
             assertArrayEquals(new float[] {
-                    4, 6, 4, 6,
-                    4, 6, 4, 6,
-                    4, 6, 4, 6
+                    4, 4, 6, 6,
+                    4, 4, 6, 6,
+                    4, 4, 6, 6
             }, right.grad().toFloatArray(), 1.0e-6f);
         } finally {
             loss.release();
