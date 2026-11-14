@@ -327,4 +327,49 @@ class DefaultTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void eagerConcatenationRoutesGradientSlicesToEveryInput() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, backend, 2, 2);
+        Tensor middle = TensorFactory.of(new float[] { 5, 6 }, backend, 2, 1);
+        Tensor right = TensorFactory.of(new float[] { 7, 8, 9, 10, 11, 12 }, backend, 2, 3);
+        left.setRequiresGrad(true);
+        middle.setRequiresGrad(true);
+        right.setRequiresGrad(true);
+        Tensor joined = Tensor.cat(java.util.List.of(left, middle, right), -1);
+        Tensor seed = TensorFactory.of(
+                new float[] { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120 },
+                backend, 2, 6);
+        try {
+            joined.backward(seed);
+            assertArrayEquals(new float[] { 10, 20, 70, 80 }, left.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 30, 90 }, middle.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 40, 50, 60, 100, 110, 120 },
+                    right.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            joined.release();
+            right.release();
+            middle.release();
+            left.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerConcatenationValidatesCompatibleShapes() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[] { 1, 2 }, backend, 1, 2);
+        Tensor right = TensorFactory.of(new float[] { 3, 4, 5, 6 }, backend, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> Tensor.cat(java.util.List.of(left, right), 1));
+        } finally {
+            right.release();
+            left.release();
+            backend.close();
+        }
+    }
+
 }
