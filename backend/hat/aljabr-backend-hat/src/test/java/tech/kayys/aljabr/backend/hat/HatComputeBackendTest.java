@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -49,6 +50,10 @@ public class HatComputeBackendTest {
 
         assertNotNull(result);
         assertEquals(4, backend.numel(result));
+        assertInstanceOf(CpuBackend.class, result.backend(),
+                "Operations without a HAT kernel must retain CPU fallback ownership");
+        assertEquals(tech.kayys.aljabr.core.tensor.DeviceType.CPU, result.device(),
+                "CPU fallback results must report the device that executed the operation");
 
         // Verify values via array copy (CPU mode mapping)
         float[] out = result.toFloatArray();
