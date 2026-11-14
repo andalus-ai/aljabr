@@ -372,4 +372,36 @@ class DefaultTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void eagerBatchedMatmulComputesEveryBatchAndBackpropagates() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(
+                new float[] { 1, 2, 3, 4, 2, 0, 0, 2 }, backend, 2, 2, 2);
+        Tensor right = TensorFactory.of(
+                new float[] { 5, 6, 7, 8, 1, 2, 3, 4 }, backend, 2, 2, 2);
+        left.setRequiresGrad(true);
+        right.setRequiresGrad(true);
+        Tensor product = left.matmul(right);
+        Tensor loss = product.sum();
+        try {
+            assertArrayEquals(
+                    new float[] { 19, 22, 43, 50, 2, 4, 6, 8 },
+                    product.toFloatArray(), 1.0e-6f);
+            loss.backward();
+            assertArrayEquals(
+                    new float[] { 11, 15, 11, 15, 3, 7, 3, 7 },
+                    left.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(
+                    new float[] { 4, 4, 6, 6, 2, 2, 2, 2 },
+                    right.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            product.release();
+            right.release();
+            left.release();
+            backend.close();
+        }
+    }
+
 }
