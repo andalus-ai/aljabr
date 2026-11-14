@@ -96,6 +96,37 @@ class OptimizerTest {
     }
 
     @Test
+    void trainsLinearAcrossConsecutiveForwardBackwardAndOptimizerSteps() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 3f, 4f }, backend, 1, 2);
+        Tensor initialWeight = TensorFactory.of(new float[] { 1f, 2f }, backend, 1, 2);
+        try (Linear layer = new Linear(initialWeight, null)) {
+            Parameter parameter = layer.namedParameterObjects().get("weight");
+            SGD optimizer = new SGD(0.1f);
+
+            try (Tensor output = layer.forward(input);
+                 Tensor loss = output.sum()) {
+                loss.backward();
+            }
+            assertThat(parameter.tensor().grad().toFloatArray()).containsExactly(3f, 4f);
+            optimizer.step(Map.of("weight", parameter),
+                    Map.of("weight", parameter.tensor().grad()));
+            assertThat(parameter.tensor().toFloatArray()).containsExactly(0.7f, 1.6f);
+
+            try (Tensor output = layer.forward(input);
+                 Tensor loss = output.sum()) {
+                loss.backward();
+            }
+            assertThat(parameter.tensor().grad().toFloatArray()).containsExactly(3f, 4f);
+            optimizer.step(Map.of("weight", parameter),
+                    Map.of("weight", parameter.tensor().grad()));
+            assertThat(parameter.tensor().toFloatArray()).containsExactly(0.4f, 1.2f);
+        } finally {
+            input.release();
+        }
+    }
+
+    @Test
     void frozenParametersAreNotUpdated() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, false)) {
