@@ -64,6 +64,16 @@ class HatComputeProviderTest {
             assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID, fallback.effectiveBackendId());
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(fallback.effectiveBackendId()));
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.relu", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.cat", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.upsample_nearest2d", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention.masked", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.unknown", Map.of()).support());
         } finally {
             provider.close();
         }
