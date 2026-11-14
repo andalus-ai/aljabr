@@ -320,10 +320,56 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public java.util.List<Tensor> split(int axis, int parts) {
-        if (requiresGrad()) {
-            throw new UnsupportedOperationException("Autograd for split is not implemented yet");
+        ensureOpen();
+        int rank = shape.rank();
+        int normalizedAxis = axis < 0 ? rank + axis : axis;
+        if (normalizedAxis < 0 || normalizedAxis >= rank) {
+            throw new IllegalArgumentException(
+                    "Split axis " + axis + " is out of range for tensor rank " + rank);
         }
-        return backend.split(this, axis, parts);
+        if (parts <= 0 || shape.dim(normalizedAxis) % parts != 0) {
+            throw new IllegalArgumentException(
+                    "Split dimension " + shape.dim(normalizedAxis)
+                            + " must be evenly divisible by a positive part count; parts=" + parts);
+        }
+
+        java.util.List<Tensor> outputs = backend.split(this, normalizedAxis, parts);
+        if (!AutogradContext.isRecordingEnabled()
+                || !java.util.Arrays.stream(new Tensor[] { this }).anyMatch(Tensor::requiresGrad)) {
+            return outputs;
+        }
+
+        java.util.List<Tensor> recorded = new java.util.ArrayList<>(outputs.size());
+        long chunkSize = shape.dim(normalizedAxis) / parts;
+        try {
+            for (int index = 0; index < outputs.size(); index++) {
+                Tensor output = outputs.get(index);
+                if (!(output instanceof DefaultTensor eagerOutput)) {
+                    throw new UnsupportedOperationException(
+                            "Autograd recording requires eager DefaultTensor split outputs; got "
+                                    + output.getClass().getName());
+                }
+                long[] offsets = new long[rank];
+                long[] sizes = shape.dims();
+                offsets[normalizedAxis] = Math.multiplyExact((long) index, chunkSize);
+                sizes[normalizedAxis] = chunkSize;
+                GraphNode inputNode = autogradNode != null ? autogradNode : GraphNode.constant(this);
+                GraphNode node = new GraphNode(
+                        OpType.SLICE,
+                        java.util.List.of(inputNode),
+                        new Object[] { offsets, sizes },
+                        eagerOutput.shape(),
+                        eagerOutput.dtype(),
+                        OperationBackwardFunctions.forOperation(OpType.SLICE));
+                node.setMaterializedData(output);
+                eagerOutput.autogradNode = node;
+                recorded.add(output);
+            }
+            return outputs;
+        } catch (RuntimeException | Error failure) {
+            outputs.forEach(Tensor::release);
+            throw failure;
+        }
     }
 
     @Override
