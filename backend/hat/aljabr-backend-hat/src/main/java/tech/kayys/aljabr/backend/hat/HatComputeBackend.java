@@ -76,7 +76,7 @@ public class HatComputeBackend implements ComputeBackend {
         int outputLength = Math.multiplyExact(rows, columns);
         float[] result = new float[outputLength];
         if (outputLength == 0 || reductionSize == 0) {
-            return TensorFactory.of(result, rows, columns);
+            return TensorFactory.of(result, this, rows, columns);
         }
 
         synchronized (hatExecutionLock) {
