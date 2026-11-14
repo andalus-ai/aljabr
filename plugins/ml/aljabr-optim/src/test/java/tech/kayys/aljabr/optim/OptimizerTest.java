@@ -20,14 +20,17 @@ class OptimizerTest {
             Parameter parameter = layer.namedParameterObjects().get("weight");
             Tensor original = parameter.tensor();
             Tensor gradient = TensorFactory.ones(backend, 2, 2);
-            new SGD(0.1f).step(Map.of("weight", parameter), Map.of("weight", gradient));
+            SGD optimizer = new SGD(0.1f);
+            optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
+            // A second step verifies that the first replacement is a fresh leaf tensor.
+            optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
 
             assertThat(parameter.tensor()).isNotSameAs(original);
             assertThat(parameter.tensor()).isSameAs(layer.parameters().get("weight"));
             assertThat(parameter.requiresGrad()).isTrue();
             float[] expected = original.toFloatArray();
             for (int i = 0; i < expected.length; i++) {
-                expected[i] -= 0.1f;
+                expected[i] -= 0.2f;
             }
             assertThat(parameter.tensor().toFloatArray()).containsExactly(expected);
             gradient.release();
@@ -62,6 +65,8 @@ class OptimizerTest {
             Tensor original = parameter.tensor();
             optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
             assertThat(parameter.tensor()).isNotSameAs(original);
+            // Optimizer arithmetic must not build a new autograd graph across steps.
+            optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
             optimizer.reset();
             gradient.release();
         }
