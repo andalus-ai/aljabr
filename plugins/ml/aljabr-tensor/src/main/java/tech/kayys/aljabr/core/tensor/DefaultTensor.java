@@ -618,7 +618,18 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public void setGrad(Tensor g) {
+        ensureOpen();
+        if (g == this) {
+            throw new IllegalArgumentException("A tensor cannot own itself as its gradient");
+        }
+        Tensor previous = this.grad;
+        if (previous == g) {
+            return;
+        }
         this.grad = g;
+        if (previous != null) {
+            previous.release();
+        }
     }
 
     @Override

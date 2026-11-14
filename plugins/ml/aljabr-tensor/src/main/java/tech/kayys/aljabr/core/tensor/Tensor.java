@@ -127,8 +127,21 @@ public interface Tensor extends AutoCloseable {
                 "Explicit-gradient backward is not supported by " + getClass().getName());
     }
 
+    /**
+     * Returns the gradient currently owned by this tensor, or {@code null}.
+     * The returned reference is borrowed; callers must not release it.
+     */
     Tensor grad();
 
+    /**
+     * Assigns the gradient owned by this tensor.
+     *
+     * <p>Ownership of {@code grad} is transferred to this tensor. Replacing an
+     * existing gradient releases the previously owned gradient. Passing
+     * {@code null} clears the gradient.</p>
+     *
+     * @param grad gradient tensor to take ownership of, or {@code null}
+     */
     void setGrad(Tensor grad);
 
     boolean requiresGrad();

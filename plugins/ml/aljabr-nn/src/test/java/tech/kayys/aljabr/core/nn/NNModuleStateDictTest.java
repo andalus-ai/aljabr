@@ -58,6 +58,49 @@ class NNModuleStateDictTest {
     }
 
     @Test
+    void replacingOrClearingGradientReleasesThePreviouslyOwnedGradient() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true)) {
+            Tensor parameter = layer.stateDict().get("weight");
+            Tensor first = TensorFactory.of(new float[] { 1f, 1f, 1f, 1f }, backend, 2, 2);
+            Tensor second = TensorFactory.of(new float[] { 2f, 2f, 2f, 2f }, backend, 2, 2);
+
+            parameter.setGrad(first);
+            parameter.setGrad(second);
+
+            assertThatThrownBy(first::toFloatArray)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("released");
+            assertThat(parameter.grad()).isSameAs(second);
+
+            parameter.setGrad(null);
+
+            assertThat(parameter.grad()).isNull();
+            assertThatThrownBy(second::toFloatArray)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("released");
+        } finally {
+            backend.close();
+        }
+    }
+
+    @Test
+    void closingModuleReleasesGradientsOwnedByRegisteredParameters() {
+        CpuBackend backend = new CpuBackend();
+        Linear layer = new Linear(backend, 2, 2, true);
+        Tensor parameter = layer.stateDict().get("weight");
+        Tensor gradient = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
+        parameter.setGrad(gradient);
+
+        layer.close();
+
+        assertThatThrownBy(gradient::toFloatArray)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("released");
+        backend.close();
+    }
+
+    @Test
     void strictLoadRejectsMissingAndUnexpectedKeysBeforeMutation() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, true)) {

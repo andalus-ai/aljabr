@@ -32,6 +32,29 @@ class DefaultTensorAutogradTest {
     }
 
     @Test
+    void separateBackwardPassesAccumulateIntoTheSameLeafGradient() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 2.0f }, backend, 1);
+        x.setRequiresGrad(true);
+        Tensor firstOutput = x.mul(2.0f);
+        Tensor secondOutput = x.mul(3.0f);
+
+        try {
+            firstOutput.backward();
+            assertEquals(2.0f, x.grad().item(), 1.0e-6f);
+
+            firstOutput.release();
+            secondOutput.backward();
+
+            assertEquals(5.0f, x.grad().item(), 1.0e-6f);
+        } finally {
+            secondOutput.release();
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
     void eagerScalarArithmeticSupportsExplicitVectorGradient() {
         CpuBackend backend = new CpuBackend();
         Tensor x = TensorFactory.of(new float[] { 1.0f, 2.0f }, backend, 2);
