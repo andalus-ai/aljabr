@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.spi.compute.ComputeProvider;
 import tech.kayys.aljabr.spi.compute.ProviderSession;
 import tech.kayys.aljabr.spi.provider.CapabilityDescriptor;
@@ -74,7 +75,9 @@ public final class HatComputeProvider implements ComputeProvider {
                     + requested.deviceId());
         }
 
-        HatProviderSession session = new HatProviderSession(this, device, new HatComputeBackend());
+        CpuBackend cpuFallback = new CpuBackend();
+        HatComputeBackend hatBackend = new HatComputeBackend(cpuFallback);
+        HatProviderSession session = new HatProviderSession(this, device, hatBackend, cpuFallback);
         sessions.add(session);
         return session;
     }
@@ -111,10 +114,16 @@ public final class HatComputeProvider implements ComputeProvider {
         private final Map<String, ComputeBackend> backends;
         private boolean closed;
 
-        private HatProviderSession(HatComputeProvider owner, DeviceDescriptor device, HatComputeBackend backend) {
+        private HatProviderSession(
+                HatComputeProvider owner,
+                DeviceDescriptor device,
+                HatComputeBackend hatBackend,
+                CpuBackend cpuFallback) {
             this.owner = owner;
             this.device = device;
-            this.backends = Map.of(BACKEND_ID, backend);
+            this.backends = Map.of(
+                    BACKEND_ID, hatBackend,
+                    CPU_FALLBACK_BACKEND_ID, cpuFallback);
         }
 
         @Override
