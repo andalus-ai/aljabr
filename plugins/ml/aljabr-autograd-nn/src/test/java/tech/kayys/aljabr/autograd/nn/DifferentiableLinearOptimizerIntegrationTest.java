@@ -23,7 +23,7 @@ class DifferentiableLinearOptimizerIntegrationTest {
             weight.updateTensor(TensorFactory.zeros(backend, 1, 1));
 
             Tensor inputValue = TensorFactory.ones(backend, 1, 1);
-            Tensor targetValue = TensorFactory.ones(backend, 1, 1).mul(2.0f);
+            Tensor targetValue = TensorFactory.ones(backend, 1, 1);
             float initialLoss;
             try (AutogradContext context = new AutogradContext()) {
                 Variable input = context.variable(inputValue, false);
