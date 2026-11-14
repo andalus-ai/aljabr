@@ -34,6 +34,23 @@ public final class HatComputeProvider implements ComputeProvider {
     public static final String BACKEND_ID = "hat-java-default";
     public static final String CPU_FALLBACK_BACKEND_ID = "cpu-fallback";
 
+    private static final Set<String> CPU_DELEGATED_OPERATIONS = Set.of(
+            "tensor.add", "tensor.sub", "tensor.mul", "tensor.div",
+            "tensor.mul_scalar", "tensor.div_scalar", "tensor.add_scalar",
+            "tensor.reshape", "tensor.slice", "tensor.split",
+            "tensor.flatten", "tensor.unsqueeze", "tensor.squeeze", "tensor.transpose",
+            "tensor.softmax", "tensor.log_softmax", "tensor.mean", "tensor.sum",
+            "tensor.max", "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
+            "tensor.sigmoid", "tensor.tanh", "tensor.sqrt", "tensor.exp", "tensor.log",
+            "tensor.pow", "tensor.layer_norm", "tensor.rms_norm", "tensor.batch_norm",
+            "tensor.conv2d", "tensor.max_pool2d", "tensor.adaptive_avg_pool2d",
+            "tensor.dropout", "tensor.cross_entropy", "tensor.binary_cross_entropy",
+            "tensor.zeros_like");
+
+    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
+            "tensor.cat", "tensor.upsample_nearest2d", "tensor.attention",
+            "tensor.attention.masked", "tensor.rope");
+
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
             Set.of(new CapabilityDescriptor("tensor.compute", "1", CapabilityStability.EXPERIMENTAL)));
@@ -156,10 +173,21 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
 
-            // HatComputeBackend delegates every operation without a HAT kernel
-            // to its CPU fallback. Keep that distinction visible to selectors.
-            return new OperationSupportDescriptor(
-                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            if (CPU_DELEGATED_OPERATIONS.contains(operationId)) {
+                String dtype = constraints.get("dtype");
+                if (dtype == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (!"F32".equalsIgnoreCase(dtype)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                return new OperationSupportDescriptor(
+                        operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+            if (UNSUPPORTED_OPERATIONS.contains(operationId)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
         }
 
         @Override

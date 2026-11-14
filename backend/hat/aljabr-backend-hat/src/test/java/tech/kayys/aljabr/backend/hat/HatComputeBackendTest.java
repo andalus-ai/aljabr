@@ -80,6 +80,59 @@ public class HatComputeBackendTest {
         }
     }
     @Test
+    public void testCpuFallbackCanConsumeHatOwnedMatmulResult() {
+        Tensor left = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, 2, 2);
+        Tensor right = TensorFactory.of(new float[] { 5.0f, 6.0f, 7.0f, 8.0f }, 2, 2);
+
+        Tensor hatResult = backend.matmul(left, right);
+        assertEquals(backend, hatResult.backend());
+
+        Tensor fallbackResult = backend.add(hatResult, hatResult);
+
+        assertInstanceOf(CpuBackend.class, fallbackResult.backend(),
+                "CPU fallback must return a CPU-owned tensor when consuming HAT-owned host storage");
+        assertEquals(tech.kayys.aljabr.core.tensor.DeviceType.CPU, fallbackResult.device());
+        assertArrayEquals(new float[] { 38.0f, 44.0f, 86.0f, 100.0f },
+                fallbackResult.toFloatArray(), 1e-4f);
+    }
+
+    @Test
+    public void testHatMatmulCanConsumeCpuFallbackResult() {
+        Tensor left = TensorFactory.of(new float[] {
+                1.0f, 2.0f,
+                3.0f, 4.0f
+        }, 2, 2);
+        Tensor right = TensorFactory.of(new float[] {
+                5.0f, 6.0f,
+                7.0f, 8.0f
+        }, 2, 2);
+
+        Tensor cpuResult = backend.add(left, right);
+
+        assertInstanceOf(CpuBackend.class, cpuResult.backend(),
+                "Fallback input must remain CPU-owned before HAT dispatch");
+        assertEquals(tech.kayys.aljabr.core.tensor.DType.F32, cpuResult.dtype());
+        assertEquals(2, cpuResult.shape().dim(0));
+        assertEquals(2, cpuResult.shape().dim(1));
+        assertArrayEquals(new float[] { 6.0f, 8.0f, 10.0f, 12.0f },
+                cpuResult.toFloatArray(), 1e-4f);
+
+        Tensor identity = TensorFactory.of(new float[] {
+                1.0f, 0.0f,
+                0.0f, 1.0f
+        }, 2, 2);
+        Tensor hatResult = backend.matmul(cpuResult, identity);
+
+        assertEquals(backend, hatResult.backend(),
+                "Native HAT dispatch must own its result after consuming CPU storage");
+        assertEquals(tech.kayys.aljabr.core.tensor.DType.F32, hatResult.dtype());
+        assertEquals(2, hatResult.shape().dim(0));
+        assertEquals(2, hatResult.shape().dim(1));
+        assertArrayEquals(new float[] { 6.0f, 8.0f, 10.0f, 12.0f },
+                hatResult.toFloatArray(), 1e-4f);
+    }
+
+    @Test
     public void testMatmulSupportsRectangularRowMajorMatrices() {
         Tensor a = TensorFactory.of(new float[] {
                 1.0f, 2.0f, 3.0f,
