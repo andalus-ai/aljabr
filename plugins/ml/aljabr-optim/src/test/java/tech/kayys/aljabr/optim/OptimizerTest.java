@@ -219,6 +219,60 @@ class OptimizerTest {
 
 
     @Test
+    void adamWSkipsFrozenParametersWhileUpdatingTrainableParameters() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true);
+             AdamW optimizer = new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, 0.01f)) {
+            Parameter weight = layer.namedParameterObjects().get("weight");
+            Parameter bias = layer.namedParameterObjects().get("bias");
+            bias.setRequiresGrad(false);
+            Tensor originalWeight = weight.tensor();
+            Tensor originalBias = bias.tensor();
+            Tensor weightGradient = TensorFactory.ones(backend, 2, 2);
+            Tensor biasGradient = TensorFactory.ones(backend, 2);
+            try {
+                optimizer.step(
+                        Map.of("weight", weight, "bias", bias),
+                        Map.of("weight", weightGradient, "bias", biasGradient));
+
+                assertThat(weight.tensor()).isNotSameAs(originalWeight);
+                assertThat(bias.tensor()).isSameAs(originalBias);
+            } finally {
+                weightGradient.release();
+                biasGradient.release();
+            }
+        }
+    }
+
+    @Test
+    void adamWMissingGradientDoesNotAdvanceOptimizerState() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, false);
+             Linear referenceLayer = new Linear(backend, 2, 2, false);
+             AdamW optimizer = new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, 0.0f);
+             AdamW referenceOptimizer = new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, 0.0f)) {
+            Parameter parameter = layer.namedParameterObjects().get("weight");
+            Parameter referenceParameter = referenceLayer.namedParameterObjects().get("weight");
+            Tensor referenceInitialValue = TensorFactory.of(
+                    parameter.tensor().toFloatArray(), backend, 2, 2);
+            referenceParameter.updateTensor(referenceInitialValue);
+            Tensor gradient = TensorFactory.ones(backend, 2, 2);
+            try {
+                optimizer.step(Map.of("weight", parameter), Map.of());
+
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
+                referenceOptimizer.step(
+                        Map.of("weight", referenceParameter), Map.of("weight", gradient));
+
+                assertThat(parameter.tensor().toFloatArray())
+                        .containsExactly(referenceParameter.tensor().toFloatArray());
+            } finally {
+                gradient.release();
+            }
+        }
+    }
+
+    @Test
     void adamWValidatesEveryGradientBeforeUpdatingAnyParameter() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, true);
