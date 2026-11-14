@@ -9,14 +9,25 @@ final class OptimizerState {
     final Map<String, Tensor> firstMoment = new HashMap<>();
     final Map<String, Tensor> secondMoment = new HashMap<>();
     final Map<String, Tensor> parameterSnapshots = new HashMap<>();
-    long step;
+    final Map<String, Long> parameterSteps = new HashMap<>();
+
+    void resetParameter(String name) {
+        Tensor first = firstMoment.remove(name);
+        if (first != null) {
+            first.release();
+        }
+        Tensor second = secondMoment.remove(name);
+        if (second != null) {
+            second.release();
+        }
+        parameterSnapshots.remove(name);
+        parameterSteps.remove(name);
+    }
 
     void clear() {
-        firstMoment.values().forEach(Tensor::release);
-        secondMoment.values().forEach(Tensor::release);
-        firstMoment.clear();
-        secondMoment.clear();
-        parameterSnapshots.clear();
-        step = 0;
+        firstMoment.keySet().stream().toList().forEach(this::resetParameter);
+        secondMoment.keySet().stream().toList().forEach(this::resetParameter);
+        parameterSnapshots.keySet().stream().toList().forEach(this::resetParameter);
+        parameterSteps.clear();
     }
 }
