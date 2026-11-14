@@ -116,7 +116,7 @@ public class HatComputeBackend implements ComputeBackend {
 
         // Tensor.toFloatArray() returns a copy. Construct the result from the
         // computed HAT values instead of attempting to mutate that exported copy.
-        return TensorFactory.of(result, rows, columns);
+        return TensorFactory.of(result, this, rows, columns);
     }
 
     @Override
