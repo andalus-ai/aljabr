@@ -11,6 +11,19 @@ import optkl.util.carriers.ArenaAndLookupCarrier;
 import hat.Accelerator.Compute;
 import jdk.incubator.code.Reflect;
 
+/**
+ * Hybrid HAT compute backend.
+ *
+ * <p>F32 rank-2 matrix multiplication is currently dispatched through Project
+ * Babylon HAT. Operations without a HAT kernel are delegated to the CPU backend.
+ * Those fallback operations intentionally return CPU-owned tensors whose
+ * {@link Tensor#backend()} and device metadata identify the CPU backend that
+ * performed the operation; results are not copied back into HAT storage.</p>
+ *
+ * <p>This is an explicit hybrid execution strategy, not a claim that every
+ * operation runs on HAT. Callers that require HAT execution for a particular
+ * operation must check backend capability before dispatch.</p>
+ */
 public class HatComputeBackend implements ComputeBackend {
     private static final Logger LOG = Logger.getLogger(HatComputeBackend.class);
     private final CpuBackend cpuFallback;
