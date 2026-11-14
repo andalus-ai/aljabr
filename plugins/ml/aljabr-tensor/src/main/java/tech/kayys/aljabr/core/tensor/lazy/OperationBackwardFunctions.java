@@ -174,26 +174,28 @@ public final class OperationBackwardFunctions {
     private static Tensor[] matmul(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
         Tensor left = inputs.get(0);
         Tensor right = inputs.get(1);
-        int rank = left.shape().rank();
-        if (rank < 2 || right.shape().rank() != rank || gradient.shape().rank() != rank) {
-            throw new UnsupportedOperationException(
-                    "MATMUL autograd requires inputs and output gradient with matching rank >= 2");
-        }
-        Tensor rightTranspose = right.transpose(rank - 2, rank - 1);
-        Tensor leftTranspose = left.transpose(rank - 2, rank - 1);
-        Tensor leftGradient = null;
+        int leftRank = left.shape().rank();
+        int rightRank = right.shape().rank();
+        Tensor rightTranspose = right.transpose(rightRank - 2, rightRank - 1);
+        Tensor leftTranspose = left.transpose(leftRank - 2, leftRank - 1);
+        Tensor leftExpandedGradient = null;
+        Tensor rightExpandedGradient = null;
         try {
-            leftGradient = gradient.matmul(rightTranspose);
-            Tensor rightGradient = leftTranspose.matmul(gradient);
-            return new Tensor[] { leftGradient, rightGradient };
-        } catch (RuntimeException | Error failure) {
-            if (leftGradient != null) {
+            leftExpandedGradient = gradient.matmul(rightTranspose);
+            rightExpandedGradient = leftTranspose.matmul(gradient);
+            Tensor leftGradient = reduceToInputShape(leftExpandedGradient, left);
+            try {
+                Tensor rightGradient = reduceToInputShape(rightExpandedGradient, right);
+                return new Tensor[] { leftGradient, rightGradient };
+            } catch (RuntimeException | Error failure) {
                 leftGradient.release();
+                throw failure;
             }
-            throw failure;
         } finally {
             rightTranspose.release();
             leftTranspose.release();
+            if (leftExpandedGradient != null) leftExpandedGradient.release();
+            if (rightExpandedGradient != null) rightExpandedGradient.release();
         }
     }
 
