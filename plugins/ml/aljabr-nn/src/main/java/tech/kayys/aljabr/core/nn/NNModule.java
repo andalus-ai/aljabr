@@ -20,6 +20,8 @@ public abstract class NNModule implements AutoCloseable {
 
     protected final Map<String, Tensor> parameters = new LinkedHashMap<>();
     private final Map<String, Parameter> parameterObjects = new LinkedHashMap<>();
+    private final java.util.Set<Tensor> retiredParameters =
+            Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     protected final Map<String, Tensor> buffers = new LinkedHashMap<>();
     protected final Map<String, NNModule> submodules = new LinkedHashMap<>();
     protected boolean training = true;
@@ -78,11 +80,15 @@ public abstract class NNModule implements AutoCloseable {
         Objects.requireNonNull(param, "Parameter must not be null");
         validateOwnedTensor(name, param);
         param.setRequiresGrad(requiresGrad);
-        parameters.put(name, param);
         Parameter registered = parameterObjects.get(name);
         if (registered == null) {
-            parameterObjects.put(name, new Parameter(name, param, replacement -> parameters.put(name, replacement)));
+            parameters.put(name, param);
+            parameterObjects.put(name, new Parameter(name, param, replacement -> replaceRegisteredParameter(name, replacement)));
         } else {
+            Tensor previous = parameters.put(name, param);
+            if (previous != null && previous != param) {
+                retiredParameters.add(previous);
+            }
             registered.replaceTensor(param);
         }
     }
@@ -158,17 +164,37 @@ public abstract class NNModule implements AutoCloseable {
     }
 
     public NNModule to(DeviceType device) {
-        parameters.replaceAll((name, param) -> {
-            Tensor moved = param.to(device);
+        for (Map.Entry<String, Tensor> entry : new ArrayList<>(parameters.entrySet())) {
+            String name = entry.getKey();
+            Tensor previous = entry.getValue();
+            Tensor moved = previous.to(device);
             Parameter registered = parameterObjects.get(name);
             if (registered != null) {
                 registered.replaceTensor(moved);
             }
-            return moved;
-        });
-        buffers.replaceAll((name, buf) -> buf.to(device));
+            parameters.put(name, moved);
+            if (previous != moved) {
+                retiredParameters.add(previous);
+            }
+        }
+        for (Map.Entry<String, Tensor> entry : new ArrayList<>(buffers.entrySet())) {
+            Tensor previous = entry.getValue();
+            Tensor moved = previous.to(device);
+            buffers.put(entry.getKey(), moved);
+            if (previous != moved) {
+                retiredParameters.add(previous);
+            }
+        }
         submodules.values().forEach(m -> m.to(device));
         return this;
+    }
+
+    /** Updates the module's live parameter map while retaining the previous value until close. */
+    private void replaceRegisteredParameter(String name, Tensor replacement) {
+        Tensor previous = parameters.put(name, replacement);
+        if (previous != null && previous != replacement) {
+            retiredParameters.add(previous);
+        }
     }
 
     public void zeroGrad() {
@@ -338,9 +364,16 @@ public abstract class NNModule implements AutoCloseable {
 
     @Override
     public void close() {
-        parameters.values().forEach(Tensor::release);
-        buffers.values().forEach(Tensor::release);
+        java.util.Set<Tensor> owned = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        owned.addAll(parameters.values());
+        owned.addAll(buffers.values());
+        owned.addAll(retiredParameters);
+        owned.forEach(Tensor::release);
+        retiredParameters.clear();
+        parameters.clear();
+        buffers.clear();
         submodules.values().forEach(NNModule::close);
+        submodules.clear();
     }
 
     @Override
