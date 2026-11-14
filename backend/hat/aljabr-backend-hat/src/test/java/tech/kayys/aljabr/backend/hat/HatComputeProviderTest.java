@@ -85,6 +85,23 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.slice", Map.of("dtype", "Q4_0")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.relu", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.cross_entropy", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.cross_entropy",
+                            Map.of("dtype", "F32", "target_dtype", "I32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.cross_entropy",
+                            Map.of("dtype", "F32", "target_dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.binary_cross_entropy",
+                            Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.binary_cross_entropy",
+                            Map.of("dtype", "F32", "target_dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.binary_cross_entropy",
+                            Map.of("dtype", "F32", "target_dtype", "I32")).support());
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.relu", Map.of("dtype", "F32")).support());
             assertEquals(OperationSupport.UNSUPPORTED,

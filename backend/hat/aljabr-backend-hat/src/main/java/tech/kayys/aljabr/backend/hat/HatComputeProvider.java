@@ -185,6 +185,34 @@ public final class HatComputeProvider implements ComputeProvider {
                         operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
 
+            if ("tensor.cross_entropy".equals(operationId)) {
+                String predictionDtype = constraints.get("dtype");
+                String targetDtype = constraints.get("target_dtype");
+                if (predictionDtype == null || targetDtype == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (!"F32".equalsIgnoreCase(predictionDtype)
+                        || !"I32".equalsIgnoreCase(targetDtype)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                return new OperationSupportDescriptor(
+                        operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+
+            if ("tensor.binary_cross_entropy".equals(operationId)) {
+                String predictionDtype = constraints.get("dtype");
+                String targetDtype = constraints.get("target_dtype");
+                if (predictionDtype == null || targetDtype == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (!"F32".equalsIgnoreCase(predictionDtype)
+                        || !"F32".equalsIgnoreCase(targetDtype)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                return new OperationSupportDescriptor(
+                        operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+
             if (CPU_DELEGATED_OPERATIONS.contains(operationId)) {
                 String dtype = constraints.get("dtype");
                 if (dtype == null) {
