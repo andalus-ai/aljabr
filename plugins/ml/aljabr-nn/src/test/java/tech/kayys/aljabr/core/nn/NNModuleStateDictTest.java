@@ -38,6 +38,26 @@ class NNModuleStateDictTest {
     }
 
     @Test
+    void zeroGradReplacesAndReleasesThePreviousParameterGradient() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true)) {
+            Tensor parameter = layer.stateDict().get("weight");
+            Tensor previousGradient = TensorFactory.of(
+                    new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
+            parameter.setGrad(previousGradient);
+
+            layer.zeroGrad();
+
+            assertThat(parameter.grad().toFloatArray()).containsExactly(0f, 0f, 0f, 0f);
+            assertThatThrownBy(previousGradient::toFloatArray)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("released");
+        } finally {
+            backend.close();
+        }
+    }
+
+    @Test
     void strictLoadRejectsMissingAndUnexpectedKeysBeforeMutation() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, true)) {

@@ -1084,12 +1084,18 @@ public final class CpuBackend implements ComputeBackend {
             return false;
         }
         long work = groupCount;
-        for (long factor : new long[] {queryLength, keyLength, headDim}) {
-            if (factor != 0 && work > Long.MAX_VALUE / factor) {
-                return true;
-            }
-            work *= factor;
+        if (work > Long.MAX_VALUE / queryLength) {
+            return true;
         }
+        work *= queryLength;
+        if (work > Long.MAX_VALUE / keyLength) {
+            return true;
+        }
+        work *= keyLength;
+        if (work > Long.MAX_VALUE / headDim) {
+            return true;
+        }
+        work *= headDim;
         return work >= (1L << 18);
     }
 
@@ -1106,9 +1112,10 @@ public final class CpuBackend implements ComputeBackend {
             long headDim,
             float scale,
             boolean causal) {
-        long qBase = (long) group * queryLength * headDim;
-        long kBase = (long) group * keyLength * headDim;
-        double[] weightedValues = new double[Math.toIntExact(headDim)];
+        int dimension = Math.toIntExact(headDim);
+        long qBase = (long) group * queryLength * dimension;
+        long kBase = (long) group * keyLength * dimension;
+        double[] weightedValues = new double[dimension];
 
         for (long qi = 0; qi < queryLength; qi++) {
             java.util.Arrays.fill(weightedValues, 0d);
@@ -1130,9 +1137,9 @@ public final class CpuBackend implements ComputeBackend {
                 }
 
                 float score = CpuAttentionOps.dot(
-                        q, (qBase + qi * headDim) * Float.BYTES,
-                        k, (kBase + ki * headDim) * Float.BYTES,
-                        Math.toIntExact(headDim)) * scale + additive;
+                        q, (qBase + qi * dimension) * Float.BYTES,
+                        k, (kBase + ki * dimension) * Float.BYTES,
+                        dimension) * scale + additive;
 
                 float nextMax;
                 double previousScale;
@@ -1156,21 +1163,20 @@ public final class CpuBackend implements ComputeBackend {
                 }
                 denominator = denominator * previousScale + currentScale;
 
-                for (long d = 0; d < headDim; d++) {
+                for (int d = 0; d < dimension; d++) {
                     float valueAtKey = v.get(ValueLayout.JAVA_FLOAT,
-                            (kBase + ki * headDim + d) * Float.BYTES);
-                    int index = Math.toIntExact(d);
-                    weightedValues[index] = weightedValues[index] * previousScale
+                            (kBase + ki * dimension + d) * Float.BYTES);
+                    weightedValues[d] = weightedValues[d] * previousScale
                             + currentScale * valueAtKey;
                 }
                 runningMax = nextMax;
             }
 
-            for (long d = 0; d < headDim; d++) {
+            for (int d = 0; d < dimension; d++) {
                 float result = denominator == 0d
-                        ? 0f : (float) (weightedValues[Math.toIntExact(d)] / denominator);
+                        ? 0f : (float) (weightedValues[d] / denominator);
                 out.set(ValueLayout.JAVA_FLOAT,
-                        (qBase + qi * headDim + d) * Float.BYTES, result);
+                        (qBase + qi * dimension + d) * Float.BYTES, result);
             }
         }
     }

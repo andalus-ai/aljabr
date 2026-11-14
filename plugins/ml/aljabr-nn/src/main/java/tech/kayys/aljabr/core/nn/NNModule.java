@@ -197,10 +197,23 @@ public abstract class NNModule implements AutoCloseable {
         }
     }
 
+    /**
+     * Clears gradients for this module and all registered submodules.
+     *
+     * <p>Gradient tensors are owned by their parameter tensors. Replacing a
+     * gradient therefore releases the previous gradient after the zeroed
+     * replacement has been installed.</p>
+     */
     public void zeroGrad() {
-        parameters.values().forEach(p -> {
-            if (p.grad() != null) {
-                p.setGrad(p.grad().zerosLike());
+        parameters.values().forEach(parameter -> {
+            Tensor previousGradient = parameter.grad();
+            if (previousGradient == null) {
+                return;
+            }
+            Tensor zeroGradient = previousGradient.zerosLike();
+            parameter.setGrad(zeroGradient);
+            if (previousGradient != zeroGradient) {
+                previousGradient.release();
             }
         });
         submodules.values().forEach(NNModule::zeroGrad);

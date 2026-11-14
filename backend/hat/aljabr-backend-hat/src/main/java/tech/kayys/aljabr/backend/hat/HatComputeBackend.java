@@ -23,6 +23,16 @@ import jdk.incubator.code.Reflect;
  * <p>This is an explicit hybrid execution strategy, not a claim that every
  * operation runs on HAT. Callers that require HAT execution for a particular
  * operation must check backend capability before dispatch.</p>
+ *
+ * <p>HAT resource lifecycle is currently constrained by the upstream Babylon
+ * API: {@code hat.Accelerator} and its {@code hat.backend.Backend} do not expose
+ * a close contract. This backend therefore reuses one lazily-created
+ * Accelerator for its lifetime and closes only the per-dispatch shared arenas
+ * that it creates for temporary tensor buffers. Closing an Aljabr provider
+ * session closes the session contract, but cannot explicitly dispose the
+ * Accelerator's internal backend arena or cached compute contexts. Do not
+ * construct an Accelerator per operation. Revisit this limitation when HAT
+ * exposes an explicit backend/accelerator shutdown API.</p>
  */
 public class HatComputeBackend implements ComputeBackend {
     private static final Logger LOG = Logger.getLogger(HatComputeBackend.class);

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Map;
 import java.util.ServiceLoader;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -37,8 +38,10 @@ class HatComputeProviderTest {
 
         provider.initialize(new ProviderContext("test", Map.of()));
         try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
-            assertEquals(HatComputeProvider.BACKEND_ID,
-                    session.computeBackends().keySet().iterator().next());
+            assertEquals(Set.of(
+                    HatComputeProvider.BACKEND_ID,
+                    HatComputeProvider.CPU_FALLBACK_BACKEND_ID),
+                    session.computeBackends().keySet());
             assertInstanceOf(HatComputeBackend.class,
                     session.computeBackends().get(HatComputeProvider.BACKEND_ID));
         }
@@ -64,6 +67,30 @@ class HatComputeProviderTest {
             assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID, fallback.effectiveBackendId());
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(fallback.effectiveBackendId()));
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.relu", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.relu", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.relu", Map.of("dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.embedding", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.cast", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.to", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.cat", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.upsample_nearest2d", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention.masked", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.unknown", Map.of()).support());
         } finally {
             provider.close();
         }
