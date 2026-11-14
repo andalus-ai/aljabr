@@ -339,16 +339,22 @@ public final class DefaultTensor implements Tensor {
             return outputs;
         }
 
-        java.util.List<Tensor> recorded = new java.util.ArrayList<>(outputs.size());
+        if (outputs.size() != parts) {
+            outputs.forEach(Tensor::release);
+            throw new IllegalStateException(
+                    "Backend returned " + outputs.size() + " split outputs; expected " + parts);
+        }
+        if (outputs.stream().anyMatch(output -> !(output instanceof DefaultTensor))) {
+            outputs.forEach(Tensor::release);
+            throw new UnsupportedOperationException(
+                    "Autograd recording requires eager DefaultTensor split outputs");
+        }
+
         long chunkSize = shape.dim(normalizedAxis) / parts;
         try {
             for (int index = 0; index < outputs.size(); index++) {
                 Tensor output = outputs.get(index);
-                if (!(output instanceof DefaultTensor eagerOutput)) {
-                    throw new UnsupportedOperationException(
-                            "Autograd recording requires eager DefaultTensor split outputs; got "
-                                    + output.getClass().getName());
-                }
+                DefaultTensor eagerOutput = (DefaultTensor) output;
                 long[] offsets = new long[rank];
                 long[] sizes = shape.dims();
                 offsets[normalizedAxis] = Math.multiplyExact((long) index, chunkSize);
@@ -363,7 +369,6 @@ public final class DefaultTensor implements Tensor {
                         OperationBackwardFunctions.forOperation(OpType.SLICE));
                 node.setMaterializedData(output);
                 eagerOutput.autogradNode = node;
-                recorded.add(output);
             }
             return outputs;
         } catch (RuntimeException | Error failure) {
