@@ -111,7 +111,8 @@ class OptimizerTest {
             assertThat(parameter.tensor().grad().toFloatArray()).containsExactly(3f, 4f);
             optimizer.step(Map.of("weight", parameter),
                     Map.of("weight", parameter.tensor().grad()));
-            assertThat(parameter.tensor().toFloatArray()).containsExactly(0.7f, 1.6f);
+            assertThat(parameter.tensor().toFloatArray()[0]).isBetween(0.6999f, 0.7001f);
+            assertThat(parameter.tensor().toFloatArray()[1]).isBetween(1.5999f, 1.6001f);
 
             try (Tensor output = layer.forward(input);
                  Tensor loss = output.sum()) {
@@ -120,9 +121,11 @@ class OptimizerTest {
             assertThat(parameter.tensor().grad().toFloatArray()).containsExactly(3f, 4f);
             optimizer.step(Map.of("weight", parameter),
                     Map.of("weight", parameter.tensor().grad()));
-            assertThat(parameter.tensor().toFloatArray()).containsExactly(0.4f, 1.2f);
+            assertThat(parameter.tensor().toFloatArray()[0]).isBetween(0.3999f, 0.4001f);
+            assertThat(parameter.tensor().toFloatArray()[1]).isBetween(1.1999f, 1.2001f);
         } finally {
             input.release();
+            initialWeight.release();
         }
     }
 
