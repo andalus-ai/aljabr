@@ -115,9 +115,43 @@ public class GraphExecutor {
                         gradient.release();
                         throw failure;
                     }
-                    if (inputGradients == null || inputGradients.length != node.getInputs().size()) {
+                    try {
+                        if (inputGradients == null || inputGradients.length != node.getInputs().size()) {
+                            throw new IllegalStateException("Backward rule for " + node.getOp()
+                                    + " must return one gradient slot per input");
+                        }
+
+                        // Validate every contribution before transferring any ownership.
+                        for (int i = 0; i < inputGradients.length; i++) {
+                            Tensor contribution = inputGradients[i];
+                            if (contribution != null
+                                    && !node.getInputs().get(i).getOutputShape().equals(contribution.shape())) {
+                                throw new IllegalArgumentException("Backward rule for " + node.getOp()
+                                        + " returned gradient shape " + contribution.shape()
+                                        + " for input shape " + node.getInputs().get(i).getOutputShape()
+                                        + "; broadcasting gradients are not yet supported");
+                            }
+                        }
+
+                        for (int i = 0; i < inputGradients.length; i++) {
+                            Tensor contribution = inputGradients[i];
+                            if (contribution == null) {
+                                continue;
+                            }
+                            GraphNode input = node.getInputs().get(i);
+                            if (input.requiresGrad()) {
+                                accumulate(gradients, input, contribution);
+                            } else {
+                                contribution.release();
+                            }
+                            // Ownership was transferred to the map or released locally.
+                            inputGradients[i] = null;
+                        }
+                    } finally {
+                        // Also release contributions not yet consumed if accumulation fails.
                         release(inputGradients);
                         gradient.release();
+                    }
                         throw new IllegalStateException("Backward rule for " + node.getOp()
                                 + " must return one gradient slot per input");
                     }
