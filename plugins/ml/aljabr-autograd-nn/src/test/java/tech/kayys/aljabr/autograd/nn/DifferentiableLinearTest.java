@@ -88,7 +88,7 @@ class DifferentiableLinearTest {
             Variable input = context.variable(inputValue);
             DifferentiableLinear differentiable = new DifferentiableLinear(layer, context);
             var parameter = differentiable.weightParameter();
-            Tensor replacement = weight.zerosLike();
+            Tensor replacement = TensorFactory.of(new float[] { 0f, 0f }, backend, 1, 2);
             parameter.updateTensor(replacement);
 
             org.junit.jupiter.api.Assertions.assertThrows(
