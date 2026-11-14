@@ -69,54 +69,115 @@ public final class AdamW implements Optimizer, AutoCloseable {
         }
 
         try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
-        Map<String, Tensor> nextFirst = new LinkedHashMap<>();
-        Map<String, Tensor> nextSecond = new LinkedHashMap<>();
-        Map<String, Tensor> nextSnapshots = new LinkedHashMap<>();
-        Map<String, Tensor> updates = new LinkedHashMap<>();
-        for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
-            String name = entry.getKey();
-            Parameter parameter = entry.getValue();
-            Tensor gradient = gradients.get(name);
-            if (gradient == null || !parameter.isTrainable()) {
-                continue;
+            Map<String, Tensor> nextFirst = new LinkedHashMap<>();
+            Map<String, Tensor> nextSecond = new LinkedHashMap<>();
+            Map<String, Tensor> updates = new LinkedHashMap<>();
+            try {
+                for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
+                    String name = entry.getKey();
+                    Parameter parameter = entry.getValue();
+                    Tensor gradient = gradients.get(name);
+                    if (gradient == null || !parameter.isTrainable()) {
+                        continue;
+                    }
+
+                    Tensor current = parameter.tensor();
+                    long nextStep = state.parameterSteps.getOrDefault(name, 0L) + 1L;
+                    float correction1 = 1.0f - (float) Math.pow(beta1, nextStep);
+                    float correction2 = 1.0f - (float) Math.pow(beta2, nextStep);
+                    Tensor first = updateFirstMoment(gradient, state.firstMoment.get(name));
+                    Tensor second = updateSecondMoment(gradient, state.secondMoment.get(name));
+                    Tensor update = computeUpdate(current, first, second, correction1, correction2);
+                    nextFirst.put(name, first);
+                    nextSecond.put(name, second);
+                    updates.put(name, update);
+                }
+
+                // Commit state only after every parameter update has been computed.
+                nextFirst.forEach((name, value) -> {
+                    Tensor old = state.firstMoment.put(name, value);
+                    if (old != null) old.release();
+                });
+                nextSecond.forEach((name, value) -> {
+                    Tensor old = state.secondMoment.put(name, value);
+                    if (old != null) old.release();
+                });
+                updates.forEach((name, value) -> {
+                    parameters.get(name).updateTensor(value);
+                    state.parameterSnapshots.put(name, value);
+                    state.parameterSteps.merge(name, 1L, Long::sum);
+                });
+            } catch (RuntimeException | Error failure) {
+                nextFirst.forEach((name, value) -> {
+                    if (state.firstMoment.get(name) != value) value.release();
+                });
+                nextSecond.forEach((name, value) -> {
+                    if (state.secondMoment.get(name) != value) value.release();
+                });
+                updates.forEach((name, value) -> {
+                    if (parameters.get(name).tensor() != value) value.release();
+                });
+                throw failure;
             }
-
-            Tensor current = parameter.tensor();
-            long nextStep = state.parameterSteps.getOrDefault(name, 0L) + 1L;
-            float correction1 = 1.0f - (float) Math.pow(beta1, nextStep);
-            float correction2 = 1.0f - (float) Math.pow(beta2, nextStep);
-            Tensor oldFirst = state.firstMoment.get(name);
-            Tensor oldSecond = state.secondMoment.get(name);
-            Tensor first = (oldFirst == null ? gradient.zerosLike() : oldFirst.mul(beta1))
-                    .add(gradient.mul(1.0f - beta1));
-            Tensor second = (oldSecond == null ? gradient.zerosLike() : oldSecond.mul(beta2))
-                    .add(gradient.mul(gradient).mul(1.0f - beta2));
-            Tensor firstHat = first.div(correction1);
-            Tensor secondHat = second.div(correction2);
-            Tensor adaptive = firstHat.div(secondHat.sqrt().add(epsilon));
-            Tensor decayed = current.sub(current.mul(learningRate * weightDecay));
-
-            nextFirst.put(name, first);
-            nextSecond.put(name, second);
-            nextSnapshots.put(name, current);
-            updates.put(name, decayed.sub(adaptive.mul(learningRate)));
         }
+    }
 
-        // Commit the newly computed state only after every parameter update was computed.
-        nextFirst.forEach((name, value) -> {
-            Tensor old = state.firstMoment.put(name, value);
-            if (old != null) old.release();
-        });
-        nextSecond.forEach((name, value) -> {
-            Tensor old = state.secondMoment.put(name, value);
-            if (old != null) old.release();
-        });
-        nextSnapshots.forEach(state.parameterSnapshots::put);
-        updates.forEach((name, value) -> {
-            parameters.get(name).updateTensor(value);
-            state.parameterSnapshots.put(name, value);
-            state.parameterSteps.merge(name, 1L, Long::sum);
-        });
+    private Tensor updateFirstMoment(Tensor gradient, Tensor previous) {
+        Tensor base = previous == null ? gradient.zerosLike() : previous.mul(beta1);
+        Tensor contribution = null;
+        try {
+            contribution = gradient.mul(1.0f - beta1);
+            return base.add(contribution);
+        } finally {
+            base.release();
+            if (contribution != null) contribution.release();
+        }
+    }
+
+    private Tensor updateSecondMoment(Tensor gradient, Tensor previous) {
+        Tensor base = previous == null ? gradient.zerosLike() : previous.mul(beta2);
+        Tensor squared = null;
+        Tensor contribution = null;
+        try {
+            squared = gradient.mul(gradient);
+            contribution = squared.mul(1.0f - beta2);
+            return base.add(contribution);
+        } finally {
+            base.release();
+            if (squared != null) squared.release();
+            if (contribution != null) contribution.release();
+        }
+    }
+
+    private Tensor computeUpdate(
+            Tensor current, Tensor first, Tensor second, float correction1, float correction2) {
+        Tensor firstHat = null;
+        Tensor secondHat = null;
+        Tensor root = null;
+        Tensor denominator = null;
+        Tensor adaptive = null;
+        Tensor decay = null;
+        Tensor decayed = null;
+        Tensor scaledAdaptive = null;
+        try {
+            firstHat = first.div(correction1);
+            secondHat = second.div(correction2);
+            root = secondHat.sqrt();
+            denominator = root.add(epsilon);
+            adaptive = firstHat.div(denominator);
+            decay = current.mul(learningRate * weightDecay);
+            decayed = current.sub(decay);
+            scaledAdaptive = adaptive.mul(learningRate);
+            return decayed.sub(scaledAdaptive);
+        } finally {
+            if (firstHat != null) firstHat.release();
+            if (secondHat != null) secondHat.release();
+            if (root != null) root.release();
+            if (denominator != null) denominator.release();
+            if (adaptive != null) adaptive.release();
+            if (decay != null) decay.release();
+            if (decayed != null) decayed.release();
+            if (scaledAdaptive != null) scaledAdaptive.release();
         }
     }
 
