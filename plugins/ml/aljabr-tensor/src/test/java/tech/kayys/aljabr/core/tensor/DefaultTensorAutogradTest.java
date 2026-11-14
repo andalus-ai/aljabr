@@ -524,4 +524,20 @@ class DefaultTensorAutogradTest {
     }
 
 
+
+    @Test
+    void eagerBatchedMatmulRejectsIncompatibleBatchDimensions() {
+        CpuBackend backend = new CpuBackend();
+        Tensor left = TensorFactory.of(new float[8], backend, 2, 2, 2);
+        Tensor right = TensorFactory.of(new float[12], backend, 3, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> left.matmul(right));
+        } finally {
+            right.release();
+            left.release();
+            backend.close();
+        }
+    }
+
+
 }
