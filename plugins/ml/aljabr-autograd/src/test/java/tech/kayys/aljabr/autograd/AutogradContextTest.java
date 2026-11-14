@@ -197,6 +197,30 @@ class AutogradContextTest {
         }
     }
 
+ 
+    @Test
+    void failedBackwardDoesNotConsumeContextOrPublishPartialGradients() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 1f, 2f }, backend, 2);
+        try (AutogradContext context = new AutogradContext()) {
+            Variable x = context.variable(input);
+            Tensor failingValue = context.own(input.sum());
+            Variable failing = new Variable(context, failingValue, true, java.util.List.of(x), gradient -> {
+                context.own(gradient.add(0.0f));
+                throw new IllegalStateException("intentional backward-rule failure");
+            });
+
+            assertThrows(IllegalStateException.class, failing::backward);
+            assertNull(x.grad());
+
+            x.sum().backward();
+            assertArrayEquals(new float[] { 1f, 1f }, x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            input.release();
+            backend.close();
+        }
+    }
+
     @Test
     void meanSquareGradientMatchesFiniteDifferences() {
         CpuBackend backend = new CpuBackend();
