@@ -72,6 +72,8 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.reshape", Map.of()).support());
             assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.reshape", Map.of("dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.flatten", Map.of()).support());
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.unsqueeze", Map.of()).support());
