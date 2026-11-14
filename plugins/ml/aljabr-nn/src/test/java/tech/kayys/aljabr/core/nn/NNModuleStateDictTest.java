@@ -85,6 +85,22 @@ class NNModuleStateDictTest {
     }
 
     @Test
+    void closingModuleReleasesGradientsOwnedByRegisteredParameters() {
+        CpuBackend backend = new CpuBackend();
+        Linear layer = new Linear(backend, 2, 2, true);
+        Tensor parameter = layer.stateDict().get("weight");
+        Tensor gradient = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
+        parameter.setGrad(gradient);
+
+        layer.close();
+
+        assertThatThrownBy(gradient::toFloatArray)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("released");
+        backend.close();
+    }
+
+    @Test
     void strictLoadRejectsMissingAndUnexpectedKeysBeforeMutation() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, true)) {
