@@ -278,55 +278,94 @@ public final class CpuBackend implements ComputeBackend {
         if (a.dtype() != DType.F32 || b.dtype() != DType.F32) {
             throw new UnsupportedOperationException("CPU matmul currently supports F32 tensors only");
         }
-        if (shapeA.length != shapeB.length) {
-            throw new IllegalArgumentException("Batched matmul requires equal input ranks: "
-                    + shapeA.length + " != " + shapeB.length);
-        }
 
-        int rank = shapeA.length;
-        int m = Math.toIntExact(shapeA[rank - 2]);
-        int k = Math.toIntExact(shapeA[rank - 1]);
-        int k2 = Math.toIntExact(shapeB[rank - 2]);
-        int n = Math.toIntExact(shapeB[rank - 1]);
+        int batchRankA = shapeA.length - 2;
+        int batchRankB = shapeB.length - 2;
+        int batchRank = Math.max(batchRankA, batchRankB);
+        int outputRank = batchRank + 2;
+        int m = Math.toIntExact(shapeA[shapeA.length - 2]);
+        int k = Math.toIntExact(shapeA[shapeA.length - 1]);
+        int k2 = Math.toIntExact(shapeB[shapeB.length - 2]);
+        int n = Math.toIntExact(shapeB[shapeB.length - 1]);
         if (k != k2) {
             throw new IllegalArgumentException("Dimension mismatch: " + k + " != " + k2);
         }
 
-        long batchCount = 1;
-        for (int dimension = 0; dimension < rank - 2; dimension++) {
-            if (shapeA[dimension] != shapeB[dimension]) {
+        long[] outputBatchDims = new long[batchRank];
+        for (int axis = 0; axis < batchRank; axis++) {
+            int axisA = axis - (batchRank - batchRankA);
+            int axisB = axis - (batchRank - batchRankB);
+            long dimA = axisA < 0 ? 1 : shapeA[axisA];
+            long dimB = axisB < 0 ? 1 : shapeB[axisB];
+            if (dimA != dimB && dimA != 1 && dimB != 1) {
                 throw new IllegalArgumentException(
-                        "CPU batched matmul requires matching batch dimensions; mismatch at dimension "
-                                + dimension + ": " + shapeA[dimension] + " != " + shapeB[dimension]);
+                        "matmul batch dimensions are not broadcast-compatible at aligned axis "
+                                + axis + ": " + dimA + " != " + dimB);
             }
-            batchCount = Math.multiplyExact(batchCount, shapeA[dimension]);
+            outputBatchDims[axis] = Math.max(dimA, dimB);
         }
 
-        long[] outDims = shapeA.clone();
-        outDims[rank - 2] = m;
-        outDims[rank - 1] = n;
+        long[] outDims = java.util.Arrays.copyOf(outputBatchDims, outputRank);
+        outDims[outputRank - 2] = m;
+        outDims[outputRank - 1] = n;
         Shape outShape = new Shape(outDims);
         HostAccessibleStorage outBuf = allocateOutput(
                 Math.multiplyExact(outShape.numel(), (long) Float.BYTES));
-        MemorySegment left = seg(a);
-        MemorySegment right = seg(b);
         MemorySegment output = outBuf.segment();
         output.fill((byte) 0);
+
+        long[] stridesA = batchStrides(shapeA);
+        long[] stridesB = batchStrides(shapeB);
+        long batchCount = 1;
+        for (long dimension : outputBatchDims) {
+            batchCount = Math.multiplyExact(batchCount, dimension);
+        }
         long leftMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, k), Float.BYTES);
         long rightMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) k, n), Float.BYTES);
         long outputMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, n), Float.BYTES);
+        MemorySegment left = seg(a);
+        MemorySegment right = seg(b);
 
         for (long batch = 0; batch < batchCount; batch++) {
-            long leftOffset = Math.multiplyExact(batch, leftMatrixBytes);
-            long rightOffset = Math.multiplyExact(batch, rightMatrixBytes);
+            long remaining = batch;
+            long leftElementOffset = 0;
+            long rightElementOffset = 0;
+            for (int axis = batchRank - 1; axis >= 0; axis--) {
+                long dimension = outputBatchDims[axis];
+                long coordinate = remaining % dimension;
+                remaining /= dimension;
+                int axisA = axis - (batchRank - batchRankA);
+                int axisB = axis - (batchRank - batchRankB);
+                if (axisA >= 0 && shapeA[axisA] != 1) {
+                    leftElementOffset = Math.addExact(leftElementOffset,
+                            Math.multiplyExact(coordinate, stridesA[axisA]));
+                }
+                if (axisB >= 0 && shapeB[axisB] != 1) {
+                    rightElementOffset = Math.addExact(rightElementOffset,
+                            Math.multiplyExact(coordinate, stridesB[axisB]));
+                }
+            }
+
             long outputOffset = Math.multiplyExact(batch, outputMatrixBytes);
             MatmulCpu.matmul(
-                    left.asSlice(leftOffset, leftMatrixBytes),
-                    right.asSlice(rightOffset, rightMatrixBytes),
+                    left.asSlice(Math.multiplyExact(leftElementOffset, Float.BYTES), leftMatrixBytes),
+                    right.asSlice(Math.multiplyExact(rightElementOffset, Float.BYTES), rightMatrixBytes),
                     output.asSlice(outputOffset, outputMatrixBytes),
                     m, n, k);
         }
         return out(outShape, outBuf);
+    }
+
+    /** Returns row-major batch strides in elements, excluding the final matrix dimensions. */
+    private static long[] batchStrides(long[] shape) {
+        int batchRank = shape.length - 2;
+        long[] strides = new long[batchRank];
+        long stride = 1;
+        for (int axis = batchRank - 1; axis >= 0; axis--) {
+            strides[axis] = stride;
+            stride = Math.multiplyExact(stride, shape[axis]);
+        }
+        return strides;
     }
 
     // ── Shape ops ────────────────────────────────────────────────────────────
