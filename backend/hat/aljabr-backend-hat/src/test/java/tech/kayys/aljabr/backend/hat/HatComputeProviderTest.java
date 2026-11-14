@@ -72,6 +72,8 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.upsample_nearest2d", Map.of()).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.attention.masked", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of()).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.unknown", Map.of()).support());
         } finally {
