@@ -217,4 +217,30 @@ class OptimizerTest {
         }
     }
 
+
+    @Test
+    void adamWValidatesEveryGradientBeforeUpdatingAnyParameter() {
+        CpuBackend backend = new CpuBackend();
+        try (Linear layer = new Linear(backend, 2, 2, true);
+             AdamW optimizer = new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, 0.01f)) {
+            Parameter weight = layer.namedParameterObjects().get("weight");
+            Parameter bias = layer.namedParameterObjects().get("bias");
+            Tensor originalWeight = weight.tensor();
+            Tensor originalBias = bias.tensor();
+            Tensor validWeightGradient = TensorFactory.ones(backend, 2, 2);
+            Tensor invalidBiasGradient = TensorFactory.zeros(backend, 3);
+            try {
+                assertThrows(IllegalArgumentException.class, () -> optimizer.step(
+                        Map.of("weight", weight, "bias", bias),
+                        Map.of("weight", validWeightGradient, "bias", invalidBiasGradient)));
+
+                assertThat(weight.tensor()).isSameAs(originalWeight);
+                assertThat(bias.tensor()).isSameAs(originalBias);
+            } finally {
+                validWeightGradient.release();
+                invalidBiasGradient.release();
+            }
+        }
+    }
+
 }
