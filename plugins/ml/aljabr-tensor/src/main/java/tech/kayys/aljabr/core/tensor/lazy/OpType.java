@@ -24,6 +24,7 @@ public enum OpType {
     // Shape & Indexing
     RESHAPE,
     SLICE,
+    CAT,
     SPLIT,
     FLATTEN,
     UNSQUEEZE,
