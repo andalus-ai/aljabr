@@ -288,4 +288,43 @@ class DefaultTensorAutogradTest {
         }
     }
 
+    @Test
+    void eagerSplitOutputsAccumulateTheirGradientsIntoTheSharedInput() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        x.setRequiresGrad(true);
+        java.util.List<Tensor> parts = x.split(1, 3);
+        Tensor firstLoss = parts.get(0).sum();
+        Tensor secondLoss = parts.get(1).sum();
+        Tensor thirdLoss = parts.get(2).sum();
+        Tensor partialLoss = firstLoss.add(secondLoss);
+        Tensor loss = partialLoss.add(thirdLoss);
+        try {
+            loss.backward();
+            assertArrayEquals(new float[] { 1, 1, 1, 1, 1, 1 },
+                    x.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            loss.release();
+            partialLoss.release();
+            thirdLoss.release();
+            secondLoss.release();
+            firstLoss.release();
+            parts.forEach(Tensor::release);
+            x.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerSplitRejectsUnevenPartitionsInsteadOfDroppingElements() {
+        CpuBackend backend = new CpuBackend();
+        Tensor x = TensorFactory.of(new float[] { 1, 2, 3, 4, 5 }, backend, 5);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> x.split(0, 2));
+        } finally {
+            x.release();
+            backend.close();
+        }
+    }
+
 }
