@@ -15,6 +15,34 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
 class OptimizerTest {
 
     @Test
+    void optimizersRejectInvalidHyperparameters() {
+        assertThrows(IllegalArgumentException.class, () -> new SGD(-0.01f));
+        assertThrows(IllegalArgumentException.class, () -> new SGD(Float.NaN));
+        assertThrows(IllegalArgumentException.class, () -> new SGD(Float.POSITIVE_INFINITY));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(-0.01f, 0.9f, 0.999f, 1.0e-8f, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(Float.NaN, 0.9f, 0.999f, 1.0e-8f, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, -0.1f, 0.999f, 1.0e-8f, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, 1.0f, 0.999f, 1.0e-8f, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, 0.9f, Float.NaN, 1.0e-8f, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, 0.9f, 1.0f, 1.0e-8f, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, 0.9f, 0.999f, 0.0f, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, 0.9f, 0.999f, Float.POSITIVE_INFINITY, 0.0f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, -0.01f));
+        assertThrows(IllegalArgumentException.class,
+                () -> new AdamW(0.01f, 0.9f, 0.999f, 1.0e-8f, Float.NaN));
+    }
+
+    @Test
     void sgdUpdatesRegisteredParameterAndPreservesHandle() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, false)) {
