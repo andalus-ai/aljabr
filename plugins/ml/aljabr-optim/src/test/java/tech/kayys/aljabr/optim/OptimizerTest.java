@@ -25,9 +25,11 @@ class OptimizerTest {
             assertThat(parameter.tensor()).isNotSameAs(original);
             assertThat(parameter.tensor()).isSameAs(layer.parameters().get("weight"));
             assertThat(parameter.requiresGrad()).isTrue();
-            assertThat(parameter.tensor().toFloatArray())
-                    .containsExactlyElementsOf(java.util.Arrays.stream(original.toFloatArray())
-                            .map(value -> value - 0.1f).boxed().toList());
+            float[] expected = original.toFloatArray();
+            for (int i = 0; i < expected.length; i++) {
+                expected[i] -= 0.1f;
+            }
+            assertThat(parameter.tensor().toFloatArray()).containsExactly(expected);
             gradient.release();
         }
     }
@@ -40,10 +42,12 @@ class OptimizerTest {
             Parameter bias = layer.namedParameterObjects().get("bias");
             Tensor originalWeight = weight.tensor();
             Tensor invalid = TensorFactory.zeros(backend, 7);
+            Tensor validWeightGradient = TensorFactory.ones(backend, 2, 2);
             assertThrows(IllegalArgumentException.class, () -> new SGD(0.1f).step(
                     Map.of("weight", weight, "bias", bias),
-                    Map.of("weight", TensorFactory.ones(backend, 2, 2), "bias", invalid)));
+                    Map.of("weight", validWeightGradient, "bias", invalid)));
             assertThat(weight.tensor()).isSameAs(originalWeight);
+            validWeightGradient.release();
             invalid.release();
         }
     }
