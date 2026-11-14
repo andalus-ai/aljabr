@@ -80,6 +80,23 @@ public class HatComputeBackendTest {
         }
     }
     @Test
+    public void testCpuFallbackCanConsumeHatOwnedMatmulResult() {
+        Tensor left = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, 2, 2);
+        Tensor right = TensorFactory.of(new float[] { 5.0f, 6.0f, 7.0f, 8.0f }, 2, 2);
+
+        Tensor hatResult = backend.matmul(left, right);
+        assertEquals(backend, hatResult.backend());
+
+        Tensor fallbackResult = backend.add(hatResult, hatResult);
+
+        assertInstanceOf(CpuBackend.class, fallbackResult.backend(),
+                "CPU fallback must return a CPU-owned tensor when consuming HAT-owned host storage");
+        assertEquals(tech.kayys.aljabr.core.tensor.DeviceType.CPU, fallbackResult.device());
+        assertArrayEquals(new float[] { 38.0f, 44.0f, 86.0f, 100.0f },
+                fallbackResult.toFloatArray(), 1e-4f);
+    }
+
+    @Test
     public void testMatmulSupportsRectangularRowMajorMatrices() {
         Tensor a = TensorFactory.of(new float[] {
                 1.0f, 2.0f, 3.0f,
