@@ -10,6 +10,7 @@ import java.util.ServiceLoader;
 import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.spi.compute.ProviderSession;
 import tech.kayys.aljabr.spi.provider.AljabrProvider;
 import tech.kayys.aljabr.spi.provider.DeviceKind;
@@ -61,6 +62,8 @@ class HatComputeProviderTest {
             var fallback = session.operationSupport("tensor.add", Map.of());
             assertEquals(OperationSupport.DELEGATED, fallback.support());
             assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID, fallback.effectiveBackendId());
+            assertInstanceOf(CpuBackend.class,
+                    session.computeBackends().get(fallback.effectiveBackendId()));
         } finally {
             provider.close();
         }
@@ -88,7 +91,9 @@ class HatComputeProviderTest {
         try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
             ComputeBackend backend = session.computeBackends().get(HatComputeProvider.BACKEND_ID);
             assertInstanceOf(HatComputeBackend.class, backend);
-            assertEquals(1, session.computeBackends().size());
+            assertEquals(2, session.computeBackends().size());
+            assertInstanceOf(CpuBackend.class,
+                    session.computeBackends().get(HatComputeProvider.CPU_FALLBACK_BACKEND_ID));
         } finally {
             provider.close();
         }
