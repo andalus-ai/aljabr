@@ -62,11 +62,27 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.matmul", Map.of("dtype", "F32")).support());
 
-            var fallback = session.operationSupport("tensor.add", Map.of());
+            var fallbackUnknown = session.operationSupport("tensor.add", Map.of());
+            assertEquals(OperationSupport.UNKNOWN, fallbackUnknown.support());
+            var fallback = session.operationSupport("tensor.add", Map.of("dtype", "F32"));
             assertEquals(OperationSupport.DELEGATED, fallback.support());
             assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID, fallback.effectiveBackendId());
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(fallback.effectiveBackendId()));
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.reshape", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.reshape", Map.of("dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.flatten", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.unsqueeze", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.squeeze", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.slice", Map.of()).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.slice", Map.of("dtype", "Q4_0")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.relu", Map.of()).support());
             assertEquals(OperationSupport.DELEGATED,

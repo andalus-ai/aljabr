@@ -34,6 +34,13 @@ public final class HatComputeProvider implements ComputeProvider {
     public static final String BACKEND_ID = "hat-java-default";
     public static final String CPU_FALLBACK_BACKEND_ID = "cpu-fallback";
 
+    /**
+     * Shape-only operations that retain the input dtype and do not interpret
+     * tensor elements as floats. These can be delegated without a dtype hint.
+     */
+    private static final Set<String> CPU_DTYPE_PRESERVING_OPERATIONS = Set.of(
+            "tensor.reshape", "tensor.flatten", "tensor.unsqueeze", "tensor.squeeze");
+
     private static final Set<String> CPU_DELEGATED_OPERATIONS = Set.of(
             "tensor.add", "tensor.sub", "tensor.mul", "tensor.div",
             "tensor.mul_scalar", "tensor.div_scalar", "tensor.add_scalar",
@@ -171,6 +178,11 @@ public final class HatComputeProvider implements ComputeProvider {
                     return new OperationSupportDescriptor(operationId, OperationSupport.NATIVE, null);
                 }
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+
+            if (CPU_DTYPE_PRESERVING_OPERATIONS.contains(operationId)) {
+                return new OperationSupportDescriptor(
+                        operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
 
             if (CPU_DELEGATED_OPERATIONS.contains(operationId)) {
