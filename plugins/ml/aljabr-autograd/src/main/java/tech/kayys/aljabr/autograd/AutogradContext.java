@@ -73,8 +73,14 @@ public final class AutogradContext implements AutoCloseable {
             throw new IllegalArgumentException(
                     "Implicit backward requires a scalar output; use backward(Tensor outputGradient) for non-scalar outputs");
         }
-        Tensor seed = own(TensorFactory.ones(output.value().backend(), output.value().shape().dims()));
-        runBackward(output, seed);
+        int ownershipCheckpoint = ownedTensors.size();
+        try {
+            Tensor seed = own(TensorFactory.ones(output.value().backend(), output.value().shape().dims()));
+            runBackward(output, seed);
+        } catch (RuntimeException | Error failure) {
+            releaseOwnedSince(ownershipCheckpoint);
+            throw failure;
+        }
     }
 
     void backward(Variable output, Tensor outputGradient) {
@@ -95,8 +101,14 @@ public final class AutogradContext implements AutoCloseable {
         }
 
         // Copy the caller's seed so the context owns a stable value for the full backward pass.
-        Tensor seed = own(outputGradient.add(0.0f));
-        runBackward(output, seed);
+        int ownershipCheckpoint = ownedTensors.size();
+        try {
+            Tensor seed = own(outputGradient.add(0.0f));
+            runBackward(output, seed);
+        } catch (RuntimeException | Error failure) {
+            releaseOwnedSince(ownershipCheckpoint);
+            throw failure;
+        }
     }
 
     private void validateOutput(Variable output) {
@@ -111,8 +123,8 @@ public final class AutogradContext implements AutoCloseable {
     }
 
     private void runBackward(Variable output, Tensor seed) {
-        backwardCompleted = true;
-        gradients.put(output, seed);
+        Map<Variable, Tensor> passGradients = new IdentityHashMap<>();
+        passGradients.put(output, seed);
 
         List<Variable> order = new ArrayList<>();
         Set<Variable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -120,7 +132,7 @@ public final class AutogradContext implements AutoCloseable {
 
         for (int index = order.size() - 1; index >= 0; index--) {
             Variable current = order.get(index);
-            Tensor outputGradient = gradients.get(current);
+            Tensor outputGradient = passGradients.get(current);
             if (outputGradient == null || !current.requiresGrad()) {
                 continue;
             }
@@ -157,9 +169,19 @@ public final class AutogradContext implements AutoCloseable {
                     throw new IllegalStateException("Gradient shape mismatch for " + current.operationName()
                             + ": expected " + parent.value().shape() + " but got " + contribution.shape());
                 }
-                Tensor previous = gradients.get(parent);
-                gradients.put(parent, previous == null ? contribution : own(previous.add(contribution)));
+                Tensor previous = passGradients.get(parent);
+                passGradients.put(parent, previous == null ? contribution : own(previous.add(contribution)));
             }
+        }
+
+        // Publish gradients and consume the context only after the entire pass succeeds.
+        gradients.putAll(passGradients);
+        backwardCompleted = true;
+    }
+
+    private void releaseOwnedSince(int checkpoint) {
+        for (int i = ownedTensors.size() - 1; i >= checkpoint; i--) {
+            ownedTensors.remove(i).release();
         }
     }
 
