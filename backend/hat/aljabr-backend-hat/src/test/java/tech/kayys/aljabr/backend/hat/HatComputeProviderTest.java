@@ -107,6 +107,50 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.relu", Map.of("dtype", "Q4_0")).support());
             assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.layer_norm", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.layer_norm", Map.of(
+                            "dtype", "F32", "weight_present", "false", "bias_present", "false")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.layer_norm", Map.of(
+                            "dtype", "F32", "weight_present", "true", "weight_dtype", "F32",
+                            "bias_present", "true", "bias_dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.layer_norm", Map.of(
+                            "dtype", "F32", "weight_present", "true", "bias_present", "false")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.layer_norm", Map.of(
+                            "dtype", "F32", "weight_present", "true", "weight_dtype", "F16",
+                            "bias_present", "false")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.rms_norm", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.rms_norm", Map.of(
+                            "dtype", "F32", "weight_dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rms_norm", Map.of(
+                            "dtype", "F32", "weight_dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.batch_norm", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.batch_norm", Map.of(
+                            "dtype", "F32", "training", "false")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.batch_norm", Map.of(
+                            "dtype", "F32", "training", "false",
+                            "running_mean_dtype", "F32", "running_var_dtype", "F32",
+                            "weight_present", "false", "bias_present", "false")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.batch_norm", Map.of(
+                            "dtype", "F32", "training", "true",
+                            "running_mean_dtype", "F32", "running_var_dtype", "F32",
+                            "weight_present", "false", "bias_present", "false")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.batch_norm", Map.of(
+                            "dtype", "F32", "training", "false",
+                            "running_mean_dtype", "F16", "running_var_dtype", "F32",
+                            "weight_present", "false", "bias_present", "false")).support());
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.embedding", Map.of("dtype", "F32")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.cast", Map.of("dtype", "F32")).support());
