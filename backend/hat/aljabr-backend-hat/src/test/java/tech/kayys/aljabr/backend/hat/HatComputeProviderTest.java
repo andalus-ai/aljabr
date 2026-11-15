@@ -167,6 +167,38 @@ class HatComputeProviderTest {
                             "running_mean_dtype", "F16", "running_var_dtype", "F32",
                             "weight_present", "false", "bias_present", "false")).support());
             assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.conv2d", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.conv2d", Map.of(
+                            "dtype", "F32", "rank", "4", "weight_dtype", "F32", "groups", "1",
+                            "bias_present", "false", "stride", "1", "dilation", "1", "padding", "0")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.conv2d", Map.of(
+                            "dtype", "F32", "rank", "4", "weight_dtype", "F32", "groups", "1",
+                            "bias_present", "true", "stride", "1", "dilation", "1", "padding", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.conv2d", Map.of(
+                            "dtype", "F32", "rank", "4", "weight_dtype", "F16", "groups", "1",
+                            "bias_present", "false", "stride", "1", "dilation", "1", "padding", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.conv2d", Map.of(
+                            "dtype", "F32", "rank", "4", "weight_dtype", "F32", "groups", "2",
+                            "bias_present", "false", "stride", "1", "dilation", "1", "padding", "0")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.max_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "kernel_size", "2", "stride", "2", "padding", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.max_pool2d", Map.of(
+                            "dtype", "F32", "rank", "3", "kernel_size", "2", "stride", "2", "padding", "0")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.max_pool2d", Map.of("dtype", "F32", "rank", "4")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "output_h", "1", "output_w", "1")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "output_h", "0", "output_w", "1")).support());
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.embedding", Map.of("dtype", "F32")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.cast", Map.of("dtype", "F32")).support());
