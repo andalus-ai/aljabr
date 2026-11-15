@@ -186,11 +186,11 @@ public final class HatComputeProvider implements ComputeProvider {
             }
 
             if ("tensor.layer_norm".equals(operationId)) {
-                return normalizationSupport(operationId, constraints, false, false);
+                return normalizationSupport(operationId, constraints, false, false, true);
             }
 
             if ("tensor.rms_norm".equals(operationId)) {
-                return normalizationSupport(operationId, constraints, true, false);
+                return normalizationSupport(operationId, constraints, true, false, false);
             }
 
             if ("tensor.batch_norm".equals(operationId)) {
@@ -209,7 +209,7 @@ public final class HatComputeProvider implements ComputeProvider {
                 if (!isF32(runningMeanDtype) || !isF32(runningVarDtype)) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
                 }
-                return normalizationSupport(operationId, constraints, true, true);
+                return normalizationSupport(operationId, constraints, false, false, true);
             }
 
             if ("tensor.cross_entropy".equals(operationId)) {
@@ -266,7 +266,8 @@ public final class HatComputeProvider implements ComputeProvider {
                 String operationId,
                 Map<String, String> constraints,
                 boolean weightRequired,
-                boolean biasRequired) {
+                boolean biasRequired,
+                boolean checkBias) {
             String inputDtype = constraints.get("dtype");
             if (inputDtype == null) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
@@ -277,8 +278,9 @@ public final class HatComputeProvider implements ComputeProvider {
 
             OperationSupport weightSupport = optionalNormalizationTensorSupport(
                     constraints, "weight", weightRequired);
-            OperationSupport biasSupport = optionalNormalizationTensorSupport(
-                    constraints, "bias", biasRequired);
+            OperationSupport biasSupport = checkBias
+                    ? optionalNormalizationTensorSupport(constraints, "bias", biasRequired)
+                    : OperationSupport.DELEGATED;
             if (weightSupport == OperationSupport.UNSUPPORTED
                     || biasSupport == OperationSupport.UNSUPPORTED) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
