@@ -226,6 +226,12 @@ public final class HatComputeProvider implements ComputeProvider {
                 return normalizationSupport(operationId, constraints, false, false, true);
             }
 
+            if ("tensor.conv2d".equals(operationId)) return convolutionSupport(operationId, constraints);
+            if ("tensor.max_pool2d".equals(operationId))
+                return poolingSupport(operationId, constraints, "kernel_size", "stride", "padding");
+            if ("tensor.adaptive_avg_pool2d".equals(operationId))
+                return poolingSupport(operationId, constraints, "output_h", "output_w", null);
+
             if ("tensor.cross_entropy".equals(operationId)) {
                 String predictionDtype = constraints.get("dtype");
                 String targetDtype = constraints.get("target_dtype");
@@ -324,6 +330,71 @@ public final class HatComputeProvider implements ComputeProvider {
             String dtype = constraints.get(tensorName + "_dtype");
             if (dtype == null) return OperationSupport.UNKNOWN;
             return isF32(dtype) ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED;
+        }
+
+        private OperationSupportDescriptor convolutionSupport(String operationId, Map<String, String> constraints) {
+            OperationSupportDescriptor input = floatInputSupport(operationId, constraints, 4);
+            if (input.support() != OperationSupport.DELEGATED) return input;
+            String weightDtype = constraints.get("weight_dtype");
+            if (weightDtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            if (!isF32(weightDtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            String groups = constraints.get("groups");
+            if (groups == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            try {
+                if (Integer.parseInt(groups) != 1) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            } catch (NumberFormatException invalidGroups) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            OperationSupport bias = optionalNormalizationTensorSupport(constraints, "bias", false);
+            if (bias != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, bias, null);
+            for (String key : new String[]{"stride", "dilation"}) {
+                OperationSupport support = positiveIntegerConstraint(constraints, key);
+                if (support != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, support, null);
+            }
+            OperationSupport padding = nonNegativeIntegerConstraint(constraints, "padding");
+            if (padding != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, padding, null);
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupportDescriptor poolingSupport(String operationId, Map<String, String> constraints,
+                String firstKey, String secondKey, String nonNegativeKey) {
+            OperationSupportDescriptor input = floatInputSupport(operationId, constraints, 4);
+            if (input.support() != OperationSupport.DELEGATED) return input;
+            OperationSupport first = positiveIntegerConstraint(constraints, firstKey);
+            if (first != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, first, null);
+            OperationSupport second = positiveIntegerConstraint(constraints, secondKey);
+            if (second != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, second, null);
+            if (nonNegativeKey != null) {
+                OperationSupport padding = nonNegativeIntegerConstraint(constraints, nonNegativeKey);
+                if (padding != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, padding, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupportDescriptor floatInputSupport(String operationId, Map<String, String> constraints, int requiredRank) {
+            String dtype = constraints.get("dtype"), rank = constraints.get("rank");
+            if (dtype == null || rank == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            if (!isF32(dtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            try {
+                if (Integer.parseInt(rank) != requiredRank) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            } catch (NumberFormatException invalidRank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupport positiveIntegerConstraint(Map<String, String> constraints, String key) {
+            String value = constraints.get(key);
+            if (value == null) return OperationSupport.UNKNOWN;
+            try { return Integer.parseInt(value) > 0 ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED; }
+            catch (NumberFormatException invalid) { return OperationSupport.UNKNOWN; }
+        }
+
+        private OperationSupport nonNegativeIntegerConstraint(Map<String, String> constraints, String key) {
+            String value = constraints.get(key);
+            if (value == null) return OperationSupport.UNKNOWN;
+            try { return Integer.parseInt(value) >= 0 ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED; }
+            catch (NumberFormatException invalid) { return OperationSupport.UNKNOWN; }
         }
 
         private static boolean isF32(String dtype) {
