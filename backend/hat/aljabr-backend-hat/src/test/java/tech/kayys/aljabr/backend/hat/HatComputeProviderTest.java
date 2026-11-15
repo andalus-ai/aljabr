@@ -134,6 +134,12 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.batch_norm", Map.of("dtype", "F32")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.batch_norm", Map.of(
+                            "dtype", "F32", "training", "false",
+                            "running_mean_dtype", "F32", "running_var_dtype", "F32",
+                            "rank", "4", "weight_present", "false", "bias_present", "false"))
+                            .support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.batch_norm", Map.of(
                             "dtype", "F32", "training", "false")).support());
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.batch_norm", Map.of(
@@ -145,6 +151,16 @@ class HatComputeProviderTest {
                             "dtype", "F32", "training", "true",
                             "running_mean_dtype", "F32", "running_var_dtype", "F32",
                             "weight_present", "false", "bias_present", "false")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.batch_norm", Map.of(
+                            "dtype", "F32", "training", "inference",
+                            "running_mean_dtype", "F32", "running_var_dtype", "F32",
+                            "rank", "4", "weight_present", "false", "bias_present", "false")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.batch_norm", Map.of(
+                            "dtype", "F32", "training", "false",
+                            "running_mean_dtype", "F32", "running_var_dtype", "F32",
+                            "rank", "1", "weight_present", "false", "bias_present", "false")).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.batch_norm", Map.of(
                             "dtype", "F32", "training", "false",
