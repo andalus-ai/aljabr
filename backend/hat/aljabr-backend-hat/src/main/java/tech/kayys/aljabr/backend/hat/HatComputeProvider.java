@@ -198,8 +198,22 @@ public final class HatComputeProvider implements ComputeProvider {
                 if (training == null) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
+                if (!"true".equalsIgnoreCase(training) && !"false".equalsIgnoreCase(training)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
                 if (Boolean.parseBoolean(training)) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                String rank = constraints.get("rank");
+                if (rank == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                try {
+                    if (Integer.parseInt(rank) < 2) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                } catch (NumberFormatException invalidRank) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
                 String runningMeanDtype = constraints.get("running_mean_dtype");
                 String runningVarDtype = constraints.get("running_var_dtype");
