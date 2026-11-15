@@ -185,6 +185,33 @@ public final class HatComputeProvider implements ComputeProvider {
                         operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
 
+            if ("tensor.layer_norm".equals(operationId)) {
+                return normalizationSupport(operationId, constraints, false, false);
+            }
+
+            if ("tensor.rms_norm".equals(operationId)) {
+                return normalizationSupport(operationId, constraints, true, false);
+            }
+
+            if ("tensor.batch_norm".equals(operationId)) {
+                String training = constraints.get("training");
+                if (training == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (Boolean.parseBoolean(training)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                String runningMeanDtype = constraints.get("running_mean_dtype");
+                String runningVarDtype = constraints.get("running_var_dtype");
+                if (runningMeanDtype == null || runningVarDtype == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (!isF32(runningMeanDtype) || !isF32(runningVarDtype)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                return normalizationSupport(operationId, constraints, true, true);
+            }
+
             if ("tensor.cross_entropy".equals(operationId)) {
                 String predictionDtype = constraints.get("dtype");
                 String targetDtype = constraints.get("target_dtype");
@@ -228,6 +255,63 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+        }
+
+        /**
+         * Models the CPU normalization kernels' float-only memory layouts.
+         * Optional affine tensors are explicit: callers provide *_present,
+         * and a dtype whenever the corresponding tensor is present.
+         */
+        private OperationSupportDescriptor normalizationSupport(
+                String operationId,
+                Map<String, String> constraints,
+                boolean weightRequired,
+                boolean biasRequired) {
+            String inputDtype = constraints.get("dtype");
+            if (inputDtype == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(inputDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+
+            OperationSupport weightSupport = optionalNormalizationTensorSupport(
+                    constraints, "weight", weightRequired);
+            OperationSupport biasSupport = optionalNormalizationTensorSupport(
+                    constraints, "bias", biasRequired);
+            if (weightSupport == OperationSupport.UNSUPPORTED
+                    || biasSupport == OperationSupport.UNSUPPORTED) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (weightSupport == OperationSupport.UNKNOWN || biasSupport == OperationSupport.UNKNOWN) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupport optionalNormalizationTensorSupport(
+                Map<String, String> constraints, String tensorName, boolean required) {
+            String present = constraints.get(tensorName + "_present");
+            if (present == null) {
+                if (!required) return OperationSupport.UNKNOWN;
+                String dtype = constraints.get(tensorName + "_dtype");
+                if (dtype == null) return OperationSupport.UNKNOWN;
+                return isF32(dtype) ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED;
+            }
+            if (!"true".equalsIgnoreCase(present) && !"false".equalsIgnoreCase(present)) {
+                return OperationSupport.UNKNOWN;
+            }
+            if ("false".equalsIgnoreCase(present)) {
+                return required ? OperationSupport.UNSUPPORTED : OperationSupport.DELEGATED;
+            }
+            String dtype = constraints.get(tensorName + "_dtype");
+            if (dtype == null) return OperationSupport.UNKNOWN;
+            return isF32(dtype) ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED;
+        }
+
+        private static boolean isF32(String dtype) {
+            return "F32".equalsIgnoreCase(dtype);
         }
 
         @Override
