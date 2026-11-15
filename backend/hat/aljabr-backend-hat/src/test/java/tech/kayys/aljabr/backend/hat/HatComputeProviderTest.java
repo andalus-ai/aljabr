@@ -136,7 +136,7 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.batch_norm", Map.of(
                             "dtype", "F32", "training", "false",
                             "running_mean_dtype", "F32", "running_var_dtype", "F32",
-                            "rank", "4", "weight_present", "false", "bias_present", "false"))
+                            "weight_present", "false", "bias_present", "false"))
                             .support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.batch_norm", Map.of(
