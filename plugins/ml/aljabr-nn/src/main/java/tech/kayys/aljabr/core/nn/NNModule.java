@@ -164,29 +164,93 @@ public abstract class NNModule implements AutoCloseable {
     }
 
     public NNModule to(DeviceType device) {
-        for (Map.Entry<String, Tensor> entry : new ArrayList<>(parameters.entrySet())) {
-            String name = entry.getKey();
-            Tensor previous = entry.getValue();
-            Tensor moved = previous.to(device);
+        Objects.requireNonNull(device, "device must not be null");
+
+        // Prepare every local replacement before changing the live module state.
+        Map<String, Tensor> movedParameters = new LinkedHashMap<>();
+        Map<String, Tensor> movedBuffers = new LinkedHashMap<>();
+        Map<String, Tensor> movedGradients = new LinkedHashMap<>();
+        List<Tensor> stagedTensors = new ArrayList<>();
+        try {
+            for (Map.Entry<String, Tensor> entry : parameters.entrySet()) {
+                Tensor previous = entry.getValue();
+                Tensor moved = previous.to(device);
+                if (moved != previous) {
+                    stagedTensors.add(moved);
+                }
+                movedParameters.put(entry.getKey(), moved);
+
+                Tensor gradient = previous.grad();
+                if (gradient != null && (moved != previous || gradient.device() != device)) {
+                    Tensor movedGradient = copyToDevice(gradient, device);
+                    movedGradients.put(entry.getKey(), movedGradient);
+                    stagedTensors.add(movedGradient);
+                }
+            }
+
+            for (Map.Entry<String, Tensor> entry : buffers.entrySet()) {
+                Tensor previous = entry.getValue();
+                Tensor moved = previous.to(device);
+                movedBuffers.put(entry.getKey(), moved);
+                if (moved != previous) {
+                    stagedTensors.add(moved);
+                }
+            }
+
+            // Install gradients only after all parameter and buffer transfers succeed.
+            movedGradients.forEach((name, gradient) ->
+                    movedParameters.get(name).setGrad(gradient));
+            stagedTensors.removeAll(movedGradients.values());
+        } catch (RuntimeException | Error failure) {
+            stagedTensors.forEach(Tensor::release);
+            throw failure;
+        }
+
+        movedParameters.forEach((name, moved) -> {
+            Tensor previous = parameters.put(name, moved);
             Parameter registered = parameterObjects.get(name);
-            if (registered != null) {
+            if (registered != null && registered.tensor() != moved) {
                 registered.replaceTensor(moved);
             }
-            parameters.put(name, moved);
             if (previous != moved) {
                 retiredStateTensors.add(previous);
             }
-        }
-        for (Map.Entry<String, Tensor> entry : new ArrayList<>(buffers.entrySet())) {
-            Tensor previous = entry.getValue();
-            Tensor moved = previous.to(device);
-            buffers.put(entry.getKey(), moved);
+        });
+        movedBuffers.forEach((name, moved) -> {
+            Tensor previous = buffers.put(name, moved);
             if (previous != moved) {
                 retiredStateTensors.add(previous);
             }
-        }
+        });
         submodules.values().forEach(m -> m.to(device));
         return this;
+    }
+
+    /**
+     * Creates an independently owned gradient on the requested device.
+     * When the source is already on that device, an explicit copy is needed:
+     * sharing it would give two parameter tensors ownership of one gradient.
+     */
+    private static Tensor copyToDevice(Tensor source, DeviceType device) {
+        if (source.device() != device) {
+            Tensor moved = source.to(device);
+            if (moved == source || moved.device() != device) {
+                if (moved != source) {
+                    moved.release();
+                }
+                throw new IllegalStateException("Backend did not transfer gradient to " + device);
+            }
+            return moved;
+        }
+
+        Tensor copy = source.zerosLike();
+        try {
+            source.backend().copyInto(copy, source);
+            return copy;
+        } catch (RuntimeException | Error failure) {
+            copy.release();
+            throw failure;
+        }
     }
 
     /** Updates the module's live parameter map while retaining the previous value until close. */
