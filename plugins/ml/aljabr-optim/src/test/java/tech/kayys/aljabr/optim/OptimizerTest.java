@@ -348,4 +348,55 @@ class OptimizerTest {
         }
     }
 
+    @Test
+    void sgdMatchesIndependentTwoStepScalarReference() {
+        CpuBackend backend = new CpuBackend();
+        Tensor initial = TensorFactory.of(new float[] { 1.5f }, backend, 1, 1);
+        Tensor firstGradient = TensorFactory.of(new float[] { 0.25f }, backend, 1, 1);
+        Tensor secondGradient = TensorFactory.of(new float[] { -0.5f }, backend, 1, 1);
+        try (Linear layer = new Linear(initial, null)) {
+            Parameter parameter = layer.namedParameterObjects().get("weight");
+            SGD optimizer = new SGD(0.1f);
+            try {
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", firstGradient));
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(1.475f, offset(1.0e-6f));
+
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", secondGradient));
+                // 1.5 - (0.1 * 0.25) - (0.1 * -0.5) = 1.525.
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(1.525f, offset(1.0e-6f));
+            } finally {
+                firstGradient.release();
+                secondGradient.release();
+            }
+        }
+    }
+
+    @Test
+    void adamWMatchesIndependentTwoStepBiasCorrectedScalarReference() {
+        CpuBackend backend = new CpuBackend();
+        Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
+        Tensor firstGradient = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
+        Tensor secondGradient = TensorFactory.zeros(backend, 1, 1);
+        try (Linear layer = new Linear(initial, null);
+             AdamW optimizer = new AdamW(0.1f, 0.5f, 0.5f, 1.0e-8f, 0.0f)) {
+            Parameter parameter = layer.namedParameterObjects().get("weight");
+            try {
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", firstGradient));
+                assertThat(parameter.tensor().toFloatArray()[0])
+                        .isCloseTo(0.9f, offset(2.0e-6f));
+
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", secondGradient));
+                // Scalar reference: m=(0.5, 0.25), v=(0.5, 0.25).
+                // Bias-corrected step two gives mHat=vHat=1/3, so the
+                // second update is 0.1 * (1/3) / (sqrt(1/3) + 1e-8).
+                // Starting from the first-step value (approximately 0.9),
+                // the independently evaluated result is approximately 0.84226498.
+                assertThat(parameter.tensor().toFloatArray()[0])
+                        .isCloseTo(0.842265f, offset(3.0e-5f));
+            } finally {
+                firstGradient.release();
+                secondGradient.release();
+            }
+        }
+    }
 }
