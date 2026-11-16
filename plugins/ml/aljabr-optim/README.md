@@ -16,6 +16,7 @@ autograd and training orchestration.
 ## Initial algorithms
 
 - `SGD`: stateless gradient descent.
+- `MomentumSGD`: SGD with per-parameter momentum buffers.
 - `AdamW`: adaptive moments with decoupled weight decay.
 
 Both consume stable, fully qualified parameter names and gradient maps. Missing

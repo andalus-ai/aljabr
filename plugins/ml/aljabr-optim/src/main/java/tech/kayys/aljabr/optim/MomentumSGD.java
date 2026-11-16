@@ -1,0 +1,122 @@
+package tech.kayys.aljabr.optim;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import tech.kayys.aljabr.core.nn.Parameter;
+import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
+
+/**
+ * Stochastic gradient descent with a per-parameter momentum buffer.
+ *
+ * <p>The velocity follows {@code v = momentum * previousVelocity + gradient};
+ * parameters are updated as {@code parameter -= learningRate * v}. A replaced
+ * parameter tensor starts with a fresh velocity buffer.</p>
+ */
+public final class MomentumSGD implements Optimizer, AutoCloseable {
+    private final float learningRate;
+    private final float momentum;
+    private final Map<String, Tensor> velocities = new LinkedHashMap<>();
+    private final Map<String, Tensor> parameterSnapshots = new LinkedHashMap<>();
+
+    public MomentumSGD(float learningRate, float momentum) {
+        if (!Float.isFinite(learningRate) || learningRate < 0.0f) {
+            throw new IllegalArgumentException("Learning rate must be finite and non-negative");
+        }
+        if (!Float.isFinite(momentum) || momentum < 0.0f || momentum >= 1.0f) {
+            throw new IllegalArgumentException("Momentum must be in [0, 1)");
+        }
+        this.learningRate = learningRate;
+        this.momentum = momentum;
+    }
+
+    public float learningRate() {
+        return learningRate;
+    }
+
+    public float momentum() {
+        return momentum;
+    }
+
+    @Override
+    public void step(Map<String, Parameter> parameters, Map<String, Tensor> gradients) {
+        Objects.requireNonNull(parameters, "parameters must not be null");
+        Objects.requireNonNull(gradients, "gradients must not be null");
+
+        boolean hasGradient = false;
+        for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
+            String name = Objects.requireNonNull(entry.getKey(), "parameter name must not be null");
+            Parameter parameter = Objects.requireNonNull(entry.getValue(), "parameter " + name);
+            Tensor gradient = gradients.get(name);
+            if (gradient != null && parameter.isTrainable()) {
+                parameter.validateGradient(gradient);
+                hasGradient = true;
+            }
+        }
+        if (!hasGradient) {
+            return;
+        }
+
+        try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
+            Map<String, Tensor> nextVelocities = new LinkedHashMap<>();
+            Map<String, Tensor> updates = new LinkedHashMap<>();
+            try {
+                for (Map.Entry<String, Parameter> entry : parameters.entrySet()) {
+                    String name = entry.getKey();
+                    Parameter parameter = entry.getValue();
+                    Tensor gradient = gradients.get(name);
+                    if (gradient == null || !parameter.isTrainable()) {
+                        continue;
+                    }
+
+                    Tensor current = parameter.tensor();
+                    boolean replaced = parameterSnapshots.containsKey(name)
+                            && parameterSnapshots.get(name) != current;
+                    Tensor previous = replaced ? null : velocities.get(name);
+                    Tensor base = previous == null ? gradient.zerosLike() : previous.mul(momentum);
+                    Tensor velocity = null;
+                    Tensor scaledVelocity = null;
+                    try {
+                        velocity = base.add(gradient);
+                        nextVelocities.put(name, velocity);
+                        scaledVelocity = velocity.mul(learningRate);
+                        updates.put(name, current.sub(scaledVelocity));
+                    } finally {
+                        base.release();
+                        if (scaledVelocity != null) scaledVelocity.release();
+                    }
+                }
+
+                nextVelocities.forEach((name, value) -> {
+                    Tensor old = velocities.put(name, value);
+                    if (old != null) old.release();
+                });
+                updates.forEach((name, value) -> {
+                    parameters.get(name).updateTensor(value);
+                    parameterSnapshots.put(name, value);
+                });
+            } catch (RuntimeException | Error failure) {
+                nextVelocities.forEach((name, value) -> {
+                    if (velocities.get(name) != value) value.release();
+                });
+                updates.forEach((name, value) -> {
+                    if (parameters.get(name).tensor() != value) value.release();
+                });
+                throw failure;
+            }
+        }
+    }
+
+    @Override
+    public void reset() {
+        velocities.values().forEach(Tensor::release);
+        velocities.clear();
+        parameterSnapshots.clear();
+    }
+
+    @Override
+    public void close() {
+        reset();
+    }
+}
