@@ -232,6 +232,17 @@ public final class HatComputeProvider implements ComputeProvider {
             if ("tensor.adaptive_avg_pool2d".equals(operationId))
                 return poolingSupport(operationId, constraints, "output_h", "output_w", null);
 
+            if ("tensor.dropout".equals(operationId)) {
+                return dropoutSupport(operationId, constraints);
+            }
+
+            if ("tensor.zeros_like".equals(operationId)) {
+                String dtype = constraints.get("dtype");
+                if (dtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                if (!isF32(dtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+
             if ("tensor.cross_entropy".equals(operationId)) {
                 String predictionDtype = constraints.get("dtype");
                 String targetDtype = constraints.get("target_dtype");
@@ -395,6 +406,41 @@ public final class HatComputeProvider implements ComputeProvider {
             if (value == null) return OperationSupport.UNKNOWN;
             try { return Integer.parseInt(value) >= 0 ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED; }
             catch (NumberFormatException invalid) { return OperationSupport.UNKNOWN; }
+        }
+
+        /**
+         * Inference/zero-probability dropout is an identity operation. The
+         * training kernel reads and writes F32 values and requires 0 <= p < 1.
+         */
+        private OperationSupportDescriptor dropoutSupport(
+                String operationId, Map<String, String> constraints) {
+            String training = constraints.get("training");
+            String probability = constraints.get("p");
+            if (training == null || probability == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!"true".equalsIgnoreCase(training) && !"false".equalsIgnoreCase(training)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            float p;
+            try {
+                p = Float.parseFloat(probability);
+            } catch (NumberFormatException invalidProbability) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!Float.isFinite(p) || p < 0f || p > 1f) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (!Boolean.parseBoolean(training) || p == 0f) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+            if (p == 1f) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            String dtype = constraints.get("dtype");
+            if (dtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            if (!isF32(dtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
         private static boolean isF32(String dtype) {
