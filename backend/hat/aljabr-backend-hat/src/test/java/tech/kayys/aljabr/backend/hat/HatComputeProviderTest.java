@@ -199,6 +199,34 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
                             "dtype", "F32", "rank", "4", "output_h", "0", "output_w", "1")).support());
             assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.dropout", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.dropout", Map.of("training", "true", "p", "0.25")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "false", "p", "0.25", "dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "true", "p", "0", "dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "true", "p", "0.25", "dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "true", "p", "0.25", "dtype", "F16")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "true", "p", "1", "dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "true", "p", "1.2", "dtype", "F32")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.zeros_like", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.zeros_like", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.zeros_like", Map.of("dtype", "Q4_0")).support());
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.embedding", Map.of("dtype", "F32")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.cast", Map.of("dtype", "F32")).support());
