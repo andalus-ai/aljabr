@@ -55,7 +55,7 @@ public final class EMeansParameterScaling {
             rawBatch /= 8.0;
         }
         long roundedBatch = nearestPowerOfTwo(rawBatch);
-        int batchSize = (int) Math.min(sampleCount, roundedBatch);
+        int batchSize = (int) Math.min(Math.min(sampleCount, Integer.MAX_VALUE), roundedBatch);
 
         double alpha = STEP_COEFFICIENT
                 * Math.pow(k, -0.46)
