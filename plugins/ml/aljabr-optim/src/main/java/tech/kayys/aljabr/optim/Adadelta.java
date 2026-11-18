@@ -80,6 +80,8 @@ public final class Adadelta implements Optimizer, AutoCloseable {
                     Tensor updatePlusEpsilon = null;
                     Tensor updateRoot = null;
                     Tensor ratio = null;
+                    Tensor scaledGradient = null;
+                    Tensor delta = null;
                     Tensor delta = null;
                     Tensor deltaSquares = null;
                     Tensor updateContribution = null;
@@ -97,7 +99,8 @@ public final class Adadelta implements Optimizer, AutoCloseable {
                         }
                         updateRoot = updatePlusEpsilon.sqrt();
                         ratio = updateRoot.div(gradientRoot);
-                        delta = gradient.mul(ratio).mul(-1.0f);
+                        scaledGradient = gradient.mul(ratio);
+                        delta = scaledGradient.mul(-1.0f);
 
                         deltaSquares = delta.mul(delta);
                         updateContribution = deltaSquares.mul(1.0f - rho);
@@ -112,6 +115,7 @@ public final class Adadelta implements Optimizer, AutoCloseable {
                         if (updatePlusEpsilon != null) updatePlusEpsilon.release();
                         if (updateRoot != null) updateRoot.release();
                         if (ratio != null) ratio.release();
+                        if (scaledGradient != null) scaledGradient.release();
                         if (delta != null) delta.release();
                         if (deltaSquares != null) deltaSquares.release();
                         if (updateContribution != null) updateContribution.release();
