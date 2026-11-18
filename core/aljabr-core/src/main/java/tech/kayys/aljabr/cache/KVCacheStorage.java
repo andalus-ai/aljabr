@@ -41,6 +41,70 @@ public interface KVCacheStorage extends AutoCloseable {
     /** Copies one position's V vector into the destination. */
     void readValue(int layer, int position, float[] destination, int destinationOffset);
 
+    /**
+     * Writes a contiguous sequence range for one layer. The source arrays
+     * contain {@code tokenCount * layout().layerStride(layer)} floats beginning
+     * at their respective offsets, in position-major order.
+     *
+     * <p>The default implementation delegates to {@link #write}; optimized
+     * providers should override it with a bulk transfer where possible.
+     */
+    default void writeRange(int layer, int firstPosition, int tokenCount,
+            float[] keys, int keysOffset, float[] values, int valuesOffset) {
+        int stride = checkedRange(layer, firstPosition, tokenCount);
+        int elements = Math.multiplyExact(tokenCount, stride);
+        checkArrayRange(keys, keysOffset, elements, "keys");
+        checkArrayRange(values, valuesOffset, elements, "values");
+        for (int token = 0; token < tokenCount; token++) {
+            int sourceOffset = token * stride;
+            write(layer, firstPosition + token,
+                    keys, keysOffset + sourceOffset,
+                    values, valuesOffset + sourceOffset);
+        }
+    }
+
+    /** Copies a contiguous sequence range of K vectors into {@code destination}. */
+    default void readKeyRange(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        int stride = checkedRange(layer, firstPosition, tokenCount);
+        int elements = Math.multiplyExact(tokenCount, stride);
+        checkArrayRange(destination, destinationOffset, elements, "destination");
+        for (int token = 0; token < tokenCount; token++) {
+            readKey(layer, firstPosition + token, destination,
+                    destinationOffset + token * stride);
+        }
+    }
+
+    /** Copies a contiguous sequence range of V vectors into {@code destination}. */
+    default void readValueRange(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        int stride = checkedRange(layer, firstPosition, tokenCount);
+        int elements = Math.multiplyExact(tokenCount, stride);
+        checkArrayRange(destination, destinationOffset, elements, "destination");
+        for (int token = 0; token < tokenCount; token++) {
+            readValue(layer, firstPosition + token, destination,
+                    destinationOffset + token * stride);
+        }
+    }
+
+    private int checkedRange(int layer, int firstPosition, int tokenCount) {
+        KVCacheLayout geometry = layout();
+        int stride = geometry.layerStride(layer);
+        if (firstPosition < 0 || tokenCount < 0
+                || firstPosition > geometry.maxSequenceLength()
+                || tokenCount > geometry.maxSequenceLength() - firstPosition) {
+            throw new IndexOutOfBoundsException("KV cache range exceeds layer capacity");
+        }
+        return stride;
+    }
+
+    private static void checkArrayRange(
+            float[] array, int offset, int length, String name) {
+        if (array == null || offset < 0 || length < 0 || offset > array.length - length) {
+            throw new IndexOutOfBoundsException(name + " range is outside the supplied array");
+        }
+    }
+
     /** Clears all positions for one layer. */
     void clearLayer(int layer);
 
