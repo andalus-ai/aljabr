@@ -216,15 +216,14 @@ public final class KMeansAlgorithm implements ClusteringAlgorithm<KMeansConfig> 
         return updated;
     }
 
-    private static double maximumCentroidShift(
-            float[] previous, float[] updated, DistanceMetric metric) {
+    private static double maximumCentroidShift(float[] previous, float[] updated, DistanceMetric metric) {
         int dimensions = previous.length;
-        double maximum = 0.0;
-        for (int i = 0; i < dimensions; i++) {
-            double difference = (double) previous[i] - updated[i];
-            maximum = Math.max(maximum, difference * difference);
+        double maximumSquaredShift = 0.0;
+        for (int offset = 0; offset < dimensions; offset += 1) {
+            double difference = (double) previous[offset] - updated[offset];
+            maximumSquaredShift = Math.max(maximumSquaredShift, difference * difference);
         }
-        return metric == DistanceMetric.COSINE ? Math.sqrt(maximum) : Math.sqrt(maximum);
+        return Math.sqrt(maximumSquaredShift);
     }
 
     private static double objective(
