@@ -108,14 +108,18 @@ public final class MomentumSGD implements Optimizer, AutoCloseable {
                     }
                 }
 
+                // Publish parameter values before replacing optimizer state. If a
+                // parameter publication fails, newly computed velocities remain
+                // uncommitted and are released below; the next step detects any
+                // parameter values that were already published and resets their
+                // momentum rather than pairing them with stale state.
+                updates.forEach((name, value) -> parameters.get(name).updateTensor(value));
+
                 nextVelocities.forEach((name, value) -> {
                     Tensor old = velocities.put(name, value);
                     if (old != null) old.release();
                 });
-                updates.forEach((name, value) -> {
-                    parameters.get(name).updateTensor(value);
-                    parameterSnapshots.put(name, value);
-                });
+                updates.forEach((name, value) -> parameterSnapshots.put(name, value));
             } catch (RuntimeException | Error failure) {
                 nextVelocities.forEach((name, value) -> {
                     if (velocities.get(name) != value) value.release();
