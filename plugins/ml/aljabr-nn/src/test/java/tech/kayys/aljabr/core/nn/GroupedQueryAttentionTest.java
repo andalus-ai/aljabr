@@ -5,6 +5,7 @@ import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -43,10 +44,7 @@ class GroupedQueryAttentionTest {
         Tensor output = null;
         try {
             output = attention.forward(query, key, value, null, false);
-            assertEquals(1f, output.slice(new long[] {0, 0, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
-            assertEquals(1f, output.slice(new long[] {0, 1, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
-            assertEquals(2f, output.slice(new long[] {0, 2, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
-            assertEquals(2f, output.slice(new long[] {0, 3, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
+            assertArrayEquals(new float[] {1f, 1f, 2f, 2f}, output.toFloatArray(), 1e-6f);
         } finally {
             if (output != null) output.release();
             value.release();
