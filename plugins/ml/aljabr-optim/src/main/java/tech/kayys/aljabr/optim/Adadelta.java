@@ -82,7 +82,6 @@ public final class Adadelta implements Optimizer, AutoCloseable {
                     Tensor ratio = null;
                     Tensor scaledGradient = null;
                     Tensor delta = null;
-                    Tensor delta = null;
                     Tensor deltaSquares = null;
                     Tensor updateContribution = null;
                     Tensor decayedUpdateSquares = null;
