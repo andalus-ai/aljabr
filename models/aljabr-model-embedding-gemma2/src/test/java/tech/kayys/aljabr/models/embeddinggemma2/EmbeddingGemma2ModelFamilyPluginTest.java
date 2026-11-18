@@ -58,6 +58,6 @@ class EmbeddingGemma2ModelFamilyPluginTest {
     void supportReportKeepsRunnerPending() {
         var report = new EmbeddingGemma2ModelFamilyPlugin().supportReport();
 
-        assertEquals(ModelFamilyDirectSupport.PENDING, report.directSupport());
+        assertEquals(ModelFamilyDirectSupport.PENDING, report.directSafetensorStatus());
     }
 }
