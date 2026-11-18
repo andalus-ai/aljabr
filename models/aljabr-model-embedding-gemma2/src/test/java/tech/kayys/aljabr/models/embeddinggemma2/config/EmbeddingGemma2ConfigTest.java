@@ -14,7 +14,7 @@ class EmbeddingGemma2ConfigTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
-    void parsesNestedTextConfigAndPreservesPerLayerOverrides() throws Exception {
+    void parsesNestedTextConfigAndPreservesZeroPaddedPerLayerOverrides() throws Exception {
         EmbeddingGemma2Config config = EmbeddingGemma2Config.fromJson(validConfig());
 
         assertEquals("embedding_gemma2", config.modelType());
@@ -24,6 +24,8 @@ class EmbeddingGemma2ConfigTest {
         assertEquals(24, config.numHiddenLayers());
         assertEquals(4, config.numAttentionHeads());
         assertEquals(2, config.numKeyValueHeads());
+        assertEquals(256, config.headDim());
+        assertEquals(768, config.embeddingDim());
         assertEquals(262144, config.vocabSize());
         assertEquals(262144, config.maxPositionEmbeddings());
         assertEquals(8192, config.maxInputTokens());
@@ -31,6 +33,8 @@ class EmbeddingGemma2ConfigTest {
         assertEquals(4, config.perLayerConfig().size());
         assertEquals(512, config.perLayerOverride(5).path("head_dim").asInt());
         assertNotNull(config.perLayerOverride(23));
+        assertEquals(1000000.0, config.ropeParameters()
+                .path("full_attention").path("rope_theta").asDouble());
     }
 
     @Test
@@ -52,7 +56,7 @@ class EmbeddingGemma2ConfigTest {
     void rejectsInvalidLayerOverrideIndex() throws Exception {
         JsonNode json = validConfig();
         ((ObjectNode) json.path("text_config").path("per_layer_config"))
-                .set("24", mapper.createObjectNode().put("head_dim", 256));
+                .set("24", mapper.createObjectNode().put("head_dim", 512));
         assertThrows(IllegalArgumentException.class, () -> EmbeddingGemma2Config.fromJson(json));
     }
 
@@ -81,15 +85,22 @@ class EmbeddingGemma2ConfigTest {
                     "num_hidden_layers":24,
                     "num_attention_heads":4,
                     "num_key_value_heads":2,
+                    "head_dim":256,
+                    "embedding_dim":768,
                     "vocab_size":262144,
                     "max_position_embeddings":262144,
-                    "dtype":"bfloat16",\n                    "head_dim":256,\n                    "embedding_dim":768,
+                    "dtype":"bfloat16",
                     "rms_norm_eps":0.000001,
-                    "rope_parameters":{\n                      "full_attention":{"rope_theta":1000000.0,"rope_type":"default"},\n                      "sliding_attention":{"rope_theta":10000.0,"rope_type":"default"}\n                    },
+                    "rope_parameters":{
+                      "full_attention":{"rope_theta":1000000.0,"rope_type":"default"},
+                      "sliding_attention":{"rope_theta":10000.0,"rope_type":"default"}
+                    },
                     "sliding_window":512,
                     "per_layer_config":{
-                      "5":{"head_dim":256,"num_key_value_heads":1},
-                      "23":{"head_dim":256,"num_key_value_heads":1}
+                      "05":{"head_dim":512,"num_key_value_heads":1},
+                      "11":{"head_dim":512,"num_key_value_heads":1},
+                      "17":{"head_dim":512,"num_key_value_heads":1},
+                      "23":{"head_dim":512,"num_key_value_heads":1}
                     }
                   }
                 }
