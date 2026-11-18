@@ -67,7 +67,6 @@ public final class EMeansParameterScaling {
         return new Recommendation(
                 batchSize,
                 alpha,
-                dimensions <= 16,
                 sampleCount > LARGE_DATASET_THRESHOLD);
     }
 
@@ -83,11 +82,14 @@ public final class EMeansParameterScaling {
         return value - lower < upper - value ? lower : upper;
     }
 
-    /** Immutable result with an explicit low-dimensional caution. */
+    /**
+     * Immutable recommendation. The paper does not establish a universal
+     * dimensionality cutoff for when its fitted laws stop transferring;
+     * callers should apply domain-specific caution to low-dimensional data.
+     */
     public record Recommendation(
             int batchSize,
             double initialStepSize,
-            boolean lowDimensionalCaution,
             boolean largeDatasetAdjustment) {
     }
 }
