@@ -95,6 +95,8 @@ final class GgufLayerWeightResolver {
         }
         GgufKvProjectionLayout.validate(
                 weights.wK, weights.wV, kvHeads, headDimensions, slidingWindowLayers, embeddingDimension);
+        GgufAttentionOutputProjectionLayout.validate(
+                weights.wO, config.nHeads(), headDimensions, embeddingDimension);
 
         return weights;
     }
