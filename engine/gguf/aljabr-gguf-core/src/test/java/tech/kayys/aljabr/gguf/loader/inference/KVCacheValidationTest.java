@@ -52,6 +52,21 @@ class KVCacheValidationTest {
     }
 
     @Test
+    void readsRejectUncommittedPositionsInvalidHeadsAndShortDestinations() {
+        KVCache cache = new KVCache(1, 3, 2, 2);
+        cache.store(0, new float[] {1, 2, 3, 4}, new float[] {5, 6, 7, 8});
+        cache.advance();
+
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> cache.readK(0, 1, 0, new float[2], 0));
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> cache.readV(0, 0, 2, new float[2], 0));
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> cache.readK(0, 0, 0, new float[2], 1));
+        assertThrows(IndexOutOfBoundsException.class, () -> cache.kLayer(1));
+    }
+
+    @Test
     void copyFromRejectsIncompatibleLayerGeometry() {
         KVCache source = new KVCache(1, 4, 2, 2);
         source.advance();

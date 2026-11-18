@@ -15,6 +15,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention, and attention-specific RoPE metadata.
 - Text task formatting for search, question answering, fact checking, code
   retrieval, classification, clustering, and semantic similarity.
+- Matryoshka truncation and final L2 normalization for already-projected
+  768-dimensional vectors.
 - Text-only is the first intended execution milestone.
 
 The plugin deliberately does **not** declare
@@ -53,6 +55,17 @@ callers.
 
 The formatter does not tokenize, execute the model, pool token states, or
 normalize vectors. Those remain separate stages of the model runner.
+## Vector post-processing
+
+`EmbeddingGemma2VectorPostProcessor` accepts only the learned projection's
+native 768-dimensional output. It supports the documented Matryoshka
+dimensions (768, 512, 256, 128), truncates leading dimensions first, then
+normalizes the retained vector using L2 normalization. It rejects non-finite,
+zero-norm, malformed, and unsupported-dimension inputs rather than returning
+invalid vectors.
+
+This utility does not perform mask-aware mean pooling or the learned
+512-to-768 projection. Those remain part of the model forward path.
 
 ## Required execution constraints
 
