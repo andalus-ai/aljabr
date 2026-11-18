@@ -33,3 +33,7 @@ tasks.register<JavaExec>("jmh") {
     mainClass.set("org.openjdk.jmh.Main")
     args("-f", "1", "-wi", "3", "-i", "5", "-w", "1s", "-r", "1s")
 }
+
+tasks.named("check") {
+    dependsOn(jmh.classesTaskName)
+}
