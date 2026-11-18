@@ -52,8 +52,8 @@ class EmbeddingGemma2LayerConfigResolverTest {
     @Test
     void rejectsUnknownLayerTypesAndIncompleteLayerLayouts() throws Exception {
         JsonNode json = validConfig();
-        ((com.fasterxml.jackson.databind.node.ObjectNode) json.path("text_config"))
-                .withArray("layer_types").set(0, mapper.getNodeFactory().textNode("causal_attention"));
+        ((com.fasterxml.jackson.databind.node.ArrayNode) json.path("text_config").path("layer_types"))
+                .set(0, mapper.getNodeFactory().textNode("causal_attention"));
         EmbeddingGemma2Config config = EmbeddingGemma2Config.fromJson(json);
         assertThrows(IllegalArgumentException.class,
                 () -> EmbeddingGemma2LayerConfigResolver.resolve(config, 0));
@@ -86,7 +86,7 @@ class EmbeddingGemma2LayerConfigResolverTest {
                     ? "\"full_attention\"" : "\"sliding_attention\"");
         }
         types.append(']');
-        return mapper.readTree("""
+        String json = """
                 {
                   "model_type":"embedding_gemma2",
                   "text_config":{
@@ -107,7 +107,7 @@ class EmbeddingGemma2LayerConfigResolverTest {
                       "sliding_attention":{"rope_theta":10000.0,"rope_type":"default"}
                     },
                     "sliding_window":512,
-                    "layer_types":""" + types + """,
+                    "layer_types":__LAYER_TYPES__,
                     "per_layer_config":{
                       "05":{"head_dim":512,"num_key_value_heads":1},
                       "11":{"head_dim":512,"num_key_value_heads":1},
@@ -116,6 +116,7 @@ class EmbeddingGemma2LayerConfigResolverTest {
                     }
                   }
                 }
-                """);
+                """.replace("__LAYER_TYPES__", types.toString());
+        return mapper.readTree(json);
     }
 }
