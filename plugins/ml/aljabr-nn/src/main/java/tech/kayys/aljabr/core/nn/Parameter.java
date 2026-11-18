@@ -68,8 +68,10 @@ public final class Parameter {
         Tensor current = tensor;
         validateCompatibleValue(current, replacement, "replacement");
         replacement.setRequiresGrad(current.requiresGrad());
-        this.tensor = replacement;
+        // Let the owning module publish and retain the previous value first.
+        // If that callback rejects the replacement, this handle stays unchanged.
         updateListener.accept(replacement);
+        this.tensor = replacement;
     }
 
     /** Validates that a gradient is compatible with this parameter. */
