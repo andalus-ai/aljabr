@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.core.nn;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
