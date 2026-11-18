@@ -34,10 +34,11 @@ not an alias for the causal `gemma2` or `gemma4` modules.
 The attention, encoder-layer, and assembled text-backbone operations are
 float32 references, not yet a complete registered model runner. The backbone
 accepts token IDs and explicit position IDs; it does not perform tokenizer
-preprocessing or checkpoint deserialization. All trainable projection and norm
-tensors are supplied explicitly in a typed weight bundle. Checkpoint tensor-name
-mapping, tokenizer execution, Matryoshka post-processing integration, and
-end-to-end runner registration remain separate work items.
+preprocessing or checkpoint-file deserialization. The checkpoint mapper accepts
+format-decoded named tensors, validates the complete text tensor set, and creates
+the typed weight bundle. Safetensors/GGUF decoding, tokenizer execution,
+Matryoshka post-processing integration, and end-to-end runner registration
+remain separate work items.
 
 The plugin deliberately does **not** declare
 `DIRECT_SAFETENSOR_INFERENCE`, and this module does not yet register an
@@ -58,8 +59,8 @@ override index ranges.
 Checkpoint layer keys such as `"05"`, `"11"`, `"17"`, and `"23"` are
 normalized to zero-based integer-string keys, so the runtime can reliably
 resolve an override by layer index. The raw override objects and RoPE
-parameters are defensively copied and retained; the backbone resolves the
-effective attention geometry per layer.
+parameters are defensively copied and retained; both the backbone and checkpoint
+mapper resolve the effective attention geometry per layer.
 
 The documented input budget (8,192 tokens) is kept distinct from the raw
 `max_position_embeddings` field.
