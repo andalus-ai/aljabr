@@ -214,6 +214,9 @@ public final class KVCache {
     /** Current filled sequence length (same for all layers). */
     public int seqLen() { return seqLen; }
 
+    /** Maximum number of sequence positions this cache can hold. */
+    public int capacity() { return maxSeq; }
+
     /**
      * Legacy accessor — returns the stride of layer 0 (equivalent to the old
      * uniform {@code headStride()} field). Prefer {@link #headStride(int)}.

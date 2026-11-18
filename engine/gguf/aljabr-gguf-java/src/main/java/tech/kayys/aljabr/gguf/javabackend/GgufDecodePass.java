@@ -120,6 +120,8 @@ final class GgufDecodePass {
      * and returns the best token without copying vocabulary logits to host memory.
      */
     int forwardGreedy(int tokenId, int pos, KVCache cache) {
+        GgufKvCacheSequenceLifecycle.validateDecodeInputs(cache, tokenId, pos,
+                cfg.vocabSize(), cfg.contextLength());
         if (!metalDecodeState.canUse(canUseMetalDecodeStep)) {
             return -1;
         }
@@ -173,6 +175,8 @@ final class GgufDecodePass {
 
     /** One token's forward pass with optional logit computation. */
     float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits) {
+        GgufKvCacheSequenceLifecycle.validateDecodeInputs(cache, tokenId, pos,
+                cfg.vocabSize(), cfg.contextLength());
         int dim = cfg.embeddingDim();
         int nH = cfg.nHeads();
         int ffnDim = cfg.ffnDim();
