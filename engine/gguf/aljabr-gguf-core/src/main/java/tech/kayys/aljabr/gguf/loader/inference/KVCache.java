@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.gguf.loader.inference;
 
+import tech.kayys.aljabr.cache.KVCacheLayout;
+
 /**
  * Per-layer key-value cache for auto-regressive transformer decoding.
  *
@@ -13,15 +15,12 @@ package tech.kayys.aljabr.gguf.loader.inference;
  *
  * <p>For uniform models (all layers share the same nKVHeads and headDim) use
  * {@link #KVCache(int, int, int, int)}; it delegates to the per-layer
- * shared layout.
+ * constructor with identical arrays.
  */
 public final class KVCache {
     private final float[][] k;          // k[layer][pos * layout.layerStride(layer) + ...]
     private final float[][] v;          // v[layer][...]
-    private final int[] layerStride;    // nKVHeads[layer] * headDim[layer]
-    private final int[] layerNKVH;      // nKVHeads per layer
-    private final int[] layerHDim;      // headDim per layer
-    private final int maxSeq;
+    private final KVCacheLayout layout;
     private int seqLen = 0;
 
     /**
@@ -29,26 +28,7 @@ public final class KVCache {
      * must have length {@code nLayers}.
      */
     public KVCache(int nLayers, int maxSeq, int[] nKVHeadsPerLayer, int[] headDimPerLayer) {
-        validateDimensions(nLayers, maxSeq);
-        if (nKVHeadsPerLayer == null || headDimPerLayer == null
-                || nKVHeadsPerLayer.length != nLayers || headDimPerLayer.length != nLayers) {
-            throw new IllegalArgumentException("Per-layer KV head and head-dimension arrays must match nLayers");
-        }
-        this.maxSeq      = maxSeq;
-        this.layerNKVH   = nKVHeadsPerLayer.clone();
-        this.layerHDim   = headDimPerLayer.clone();
-        this.layerStride = new int[nLayers];
-        this.k = new float[nLayers][];
-        this.v = new float[nLayers][];
-        for (int i = 0; i < nLayers; i++) {
-            if (nKVHeadsPerLayer[i] <= 0 || headDimPerLayer[i] <= 0) {
-                throw new IllegalArgumentException("KV heads and head dimension must be positive for layer " + i);
-            }
-            int stride = checkedProduct(nKVHeadsPerLayer[i], headDimPerLayer[i], "layer stride");
-            layerStride[i] = stride;
-            k[i] = new float[checkedProduct(maxSeq, stride, "layer cache size")];
-            v[i] = new float[checkedProduct(maxSeq, stride, "layer cache size")];
-        }
+        this(createLayout(nLayers, maxSeq, nKVHeadsPerLayer, headDimPerLayer));
     }
 
     /**
@@ -57,23 +37,27 @@ public final class KVCache {
      * identical arrays.
      */
     public KVCache(int nLayers, int maxSeq, int nKVHeads, int headDim) {
+        this(KVCacheLayout.uniform(nLayers, maxSeq, nKVHeads, headDim));
+    }
+
+    private static KVCacheLayout createLayout(
+            int nLayers, int maxSeq, int[] nKVHeadsPerLayer, int[] headDimPerLayer) {
         validateDimensions(nLayers, maxSeq);
-        if (nKVHeads <= 0 || headDim <= 0) {
-            throw new IllegalArgumentException("KV heads and head dimension must be positive");
+        if (nKVHeadsPerLayer == null || headDimPerLayer == null
+                || nKVHeadsPerLayer.length != nLayers || headDimPerLayer.length != nLayers) {
+            throw new IllegalArgumentException("Per-layer KV head and head-dimension arrays must match nLayers");
         }
-        this.maxSeq      = maxSeq;
-        this.layerNKVH   = new int[nLayers];
-        this.layerHDim   = new int[nLayers];
-        this.layerStride = new int[nLayers];
-        this.k = new float[nLayers][];
-        this.v = new float[nLayers][];
-        int stride = checkedProduct(nKVHeads, headDim, "layer stride");
-        for (int i = 0; i < nLayers; i++) {
-            layerNKVH[i]   = nKVHeads;
-            layerHDim[i]   = headDim;
-            layerStride[i] = stride;
-            k[i] = new float[checkedProduct(maxSeq, stride, "layer cache size")];
-            v[i] = new float[checkedProduct(maxSeq, stride, "layer cache size")];
+        return new KVCacheLayout(maxSeq, nKVHeadsPerLayer, headDimPerLayer);
+    }
+
+    private KVCache(KVCacheLayout layout) {
+        this.layout = java.util.Objects.requireNonNull(layout, "layout");
+        this.k = new float[layout.layerCount()][];
+        this.v = new float[layout.layerCount()][];
+        for (int layer = 0; layer < layout.layerCount(); layer++) {
+            int elements = Math.multiplyExact(layout.maxSequenceLength(), layout.layerStride(layer));
+            k[layer] = new float[elements];
+            v[layer] = new float[elements];
         }
     }
 
@@ -86,8 +70,8 @@ public final class KVCache {
      */
     public void store(int layer, float[] kVec, float[] vVec) {
         validateLayer(layer);
-        if (seqLen >= maxSeq) {
-            throw new IllegalStateException("KV cache capacity exceeded: " + seqLen + " >= " + maxSeq);
+        if (seqLen >= layout.maxSequenceLength()) {
+            throw new IllegalStateException("KV cache capacity exceeded: " + seqLen + " >= " + layout.maxSequenceLength());
         }
         int base = seqLen * layerStride[layer];
         int len  = layerStride[layer];
@@ -148,7 +132,7 @@ public final class KVCache {
 
     /** Advance the sequence pointer by multiple positions. */
     public void advance(int n) {
-        if (n < 0 || n > maxSeq - seqLen) {
+        if (n < 0 || n > layout.maxSequenceLength() - seqLen) {
             throw new IllegalArgumentException(
                     "Advance of " + n + " exceeds remaining KV cache capacity " + (layout.maxSequenceLength() - seqLen));
         }
@@ -225,7 +209,7 @@ public final class KVCache {
      *             hybrid-attention models.
      */
     @Deprecated
-    public int headStride() { return layerStride[0]; }
+    public int headStride() { return layout.layerStride(0); }
 
     private static void validateDimensions(int nLayers, int maxSeq) {
         if (nLayers <= 0 || maxSeq <= 0) {
@@ -306,14 +290,14 @@ public final class KVCache {
         // must not leave earlier layers overwritten under the destination's
         // previously committed sequence length.
         for (int l = 0; l < nLayers; l++) {
-            if (src.layout.layerStride(l) != layout.layerStride(l)
-                    || src.layout.kvHeads(l) != layout.kvHeads(l)
-                    || src.layout.headDimension(l) != layout.headDimension(l)) {
+            if (src.layout.layerStride(l) != layerStride[l]
+                    || src.layout.kvHeads(l) != layerNKVH[l]
+                    || src.layout.headDimension(l) != layerHDim[l]) {
                 throw new IllegalArgumentException("KV cache layer geometry differs at layer " + l);
             }
         }
         for (int l = 0; l < nLayers; l++) {
-            int count = numTokens * layout.layerStride(l);
+            int count = numTokens * layerStride[l];
             System.arraycopy(src.k[l], 0, this.k[l], 0, count);
             System.arraycopy(src.v[l], 0, this.v[l], 0, count);
         }
