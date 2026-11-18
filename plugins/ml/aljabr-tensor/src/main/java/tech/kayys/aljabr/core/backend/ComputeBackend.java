@@ -341,6 +341,19 @@ public interface ComputeBackend extends AutoCloseable {
     Tensor attention(Tensor Q, Tensor K, Tensor V);
 
     /**
+     * Grouped-query scaled dot-product attention for Q[B,Hq,Sq,D] and
+     * K/V[B,Hkv,Sk,D]. Query heads must be divisible by KV heads.
+     *
+     * <p>Backends with a native GQA kernel should override this operation.
+     * The default fails explicitly so model code never silently expands
+     * device-resident K/V tensors on the Java side.</p>
+     */
+    default Tensor attentionGqa(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
+        throw new UnsupportedOperationException(
+                "Grouped-query attention is not supported by backend " + getClass().getName());
+    }
+
+    /**
      * Attention with an optional additive [queryLength, keyLength] mask.
      * Negative infinity suppresses a key. Causal mode permits keyIndex <= queryIndex.
      * Backends without masked attention support must fail explicitly.
