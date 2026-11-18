@@ -15,7 +15,8 @@ final class GgufPrefillMetalCacheSync {
     static int sync(int tokenCount, GGUFTensorInfo[] keyWeights, GgufModelConfig config,
             KVCache cache, int layers) {
         for (int layer = 0; layer < layers; layer++) {
-            int sourceLayer = sourceLayer(layer, keyWeights[layer] != null, config.isSwaLayer(layer));
+            int sourceLayer = GgufKvCacheRouting.resolveCacheLayer(
+                    layer, keyWeights[layer] != null, config.isSwaLayer(layer));
             int stride = cache.headStride(sourceLayer);
             int count = tokenCount * stride;
             if (!GgufMetalBridge.syncKVCache(layer, tokenCount,
@@ -24,9 +25,5 @@ final class GgufPrefillMetalCacheSync {
             }
         }
         return -1;
-    }
-
-    static int sourceLayer(int layer, boolean hasOwnKeyProjection, boolean isSwaLayer) {
-        return hasOwnKeyProjection ? layer : Math.max(0, layer - (isSwaLayer ? 2 : 1));
     }
 }

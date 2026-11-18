@@ -6,7 +6,8 @@ package tech.kayys.aljabr.gguf.javabackend;
  * <p>A layer with a key projection owns its KV entries. A layer without a key
  * projection reuses the preceding global-attention owner, or the owner two
  * layers back for sliding-window attention. The owner is clamped to layer zero
- * to preserve the existing behavior for leading shared layers.</p>
+ * to preserve the existing behavior for leading shared layers. All execution
+ * paths, including native-cache synchronization, must use this resolver.</p>
  *
  * <p>This is routing only: it does not allocate, write, advance, or synchronize
  * cache storage.</p>
