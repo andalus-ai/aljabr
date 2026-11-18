@@ -28,8 +28,8 @@ class EmbeddingGemma2ConfigTest {
         assertEquals(262144, config.maxPositionEmbeddings());
         assertEquals(8192, config.maxInputTokens());
         assertEquals(512, config.slidingWindow());
-        assertEquals(2, config.perLayerConfig().size());
-        assertEquals(256, config.perLayerOverride(5).path("head_dim").asInt());
+        assertEquals(4, config.perLayerConfig().size());
+        assertEquals(512, config.perLayerOverride(5).path("head_dim").asInt());
         assertNotNull(config.perLayerOverride(23));
     }
 
@@ -44,7 +44,7 @@ class EmbeddingGemma2ConfigTest {
     @Test
     void rejectsUnsupportedPrecision() throws Exception {
         JsonNode json = validConfig();
-        ((ObjectNode) json.path("text_config")).put("torch_dtype", "float16");
+        ((ObjectNode) json.path("text_config")).put("dtype", "float16");
         assertThrows(IllegalArgumentException.class, () -> EmbeddingGemma2Config.fromJson(json));
     }
 
@@ -83,9 +83,9 @@ class EmbeddingGemma2ConfigTest {
                     "num_key_value_heads":2,
                     "vocab_size":262144,
                     "max_position_embeddings":262144,
-                    "torch_dtype":"bfloat16",
+                    "dtype":"bfloat16",\n                    "head_dim":256,\n                    "embedding_dim":768,
                     "rms_norm_eps":0.000001,
-                    "rope_theta":10000.0,
+                    "rope_parameters":{\n                      "full_attention":{"rope_theta":1000000.0,"rope_type":"default"},\n                      "sliding_attention":{"rope_theta":10000.0,"rope_type":"default"}\n                    },
                     "sliding_window":512,
                     "per_layer_config":{
                       "5":{"head_dim":256,"num_key_value_heads":1},
