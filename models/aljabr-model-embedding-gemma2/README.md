@@ -20,17 +20,23 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   and per-layer full/sliding attention geometry.
 - A complete text encoder-layer reference operation with all four residual-path
   RMSNorms, gated GELU MLP, and the third PLE residual sub-block.
+- A composed text-backbone reference path from already-scaled token embeddings
+  through PLE projection, all encoder layers, final RMSNorm, and token-wise
+  projection into the shared embedding dimension.
 - Projection-only Per-Layer Embeddings (PLE) reference operations: input
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - Text-only is the first intended execution milestone.
 
-The attention and encoder-layer operations are float32 references, not yet a
-complete text model runner. The encoder layer composes attention residual,
-gated MLP residual, and PLE residual in the reference order. Final model RMSNorm,
-checkpoint loading/mapping, tokenizer execution, and end-to-end runner registration
-remain separate work items. All trainable projection and norm tensors are supplied
+The attention, encoder-layer, and assembled text-backbone operations are float32
+references, not yet a complete text model runner. The backbone composes the
+projection-only PLE input, every encoder layer, final RMSNorm, and learned
+per-token embedding projection. Tokenizer execution, vocabulary embedding lookup,
+checkpoint loading/mapping, mask-aware mean pooling, and end-to-end runner
+registration remain separate work items. The backbone accepts already-scaled
+token embeddings and explicit position IDs; it does not silently perform
+vocabulary lookup or tokenizer-specific preprocessing. All trainable projection and norm tensors are supplied
 by the checkpoint loader; these operations never randomly initialize weights.
 
 The plugin deliberately does **not** declare
