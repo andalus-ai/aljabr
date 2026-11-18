@@ -54,12 +54,12 @@ class EmbeddingGemma2VisionPatchEmbedderTest {
     @Test
     void reportsConfiguredDimensions() {
         var embedder = new EmbeddingGemma2VisionPatchEmbedder(
-                16, 768, 10240,
+                1, 1, 2,
                 new EmbeddingGemma2VisionPatchEmbedder.Weights(
-                        new float[768][768], new float[2][10240][768]));
+                        new float[1][3], new float[2][2][1]));
 
-        assertEquals(16, embedder.patchSize());
-        assertEquals(768, embedder.hiddenSize());
-        assertEquals(10240, embedder.positionEmbeddingSize());
+        assertEquals(1, embedder.patchSize());
+        assertEquals(1, embedder.hiddenSize());
+        assertEquals(2, embedder.positionEmbeddingSize());
     }
 }
