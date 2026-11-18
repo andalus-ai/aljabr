@@ -9,7 +9,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   `embedding_gemma2_text`.
 - SentencePiece tokenizer routing.
 - Validated nested text configuration through `EmbeddingGemma2Config`.
-- Preservation and validation of per-layer configuration overrides.
+- Preservation and validation of zero-padded per-layer overrides and
+  attention-type-specific RoPE parameters.
 - Text-only is the first intended execution milestone.
 
 The plugin deliberately does **not** declare
@@ -22,15 +23,20 @@ implemented and validated.
 
 `EmbeddingGemma2Config.fromJson` requires the family-level
 `embedding_gemma2` identity and nested `embedding_gemma2_text` identity.
-It validates positive dimensions, query/KV head divisibility, the supported
-BF16/FP32 precision contract, layer-type count, and per-layer override index
-ranges. Raw per-layer JSON is preserved so layer-specific head dimensions,
-KV-head counts, and RoPE settings are not lost while parsing the base text
-configuration.
+It reads the checkpoint's `dtype` field (with `torch_dtype` compatibility),
+base head dimension, embedding dimension, and both full/sliding RoPE parameter
+sets. It validates positive dimensions, query/KV head divisibility, the
+supported BF16/FP32 precision contract, layer-type count, and per-layer
+override index ranges.
+
+Checkpoint layer keys such as `"05"`, `"11"`, `"17"`, and `"23"` are
+normalized to zero-based integer-string keys, so the runtime can reliably
+resolve an override by layer index. The raw override objects and RoPE
+parameters are defensively copied and retained; the runner must use them when
+constructing per-layer attention projections and positional encoding.
 
 The documented input budget (8,192 tokens) is kept distinct from the raw
-`max_position_embeddings` field. The runner must resolve per-layer overrides
-before constructing attention projections or loading corresponding weights.
+`max_position_embeddings` field.
 
 ## Required execution constraints
 
