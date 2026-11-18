@@ -16,7 +16,9 @@ final class GgufPrefillMetalCacheSync {
             KVCache cache, int layers) {
         for (int layer = 0; layer < layers; layer++) {
             int sourceLayer = GgufKvCacheRouting.resolveCacheLayer(
-                    layer, keyWeights[layer] != null, config.isSwaLayer(layer));
+                    layer, keyWeights, config.isSwaLayer(layer));
+            GgufKvCacheRouting.validateCacheGeometry(cache, sourceLayer,
+                    config.nKVHeadsForLayer(layer), config.headDimForLayer(layer));
             int stride = cache.headStride(sourceLayer);
             int count = tokenCount * stride;
             if (!GgufMetalBridge.syncKVCache(layer, tokenCount,
