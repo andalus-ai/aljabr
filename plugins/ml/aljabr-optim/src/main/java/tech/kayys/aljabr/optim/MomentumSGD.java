@@ -17,10 +17,15 @@ import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
 public final class MomentumSGD implements Optimizer, AutoCloseable {
     private final float learningRate;
     private final float momentum;
+    private final boolean nesterov;
     private final Map<String, Tensor> velocities = new LinkedHashMap<>();
     private final Map<String, Tensor> parameterSnapshots = new LinkedHashMap<>();
 
     public MomentumSGD(float learningRate, float momentum) {
+        this(learningRate, momentum, false);
+    }
+
+    public MomentumSGD(float learningRate, float momentum, boolean nesterov) {
         if (!Float.isFinite(learningRate) || learningRate < 0.0f) {
             throw new IllegalArgumentException("Learning rate must be finite and non-negative");
         }
@@ -29,6 +34,7 @@ public final class MomentumSGD implements Optimizer, AutoCloseable {
         }
         this.learningRate = learningRate;
         this.momentum = momentum;
+        this.nesterov = nesterov;
     }
 
     public float learningRate() {
@@ -37,6 +43,10 @@ public final class MomentumSGD implements Optimizer, AutoCloseable {
 
     public float momentum() {
         return momentum;
+    }
+
+    public boolean nesterov() {
+        return nesterov;
     }
 
     @Override
@@ -76,26 +86,40 @@ public final class MomentumSGD implements Optimizer, AutoCloseable {
                     Tensor previous = replaced ? null : velocities.get(name);
                     Tensor base = previous == null ? gradient.zerosLike() : previous.mul(momentum);
                     Tensor velocity = null;
-                    Tensor scaledVelocity = null;
+                    Tensor lookahead = null;
+                    Tensor direction = null;
+                    Tensor scaledDirection = null;
                     try {
                         velocity = base.add(gradient);
                         nextVelocities.put(name, velocity);
-                        scaledVelocity = velocity.mul(learningRate);
-                        updates.put(name, current.sub(scaledVelocity));
+                        if (nesterov) {
+                            lookahead = velocity.mul(momentum);
+                            direction = gradient.add(lookahead);
+                        } else {
+                            direction = velocity;
+                        }
+                        scaledDirection = direction.mul(learningRate);
+                        updates.put(name, current.sub(scaledDirection));
                     } finally {
                         base.release();
-                        if (scaledVelocity != null) scaledVelocity.release();
+                        if (lookahead != null) lookahead.release();
+                        if (nesterov && direction != null) direction.release();
+                        if (scaledDirection != null) scaledDirection.release();
                     }
                 }
+
+                // Publish parameter values before replacing optimizer state. If a
+                // parameter publication fails, newly computed velocities remain
+                // uncommitted and are released below; the next step detects any
+                // parameter values that were already published and resets their
+                // momentum rather than pairing them with stale state.
+                updates.forEach((name, value) -> parameters.get(name).updateTensor(value));
 
                 nextVelocities.forEach((name, value) -> {
                     Tensor old = velocities.put(name, value);
                     if (old != null) old.release();
                 });
-                updates.forEach((name, value) -> {
-                    parameters.get(name).updateTensor(value);
-                    parameterSnapshots.put(name, value);
-                });
+                updates.forEach((name, value) -> parameterSnapshots.put(name, value));
             } catch (RuntimeException | Error failure) {
                 nextVelocities.forEach((name, value) -> {
                     if (velocities.get(name) != value) value.release();

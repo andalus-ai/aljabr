@@ -16,13 +16,14 @@ autograd and training orchestration.
 ## Initial algorithms
 
 - `SGD`: stateless gradient descent.
-- `MomentumSGD`: SGD with per-parameter momentum buffers.
+- `MomentumSGD`: SGD with per-parameter momentum buffers and optional Nesterov lookahead.
 - `AdamW`: adaptive moments with decoupled weight decay.
 
-Both consume stable, fully qualified parameter names and gradient maps. Missing
-gradients and frozen parameters are skipped. Gradient shape, dtype, backend,
-and device are validated before parameter replacement. Optimizer state is
-explicitly released by `reset()`; `AdamW` is also `AutoCloseable`.
+All optimizers consume stable, fully qualified parameter names and gradient
+maps. Missing gradients and frozen parameters are skipped. Gradient shape,
+dtype, backend, and device are validated before parameter replacement. Stateful
+optimizer state is explicitly released by `reset()`; `MomentumSGD` and `AdamW`
+are also `AutoCloseable`.
 
 This is an initial F32-oriented API built on the currently supported tensor
 arithmetic. Mixed precision, gradient scaling, sparse gradients, parameter
