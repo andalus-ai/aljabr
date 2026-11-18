@@ -29,6 +29,9 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
+- A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
+  followed by the checkpoint-backed bias-free modality-to-text projection, while
+  preserving per-image token sequences.
 - Text-only is the first intended execution milestone.
 
 The attention, encoder-layer, and assembled text-backbone operations are
