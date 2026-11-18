@@ -39,6 +39,22 @@ public record EMeansConfig(
         return DistanceMetric.SQUARED_EUCLIDEAN;
     }
 
+    /**
+     * Builds a configuration from the paper's fitted scaling laws.
+     *
+     * <p>For low-dimensional data, inspect {@link EMeansParameterScaling#recommend}
+     * first: the paper reports weaker transfer of these laws on tiny and
+     * low-dimensional problems.</p>
+     */
+    public static EMeansConfig auto(
+            int clusterCount, long seed, int epochs, long sampleCount, int dimensions) {
+        EMeansParameterScaling.Recommendation recommendation =
+                EMeansParameterScaling.recommend(sampleCount, clusterCount, epochs, dimensions);
+        return new EMeansConfig(
+                clusterCount, seed, epochs, recommendation.batchSize(),
+                recommendation.initialStepSize(), true);
+    }
+
     public static EMeansConfig defaults(int clusterCount, long seed, int epochs, int batchSize) {
         return new EMeansConfig(clusterCount, seed, epochs, batchSize, 0.5, true);
     }
