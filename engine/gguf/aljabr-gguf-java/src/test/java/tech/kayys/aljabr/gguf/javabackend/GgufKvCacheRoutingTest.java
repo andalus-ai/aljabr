@@ -30,6 +30,14 @@ class GgufKvCacheRoutingTest {
     }
 
     @Test
+    void metalCacheSynchronizationUsesTheCanonicalRoutingPolicy() {
+        assertEquals(4, GgufKvCacheRouting.resolveCacheLayer(4, true, false));
+        assertEquals(3, GgufKvCacheRouting.resolveCacheLayer(4, false, false));
+        assertEquals(2, GgufKvCacheRouting.resolveCacheLayer(4, false, true));
+        assertEquals(0, GgufKvCacheRouting.resolveCacheLayer(1, false, true));
+    }
+
+    @Test
     void rejectsNegativeLayer() {
         assertThrows(IllegalArgumentException.class,
                 () -> GgufKvCacheRouting.resolveCacheLayer(-1, false, false));
