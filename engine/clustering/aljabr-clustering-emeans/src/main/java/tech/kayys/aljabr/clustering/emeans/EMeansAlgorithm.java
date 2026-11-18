@@ -74,10 +74,9 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
             }
         }
 
-        int batchesPerEpoch = (samples + config.batchSize() - 1) / config.batchSize();
+        int batchesPerEpoch = Math.toIntExact(((long) samples + config.batchSize() - 1) / config.batchSize());
         int totalBatches = Math.multiplyExact(config.epochs(), batchesPerEpoch);
         int[] order = new int[samples];
-        int[] finalEpochAssignments = new int[samples];
         double[] finalEpochSums = new double[centers.length];
         int[] finalEpochCounts = new int[clusters];
         int batchNumber = 0;
@@ -88,7 +87,6 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
             }
             shuffle(order, random);
             if (epoch == config.epochs() - 1) {
-                Arrays.fill(finalEpochAssignments, -1);
                 Arrays.fill(finalEpochSums, 0.0);
                 Arrays.fill(finalEpochCounts, 0);
             }
@@ -98,12 +96,10 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
                 int batchLength = end - start;
                 int[] batchCounts = new int[clusters];
                 double[] batchSums = new double[centers.length];
-                int[] batchAssignments = new int[batchLength];
 
                 for (int position = start; position < end; position++) {
                     int sample = order[position];
                     int cluster = nearest(data, sample * dimensions, centers, dimensions);
-                    batchAssignments[position - start] = cluster;
                     batchCounts[cluster]++;
                     int source = sample * dimensions;
                     int target = cluster * dimensions;
@@ -171,7 +167,7 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
                 centroidTensor,
                 assignments,
                 new ClusteringMetrics("sum_squared_euclidean", objective),
-                new ClusteringMetadata(ID, config.epochs(), config.seed(), true));
+                new ClusteringMetadata(ID, config.epochs(), config.seed(), false));
     }
 
     private static float[] initialize(
