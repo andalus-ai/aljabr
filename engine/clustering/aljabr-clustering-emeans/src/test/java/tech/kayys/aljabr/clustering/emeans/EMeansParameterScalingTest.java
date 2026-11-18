@@ -27,6 +27,16 @@ class EMeansParameterScalingTest {
     }
 
     @Test
+    void automaticConfigUsesTheRecommendation() {
+        var recommendation = EMeansParameterScaling.recommend(100_000, 256, 4, 128);
+        var config = EMeansConfig.auto(256, 42L, 4, 100_000, 128);
+
+        assertThat(config.batchSize()).isEqualTo(recommendation.batchSize());
+        assertThat(config.initialStepSize()).isEqualTo(recommendation.initialStepSize());
+        assertThat(config.reviveDeadClusters()).isTrue();
+    }
+
+    @Test
     void rejectsInvalidProblemDimensions() {
         assertThatThrownBy(() -> EMeansParameterScaling.recommend(0, 1, 1, 8))
                 .isInstanceOf(IllegalArgumentException.class);
