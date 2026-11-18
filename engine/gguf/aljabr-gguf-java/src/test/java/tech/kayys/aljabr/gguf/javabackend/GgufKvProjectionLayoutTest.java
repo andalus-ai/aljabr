@@ -10,26 +10,26 @@ class GgufKvProjectionLayoutTest {
 
     @Test
     void acceptsIndependentKeyAndValueProjections() {
-        assertDoesNotThrow(() -> validate(keys(2, 64, 0, 1), values(2, 64, 0, 1),
+        assertDoesNotThrow(() -> validate(keys(2, 2, 64, 0, 1), values(2, 2, 64, 0, 1),
                 new int[] {2, 2}, new int[] {64, 64}, new boolean[] {false, false}));
     }
 
     @Test
     void acceptsKeyOnlyOwnerBecauseRunnerUsesKeyAsValue() {
-        assertDoesNotThrow(() -> validate(keys(2, 64, 0), absent(1),
+        assertDoesNotThrow(() -> validate(keys(1, 2, 64, 0), absent(1),
                 new int[] {2}, new int[] {64}, new boolean[] {false}));
     }
 
     @Test
     void acceptsSharedLayerWithCompatibleOwnerGeometry() {
-        assertDoesNotThrow(() -> validate(keys(2, 64, 0), values(2, 64, 0),
+        assertDoesNotThrow(() -> validate(keys(2, 2, 64, 0), values(2, 2, 64, 0),
                 new int[] {2, 2}, new int[] {64, 64}, new boolean[] {false, false}));
     }
 
     @Test
     void rejectsValueProjectionWithoutKeyProjection() {
         assertThrows(IllegalArgumentException.class,
-                () -> validate(absent(1), values(2, 64, 0),
+                () -> validate(absent(1), values(1, 2, 64, 0),
                         new int[] {2}, new int[] {64}, new boolean[] {false}));
     }
 
@@ -43,14 +43,14 @@ class GgufKvProjectionLayoutTest {
     @Test
     void rejectsSharedLayerWithIncompatibleOwnerGeometry() {
         assertThrows(IllegalArgumentException.class,
-                () -> validate(keys(2, 64, 0), values(2, 64, 0),
+                () -> validate(keys(2, 2, 64, 0), values(2, 2, 64, 0),
                         new int[] {2, 4}, new int[] {64, 64}, new boolean[] {false, false}));
     }
 
     @Test
     void rejectsMismatchedLayoutArrayLengths() {
         assertThrows(IllegalArgumentException.class,
-                () -> validate(keys(2, 64, 0), absent(2),
+                () -> validate(keys(1, 2, 64, 0), absent(2),
                         new int[] {2}, new int[] {64}, new boolean[] {false}));
     }
 
@@ -71,7 +71,7 @@ class GgufKvProjectionLayoutTest {
     @Test
     void rejectsValueProjectionWithWrongOutputWidth() {
         assertThrows(IllegalArgumentException.class,
-                () -> validate(keys(2, 64, 0),
+                () -> validate(keys(1, 2, 64, 0),
                         new GGUFTensorInfo[] {tensor(0, "attn_v", 128, 96)},
                         new int[] {2}, new int[] {64}, new boolean[] {false}));
     }
@@ -79,7 +79,7 @@ class GgufKvProjectionLayoutTest {
     @Test
     void rejectsNonPositiveEmbeddingDimension() {
         assertThrows(IllegalArgumentException.class,
-                () -> GgufKvProjectionLayout.validate(keys(2, 64, 0), values(2, 64, 0),
+                () -> GgufKvProjectionLayout.validate(keys(1, 2, 64, 0), values(1, 2, 64, 0),
                         new int[] {2}, new int[] {64}, new boolean[] {false}, 0));
     }
 
@@ -89,22 +89,21 @@ class GgufKvProjectionLayoutTest {
                 keys, values, kvHeads, headDimensions, swa, EMBEDDING_DIMENSION);
     }
 
-    private static GGUFTensorInfo[] keys(int kvHeads, int headDimension, int... layers) {
-        return projections("attn_k", kvHeads, headDimension, layers);
+    private static GGUFTensorInfo[] keys(int layerCount, int kvHeads, int headDimension, int... presentLayers) {
+        return projections(layerCount, "attn_k", kvHeads, headDimension, presentLayers);
     }
 
-    private static GGUFTensorInfo[] values(int kvHeads, int headDimension, int... layers) {
-        return projections("attn_v", kvHeads, headDimension, layers);
+    private static GGUFTensorInfo[] values(int layerCount, int kvHeads, int headDimension, int... presentLayers) {
+        return projections(layerCount, "attn_v", kvHeads, headDimension, presentLayers);
     }
 
     private static GGUFTensorInfo[] absent(int layers) {
         return new GGUFTensorInfo[layers];
     }
 
-    private static GGUFTensorInfo[] projections(String name, int kvHeads, int headDimension, int... presentLayers) {
-        int layers = 0;
-        for (int layer : presentLayers) layers = Math.max(layers, layer + 1);
-        GGUFTensorInfo[] result = new GGUFTensorInfo[layers];
+    private static GGUFTensorInfo[] projections(
+            int layerCount, String name, int kvHeads, int headDimension, int... presentLayers) {
+        GGUFTensorInfo[] result = new GGUFTensorInfo[layerCount];
         for (int layer : presentLayers) {
             result[layer] = tensor(layer, name, EMBEDDING_DIMENSION, kvHeads * headDimension);
         }
