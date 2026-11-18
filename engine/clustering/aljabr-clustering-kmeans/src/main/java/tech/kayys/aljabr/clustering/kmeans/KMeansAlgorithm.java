@@ -73,7 +73,7 @@ public final class KMeansAlgorithm implements ClusteringAlgorithm<KMeansConfig> 
             boolean assignmentsStable = Arrays.equals(assignments, nextAssignments);
             float[] nextCentroids = updateCentroids(
                     data, nextAssignments, centroids, sampleCount, dimensions, config.distanceMetric());
-            double shift = maximumCentroidShift(centroids, nextCentroids, config.distanceMetric());
+            double shift = maximumCentroidShift(centroids, nextCentroids, dimensions);
             assignments = nextAssignments;
             centroids = nextCentroids;
             if (assignmentsStable || shift <= config.tolerance()) {
@@ -216,12 +216,15 @@ public final class KMeansAlgorithm implements ClusteringAlgorithm<KMeansConfig> 
         return updated;
     }
 
-    private static double maximumCentroidShift(float[] previous, float[] updated, DistanceMetric metric) {
-        int dimensions = previous.length;
+    private static double maximumCentroidShift(float[] previous, float[] updated, int dimensions) {
         double maximumSquaredShift = 0.0;
-        for (int offset = 0; offset < dimensions; offset += 1) {
-            double difference = (double) previous[offset] - updated[offset];
-            maximumSquaredShift = Math.max(maximumSquaredShift, difference * difference);
+        for (int offset = 0; offset < previous.length; offset += dimensions) {
+            double centroidShift = 0.0;
+            for (int dimension = 0; dimension < dimensions; dimension++) {
+                double difference = (double) previous[offset + dimension] - updated[offset + dimension];
+                centroidShift += difference * difference;
+            }
+            maximumSquaredShift = Math.max(maximumSquaredShift, centroidShift);
         }
         return Math.sqrt(maximumSquaredShift);
     }
