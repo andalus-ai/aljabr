@@ -1,43 +1,48 @@
 # EmbeddingGemma 2 model family
 
 This module registers the distinct `embedding_gemma2` family in Aljabr. It is
-not an alias for the causal `gemma2` or `gemma4` families.
+not an alias for the causal `gemma2` or `gemma4` modules.
 
 ## Current scope
 
 - Model-family identity: `embedding_gemma2` and nested text type
   `embedding_gemma2_text`.
-- Architecture metadata: `EmbeddingGemma2Model`.
 - SentencePiece tokenizer routing.
+- Validated nested text configuration through `EmbeddingGemma2Config`.
+- Preservation and validation of zero-padded per-layer overrides and
+  attention-type-specific RoPE parameters.
 - Text-only is the first intended execution milestone.
 
 The plugin deliberately does **not** declare
 `DIRECT_SAFETENSOR_INFERENCE`, and this module does not yet register an
-`EmbeddingModelRunner`. A metadata plugin is not evidence of executable
+`EmbeddingModelRunner`. A metadata/config module is not evidence of executable
 inference. The runner must not be registered until the complete text path is
-implemented, including bidirectional mixed attention, per-layer embeddings,
-mean pooling, learned projection, output-dimension truncation, and L2
-normalization.
+implemented and validated.
+
+## Configuration contract
+
+`EmbeddingGemma2Config.fromJson` requires the family-level
+`embedding_gemma2` identity and nested `embedding_gemma2_text` identity.
+It reads the checkpoint's `dtype` field (with `torch_dtype` compatibility),
+base head dimension, embedding dimension, and both full/sliding RoPE parameter
+sets. It validates positive dimensions, query/KV head divisibility, the
+supported BF16/FP32 precision contract, layer-type count, and per-layer
+override index ranges.
+
+Checkpoint layer keys such as `"05"`, `"11"`, `"17"`, and `"23"` are
+normalized to zero-based integer-string keys, so the runtime can reliably
+resolve an override by layer index. The raw override objects and RoPE
+parameters are defensively copied and retained; the runner must use them when
+constructing per-layer attention projections and positional encoding.
+
+The documented input budget (8,192 tokens) is kept distinct from the raw
+`max_position_embeddings` field.
 
 ## Required execution constraints
 
-The eventual text runner must validate the nested text configuration and
-per-layer overrides rather than assume a uniform Gemma 4 causal decoder. The
-supported initial contract is:
-
-- 24 transformer layers, hidden size 512, intermediate size 2048;
-- bidirectional attention with the checkpoint's full/sliding layer schedule,
-  RoPE settings, and per-layer attention overrides;
-- required per-layer embedding (PLE) projection, normalization, gating, and
-  residual contribution;
-- mean pooling, learned 512-to-768 projection, then L2 normalization;
-- output dimensions 768, 512, 256, or 128, with renormalization after
-  truncation;
-- maximum input length 8192 tokens;
-- BF16 or FP32 only; do not advertise FP16.
+The eventual text runner must implement bidirectional mixed full/sliding
+attention, per-layer embeddings (PLE), mean pooling, learned projection,
+Matryoshka truncation/renormalization, and L2 normalization.
 
 Image, audio, and video execution remain deferred. They must not be inferred
 from the broader model family's multimodal embedding-space description.
-
-The model-family project is auto-included by the root Gradle settings because
-it is located under `models/aljabr-model-*`.
