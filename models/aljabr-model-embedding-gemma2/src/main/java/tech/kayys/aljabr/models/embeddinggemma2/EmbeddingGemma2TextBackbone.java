@@ -6,7 +6,6 @@ import tech.kayys.aljabr.models.embeddinggemma2.attention.EmbeddingGemma2Encoder
 import tech.kayys.aljabr.models.embeddinggemma2.attention.EmbeddingGemma2SequenceRmsNorm;
 import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2Config;
 import tech.kayys.aljabr.models.embeddinggemma2.output.EmbeddingGemma2MeanPooler;
-import tech.kayys.aljabr.models.embeddinggemma2.output.EmbeddingGemma2Projection;
 import tech.kayys.aljabr.models.embeddinggemma2.ple.EmbeddingGemma2PerLayerEmbeddingProjector;
 
 /**
