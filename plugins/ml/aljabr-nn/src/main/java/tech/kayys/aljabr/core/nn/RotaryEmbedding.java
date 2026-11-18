@@ -89,12 +89,43 @@ public class RotaryEmbedding extends NNModule {
         if (input.shape().dim(2) > maxSeqLen) throw new IllegalArgumentException("input sequence length exceeds maxSeqLen");
     }
 
-    public Tensor apply(Tensor q, Tensor k) {
-        validateInputBackend(q);
-        validateInputBackend(k);
+    /**
+     * Applies the same rotary configuration and sequential positions to query
+     * and key tensors.
+     *
+     * <p>Query and key may have different head counts, but must share batch,
+     * sequence, and head dimensions.
+     */
+    public QueryKey apply(Tensor q, Tensor k) {
+        validateInput(q);
+        validateInput(k);
         if (q.backend() != k.backend()) {
             throw new IllegalArgumentException("Q and K tensors must use the same compute backend");
         }
-        return q; // placeholder
+        if (q.shape().dim(0) != k.shape().dim(0)
+                || q.shape().dim(2) != k.shape().dim(2)
+                || q.shape().dim(3) != k.shape().dim(3)) {
+            throw new IllegalArgumentException(
+                    "Q and K tensors must have matching batch, sequence, and head dimensions");
+        }
+        if (q.dtype() != k.dtype()) {
+            throw new IllegalArgumentException("Q and K tensors must have the same dtype");
+        }
+        Tensor rotatedQuery = forward(q);
+        try {
+            Tensor rotatedKey = forward(k);
+            return new QueryKey(rotatedQuery, rotatedKey);
+        } catch (RuntimeException | Error failure) {
+            rotatedQuery.release();
+            throw failure;
+        }
+    }
+
+    /** The independently rotated query and key tensors. */
+    public record QueryKey(Tensor query, Tensor key) {
+        public QueryKey {
+            java.util.Objects.requireNonNull(query, "query");
+            java.util.Objects.requireNonNull(key, "key");
+        }
     }
 }
