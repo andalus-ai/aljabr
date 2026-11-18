@@ -13,6 +13,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention-type-specific RoPE parameters.
 - Resolution of effective per-layer attention geometry, mixed full/sliding
   attention, and attention-specific RoPE metadata.
+- Text task formatting for search, question answering, fact checking, code
+  retrieval, classification, clustering, and semantic similarity.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - Text-only is the first intended execution milestone.
@@ -42,6 +44,17 @@ constructing per-layer attention projections and positional encoding.
 The documented input budget (8,192 tokens) is kept distinct from the raw
 `max_position_embeddings` field.
 
+## Text task formatting
+
+Use `EmbeddingGemma2InputFormatter` with an explicit
+`EmbeddingGemma2InputRole`. Asymmetric tasks intentionally use different
+query and document templates. Document inputs use
+`title: none | text: ...` when no title is supplied. Symmetric tasks use the
+same task prefix on each side. `UNSPECIFIED` preserves raw input for legacy
+callers.
+
+The formatter does not tokenize, execute the model, pool token states, or
+normalize vectors. Those remain separate stages of the model runner.
 ## Vector post-processing
 
 `EmbeddingGemma2VectorPostProcessor` accepts only the learned projection's
