@@ -113,4 +113,34 @@ class CpuRotaryEmbeddingTest {
         }
     }
 
+    @Test
+    void explicitPositionIdsSupportDifferentPositionsPerBatch() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] {1f, 0f, 1f, 0f}, backend, 2, 1, 1, 2);
+        Tensor output = null;
+        try {
+            output = backend.applyRoPE(input, 10_000f, 2, false, 1f, new long[] {0L, 1L});
+            float[] values = output.toFloatArray();
+            assertArrayEquals(new float[] {1f, 0f, (float) Math.cos(1.0), (float) Math.sin(1.0)},
+                    values, 1e-5f);
+        } finally {
+            if (output != null) output.release();
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void explicitPositionIdsMustMatchBatchAndSequence() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] {1f, 0f, 1f, 0f}, backend, 2, 1, 1, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.applyRoPE(input, 10_000f, 2, false, 1f, new long[] {0L}));
+        } finally {
+            input.release();
+            backend.close();
+        }
+    }
+
 }
