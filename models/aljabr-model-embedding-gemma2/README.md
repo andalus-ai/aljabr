@@ -15,11 +15,29 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention, and attention-specific RoPE metadata.
 - Text task formatting for search, question answering, fact checking, code
   retrieval, classification, clustering, and semantic similarity.
+- Checkpoint-backed float32 Q/K/V/O projection primitives and a composed
+  bidirectional attention sub-block with per-head RMSNorm, Q/K RoPE, GQA,
+  and per-layer full/sliding attention geometry.
+- A complete text encoder-layer reference operation with all four residual-path
+  RMSNorms, gated GELU MLP, and the third PLE residual sub-block.
+- A composed text-backbone reference path from checkpoint-backed vocabulary
+  embeddings through sqrt(hidden_size) scaling, PLE projection, all encoder
+  layers, final RMSNorm, and token-wise projection into the shared embedding dimension.
 - Projection-only Per-Layer Embeddings (PLE) reference operations: input
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - Text-only is the first intended execution milestone.
+
+The attention, encoder-layer, and assembled text-backbone operations are float32
+references, not yet a complete text model runner. The backbone performs checkpoint-backed vocabulary lookup and sqrt(hidden_size)
+embedding scaling, then composes projection-only PLE, every encoder layer, final
+RMSNorm, and learned per-token embedding projection. Tokenizer execution,
+checkpoint loading/mapping, mask-aware mean pooling, Matryoshka post-processing,
+and end-to-end runner registration remain separate work items. The backbone
+accepts token IDs and explicit position IDs; it does not perform tokenizer-specific
+preprocessing. All trainable projection and norm tensors are supplied
+by the checkpoint loader; these operations never randomly initialize weights.
 
 The plugin deliberately does **not** declare
 `DIRECT_SAFETENSOR_INFERENCE`, and this module does not yet register an
@@ -74,7 +92,7 @@ This utility does not perform mask-aware mean pooling or the learned
 The eventual text runner must implement bidirectional mixed full/sliding
 attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The PLE reference
-operations are not a complete transformer layer or a registered runner.
+operations and encoder-layer composition are not a registered model runner.
 
 Image, audio, and video execution remain deferred. They must not be inferred
 from the broader model family's multimodal embedding-space description.

@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.gguf.javabackend;
 
+import tech.kayys.aljabr.gguf.loader.GGUFTensorInfo;
 import tech.kayys.aljabr.gguf.loader.inference.KVCache;
 
 /**
@@ -34,14 +35,23 @@ final class GgufKvCacheRouting {
         }
     }
 
-    static int resolveCacheLayer(int layer, boolean hasOwnKvProjection, boolean slidingWindowAttention) {
-        if (layer < 0) {
-            throw new IllegalArgumentException("layer must be non-negative");
+    static int resolveCacheLayer(int layer, GGUFTensorInfo[] keyWeights, boolean slidingWindowAttention) {
+        if (keyWeights == null) {
+            throw new IllegalArgumentException("Key projection metadata must not be null");
         }
-        if (hasOwnKvProjection) {
+        if (layer < 0 || layer >= keyWeights.length) {
+            throw new IllegalArgumentException("layer is outside key projection metadata");
+        }
+        if (keyWeights[layer] != null) {
             return layer;
         }
+
         int ownerDistance = slidingWindowAttention ? 2 : 1;
-        return Math.max(0, layer - ownerDistance);
+        int ownerLayer = Math.max(0, layer - ownerDistance);
+        if (keyWeights[ownerLayer] == null) {
+            throw new IllegalStateException("Shared KV layer " + layer + " resolves to layer " + ownerLayer
+                    + ", but that layer has no key projection and cannot own a KV cache");
+        }
+        return ownerLayer;
     }
 }
