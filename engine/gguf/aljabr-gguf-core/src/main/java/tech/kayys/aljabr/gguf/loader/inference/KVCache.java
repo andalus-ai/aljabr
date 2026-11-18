@@ -13,10 +13,10 @@ package tech.kayys.aljabr.gguf.loader.inference;
  *
  * <p>For uniform models (all layers share the same nKVHeads and headDim) use
  * {@link #KVCache(int, int, int, int)}; it delegates to the per-layer
- * constructor with identical arrays.
+ * shared layout.
  */
 public final class KVCache {
-    private final float[][] k;          // k[layer][pos * layerStride[layer] + ...]
+    private final float[][] k;          // k[layer][pos * layout.layerStride(layer) + ...]
     private final float[][] v;          // v[layer][...]
     private final int[] layerStride;    // nKVHeads[layer] * headDim[layer]
     private final int[] layerNKVH;      // nKVHeads per layer
@@ -133,7 +133,7 @@ public final class KVCache {
             throw new IllegalArgumentException("count must be a non-negative multiple of the layer stride");
         }
         int tokenCount = count / layerStride[layer];
-        if (startPos < 0 || startPos > maxSeq || tokenCount > maxSeq - startPos) {
+        if (startPos < 0 || startPos > layout.maxSequenceLength() || tokenCount > layout.maxSequenceLength() - startPos) {
             throw new IndexOutOfBoundsException("KV batch write exceeds cache capacity");
         }
         requireArrayRange(kBatch, kOff, count, "kBatch");
@@ -150,7 +150,7 @@ public final class KVCache {
     public void advance(int n) {
         if (n < 0 || n > maxSeq - seqLen) {
             throw new IllegalArgumentException(
-                    "Advance of " + n + " exceeds remaining KV cache capacity " + (maxSeq - seqLen));
+                    "Advance of " + n + " exceeds remaining KV cache capacity " + (layout.maxSequenceLength() - seqLen));
         }
         seqLen += n;
     }
@@ -166,7 +166,7 @@ public final class KVCache {
      */
     public void readK(int layer, int pos, int kvHead, float[] dst, int dstOff) {
         validateRead(layer, pos, kvHead, dst, dstOff);
-        int hd  = layerHDim[layer];
+        int hd  = layout.headDimension(layer);
         int src = pos * layerStride[layer] + kvHead * hd;
         System.arraycopy(k[layer], src, dst, dstOff, hd);
     }
@@ -202,7 +202,7 @@ public final class KVCache {
     /** Number of KV heads for {@code layer}. */
     public int nKVHeads(int layer)    {
         validateLayer(layer);
-        return layerNKVH[layer];
+        return layout.kvHeads(layer);
     }
 
     /** Head dimension (K/V) for {@code layer}. */
@@ -215,7 +215,7 @@ public final class KVCache {
     public int seqLen() { return seqLen; }
 
     /** Maximum number of sequence positions this cache can hold. */
-    public int capacity() { return maxSeq; }
+    public int capacity() { return layout.maxSequenceLength(); }
 
     /**
      * Legacy accessor — returns the stride of layer 0 (equivalent to the old
@@ -259,7 +259,7 @@ public final class KVCache {
     }
 
     private void validateWriteRange(int position, int length, int stride) {
-        if (position < 0 || position >= maxSeq || length < 0 || length > stride) {
+        if (position < 0 || position >= layout.maxSequenceLength() || length < 0 || length > stride) {
             throw new IndexOutOfBoundsException("KV write range is outside layer capacity");
         }
     }
@@ -298,7 +298,7 @@ public final class KVCache {
         if (src == null) {
             throw new IllegalArgumentException("Source KV cache must not be null");
         }
-        if (numTokens < 0 || numTokens > maxSeq || numTokens > src.seqLen || src.k.length != k.length) {
+        if (numTokens < 0 || numTokens > layout.maxSequenceLength() || numTokens > src.seqLen || src.layout.layerCount() != layout.layerCount()) {
             throw new IllegalArgumentException("Requested KV copy length is incompatible with source or destination");
         }
         int nLayers = k.length;
@@ -306,14 +306,14 @@ public final class KVCache {
         // must not leave earlier layers overwritten under the destination's
         // previously committed sequence length.
         for (int l = 0; l < nLayers; l++) {
-            if (src.layerStride[l] != layerStride[l]
-                    || src.layerNKVH[l] != layerNKVH[l]
-                    || src.layerHDim[l] != layerHDim[l]) {
+            if (src.layout.layerStride(l) != layout.layerStride(l)
+                    || src.layout.kvHeads(l) != layout.kvHeads(l)
+                    || src.layout.headDimension(l) != layout.headDimension(l)) {
                 throw new IllegalArgumentException("KV cache layer geometry differs at layer " + l);
             }
         }
         for (int l = 0; l < nLayers; l++) {
-            int count = numTokens * layerStride[l];
+            int count = numTokens * layout.layerStride(l);
             System.arraycopy(src.k[l], 0, this.k[l], 0, count);
             System.arraycopy(src.v[l], 0, this.v[l], 0, count);
         }
