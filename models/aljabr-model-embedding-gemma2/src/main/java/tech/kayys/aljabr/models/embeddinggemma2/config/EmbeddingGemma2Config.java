@@ -18,6 +18,8 @@ public record EmbeddingGemma2Config(
         int numAttentionHeads,
         int numKeyValueHeads,
         int headDim,
+        int hiddenSizePerLayerInput,
+        String hiddenActivation,
         int embeddingDim,
         int vocabSize,
         int maxPositionEmbeddings,
@@ -32,11 +34,17 @@ public record EmbeddingGemma2Config(
     public static final String MODEL_TYPE = "embedding_gemma2";
     public static final String TEXT_MODEL_TYPE = "embedding_gemma2_text";
     public static final int DOCUMENTED_MAX_INPUT_TOKENS = 8192;
+    public static final int DEFAULT_HIDDEN_SIZE_PER_LAYER_INPUT = 512;
+    public static final String DEFAULT_HIDDEN_ACTIVATION = "gelu_pytorch_tanh";
 
     public EmbeddingGemma2Config {
         modelType = requireText(modelType, "model_type");
         textModelType = requireText(textModelType, "text_config.model_type");
         dtype = requireText(dtype, "text_config.dtype");
+        hiddenActivation = requireText(hiddenActivation, "text_config.hidden_activation");
+        if (hiddenSizePerLayerInput <= 0) {
+            throw new IllegalArgumentException("hidden_size_per_layer_input must be positive");
+        }
         layerTypes = layerTypes == null ? List.of() : List.copyOf(layerTypes);
         perLayerConfig = immutableJsonMap(perLayerConfig);
         ropeParameters = ropeParameters == null ? null : ropeParameters.deepCopy();
@@ -61,6 +69,9 @@ public record EmbeddingGemma2Config(
         int queryHeads = positiveInt(text, "num_attention_heads");
         int kvHeads = positiveInt(text, "num_key_value_heads");
         int headDim = positiveInt(text, "head_dim");
+        int hiddenPerLayer = optionalPositiveInt(text, "hidden_size_per_layer_input",
+                DEFAULT_HIDDEN_SIZE_PER_LAYER_INPUT);
+        String hiddenActivation = optionalText(text, "hidden_activation", DEFAULT_HIDDEN_ACTIVATION);
         int embeddingDim = positiveInt(text, "embedding_dim");
         int vocab = positiveInt(text, "vocab_size");
         int maxPositions = positiveInt(text, "max_position_embeddings");
@@ -108,8 +119,8 @@ public record EmbeddingGemma2Config(
         positiveDouble(ropeParameters.path("sliding_attention"), "rope_theta");
 
         return new EmbeddingGemma2Config(modelType, textModelType, hidden, intermediate, layers,
-                queryHeads, kvHeads, headDim, embeddingDim, vocab, maxPositions,
-                DOCUMENTED_MAX_INPUT_TOKENS, dtype, normEps, slidingWindow, layerTypes,
+                queryHeads, kvHeads, headDim, hiddenPerLayer, hiddenActivation, embeddingDim, vocab,
+                maxPositions, DOCUMENTED_MAX_INPUT_TOKENS, dtype, normEps, slidingWindow, layerTypes,
                 normalizeLayerKeys(overrides), ropeParameters);
     }
 
@@ -175,8 +186,17 @@ public record EmbeddingGemma2Config(
     }
 
     private static Integer optionalPositiveInt(JsonNode node, String field) {
+        return optionalPositiveInt(node, field, null);
+    }
+
+    private static int optionalPositiveInt(JsonNode node, String field, int fallback) {
+        Integer value = optionalPositiveInt(node, field);
+        return value == null ? fallback : value;
+    }
+
+    private static Integer optionalPositiveInt(JsonNode node, String field, Integer fallback) {
         JsonNode value = node.path(field);
-        if (value.isMissingNode() || value.isNull()) return null;
+        if (value.isMissingNode() || value.isNull()) return fallback;
         if (!value.canConvertToInt() || value.asInt() <= 0) {
             throw new IllegalArgumentException(field + " must be a positive integer when present");
         }
