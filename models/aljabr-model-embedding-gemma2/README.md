@@ -18,17 +18,20 @@ not an alias for the causal `gemma2` or `gemma4` modules.
 - Checkpoint-backed float32 Q/K/V/O projection primitives and a composed
   bidirectional attention sub-block with per-head RMSNorm, Q/K RoPE, GQA,
   and per-layer full/sliding attention geometry.
+- A complete text encoder-layer reference operation with all four residual-path
+  RMSNorms, gated GELU MLP, and the third PLE residual sub-block.
 - Projection-only Per-Layer Embeddings (PLE) reference operations: input
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - Text-only is the first intended execution milestone.
 
-The attention sub-block is a reference operation, not a complete encoder layer:
-encoder residual/norm sequencing, MLP, PLE injection, final norm, checkpoint
-loading, tokenizer execution, and end-to-end runner registration remain separate
-work items. The projection weights are supplied by the checkpoint loader and are
-never randomly initialized by these classes.
+The attention and encoder-layer operations are float32 references, not yet a
+complete text model runner. The encoder layer composes attention residual,
+gated MLP residual, and PLE residual in the reference order. Final model RMSNorm,
+checkpoint loading/mapping, tokenizer execution, and end-to-end runner registration
+remain separate work items. All trainable projection and norm tensors are supplied
+by the checkpoint loader; these operations never randomly initialize weights.
 
 The plugin deliberately does **not** declare
 `DIRECT_SAFETENSOR_INFERENCE`, and this module does not yet register an
@@ -83,7 +86,7 @@ This utility does not perform mask-aware mean pooling or the learned
 The eventual text runner must implement bidirectional mixed full/sliding
 attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The PLE reference
-operations are not a complete transformer layer or a registered runner.
+operations and encoder-layer composition are not a registered model runner.
 
 Image, audio, and video execution remain deferred. They must not be inferred
 from the broader model family's multimodal embedding-space description.
