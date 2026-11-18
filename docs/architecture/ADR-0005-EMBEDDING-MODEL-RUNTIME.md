@@ -91,6 +91,20 @@ The paper and official model card establish the following constraints. These are
 | Modular encoders | Text-only model is approximately 270/271M parameters; vision and audio encoders are separately loadable | Text-only execution is a legitimate first milestone, but must use the actual text-only configuration/checkpoint semantics |
 | Modalities | Text, image, audio, video, and ordered/interleaved combinations share one embedding space | Full model support requires modality-specific encoders, input processors, delimiters, position alignment, and token-budget accounting |
 
+### Checkpoint configuration findings
+
+The public checkpoint `google/embeddinggemma-2` currently declares:
+
+- Top-level `model_type: embedding_gemma2` and `architectures: [EmbeddingGemma2Model]`.
+- Text sub-config `model_type: embedding_gemma2_text`, 24 layers, hidden size 512, intermediate size 2048, four attention heads, two KV heads, vocabulary size 262,144, and BF16 dtype.
+- Per-layer configuration overrides at layers 05, 11, 17, and 23, including a different head dimension/KV-head count. The implementation must read these per-layer overrides rather than flattening all layers to one attention shape.
+- A mixed sequence of sliding-attention and full-attention layers, separate RoPE parameters for each attention type, and a configured sliding window of 512 in this checkpoint.
+- Nested `vision_config` and `audio_config` sections, plus image/audio/video token IDs and the default 280 vision soft-token budget.
+
+The config's `max_position_embeddings` value is 262,144, while the official model card documents an 8,192-token effective input context. Do not use the raw config field as the product input limit without reconciling the processor/model implementation and published model guidance.
+
+The checkpoint uses the distinct model identifiers `embedding_gemma2` and `embedding_gemma2_text`; it is not registered as ordinary `gemma4` / `gemma4_text`. Aljabr's existing Gemma 4 family adapter contains relevant Gemma-family weight-name and PLE knowledge, but the EmbeddingGemma 2 family must have its own descriptor/config and explicit weight mapping. Do not alias it to the Gemma 4 causal-LM runner: the embedding model has a distinct architecture class, bidirectional attention behavior, and embedding head.
+
 ### Task instruction behavior
 
 The official model card defines seven text task families. The model API should represent task intent and query/document role explicitly rather than expose a free-form prompt-prefix string as its only abstraction.
