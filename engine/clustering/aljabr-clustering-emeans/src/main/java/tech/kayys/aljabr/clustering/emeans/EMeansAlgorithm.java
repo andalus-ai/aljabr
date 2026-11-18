@@ -2,6 +2,7 @@ package tech.kayys.aljabr.clustering.emeans;
 
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,7 +37,7 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
     }
 
     @Override
-    public ClusteringResult fit(ClusteringDataset dataset, EMeansConfig config) {
+    public EMeansResult fit(ClusteringDataset dataset, EMeansConfig config) {
         Objects.requireNonNull(dataset, "dataset must not be null");
         Objects.requireNonNull(config, "config must not be null");
         Tensor vectors = dataset.vectors();
@@ -71,6 +72,17 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
             masses[cluster] = INITIAL_MASS;
             for (int d = 0; d < dimensions; d++) {
                 sums[cluster * dimensions + d] = centers[cluster * dimensions + d] * INITIAL_MASS;
+            }
+        }
+
+        boolean slowEnabled = config.slowEmaStepMultiplier() > 0.0;
+        double[] slowMasses = slowEnabled ? new double[clusters] : null;
+        double[] slowSums = slowEnabled ? new double[centers.length] : null;
+        if (slowEnabled) {
+            for (int c = 0; c < clusters; c++) {
+                slowMasses[c] = INITIAL_MASS;
+                for (int d = 0; d < dimensions; d++)
+                    slowSums[c * dimensions + d] = centers[c * dimensions + d] * INITIAL_MASS;
             }
         }
 
@@ -131,12 +143,36 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
                     }
                 }
 
+                if (slowEnabled) {
+                    // This EMA observes the primary model's assignments but never drives them.
+                    double slowAlpha = Math.min(1.0,
+                            config.initialStepSize() * 0.1 * config.slowEmaStepMultiplier());
+                    double slowDecay = 1.0 - slowAlpha;
+                    for (int c = 0; c < clusters; c++) {
+                        slowMasses[c] = slowDecay * slowMasses[c] + slowAlpha * batchCounts[c];
+                        int offset = c * dimensions;
+                        for (int d = 0; d < dimensions; d++)
+                            slowSums[offset + d] = slowDecay * slowSums[offset + d]
+                                    + slowAlpha * batchSums[offset + d];
+                    }
+                }
                 batchNumber++;
                 if (config.reviveDeadClusters()
                         && batchNumber % REVIVAL_INTERVAL_BATCHES == 0) {
                     reviveDeadClusters(centers, masses, sums, clusters, dimensions, random);
+                    if (slowEnabled) {
+                        float[] slowCenters = centersFrom(slowSums, slowMasses, clusters, dimensions);
+                        reviveDeadClusters(slowCenters, slowMasses, slowSums,
+                                clusters, dimensions, random);
+                    }
                 }
             }
+        }
+
+        Tensor slowTensor = null;
+        if (slowEnabled) {
+            float[] slowCenters = centersFrom(slowSums, slowMasses, clusters, dimensions);
+            slowTensor = TensorFactory.of(slowCenters, vectors.backend(), clusters, dimensions);
         }
 
         // The paper's last-epoch mean finalizer minimizes the objective for
@@ -161,11 +197,22 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
         }
 
         Tensor centroidTensor = TensorFactory.of(centers, vectors.backend(), clusters, dimensions);
-        return new EMeansResult(
+        return new EMeansResultImpl(
                 centroidTensor,
                 assignments,
                 new ClusteringMetrics("sum_squared_euclidean", objective),
-                new ClusteringMetadata(ID, config.epochs(), config.seed(), false));
+                new ClusteringMetadata(ID, config.epochs(), config.seed(), false), slowTensor);
+    }
+
+    private static float[] centersFrom(double[] sums, double[] masses, int clusters, int dimensions) {
+        float[] result = new float[Math.multiplyExact(clusters, dimensions)];
+        for (int c = 0; c < clusters; c++) {
+            int offset = c * dimensions;
+            if (masses[c] > 0.0)
+                for (int d = 0; d < dimensions; d++)
+                    result[offset + d] = (float) (sums[offset + d] / masses[c]);
+        }
+        return result;
     }
 
     private static float[] initialize(
@@ -293,20 +340,28 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
         return Math.toIntExact(value);
     }
 
-    private static final class EMeansResult implements ClusteringResult {
+    private static final class EMeansResultImpl implements EMeansResult {
         private final Tensor centroids;
         private final int[] assignments;
         private final ClusteringMetrics metrics;
         private final ClusteringMetadata metadata;
+        private final Tensor slowEmaCentroids;
         private final AtomicBoolean closed = new AtomicBoolean();
 
-        private EMeansResult(
+        private EMeansResultImpl(
                 Tensor centroids, int[] assignments,
-                ClusteringMetrics metrics, ClusteringMetadata metadata) {
+                ClusteringMetrics metrics, ClusteringMetadata metadata, Tensor slowEmaCentroids) {
             this.centroids = Objects.requireNonNull(centroids);
             this.assignments = assignments;
             this.metrics = metrics;
             this.metadata = metadata;
+            this.slowEmaCentroids = slowEmaCentroids;
+        }
+
+        @Override
+        public Optional<Tensor> slowEmaCentroids() {
+            ensureOpen();
+            return Optional.ofNullable(slowEmaCentroids);
         }
 
         @Override
@@ -351,6 +406,7 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
         public void close() {
             if (closed.compareAndSet(false, true)) {
                 centroids.close();
+                if (slowEmaCentroids != null) slowEmaCentroids.close();
             }
         }
 
