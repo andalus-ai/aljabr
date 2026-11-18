@@ -13,6 +13,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention-type-specific RoPE parameters.
 - Resolution of effective per-layer attention geometry, mixed full/sliding
   attention, and attention-specific RoPE metadata.
+- Matryoshka truncation and final L2 normalization for already-projected
+  768-dimensional vectors.
 - Text-only is the first intended execution milestone.
 
 The plugin deliberately does **not** declare
@@ -40,11 +42,23 @@ constructing per-layer attention projections and positional encoding.
 The documented input budget (8,192 tokens) is kept distinct from the raw
 `max_position_embeddings` field.
 
+## Vector post-processing
+
+`EmbeddingGemma2VectorPostProcessor` accepts only the learned projection's
+native 768-dimensional output. It supports the documented Matryoshka
+dimensions (768, 512, 256, 128), truncates leading dimensions first, then
+normalizes the retained vector using L2 normalization. It rejects non-finite,
+zero-norm, malformed, and unsupported-dimension inputs rather than returning
+invalid vectors.
+
+This utility does not perform mask-aware mean pooling or the learned
+512-to-768 projection. Those remain part of the model forward path.
+
 ## Required execution constraints
 
 The eventual text runner must implement bidirectional mixed full/sliding
-attention, per-layer embeddings (PLE), mean pooling, learned projection,
-Matryoshka truncation/renormalization, and L2 normalization.
+attention, per-layer embeddings (PLE), mask-aware mean pooling, learned
+projection, Matryoshka truncation/renormalization, and L2 normalization.
 
 Image, audio, and video execution remain deferred. They must not be inferred
 from the broader model family's multimodal embedding-space description.
