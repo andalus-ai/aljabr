@@ -32,7 +32,7 @@ class EmbeddingGemma2EncoderLayerTest {
                 10000d, "default", null, null);
         float[][] identity = {{1f, 0f}, {0f, 1f}};
         var attention = new EmbeddingGemma2AttentionBlock.Weights(
-                identity, null, identity, null, identity, null, identity, null,
+                identity, null, identity, null, identity, null, new float[][]{{0f, 0f}, {0f, 0f}}, null,
                 new float[]{1f, 1f}, new float[]{1f, 1f});
         var mlp = new EmbeddingGemma2Mlp.Weights(
                 new float[][]{{0f, 0f}, {0f, 0f}},
@@ -53,6 +53,8 @@ class EmbeddingGemma2EncoderLayerTest {
 
         assertArrayEquals(original[0], input[0]);
         assertArrayEquals(original[1], input[1]);
+        assertArrayEquals(original[0], result[0], 1e-5f);
+        assertArrayEquals(original[1], result[1], 1e-5f);
         assertEquals(2, result.length);
         assertEquals(2, result[0].length);
         assertTrue(Float.isFinite(result[0][0]));
