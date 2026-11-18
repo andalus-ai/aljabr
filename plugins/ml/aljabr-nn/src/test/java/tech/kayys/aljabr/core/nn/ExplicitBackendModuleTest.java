@@ -32,6 +32,44 @@ class ExplicitBackendModuleTest {
     }
 
     @Test
+    void movingToTheCurrentDevicePreservesTheOwnedParameterGradient() {
+        CpuBackend backend = new CpuBackend();
+        Linear linear = new Linear(backend, 2, 2);
+        Tensor parameter = linear.parameters().get("weight");
+        Tensor gradient = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
+        parameter.setGrad(gradient);
+        try {
+            linear.to(parameter.device());
+
+            assertEquals(parameter, linear.parameters().get("weight"));
+            assertEquals(gradient, linear.parameters().get("weight").grad());
+        } finally {
+            linear.close();
+            backend.close();
+        }
+    }
+
+    @Test
+    void failedDeviceMoveLeavesParametersAndGradientsUntouched() {
+        CpuBackend backend = new CpuBackend();
+        Linear linear = new Linear(backend, 2, 2);
+        Tensor parameter = linear.parameters().get("weight");
+        Tensor gradient = TensorFactory.of(new float[] { 1f, 2f, 3f, 4f }, backend, 2, 2);
+        parameter.setGrad(gradient);
+        try {
+            assertThrows(UnsupportedOperationException.class,
+                    () -> linear.to(tech.kayys.aljabr.core.tensor.DeviceType.METAL));
+
+            assertEquals(parameter, linear.parameters().get("weight"));
+            assertEquals(gradient, linear.parameters().get("weight").grad());
+            assertEquals(1f, gradient.toFloatArray()[0]);
+        } finally {
+            linear.close();
+            backend.close();
+        }
+    }
+
+    @Test
     void linearRejectsInputFromAnotherBackend() {
         CpuBackend configuredBackend = new CpuBackend();
         CpuBackend inputBackend = new CpuBackend();
