@@ -33,6 +33,7 @@ class MomentumSGDTest {
              MomentumSGD optimizer = new MomentumSGD(0.1f, 0.5f)) {
             Parameter parameter = layer.namedParameterObjects().get("weight");
             try {
+                assertThat(optimizer.nesterov()).isFalse();
                 optimizer.step(Map.of("weight", parameter), Map.of("weight", firstGradient));
                 // v1 = 0.25; p1 = 1.5 - (0.1 * 0.25) = 1.475.
                 assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(1.475f, offset(1.0e-6f));
@@ -110,6 +111,40 @@ class MomentumSGDTest {
             } finally {
                 firstGradient.release();
                 secondGradient.release();
+            }
+        }
+    }
+
+
+    @Test
+    void skipsFrozenAndMissingGradientsWithoutAdvancingMomentum() {
+        CpuBackend backend = new CpuBackend();
+        Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
+        Tensor firstGradient = TensorFactory.of(new float[] { 0.5f }, backend, 1, 1);
+        Tensor skippedGradient = TensorFactory.of(new float[] { 0.25f }, backend, 1, 1);
+        Tensor nextGradient = TensorFactory.of(new float[] { 0.25f }, backend, 1, 1);
+        try (Linear layer = new Linear(initial, null);
+             MomentumSGD optimizer = new MomentumSGD(0.1f, 0.5f)) {
+            Parameter parameter = layer.namedParameterObjects().get("weight");
+            try {
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", firstGradient));
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.95f, offset(1.0e-6f));
+
+                parameter.setRequiresGrad(false);
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", skippedGradient));
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.95f, offset(1.0e-6f));
+
+                parameter.setRequiresGrad(true);
+                optimizer.step(Map.of("weight", parameter), Map.of());
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.95f, offset(1.0e-6f));
+
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", nextGradient));
+                // Neither skipped call advances v: v2 = 0.5 * 0.5 + 0.25 = 0.5.
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.90f, offset(1.0e-6f));
+            } finally {
+                firstGradient.release();
+                skippedGradient.release();
+                nextGradient.release();
             }
         }
     }
