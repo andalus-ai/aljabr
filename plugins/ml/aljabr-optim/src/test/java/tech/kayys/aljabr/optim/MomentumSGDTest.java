@@ -91,6 +91,30 @@ class MomentumSGDTest {
     }
 
     @Test
+    void nesterovUsesLookaheadGradientDirection() {
+        CpuBackend backend = new CpuBackend();
+        Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
+        Tensor firstGradient = TensorFactory.of(new float[] { 0.5f }, backend, 1, 1);
+        Tensor secondGradient = TensorFactory.of(new float[] { 0.25f }, backend, 1, 1);
+        try (Linear layer = new Linear(initial, null);
+             MomentumSGD optimizer = new MomentumSGD(0.1f, 0.5f, true)) {
+            Parameter parameter = layer.namedParameterObjects().get("weight");
+            try {
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", firstGradient));
+                // v1 = 0.5; d1 = 0.5 + 0.5 * 0.5 = 0.75; p1 = 0.925.
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.925f, offset(1.0e-6f));
+                optimizer.step(Map.of("weight", parameter), Map.of("weight", secondGradient));
+                // v2 = 0.5 * 0.5 + 0.25 = 0.5; d2 = 0.25 + 0.5 * 0.5 = 0.5.
+                assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.875f, offset(1.0e-6f));
+                assertThat(optimizer.nesterov()).isTrue();
+            } finally {
+                firstGradient.release();
+                secondGradient.release();
+            }
+        }
+    }
+
+    @Test
     void resetClearsMomentumWithoutChangingHyperparameters() {
         CpuBackend backend = new CpuBackend();
         Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
