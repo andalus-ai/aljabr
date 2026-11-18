@@ -34,6 +34,29 @@ class GroupedQueryAttentionTest {
     }
 
     @Test
+    void gqaMapsEachQueryHeadToItsGroupedKeyValueHead() {
+        CpuBackend backend = new CpuBackend();
+        GroupedQueryAttention attention = new GroupedQueryAttention(backend, 4, 2, 1);
+        Tensor query = TensorFactory.of(new float[4], backend, 1, 4, 1, 1);
+        Tensor key = TensorFactory.of(new float[2], backend, 1, 2, 1, 1);
+        Tensor value = TensorFactory.of(new float[] {1f, 2f}, backend, 1, 2, 1, 1);
+        Tensor output = null;
+        try {
+            output = attention.forward(query, key, value, null, false);
+            assertEquals(1f, output.slice(new long[] {0, 0, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
+            assertEquals(1f, output.slice(new long[] {0, 1, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
+            assertEquals(2f, output.slice(new long[] {0, 2, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
+            assertEquals(2f, output.slice(new long[] {0, 3, 0, 0}, new long[] {1, 1, 1, 1}).item(), 1e-6f);
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+            attention.close();
+        }
+    }
+
+    @Test
     void gqaSupportsDifferentQueryAndKeySequenceLengths() {
         CpuBackend backend = new CpuBackend();
         GroupedQueryAttention attention = new GroupedQueryAttention(backend, 4, 1, 2);
