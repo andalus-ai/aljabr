@@ -13,6 +13,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention-type-specific RoPE parameters.
 - Resolution of effective per-layer attention geometry, mixed full/sliding
   attention, and attention-specific RoPE metadata.
+- Text task formatting for retrieval, code retrieval, fact checking,
+  classification, clustering, and semantic similarity.
 - Text-only is the first intended execution milestone.
 
 The plugin deliberately does **not** declare
@@ -40,11 +42,23 @@ constructing per-layer attention projections and positional encoding.
 The documented input budget (8,192 tokens) is kept distinct from the raw
 `max_position_embeddings` field.
 
+## Text task formatting
+
+Use `EmbeddingGemma2InputFormatter` with an explicit
+`EmbeddingGemma2InputRole`. Asymmetric retrieval tasks intentionally use
+different query and document templates. Document inputs use
+`title: none | text: ...` when no title is supplied. Symmetric tasks use the
+same task prefix on each side. `UNSPECIFIED` preserves raw input for legacy
+callers.
+
+The formatter does not tokenize, execute the model, pool token states, or
+normalize vectors. Those remain separate stages of the model runner.
+
 ## Required execution constraints
 
 The eventual text runner must implement bidirectional mixed full/sliding
-attention, per-layer embeddings (PLE), mean pooling, learned projection,
-Matryoshka truncation/renormalization, and L2 normalization.
+attention, per-layer embeddings (PLE), mask-aware mean pooling, learned
+projection, Matryoshka truncation/renormalization, and L2 normalization.
 
 Image, audio, and video execution remain deferred. They must not be inferred
 from the broader model family's multimodal embedding-space description.
