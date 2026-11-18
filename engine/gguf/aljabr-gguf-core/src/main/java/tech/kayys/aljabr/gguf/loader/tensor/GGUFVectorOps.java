@@ -403,7 +403,11 @@ public final class GGUFVectorOps {
 
         int half = rotaryDim / 2;
         if (freqFactors != null) {
-            for (int i = 0; i < Math.min(half, freqFactors.length); i++) {
+            if (freqFactors.length < half) {
+                throw new IllegalArgumentException(
+                        "RoPE frequency factors must contain at least rotaryDim / 2 entries");
+            }
+            for (int i = 0; i < half; i++) {
                 if (!Float.isFinite(freqFactors[i]) || freqFactors[i] <= 0.0f) {
                     throw new IllegalArgumentException(
                             "RoPE frequency factors must be finite and positive");
