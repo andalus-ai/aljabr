@@ -842,7 +842,12 @@ public class MetalComputeBackend implements ComputeBackend {
 
     @Override
     public Tensor applyRoPE(Tensor input, int posOffset, float freqBase, boolean isNeox) {
-        if (!isNative || input.dtype() != DType.F32) {
+        // The legacy native bridge only receives N and headDim. It cannot
+        // distinguish batch, head, and sequence coordinates, so flattened
+        // rank-3/rank-4 inputs would receive incorrect positions. Keep native
+        // dispatch limited to [sequence, headDim] until the shape-aware kernel
+        // and bridge are available.
+        if (!isNative || input.dtype() != DType.F32 || input.shape().rank() != 2) {
             return fallback("applyRoPE", () -> wrap(cpuFallback.applyRoPE(input, posOffset, freqBase, isNeox)));
         }
 
