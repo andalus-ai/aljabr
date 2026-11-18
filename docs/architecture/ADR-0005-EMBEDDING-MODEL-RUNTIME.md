@@ -76,6 +76,53 @@ Multimodal input support (image, audio, video, or interleaved inputs, if require
 
 Task prefixes/instructions, output dimensions, pooling, projection, normalization, maximum sequence length, and special-token behavior must be derived from the authoritative model configuration/model card/reference implementation and encoded as tested model behavior—not hard-coded into AQLI.
 
+## Verified EmbeddingGemma 2 execution requirements
+
+The paper and official model card establish the following constraints. These are implementation requirements, not optional optimizations:
+
+| Area | Verified behavior | Implementation consequence |
+|---|---|---|
+| Text backbone | 24-layer Gemma 4-derived transformer with **bidirectional attention**, model dimension 512, hidden dimension 2048 | A normal causal Gemma 4 generation runner is not a drop-in implementation; the attention mask and forward path must be embedding-model correct |
+| Per-layer embeddings | Each layer receives a learned projected/RMS-normalized path from the input embeddings, gated from the layer output and added residually | The PLE path must be implemented and validated; omitting it is an architecture mismatch |
+| Pooling/head | Mean-pool final token states, apply learned 512→768 linear projection, then L2-normalize | This is part of model inference, not a generic postprocessing option that may be skipped |
+| Output dimensions | Native 768; Matryoshka dimensions 512, 256, and 128 | Truncation is supported only at these dimensions; re-normalize after truncation |
+| Context | Up to 8,192 tokens shared across modalities | Enforce the shared context budget and test truncation/padding behavior |
+| Precision | Use BF16 or FP32; FP16 can produce NaNs or silently degraded vectors | Do not advertise FP16 execution as supported; default to BF16 only when the backend is verified, otherwise FP32 |
+| Modular encoders | Text-only model is approximately 270/271M parameters; vision and audio encoders are separately loadable | Text-only execution is a legitimate first milestone, but must use the actual text-only configuration/checkpoint semantics |
+| Modalities | Text, image, audio, video, and ordered/interleaved combinations share one embedding space | Full model support requires modality-specific encoders, input processors, delimiters, position alignment, and token-budget accounting |
+
+### Task instruction behavior
+
+The official model card defines seven text task families. The model API should represent task intent and query/document role explicitly rather than expose a free-form prompt-prefix string as its only abstraction.
+
+| Task | Query/input instruction | Target/document instruction |
+|---|---|---|
+| Web/document search | `task: search result | query: {query}` | `title: {title} | text: {content}` |
+| Question answering | `task: question answering | query: {question}` | `title: {title} | text: {passage}` |
+| Fact checking | `task: fact checking | query: {claim}` | `title: {title} | text: {evidence}` |
+| Code search | `task: code retrieval | query: {query}` | `title: {title or filename} | text: {code}` |
+| Classification | `task: classification | query: {content}` | Same instruction |
+| Clustering | `task: clustering | query: {content}` | Same instruction |
+| Semantic similarity | `task: sentence similarity | query: {content}` | Same instruction |
+
+For asymmetric retrieval tasks, query and document instructions differ. A document without a title uses `title: none`. Symmetric tasks apply the same instruction to both inputs. Prefixes apply to text only; media inputs are not prefixed.
+
+### Multimodal processing constraints
+
+- Images are converted to vision soft tokens, with a configurable token budget (70, 140, 280, 560, or 1120); the documented default is 280 tokens per image.
+- Audio input is mono 16 kHz and is encoded in 40 ms chunks, producing 25 soft tokens per second.
+- Video defaults to 1 frame per second. Frames are processed by the vision encoder and may be interleaved with audio segments and timestamps.
+- The text sequence uses modality placeholders such as `<|image|>`, `<|video|>`, and `<|audio|>`; the processor must align placeholders with supplied media in order.
+- The shared context budget is 8,192 tokens, with documented accounting rates of 280 tokens/image, 140 tokens/video frame, and 25 tokens/audio second at the default settings.
+
+### Authoritative references
+
+- [EmbeddingGemma 2 technical report (arXiv:2610.37364)](https://arxiv.org/html/2610.37364v2)
+- [Google DeepMind official model card](https://gemma.ai/models/embeddinggemma/model-card-v2/)
+- [Official Hugging Face checkpoint: google/embeddinggemma-2](https://huggingface.co/google/embeddinggemma-2)
+
+The paper reports 744M total parameters (271M text backbone/embedder, 167M vision, 305M audio); the official model card rounds these figures to 740M (270M, 170M, and 300M). Use checkpoint tensor/config metadata as the final source of truth for exact parameter and tensor-shape validation.
+
 ## Target responsibility map
 
 | Concern | Owner | Notes |
