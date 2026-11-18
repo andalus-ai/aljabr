@@ -15,6 +15,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention, and attention-specific RoPE metadata.
 - Text task formatting for search, question answering, fact checking, code
   retrieval, classification, clustering, and semantic similarity.
+- Projection-only Per-Layer Embeddings (PLE) reference operations: input
+  projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - Text-only is the first intended execution milestone.
@@ -70,8 +72,9 @@ This utility does not perform mask-aware mean pooling or the learned
 ## Required execution constraints
 
 The eventual text runner must implement bidirectional mixed full/sliding
-attention, per-layer embeddings (PLE), mask-aware mean pooling, learned
-projection, Matryoshka truncation/renormalization, and L2 normalization.
+attention, projection-only PLE, mask-aware mean pooling, learned projection,
+Matryoshka truncation/renormalization, and L2 normalization. The PLE reference
+operations are not a complete transformer layer or a registered runner.
 
 Image, audio, and video execution remain deferred. They must not be inferred
 from the broader model family's multimodal embedding-space description.
