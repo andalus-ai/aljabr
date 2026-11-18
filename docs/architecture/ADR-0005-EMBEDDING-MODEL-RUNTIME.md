@@ -151,6 +151,18 @@ The source audit confirms that the current Aljabr tree has model metadata and we
 
 This matters for the EmbeddingGemma 2 checkpoint: its root model type is `embedding_gemma2`, but the transformer settings live under `text_config` with model type `embedding_gemma2_text`. The current `ModelConfig` only falls back to nested `text_config.model_type` and `text_config.architectures` when root identity fields are missing; it does not map the nested dimensions, attention layer types, RoPE settings, or per-layer overrides into typed configuration. A flat-config-only load would therefore lose essential model shape information.
 
+### First SPI increment
+
+The first executable contract increment is `EmbeddingModelRunner` in the existing `spi/aljabr-spi-inference` module:
+
+- `modelFamily()` identifies the canonical family handled by a runner (for example, `embedding_gemma2`).
+- `embed(EmbeddingRequest)` returns a JDK `CompletionStage<EmbeddingResponse>`, preserving input order.
+- The runner owns model-specific forward execution and embedding post-processing.
+- Model discovery, alias resolution, scheduling, admission, transport, and serving lifecycle remain outside this SPI.
+- The contract deliberately uses JDK concurrency types rather than Mutiny so the SPI does not expose a reactive implementation dependency.
+
+This is an execution seam, not a complete typed embedding API redesign. The existing request/response records remain the canonical contract for this increment. Typed task, modality, and output-dimension options will be introduced additively after their consumers and compatibility constraints are audited.
+
 ### Consequence for implementation
 
 Do not create a model-family descriptor and call that a runner. Before executable model code is added, define the smallest embedding-specific execution seam that connects the existing `InferenceEngine.executeEmbedding` entry point to a family-specific implementation. Keep it in an existing Aljabr SPI module unless dependency analysis proves a new module is necessary.
