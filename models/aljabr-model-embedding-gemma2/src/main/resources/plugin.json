@@ -1,0 +1,17 @@
+{
+  "id": "model-family/embedding_gemma2",
+  "name": "EmbeddingGemma 2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "EmbeddingGemma 2 model-family metadata and tokenizer routing; executable runner pending",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.embeddinggemma2.EmbeddingGemma2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "optional",
+    "families": ["embedding_gemma2"],
+    "tokenizerKind": "sentencepiece",
+    "runnerStatus": "pending"
+  }
+}
