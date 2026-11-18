@@ -23,8 +23,8 @@ autograd and training orchestration.
 All optimizers consume stable, fully qualified parameter names and gradient
 maps. Missing gradients and frozen parameters are skipped. Gradient shape,
 dtype, backend, and device are validated before parameter replacement. Stateful
-optimizer state is explicitly released by `reset()`; `MomentumSGD` and `AdamW`
-are also `AutoCloseable`.
+optimizer state is explicitly released by `reset()`; `MomentumSGD`, `RMSProp`,
+and `AdamW` are also `AutoCloseable`.
 
 This is an initial F32-oriented API built on the currently supported tensor
 arithmetic. RMSProp currently provides the uncentered, no-momentum form; centered statistics,
