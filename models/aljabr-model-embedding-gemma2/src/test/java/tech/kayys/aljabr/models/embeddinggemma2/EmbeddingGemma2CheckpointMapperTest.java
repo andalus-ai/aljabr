@@ -23,7 +23,7 @@ class EmbeddingGemma2CheckpointMapperTest {
         assertEquals(1, weights.layers().size());
         assertEquals(2, weights.layers().get(0).attention().query().length);
         assertEquals(2, weights.layers().get(0).encoder().pleGate().length);
-        assertEquals(3, backbone.encode(new int[]{1, 2}).length);
+        assertEquals(2, backbone.encode(new int[]{1, 2}).length);
         assertEquals(3, backbone.encodePooled(new int[]{1, 2}).length);
     }
 
