@@ -11,6 +11,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
 - Validated nested text configuration through `EmbeddingGemma2Config`.
 - Preservation and validation of zero-padded per-layer overrides and
   attention-type-specific RoPE parameters.
+- Resolution of effective per-layer attention geometry, mixed full/sliding
+  attention, and attention-specific RoPE metadata.
 - Text-only is the first intended execution milestone.
 
 The plugin deliberately does **not** declare
