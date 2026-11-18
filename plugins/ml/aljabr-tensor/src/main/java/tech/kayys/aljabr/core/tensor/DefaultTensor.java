@@ -195,6 +195,10 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor mean() {
+        ensureOpen();
+        if (shape.numel() == 0) {
+            throw new IllegalArgumentException("Mean is undefined for an empty tensor");
+        }
         return record(OpType.MEAN, new Tensor[] { this }, new Object[0], backend.mean(this));
     }
 
@@ -305,7 +309,11 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor mean(int dim, boolean keepDim) {
-        return record(OpType.MEAN, new Tensor[] { this }, new Object[] { dim, keepDim }, backend.mean(this, dim, keepDim));
+        int axis = validateReductionAxis(dim);
+        if (shape.dim(axis) == 0) {
+            throw new IllegalArgumentException("Mean is undefined for an empty reduction dimension");
+        }
+        return record(OpType.MEAN, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.mean(this, axis, keepDim));
     }
 
     @Override
@@ -315,7 +323,19 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor sum(int dim, boolean keepDim) {
-        return record(OpType.SUM, new Tensor[] { this }, new Object[] { dim, keepDim }, backend.sum(this, dim, keepDim));
+        int axis = validateReductionAxis(dim);
+        return record(OpType.SUM, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.sum(this, axis, keepDim));
+    }
+
+    private int validateReductionAxis(int dim) {
+        ensureOpen();
+        int rank = shape.rank();
+        int axis = dim < 0 ? rank + dim : dim;
+        if (rank == 0 || axis < 0 || axis >= rank) {
+            throw new IllegalArgumentException(
+                    "Reduction axis " + dim + " is out of range for tensor rank " + rank);
+        }
+        return axis;
     }
 
 
