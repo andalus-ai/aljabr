@@ -13,6 +13,7 @@ public class RotaryEmbedding extends NNModule {
 
     private final int headDim;
     private final int maxSeqLen;
+    private final RotaryEmbeddingConfig config;
 
     /** @deprecated Use {@link #RotaryEmbedding(ComputeBackend, int, int)}. */
     @Deprecated(since = "0.2.0", forRemoval = true)
@@ -21,13 +22,25 @@ public class RotaryEmbedding extends NNModule {
     }
 
     public RotaryEmbedding(ComputeBackend backend, int headDim, int maxSeqLen) {
+        this(backend, headDim, maxSeqLen, RotaryEmbeddingConfig.standard(headDim));
+    }
+
+
+    public RotaryEmbedding(ComputeBackend backend, int headDim, int maxSeqLen, RotaryEmbeddingConfig config) {
         super(backend);
         if (headDim <= 0 || maxSeqLen <= 0) {
             throw new IllegalArgumentException("headDim and maxSeqLen must be positive");
         }
+        this.config = java.util.Objects.requireNonNull(config, "config");
+        if (config.rotaryDimension() > headDim) {
+            throw new IllegalArgumentException("rotaryDimension cannot exceed headDim");
+        }
         this.headDim = headDim;
         this.maxSeqLen = maxSeqLen;
     }
+
+
+    public RotaryEmbeddingConfig config() { return config; }
 
     public int headDim() {
         return headDim;
@@ -49,7 +62,10 @@ public class RotaryEmbedding extends NNModule {
         if (input.shape().dim(2) > maxSeqLen) {
             throw new IllegalArgumentException("input sequence length exceeds maxSeqLen");
         }
-        return input.backend().applyRoPE(input, 0, 10_000f, false);
+        return input.backend().applyRoPE(input, 0, config.frequencyBase(),
+                config.rotaryDimension(), config.pairing() == RotaryEmbeddingConfig.Pairing.NEOX_HALF_SPLIT,
+                config.scaling().type() == RotaryEmbeddingConfig.ScalingType.LINEAR
+                        ? config.scaling().factor() : 1.0f);
     }
 
     public Tensor apply(Tensor q, Tensor k) {
