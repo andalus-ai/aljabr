@@ -272,7 +272,9 @@ public final class KVCache {
         }
         int nLayers = k.length;
         for (int l = 0; l < nLayers; l++) {
-            if (src.layerStride[l] != layerStride[l]) {
+            if (src.layerStride[l] != layerStride[l]
+                    || src.layerNKVH[l] != layerNKVH[l]
+                    || src.layerHDim[l] != layerHDim[l]) {
                 throw new IllegalArgumentException("KV cache layer geometry differs at layer " + l);
             }
             int count = numTokens * layerStride[l];
