@@ -108,6 +108,11 @@ public record EmbeddingGemma2Config(
                 normEps, ropeTheta, slidingWindow, layerTypes, overrides);
     }
 
+    @Override
+    public Map<String, JsonNode> perLayerConfig() {
+        return immutableJsonMap(perLayerConfig);
+    }
+
     /** Returns a defensive copy of one layer's raw override, or null. */
     public JsonNode perLayerOverride(int layerIndex) {
         if (layerIndex < 0 || layerIndex >= numHiddenLayers) {
