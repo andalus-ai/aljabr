@@ -78,6 +78,8 @@ subprojects {
         ":plugins:ml:aljabr-optim",
         // NN tests exercise the CPU backend directly; it requires the incubating Vector API.
         ":plugins:ml:aljabr-nn",
+        // Clustering algorithm tests exercise the CPU backend directly.
+        ":engine:clustering:aljabr-clustering-kmeans",
         ":engine:gguf:aljabr-gguf-core",
         ":engine:safetensor:aljabr-safetensor-core",
         // Model-common tests execute Whisper through the CPU backend, which uses Vector API.
