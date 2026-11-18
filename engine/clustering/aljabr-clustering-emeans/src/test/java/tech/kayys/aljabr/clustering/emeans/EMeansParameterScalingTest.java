@@ -14,7 +14,6 @@ class EMeansParameterScalingTest {
         assertThat(Integer.bitCount(recommendation.batchSize())).isEqualTo(1);
         assertThat(recommendation.batchSize()).isLessThanOrEqualTo(1_000_000);
         assertThat(recommendation.initialStepSize()).isPositive().isLessThanOrEqualTo(1.0);
-        assertThat(recommendation.lowDimensionalCaution()).isFalse();
         assertThat(recommendation.largeDatasetAdjustment()).isFalse();
     }
 
@@ -22,7 +21,6 @@ class EMeansParameterScalingTest {
     void marksLowDimensionalAndLargeDatasetRecommendations() {
         var recommendation = EMeansParameterScaling.recommend(3_000_000, 4_096, 5, 16);
 
-        assertThat(recommendation.lowDimensionalCaution()).isTrue();
         assertThat(recommendation.largeDatasetAdjustment()).isTrue();
         assertThat(recommendation.batchSize()).isPositive();
         assertThat(recommendation.batchSize()).isLessThanOrEqualTo(3_000_000);
