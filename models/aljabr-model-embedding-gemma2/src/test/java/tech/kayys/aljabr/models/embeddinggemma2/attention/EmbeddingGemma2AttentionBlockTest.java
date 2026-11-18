@@ -11,9 +11,11 @@ class EmbeddingGemma2AttentionBlockTest {
         var layer = new EmbeddingGemma2LayerConfig(0,
                 EmbeddingGemma2LayerConfig.AttentionType.FULL,
                 2, 1, 2, 10000d, "default", null, null);
+        float[][] queryWeights = {{1f, 0f}, {0f, 1f}, {1f, 0f}, {0f, 1f}};
         float[][] identity2 = {{1f, 0f}, {0f, 1f}};
+        float[][] outputWeights = {{1f, 0f, 0f, 0f}, {0f, 0f, 1f, 0f}};
         var weights = new EmbeddingGemma2AttentionBlock.Weights(
-                identity2, null, identity2, null, identity2, null, identity2, null,
+                queryWeights, null, identity2, null, identity2, null, outputWeights, null,
                 new float[]{1f, 1f}, new float[]{1f, 1f});
         var block = new EmbeddingGemma2AttentionBlock(2, layer, weights, 1e-6d);
 
