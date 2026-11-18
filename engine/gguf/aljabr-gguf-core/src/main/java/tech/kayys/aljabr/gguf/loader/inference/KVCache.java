@@ -299,12 +299,17 @@ public final class KVCache {
             throw new IllegalArgumentException("Requested KV copy length is incompatible with source or destination");
         }
         int nLayers = k.length;
+        // Validate every layer before copying any data. A late geometry mismatch
+        // must not leave earlier layers overwritten under the destination's
+        // previously committed sequence length.
         for (int l = 0; l < nLayers; l++) {
             if (src.layerStride[l] != layerStride[l]
                     || src.layerNKVH[l] != layerNKVH[l]
                     || src.layerHDim[l] != layerHDim[l]) {
                 throw new IllegalArgumentException("KV cache layer geometry differs at layer " + l);
             }
+        }
+        for (int l = 0; l < nLayers; l++) {
             int count = numTokens * layerStride[l];
             System.arraycopy(src.k[l], 0, this.k[l], 0, count);
             System.arraycopy(src.v[l], 0, this.v[l], 0, count);

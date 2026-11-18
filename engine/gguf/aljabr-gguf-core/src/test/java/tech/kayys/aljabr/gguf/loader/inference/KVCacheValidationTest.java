@@ -66,6 +66,27 @@ class KVCacheValidationTest {
         assertThrows(IndexOutOfBoundsException.class, () -> cache.kLayer(1));
     }
 
+
+    @Test
+    void copyFromValidatesAllLayerGeometryBeforeMutatingDestination() {
+        KVCache source = new KVCache(2, 4, new int[] {1, 2}, new int[] {2, 2});
+        source.storeDirect(0, 0, new float[] {10, 11}, new float[] {12, 13}, 2);
+        source.advance();
+
+        KVCache destination = new KVCache(2, 4, 1, 2);
+        destination.storeDirect(0, 0, new float[] {1, 2}, new float[] {3, 4}, 2);
+        destination.storeDirect(1, 0, new float[] {5, 6}, new float[] {7, 8}, 2);
+        destination.advance();
+
+        assertThrows(IllegalArgumentException.class, () -> destination.copyFrom(source, 1));
+
+        assertEquals(1, destination.seqLen());
+        assertEquals(1f, destination.kLayer(0)[0]);
+        assertEquals(3f, destination.vLayer(0)[0]);
+        assertEquals(5f, destination.kLayer(1)[0]);
+        assertEquals(7f, destination.vLayer(1)[0]);
+    }
+
     @Test
     void copyFromRejectsIncompatibleLayerGeometry() {
         KVCache source = new KVCache(1, 4, 2, 2);
