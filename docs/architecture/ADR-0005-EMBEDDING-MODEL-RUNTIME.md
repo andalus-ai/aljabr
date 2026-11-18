@@ -163,6 +163,34 @@ The first executable contract increment is `EmbeddingModelRunner` in the existin
 
 This is an execution seam, not a complete typed embedding API redesign. The existing request/response records remain the canonical contract for this increment. Typed task, modality, and output-dimension options will be introduced additively after their consumers and compatibility constraints are audited.
 
+### Consumer compatibility audit (2026-11-18)
+
+The cross-repository audit of andalus-ai/aljabr and andalus-ai/aqli found that the canonical Aljabr embedding contract is already bridged into AQLI, but AQLI still exposes a compatibility mirror to its callers.
+
+| Consumer / boundary | Current contract | Finding and required treatment |
+|---|---|---|
+| Aljabr inference SPI | `tech.kayys.aljabr.spi.embedding.EmbeddingRequest/EmbeddingResponse` | Canonical model-execution DTOs. The request is a four-component record: request id, model, text inputs, and untyped parameters. |
+| AQLI inference SPI | `tech.kayys.aqli.spi.embedding.EmbeddingRequest/EmbeddingResponse` | Structurally mirrors the Aljabr records. This is a compatibility copy, not a second model contract. |
+| AQLI inference compatibility adapter | `AljabrInferenceDtoAdapter` | Performs a direct field-for-field conversion in both directions; no embedding-specific data is currently lost. Keep this adapter as the migration boundary while legacy AQLI implementations remain. |
+| AQLI inference engine | `aqli.spi.inference.InferenceEngine` | Retains its legacy AQLI-DTO method and provides a default overload accepting Aljabr's canonical request/response. This is the intended direction of travel: Aljabr types at the model-execution boundary. |
+| AQLI public SDK | `AqliSdk.createEmbedding(aqli.spi.embedding.EmbeddingRequest)` | Still exposes the AQLI mirror. SDK callers do not yet invoke the canonical Aljabr embedding DTO directly. Do not break this public surface as part of the model runner work. |
+| AQLI REST API | `EmbeddingsResource` + `AgenticApiMapper` | Parses wire JSON into the AQLI compatibility DTO, calls the SDK, then maps the result to OpenAI-compatible or native response JSON. HTTP DTOs and trace/usage metadata remain AQLI concerns. |
+| AQLI CLI | `EmbedCommand` | Builds the AQLI SPI request and invokes the SDK. Task and dimension CLI options must eventually map through the SDK contract, not bypass it. |
+| AQLI multimodal service SPI | `EmbeddingService` / `MultimodalContent` | A higher-level multimodal service abstraction. It is not the same contract as the low-level Aljabr model-family runner and should not be folded into it. |
+| AQLI legacy client SDK model | `aqli.sdk.model.EmbeddingRequest/EmbeddingResponse` | A separate single-input/single-vector convenience DTO used by the older client abstraction. Treat it as a legacy adapter surface, not a model-execution API. |
+| Aljabr Safetensors HTTP resource | `EmbeddingsResource` nested request/response records | Transport DTOs and reflective access to a legacy `EmbeddingEngine`; not a consumer of the canonical SPI runner. It should not define model task semantics. |
+
+#### Compatibility decisions
+
+1. Keep `tech.kayys.aljabr.spi.embedding` as the only canonical model-execution embedding contract.
+2. Do not add a second Aljabr embedding API/core module.
+3. Do not add task/dimension fields only to the Aljabr record while leaving AQLI's mirror and conversion adapter unaware of them. That would silently lose options at the existing bridge.
+4. The next typed-contract change must update the canonical Aljabr DTO, the AQLI compatibility DTO, and `AljabrInferenceDtoAdapter` together, with explicit tests proving round-trip preservation. Preserve the existing four-argument constructors and builder methods for compatibility.
+5. Keep the AQLI public SDK, REST, and CLI as adapters during migration. A separate SDK API migration can later move the public signature to Aljabr types once downstream compatibility and release policy are confirmed.
+6. Do not conflate the model-family runner with AQLI's multimodal service, old client DTO, or HTTP wire representations.
+
+This audit also changes the order of Phase 1: before introducing typed task and output-dimension options, first define the shared value types in Aljabr and decide how the AQLI SDK's legacy request and the `aqli.spi` compatibility mirror map to them. A field-for-field adapter test is a release gate.
+
 ### Consequence for implementation
 
 Do not create a model-family descriptor and call that a runner. Before executable model code is added, define the smallest embedding-specific execution seam that connects the existing `InferenceEngine.executeEmbedding` entry point to a family-specific implementation. Keep it in an existing Aljabr SPI module unless dependency analysis proves a new module is necessary.
