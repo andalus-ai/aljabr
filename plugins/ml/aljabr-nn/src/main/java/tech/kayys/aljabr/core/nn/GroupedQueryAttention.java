@@ -75,17 +75,7 @@ public final class GroupedQueryAttention extends NNModule {
             throw new IllegalArgumentException(
                     "attention mask must have shape [querySequence, keySequence]");
         }
-
-        Tensor expandedKey = null;
-        Tensor expandedValue = null;
-        try {
-            expandedKey = repeatHeads(key);
-            expandedValue = repeatHeads(value);
-            return query.backend().attention(query, expandedKey, expandedValue, additiveMask, causal);
-        } finally {
-            if (expandedValue != null) expandedValue.release();
-            if (expandedKey != null) expandedKey.release();
-        }
+        return query.backend().attentionGqa(query, key, value, additiveMask, causal);
     }
 
     private Tensor repeatHeads(Tensor input) {
