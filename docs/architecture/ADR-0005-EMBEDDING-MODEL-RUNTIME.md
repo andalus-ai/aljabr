@@ -282,3 +282,23 @@ That seam must not become another general serving engine. It should express only
 - Treating the current Safetensors HTTP resource as a reusable model runner.
 - Claiming full multimodal support from model-family metadata alone.
 - Replacing or merging the GGUF and Safetensors format engines.
+
+
+## Implementation update — runner discovery (2026-11-18)
+
+The canonical runner SPI and typed request options have now been added in coordinated Aljabr/AQLI changes. The Aljabr inference SPI now also provides a reusable discovery and registry mechanism:
+
+- `EmbeddingModelRunnerDiscovery` discovers implementations through Java `ServiceLoader` using an explicit classloader.
+- `EmbeddingModelRunnerRegistry` exposes an immutable, classloader-scoped snapshot indexed by the exact `modelFamily()` identifier.
+- Discovery is metadata-only: it does not load model weights, initialize tensor backends, or execute inference.
+- Provider construction/linkage failures are isolated and exposed through immutable diagnostics.
+- Duplicate family claims exclude every provider claiming that family rather than selecting one nondeterministically.
+- The registry is not a process-wide singleton. The runtime owner decides when to discover and how long to retain the resulting snapshot.
+
+Model modules register implementations with the standard service descriptor:
+
+`META-INF/services/tech.kayys.aljabr.spi.embedding.EmbeddingModelRunner`
+
+This intentionally does not make `ModelFamilyPlugin` itself an executable runner and does not create a second plugin lifecycle. Model-family metadata remains responsible for architecture/capability description; the embedding runner remains responsible for model-specific computation.
+
+The next implementation increment is the dedicated EmbeddingGemma 2 module and its service descriptor, initially with a non-advertising execution skeleton and configuration/weight validation. The runner must not return placeholder vectors or claim text readiness until the complete forward path and reference tests exist.
