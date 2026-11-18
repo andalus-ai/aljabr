@@ -9,8 +9,8 @@ class EmbeddingGemma2RmsNormTest {
     void normalizesEachTokenAndHeadWithOptionalLearnedScale() {
         float[][][] input = {{{3f, 4f}}, {{0f, 2f}}};
         float[][][] output = EmbeddingGemma2RmsNorm.apply(input, new float[]{2f, 0.5f}, 1e-6f);
-        assertEquals(2.4f, output[0][0][0], 1e-5f);
-        assertEquals(0.4f, output[0][0][1], 1e-5f);
+        assertEquals(1.697056f, output[0][0][0], 1e-5f);
+        assertEquals(0.565685f, output[0][0][1], 1e-5f);
         assertEquals(0f, output[1][0][0], 1e-6f);
         assertEquals(0.7071f, output[1][0][1], 1e-3f);
         assertEquals(3f, input[0][0][0]);
