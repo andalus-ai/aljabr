@@ -7,6 +7,7 @@ import tech.kayys.aljabr.core.tensor.TensorFactory;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GroupedQueryAttentionTest {
@@ -120,6 +121,45 @@ class GroupedQueryAttentionTest {
             query.release();
             rope.close();
             attention.close();
+        }
+    }
+
+    @Test
+    void rotaryEmbeddingChangesAttentionScoresUsingRotatedQueryAndKey() {
+        CpuBackend backend = new CpuBackend();
+        GroupedQueryAttention attention = new GroupedQueryAttention(backend, 1, 1, 2);
+        RotaryEmbedding rope = new RotaryEmbedding(backend, 2, 16);
+        Tensor query = TensorFactory.of(new float[] {
+                1f, 0f,
+                1f, 0f
+        }, backend, 1, 1, 2, 2);
+        Tensor key = TensorFactory.of(new float[] {
+                1f, 0f,
+                0f, 1f
+        }, backend, 1, 1, 2, 2);
+        Tensor value = TensorFactory.of(new float[] {
+                0f, 0f,
+                10f, 0f
+        }, backend, 1, 1, 2, 2);
+        Tensor baseline = null;
+        Tensor rotated = null;
+        try {
+            baseline = attention.forward(query, key, value, null, false);
+            rotated = attention.forward(query, key, value, null, false, rope,
+                    new long[] {0, 1});
+
+            // The second query position is rotated together with its matching key.
+            // Its attention distribution must therefore differ from unrotated attention.
+            assertNotEquals(baseline.toFloatArray()[2], rotated.toFloatArray()[2], 1e-4f);
+        } finally {
+            if (rotated != null) rotated.release();
+            if (baseline != null) baseline.release();
+            value.release();
+            key.release();
+            query.release();
+            rope.close();
+            attention.close();
+            backend.close();
         }
     }
 
