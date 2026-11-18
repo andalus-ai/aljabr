@@ -2,7 +2,6 @@ package tech.kayys.aljabr.models.embeddinggemma2.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
@@ -60,8 +59,7 @@ class EmbeddingGemma2ConfigTest {
     @Test
     void rejectsLayerTypeCountMismatch() throws Exception {
         JsonNode json = validConfig();
-        ((ArrayNode) json.path("text_config").path("layer_types"))
-                .removeAll().add("sliding_attention");
+        ((ObjectNode) json.path("text_config")).putArray("layer_types").add("sliding_attention");
         assertThrows(IllegalArgumentException.class, () -> EmbeddingGemma2Config.fromJson(json));
     }
 
@@ -89,7 +87,6 @@ class EmbeddingGemma2ConfigTest {
                     "rms_norm_eps":0.000001,
                     "rope_theta":10000.0,
                     "sliding_window":512,
-                    "layer_types":["sliding_attention","full_attention"],
                     "per_layer_config":{
                       "5":{"head_dim":256,"num_key_value_heads":1},
                       "23":{"head_dim":256,"num_key_value_heads":1}
