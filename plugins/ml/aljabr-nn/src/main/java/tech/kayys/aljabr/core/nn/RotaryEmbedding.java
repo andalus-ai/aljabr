@@ -99,6 +99,29 @@ public class RotaryEmbedding extends NNModule {
     public QueryKey apply(Tensor q, Tensor k) {
         validateInput(q);
         validateInput(k);
+        int batch = Math.toIntExact(q.shape().dim(0));
+        int sequence = Math.toIntExact(q.shape().dim(2));
+        long[] positionIds = new long[Math.multiplyExact(batch, sequence)];
+        for (int b = 0; b < batch; b++) {
+            for (int s = 0; s < sequence; s++) positionIds[b * sequence + s] = s;
+        }
+        return apply(q, k, positionIds);
+    }
+
+    /**
+     * Applies RoPE to query and key using shared batch-major position IDs.
+     * Query and key must have the same batch and sequence dimensions; their
+     * head counts may differ for grouped-query attention.
+     */
+    public QueryKey apply(Tensor q, Tensor k, long[] positionIds) {
+        validateInput(q);
+        validateInput(k);
+        java.util.Objects.requireNonNull(positionIds, "positionIds");
+        int batch = Math.toIntExact(q.shape().dim(0));
+        int sequence = Math.toIntExact(q.shape().dim(2));
+        if (positionIds.length != Math.multiplyExact(batch, sequence)) {
+            throw new IllegalArgumentException("positionIds length must equal batch * sequence");
+        }
         if (q.backend() != k.backend()) {
             throw new IllegalArgumentException("Q and K tensors must use the same compute backend");
         }
@@ -111,9 +134,9 @@ public class RotaryEmbedding extends NNModule {
         if (q.dtype() != k.dtype()) {
             throw new IllegalArgumentException("Q and K tensors must have the same dtype");
         }
-        Tensor rotatedQuery = forward(q);
+        Tensor rotatedQuery = forward(q, positionIds);
         try {
-            Tensor rotatedKey = forward(k);
+            Tensor rotatedKey = forward(k, positionIds);
             return new QueryKey(rotatedQuery, rotatedKey);
         } catch (RuntimeException | Error failure) {
             rotatedQuery.release();

@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.core.nn;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
@@ -74,6 +76,40 @@ public final class GroupedQueryAttention extends NNModule {
                     "attention mask must have shape [querySequence, keySequence]");
         }
         return query.backend().attentionGqa(query, key, value, additiveMask, causal);
+    }
+
+    /**
+     * Computes GQA after applying rotary positions to query and key.
+     *
+     * <p>This overload is intended for self-attention: query and key must
+     * share batch and sequence dimensions. Value remains unrotated.</p>
+     */
+    public Tensor forward(Tensor query, Tensor key, Tensor value,
+            Tensor additiveMask, boolean causal, RotaryEmbedding rotaryEmbedding) {
+        Objects.requireNonNull(rotaryEmbedding, "rotaryEmbedding");
+        RotaryEmbedding.QueryKey rotated = rotaryEmbedding.apply(query, key);
+        try {
+            return forward(rotated.query(), rotated.key(), value, additiveMask, causal);
+        } finally {
+            rotated.query().release();
+            rotated.key().release();
+        }
+    }
+
+    /**
+     * Computes GQA with caller-supplied batch-major position IDs [batch, sequence].
+     */
+    public Tensor forward(Tensor query, Tensor key, Tensor value,
+            Tensor additiveMask, boolean causal, RotaryEmbedding rotaryEmbedding,
+            long[] positionIds) {
+        Objects.requireNonNull(rotaryEmbedding, "rotaryEmbedding");
+        RotaryEmbedding.QueryKey rotated = rotaryEmbedding.apply(query, key, positionIds);
+        try {
+            return forward(rotated.query(), rotated.key(), value, additiveMask, causal);
+        } finally {
+            rotated.query().release();
+            rotated.key().release();
+        }
     }
 
     private Tensor repeatHeads(Tensor input) {

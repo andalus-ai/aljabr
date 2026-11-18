@@ -74,6 +74,55 @@ class GroupedQueryAttentionTest {
         }
     }
 
+
+    @Test
+    void gqaCanApplyRotaryEmbeddingBeforeAttention() {
+        CpuBackend backend = new CpuBackend();
+        GroupedQueryAttention attention = new GroupedQueryAttention(backend, 4, 2, 2);
+        RotaryEmbedding rope = new RotaryEmbedding(backend, 2, 16);
+        Tensor query = TensorFactory.of(new float[1 * 4 * 3 * 2], backend, 1, 4, 3, 2);
+        Tensor key = TensorFactory.of(new float[1 * 2 * 3 * 2], backend, 1, 2, 3, 2);
+        Tensor value = TensorFactory.of(new float[1 * 2 * 3 * 2], backend, 1, 2, 3, 2);
+        Tensor output = null;
+        try {
+            output = attention.forward(query, key, value, null, false, rope);
+            assertEquals(4, output.shape().dim(1));
+            assertEquals(3, output.shape().dim(2));
+            assertEquals(backend, output.backend());
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+            rope.close();
+            attention.close();
+        }
+    }
+
+    @Test
+    void gqaCanApplyRotaryEmbeddingWithExplicitPositions() {
+        CpuBackend backend = new CpuBackend();
+        GroupedQueryAttention attention = new GroupedQueryAttention(backend, 2, 1, 2);
+        RotaryEmbedding rope = new RotaryEmbedding(backend, 2, 16);
+        Tensor query = TensorFactory.of(new float[1 * 2 * 2 * 2], backend, 1, 2, 2, 2);
+        Tensor key = TensorFactory.of(new float[1 * 1 * 2 * 2], backend, 1, 1, 2, 2);
+        Tensor value = TensorFactory.of(new float[1 * 1 * 2 * 2], backend, 1, 1, 2, 2);
+        Tensor output = null;
+        try {
+            output = attention.forward(query, key, value, null, false, rope,
+                    new long[] {3, 7});
+            assertEquals(2, output.shape().dim(1));
+            assertEquals(2, output.shape().dim(2));
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+            rope.close();
+            attention.close();
+        }
+    }
+
     @Test
     void rejectsNonDivisibleHeadCounts() {
         CpuBackend backend = new CpuBackend();
