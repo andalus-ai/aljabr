@@ -20,6 +20,7 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   and per-layer full/sliding attention geometry.
 - A complete text encoder-layer reference operation with all four residual-path
   RMSNorms, gated GELU MLP, and the third PLE residual sub-block.
+- A format-neutral `EmbeddingGemma2CheckpointMapper` that validates Hugging Face text tensor names and shapes and assembles the typed checkpoint bundle; storage-format decoding remains outside the model module.
 - One canonical text-backbone reference path that owns vocabulary lookup,
   sqrt(hidden_size) embedding scaling, projection-only PLE, construction and
   execution of every encoder layer, final RMSNorm, token-wise embedding
