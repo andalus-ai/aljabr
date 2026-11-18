@@ -6,8 +6,8 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 /**
  * Rotary positional embedding module.
  *
- * <p>The rotation operation remains a placeholder, but the module now participates
- * in explicit backend ownership and rejects tensors from a different backend.
+ * <p>Applies configured rotary position embeddings to rank-4 attention tensors,
+ * including query/key pairs with grouped-query head counts.
  */
 public class RotaryEmbedding extends NNModule {
 
