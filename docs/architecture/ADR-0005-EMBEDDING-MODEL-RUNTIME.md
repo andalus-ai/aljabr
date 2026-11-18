@@ -137,6 +137,26 @@ For asymmetric retrieval tasks, query and document instructions differ. A docume
 
 The paper reports 744M total parameters (271M text backbone/embedder, 167M vision, 305M audio); the official model card rounds these figures to 740M (270M, 170M, and 300M). Use checkpoint tensor/config metadata as the final source of truth for exact parameter and tensor-shape validation.
 
+## Execution seam audit
+
+The source audit confirms that the current Aljabr tree has model metadata and weight-loading contracts, but not yet a reusable embedding model runner:
+
+| Existing source | What it provides | What it does not provide |
+|---|---|---|
+| `spi/aljabr-spi-model/.../ModelArchitecture.java` | Architecture identity and weight-name resolution, including Gemma-style per-layer input weight names | Model forward execution, bidirectional attention policy, embedding head, or pooling |
+| `spi/aljabr-spi-model/.../ModelConfig.java` | Flat Hugging Face model configuration fields and a fallback that infers root model type/architecture from nested `text_config` | A typed nested text config or parsing of `per_layer_config` entries |
+| `engine/safetensor/aljabr-safetensor-spi/.../SafetensorEngine.java` | Loaded-model lifecycle, raw weight map, tokenizer, flat config, and runtime traits | A forward/embedding execution method |
+| `spi/aljabr-spi-inference/.../InferenceEngine.java` | Existing top-level `executeEmbedding(modelId, EmbeddingRequest)` invocation contract | A family-specific embedding runner contract or a concrete Aljabr implementation |
+| `engine/gguf/.../GgufRunnerSession.java` | Format-specific generation session contract | A format-neutral embedding execution seam |
+
+This matters for the EmbeddingGemma 2 checkpoint: its root model type is `embedding_gemma2`, but the transformer settings live under `text_config` with model type `embedding_gemma2_text`. The current `ModelConfig` only falls back to nested `text_config.model_type` and `text_config.architectures` when root identity fields are missing; it does not map the nested dimensions, attention layer types, RoPE settings, or per-layer overrides into typed configuration. A flat-config-only load would therefore lose essential model shape information.
+
+### Consequence for implementation
+
+Do not create a model-family descriptor and call that a runner. Before executable model code is added, define the smallest embedding-specific execution seam that connects the existing `InferenceEngine.executeEmbedding` entry point to a family-specific implementation. Keep it in an existing Aljabr SPI module unless dependency analysis proves a new module is necessary.
+
+That seam must not become another general serving engine. It should express only reusable embedding-model execution and model resource ownership; AQLI continues to own scheduling, admission, transport, and runtime policy. The design must also decide how nested model configuration and per-layer overrides are represented without breaking existing flat `ModelConfig` consumers.
+
 ## Target responsibility map
 
 | Concern | Owner | Notes |
