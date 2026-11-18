@@ -313,6 +313,7 @@ final class GgufDecodePass {
 
             int kvLayerToUse = GgufKvCacheRouting.resolveCacheLayer(
                     layer, layerWeights.wK[layer] != null, cfg.isSwaLayer(layer));
+            GgufKvCacheRouting.validateCacheGeometry(cache, kvLayerToUse, layerNKVH, layerHDim);
             if (layerWeights.wK[layer] != null) {
 
                 if (layerWeights.attnKNorm[layer] != null) {
