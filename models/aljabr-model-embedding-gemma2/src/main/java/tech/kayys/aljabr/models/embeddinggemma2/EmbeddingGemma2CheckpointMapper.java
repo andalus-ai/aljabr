@@ -99,32 +99,52 @@ public final class EmbeddingGemma2CheckpointMapper {
                 tokenEmbeddings, pleProjection, pleNormScale, layers, finalNorm, embeddingProjection);
     }
 
-    /** A dense checkpoint tensor after storage-format decoding and float32 conversion. */
-    public record CheckpointTensor(int[] shape, float[] values) {
-        public CheckpointTensor {
+    /**
+     * Dense checkpoint tensor after storage-format decoding and float32 conversion.
+     *
+     * <p>Use {@link #takeOwnership(int[], float[])} when the caller has freshly
+     * allocated arrays and transfers exclusive ownership. This avoids another
+     * full copy of very large embedding matrices. Public accessors remain
+     * defensive.</p>
+     */
+    public static final class CheckpointTensor {
+        private final int[] shape;
+        private final float[] values;
+
+        public CheckpointTensor(int[] shape, float[] values) {
+            this(shape, values, false);
+        }
+
+        private CheckpointTensor(int[] shape, float[] values, boolean takeOwnership) {
             if (shape == null || values == null) {
                 throw new IllegalArgumentException("checkpoint tensor shape and values must not be null");
             }
-            shape = shape.clone();
-            values = values.clone();
+            this.shape = takeOwnership ? shape : shape.clone();
+            this.values = takeOwnership ? values : values.clone();
             long elements = 1L;
-            for (int dimension : shape) {
+            for (int dimension : this.shape) {
                 if (dimension <= 0) throw new IllegalArgumentException("tensor dimensions must be positive");
                 elements = Math.multiplyExact(elements, dimension);
             }
-            if (elements != values.length) {
+            if (elements != this.values.length) {
                 throw new IllegalArgumentException("tensor shape contains " + elements
-                        + " elements but values contains " + values.length);
+                        + " elements but values contains " + this.values.length);
             }
-            for (float value : values) {
+            for (float value : this.values) {
                 if (!Float.isFinite(value)) {
                     throw new IllegalArgumentException("checkpoint tensor values must be finite float32 values");
                 }
             }
         }
 
-        @Override public int[] shape() { return shape.clone(); }
-        @Override public float[] values() { return values.clone(); }
+        /** Transfers exclusive ownership of freshly allocated arrays to this tensor. */
+        public static CheckpointTensor takeOwnership(int[] shape, float[] values) {
+            return new CheckpointTensor(shape, values, true);
+        }
+
+        public int[] shape() { return shape.clone(); }
+        public float[] values() { return values.clone(); }
+        private float[] valuesForMapping() { return values; }
     }
 
     private static final class Mapping {
@@ -143,7 +163,7 @@ public final class EmbeddingGemma2CheckpointMapper {
         private float[][] matrix(String name, int rows, int columns) {
             CheckpointTensor tensor = required(name);
             requireShape(name, tensor, rows, columns);
-            float[] values = tensor.values();
+            float[] values = tensor.valuesForMapping();
             float[][] matrix = new float[rows][columns];
             for (int row = 0; row < rows; row++) {
                 System.arraycopy(values, row * columns, matrix[row], 0, columns);
@@ -154,7 +174,7 @@ public final class EmbeddingGemma2CheckpointMapper {
         private float[] vector(String name, int length) {
             CheckpointTensor tensor = required(name);
             requireShape(name, tensor, length);
-            return tensor.values();
+            return tensor.valuesForMapping();
         }
 
         private float[] optionalVector(String name, int length) {

@@ -101,6 +101,8 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-The Gemma 4 vision tower, image preprocessing/patchification, vision checkpoint
-mapping, and end-to-end image execution remain deferred. Current vision components cover checkpoint-backed patch projection and learned 2D position lookup, plus post-tower projection and reference per-image soft-token splitting. The bidirectional vision transformer, 2D RoPE, pooling, and standardization still remain to be implemented.
+The bidirectional Gemma4 vision transformer, 2D RoPE, image preprocessing/patchification,
+vision checkpoint mapping, pooling/standardization, and end-to-end image execution remain
+deferred. Current vision components cover patch projection and learned 2D position lookup,
+post-tower projection, and reference per-image soft-token splitting.
 Audio and video execution also remain deferred.

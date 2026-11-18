@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.gguf.loader.inference;
 
 import tech.kayys.aljabr.cache.KVCacheLayout;
+import tech.kayys.aljabr.cache.KVCacheStorage;
 
 /**
  * Per-layer key-value cache for auto-regressive transformer decoding.
@@ -203,6 +204,18 @@ public final class KVCache {
 
     /** Immutable, format-neutral geometry shared with other cache implementations. */
     public KVCacheLayout layout() { return layout; }
+
+    /**
+     * Returns a non-owning view of this cache through the format-neutral
+     * storage contract. The returned view shares these backing arrays;
+     * closing the view does not close or reset this cache.
+     *
+     * <p>Sequence advancement and reset remain responsibilities of this
+     * {@code KVCache}, not the storage view.
+     */
+    public KVCacheStorage asStorage() {
+        return new GgufKVCacheStorageAdapter(this);
+    }
 
     /**
      * Legacy accessor — returns the stride of layer 0 (equivalent to the old

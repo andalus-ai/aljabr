@@ -80,6 +80,8 @@ subprojects {
         ":plugins:ml:aljabr-nn",
         // Clustering algorithm tests exercise the CPU backend directly.
         ":engine:clustering:aljabr-clustering-kmeans",
+        // E-means tests exercise the CPU backend directly; it requires the incubating Vector API.
+        ":engine:clustering:aljabr-clustering-emeans",
         ":engine:clustering:aljabr-clustering-emeans",
         ":engine:gguf:aljabr-gguf-core",
         ":engine:safetensor:aljabr-safetensor-core",

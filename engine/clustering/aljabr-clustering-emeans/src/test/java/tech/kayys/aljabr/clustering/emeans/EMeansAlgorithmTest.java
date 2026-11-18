@@ -84,6 +84,32 @@ class EMeansAlgorithmTest {
         }
     }
 
+
+    @Test
+    void optionallyProducesSlowEmaCentroids() {
+        Tensor vectors = tensor(new float[] { 0, 0, 0.2f, 0, 9.8f, 10, 10, 10 }, 4, 2);
+        try {
+            EMeansConfig enabled = EMeansConfig.defaults(2, 17L, 5, 2)
+                    .withSlowEmaStepMultiplier(0.25);
+            try (EMeansResult result = algorithm.fit(new ClusteringDataset(vectors), enabled)) {
+                assertThat(result.slowEmaCentroids()).isPresent();
+                assertThat(result.slowEmaCentroids().orElseThrow().shape().dim(1)).isEqualTo(2);
+                assertThat(result.centroids().shape().dim(0)).isEqualTo(2);
+            }
+            try (EMeansResult result = algorithm.fit(new ClusteringDataset(vectors),
+                    EMeansConfig.defaults(2, 17L, 5, 2))) {
+                assertThat(result.slowEmaCentroids()).isEmpty();
+            }
+        } finally { vectors.close(); }
+    }
+
+    @Test
+    void rejectsInvalidSlowEmaMultiplier() {
+        assertThatThrownBy(() -> EMeansConfig.defaults(2, 1L, 2, 2)
+                .withSlowEmaStepMultiplier(5.0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private Tensor tensor(float[] values, long... shape) {
         return TensorFactory.of(values, backend, shape);
     }

@@ -29,15 +29,18 @@ final class GgufLayerWeightResolver {
 
             weights.attnNorm[layer] = tensors.dequantizeVector(
                     tensors.requireTensor(prefix + "attn_norm.weight"), embeddingDimension);
-            weights.attnQNorm[layer] = tensors.findTensor(prefix + "attn_q_norm.weight")
-                    .map(tensor -> tensors.dequantizeVector(tensor, headDimension))
-                    .orElse(null);
-            weights.attnKNorm[layer] = tensors.findTensor(prefix + "attn_k_norm.weight")
-                    .map(tensor -> tensors.dequantizeVector(tensor, headDimension))
-                    .orElse(null);
-            weights.attnVNorm[layer] = tensors.findTensor(prefix + "attn_v_norm.weight")
-                    .map(tensor -> tensors.dequantizeVector(tensor, headDimension))
-                    .orElse(null);
+            GGUFTensorInfo qNorm = tensors.findTensor(prefix + "attn_q_norm.weight").orElse(null);
+            GGUFTensorInfo kNorm = tensors.findTensor(prefix + "attn_k_norm.weight").orElse(null);
+            GGUFTensorInfo vNorm = tensors.findTensor(prefix + "attn_v_norm.weight").orElse(null);
+            GgufAttentionNormLayout.validateTensor(
+                    qNorm, prefix + "attn_q_norm.weight", layer, headDimension);
+            GgufAttentionNormLayout.validateTensor(
+                    kNorm, prefix + "attn_k_norm.weight", layer, headDimension);
+            GgufAttentionNormLayout.validateTensor(
+                    vNorm, prefix + "attn_v_norm.weight", layer, headDimension);
+            weights.attnQNorm[layer] = qNorm == null ? null : tensors.dequantizeVector(qNorm, headDimension);
+            weights.attnKNorm[layer] = kNorm == null ? null : tensors.dequantizeVector(kNorm, headDimension);
+            weights.attnVNorm[layer] = vNorm == null ? null : tensors.dequantizeVector(vNorm, headDimension);
             weights.postAttnNorm[layer] = tensors.findTensor(prefix + "post_attention_norm.weight")
                     .map(tensor -> tensors.dequantizeVector(tensor, embeddingDimension))
                     .orElse(null);
@@ -93,6 +96,8 @@ final class GgufLayerWeightResolver {
             headDimensions[layer] = config.headDimForLayer(layer);
             slidingWindowLayers[layer] = config.isSwaLayer(layer);
         }
+        GgufQueryProjectionLayout.validate(
+                weights.wQ, config.nHeads(), headDimensions, embeddingDimension);
         GgufKvProjectionLayout.validate(
                 weights.wK, weights.wV, kvHeads, headDimensions, slidingWindowLayers, embeddingDimension);
         GgufAttentionOutputProjectionLayout.validate(
