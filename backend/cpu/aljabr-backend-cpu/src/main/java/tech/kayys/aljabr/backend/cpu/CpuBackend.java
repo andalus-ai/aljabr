@@ -743,7 +743,58 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor applyRoPE(Tensor input, int posOffset, float freqBase, boolean isNeox) {
-        throw new UnsupportedOperationException("CpuBackend RoPE not implemented yet");
+        Objects.requireNonNull(input, "input");
+        if (input.backend() != this) {
+            throw new IllegalArgumentException("RoPE input must belong to this CPU backend instance");
+        }
+        if (input.dtype() != DType.F32) {
+            throw new UnsupportedOperationException("CPU RoPE currently supports F32 tensors only");
+        }
+        if (input.shape().rank() != 4) {
+            throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
+        }
+        if (posOffset < 0 || !Float.isFinite(freqBase) || freqBase <= 1.0f) {
+            throw new IllegalArgumentException("posOffset must be non-negative and freqBase must be finite and > 1");
+        }
+
+        long batch = input.shape().dim(0);
+        long heads = input.shape().dim(1);
+        long sequence = input.shape().dim(2);
+        int headDim = Math.toIntExact(input.shape().dim(3));
+        if (batch <= 0 || heads <= 0 || sequence <= 0 || headDim <= 0 || (headDim & 1) != 0) {
+            throw new IllegalArgumentException("RoPE requires positive dimensions and an even headDim");
+        }
+
+        long elements = input.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        MemorySegment source = seg(input);
+        MemorySegment destination = output.segment();
+        destination.copyFrom(source.asSlice(0, Math.multiplyExact(elements, Float.BYTES)));
+
+        int halfDim = headDim / 2;
+        for (long b = 0; b < batch; b++) {
+            for (long h = 0; h < heads; h++) {
+                for (long s = 0; s < sequence; s++) {
+                    long position = Math.addExact(posOffset, s);
+                    long row = ((b * heads + h) * sequence + s) * headDim;
+                    for (int pair = 0; pair < halfDim; pair++) {
+                        double exponent = -2.0 * pair / headDim;
+                        double angle = position * Math.pow(freqBase, exponent);
+                        float cos = (float) Math.cos(angle);
+                        float sin = (float) Math.sin(angle);
+                        int first = isNeox ? pair : pair * 2;
+                        int second = isNeox ? pair + halfDim : pair * 2 + 1;
+                        long firstOffset = (row + first) * Float.BYTES;
+                        long secondOffset = (row + second) * Float.BYTES;
+                        float x = source.get(ValueLayout.JAVA_FLOAT, firstOffset);
+                        float y = source.get(ValueLayout.JAVA_FLOAT, secondOffset);
+                        destination.set(ValueLayout.JAVA_FLOAT, firstOffset, x * cos - y * sin);
+                        destination.set(ValueLayout.JAVA_FLOAT, secondOffset, x * sin + y * cos);
+                    }
+                }
+            }
+        }
+        return out(input.shape(), output);
     }
 
     @Override
