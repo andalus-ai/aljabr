@@ -108,7 +108,6 @@ public record EmbeddingGemma2Config(
                 normEps, ropeTheta, slidingWindow, layerTypes, overrides);
     }
 
-    @Override
     public Map<String, JsonNode> perLayerConfig() {
         return immutableJsonMap(perLayerConfig);
     }
