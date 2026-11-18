@@ -93,7 +93,6 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
 
             for (int start = 0; start < samples; start += config.batchSize()) {
                 int end = Math.min(samples, start + config.batchSize());
-                int batchLength = end - start;
                 int[] batchCounts = new int[clusters];
                 double[] batchSums = new double[centers.length];
 
