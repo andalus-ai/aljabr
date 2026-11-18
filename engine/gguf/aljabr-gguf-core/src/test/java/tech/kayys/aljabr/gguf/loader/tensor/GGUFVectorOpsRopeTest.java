@@ -64,6 +64,18 @@ class GGUFVectorOpsRopeTest {
     }
 
     @Test
+    void rejectsIncompleteFrequencyFactorsBeforeMutatingInput() {
+        float[] values = {1, 2, 3, 4, 5, 6, 7, 8};
+        float[] original = values.clone();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(values, 1, 8, 8, 2, 10_000.0f,
+                        new float[] {1.0f, 1.0f, 1.0f}));
+
+        assertArrayEquals(original, values, 0.0f);
+    }
+
+    @Test
     void rejectsInputShorterThanRequestedHeadRange() {
         assertThrows(IllegalArgumentException.class,
                 () -> GGUFVectorOps.rope(new float[7], 0, 1, 8, 8, 0, 10_000.0f, null));
