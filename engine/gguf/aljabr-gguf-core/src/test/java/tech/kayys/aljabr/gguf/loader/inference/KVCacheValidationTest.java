@@ -44,7 +44,7 @@ class KVCacheValidationTest {
         KVCache cache = new KVCache(1, 2, 1, 2);
         assertThrows(IndexOutOfBoundsException.class,
                 () -> cache.storeDirect(0, 2, new float[] {1, 2}, new float[] {3, 4}, 2));
-        assertThrows(IndexOutOfBoundsException.class,
+        assertThrows(IllegalArgumentException.class,
                 () -> cache.storeDirect(0, 0, new float[] {1}, new float[] {2}, 2));
         assertThrows(IndexOutOfBoundsException.class,
                 () -> cache.storeBatch(0, 1, new float[] {1, 2, 3, 4},
