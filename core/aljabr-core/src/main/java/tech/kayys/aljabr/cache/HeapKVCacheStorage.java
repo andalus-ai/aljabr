@@ -66,6 +66,53 @@ public final class HeapKVCacheStorage implements KVCacheStorage {
     }
 
     @Override
+    public void writeRange(int layer, int firstPosition, int tokenCount,
+            float[] sourceKeys, int keysOffset, float[] sourceValues, int valuesOffset) {
+        ensureOpen();
+        int stride = checkedRange(layer, firstPosition, tokenCount);
+        int elements = Math.multiplyExact(tokenCount, stride);
+        checkArrayRange(sourceKeys, keysOffset, elements, "keys");
+        checkArrayRange(sourceValues, valuesOffset, elements, "values");
+        int destinationOffset = Math.multiplyExact(firstPosition, stride);
+
+        // Validate both source ranges before mutating either backing array.
+        System.arraycopy(sourceKeys, keysOffset, keys[layer], destinationOffset, elements);
+        System.arraycopy(sourceValues, valuesOffset, values[layer], destinationOffset, elements);
+    }
+
+    @Override
+    public void readKeyRange(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        ensureOpen();
+        int stride = checkedRange(layer, firstPosition, tokenCount);
+        int elements = Math.multiplyExact(tokenCount, stride);
+        checkArrayRange(destination, destinationOffset, elements, "destination");
+        int sourceOffset = Math.multiplyExact(firstPosition, stride);
+        System.arraycopy(keys[layer], sourceOffset, destination, destinationOffset, elements);
+    }
+
+    @Override
+    public void readValueRange(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        ensureOpen();
+        int stride = checkedRange(layer, firstPosition, tokenCount);
+        int elements = Math.multiplyExact(tokenCount, stride);
+        checkArrayRange(destination, destinationOffset, elements, "destination");
+        int sourceOffset = Math.multiplyExact(firstPosition, stride);
+        System.arraycopy(values[layer], sourceOffset, destination, destinationOffset, elements);
+    }
+
+    private int checkedRange(int layer, int firstPosition, int tokenCount) {
+        checkLayer(layer);
+        if (firstPosition < 0 || tokenCount < 0
+                || firstPosition > layout.maxSequenceLength()
+                || tokenCount > layout.maxSequenceLength() - firstPosition) {
+            throw new IndexOutOfBoundsException("KV cache range exceeds layer capacity");
+        }
+        return layout.layerStride(layer);
+    }
+
+    @Override
     public void clearLayer(int layer) {
         ensureOpen();
         checkLayer(layer);
