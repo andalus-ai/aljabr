@@ -28,7 +28,7 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
     private static final int REVIVAL_INTERVAL_BATCHES = 5;
     private static final double DEAD_CLUSTER_FRACTION = 0.1;
     private static final double SPLIT_EPSILON = 1.0e-4;
-    private static final double INITIAL_MASS = 1.0e-3;
+    private static final double INITIAL_MASS = 1.0e-10;
 
     @Override
     public String id() {
@@ -106,7 +106,6 @@ public final class EMeansAlgorithm implements ClusteringAlgorithm<EMeansConfig> 
                         batchSums[target + d] += data[source + d];
                     }
                     if (epoch == config.epochs() - 1) {
-                        finalEpochAssignments[sample] = cluster;
                         finalEpochCounts[cluster]++;
                         for (int d = 0; d < dimensions; d++) {
                             finalEpochSums[target + d] += data[source + d];
