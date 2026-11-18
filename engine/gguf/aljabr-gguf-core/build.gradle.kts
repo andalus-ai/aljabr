@@ -37,6 +37,7 @@ sourceSets {
 }
 
 dependencies {
+    api(project(":core:aljabr-core"))
     api(project(":plugins:ml:aljabr-nn"))
     api(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":spi:aljabr-spi-model"))

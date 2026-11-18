@@ -7,6 +7,26 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class KVCacheValidationTest {
 
+
+    @Test
+    void cacheUsesSharedFormatNeutralLayoutForHybridLayerGeometry() {
+        int[] heads = {1, 8};
+        int[] dimensions = {256, 512};
+        KVCache cache = new KVCache(2, 16, heads, dimensions);
+
+        heads[0] = 99;
+        dimensions[0] = 99;
+
+        assertEquals(2, cache.layout().layerCount());
+        assertEquals(16, cache.layout().maxSequenceLength());
+        assertEquals(1, cache.layout().kvHeads(0));
+        assertEquals(256, cache.layout().headDimension(0));
+        assertEquals(256, cache.headStride(0));
+        assertEquals(8, cache.layout().kvHeads(1));
+        assertEquals(512, cache.layout().headDimension(1));
+        assertEquals(4096, cache.headStride(1));
+    }
+
     @Test
     void constructorsRejectInvalidDimensions() {
         assertThrows(IllegalArgumentException.class, () -> new KVCache(0, 4, 1, 2));
