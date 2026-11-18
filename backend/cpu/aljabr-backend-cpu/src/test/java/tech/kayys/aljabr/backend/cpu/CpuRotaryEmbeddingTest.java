@@ -143,4 +143,58 @@ class CpuRotaryEmbeddingTest {
         }
     }
 
+
+    @Test
+    void explicitPositionIdsSupportNeoXPairingAndPartialDimensions() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] {1f, 2f, 3f, 4f, 5f, 6f},
+                backend, 1, 1, 1, 6);
+        Tensor output = null;
+        try {
+            output = backend.applyRoPE(input, 10_000f, 4, true, 1f, new long[] {1L});
+            double angle0 = 1.0;
+            double angle1 = 0.01;
+            assertArrayEquals(new float[] {
+                    (float) (Math.cos(angle0) - 3 * Math.sin(angle0)),
+                    (float) (2 * Math.cos(angle1) - 4 * Math.sin(angle1)),
+                    (float) (Math.sin(angle0) + 3 * Math.cos(angle0)),
+                    (float) (2 * Math.sin(angle1) + 4 * Math.cos(angle1)),
+                    5f, 6f
+            }, output.toFloatArray(), 1e-5f);
+        } finally {
+            if (output != null) output.release();
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void explicitPositionIdsApplyLinearScaling() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] {1f, 0f}, backend, 1, 1, 1, 2);
+        Tensor output = null;
+        try {
+            output = backend.applyRoPE(input, 10_000f, 2, false, 2f, new long[] {4L});
+            assertArrayEquals(new float[] {(float) Math.cos(2.0), (float) Math.sin(2.0)},
+                    output.toFloatArray(), 1e-5f);
+        } finally {
+            if (output != null) output.release();
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void explicitPositionIdsRejectNegativePositions() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] {1f, 0f}, backend, 1, 1, 1, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.applyRoPE(input, 10_000f, 2, false, 1f, new long[] {-1L}));
+        } finally {
+            input.release();
+            backend.close();
+        }
+    }
+
 }
