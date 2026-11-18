@@ -14,8 +14,8 @@ import tech.kayys.aljabr.cache.KVCacheLayout;
  * The per-layer stride is {@code nKVHeads[layer] × headDim[layer]}.
  *
  * <p>For uniform models (all layers share the same nKVHeads and headDim) use
- * {@link #KVCache(int, int, int, int)}; it delegates to the per-layer
- * constructor with identical arrays.
+ * {@link #KVCache(int, int, int, int)}; both constructors share the same
+ * format-neutral layout representation.
  */
 public final class KVCache {
     private final float[][] k;          // k[layer][pos * layout.layerStride(layer) + ...]
@@ -201,6 +201,9 @@ public final class KVCache {
     /** Maximum number of sequence positions this cache can hold. */
     public int capacity() { return layout.maxSequenceLength(); }
 
+    /** Immutable, format-neutral geometry shared with other cache implementations. */
+    public KVCacheLayout layout() { return layout; }
+
     /**
      * Legacy accessor — returns the stride of layer 0 (equivalent to the old
      * uniform {@code headStride()} field). Prefer {@link #headStride(int)}.
@@ -214,14 +217,6 @@ public final class KVCache {
     private static void validateDimensions(int nLayers, int maxSeq) {
         if (nLayers <= 0 || maxSeq <= 0) {
             throw new IllegalArgumentException("nLayers and maxSeq must be positive");
-        }
-    }
-
-    private static int checkedProduct(int left, int right, String description) {
-        try {
-            return Math.multiplyExact(left, right);
-        } catch (ArithmeticException e) {
-            throw new IllegalArgumentException(description + " exceeds supported array size", e);
         }
     }
 
