@@ -54,8 +54,10 @@ record GgufModelConfig(
         int headDim   = intMeta(meta, arch, "attention.key_length",   defaultHeadDim);
         int headDimKV = intMeta(meta, arch, "attention.value_length", headDim);
 
+        int layerCount = intMeta(meta, arch, "block_count", 32);
         int[] nKVHPerLayer  = intListMeta(meta, arch, "attention.head_count_kv");
         int[] swaPattern    = intListMeta(meta, arch, "attention.sliding_window_pattern");
+        validateLayerMetadata(layerCount, nKVHPerLayer, swaPattern);
         int ropeDimensionCount = intMeta(meta, arch, "rope.dimension_count", 0);
         int ropeDimensionCountSwa = intMeta(meta, arch, "rope.dimension_count_swa", 0);
         int slidingWindow   = intMeta(meta, arch, "attention.sliding_window", 0);
@@ -112,7 +114,7 @@ record GgufModelConfig(
                 arch,
                 contextLength,
                 embeddingDim,
-                intMeta(meta, arch, "block_count", 32),
+                layerCount,
                 intMeta(meta, arch, "feed_forward_length", embeddingDim * 4),
                 nHeads,
                 nKVHeads,
@@ -137,6 +139,39 @@ record GgufModelConfig(
                 hasUnitVNorm,
                 isGeGLU,
                 isGemma4);
+    }
+
+    /**
+     * Rejects incomplete per-layer routing metadata instead of silently
+     * falling back to uniform attention geometry for missing layers.
+     */
+    static void validateLayerMetadata(int layerCount, int[] kvHeadsPerLayer, int[] slidingWindowPattern) {
+        if (layerCount <= 0) {
+            throw new IllegalArgumentException("layer count must be positive");
+        }
+        if (kvHeadsPerLayer != null) {
+            if (kvHeadsPerLayer.length != layerCount) {
+                throw new IllegalArgumentException("per-layer KV head metadata must contain exactly "
+                        + layerCount + " entries, got " + kvHeadsPerLayer.length);
+            }
+            for (int layer = 0; layer < kvHeadsPerLayer.length; layer++) {
+                if (kvHeadsPerLayer[layer] <= 0) {
+                    throw new IllegalArgumentException("KV head count for layer " + layer + " must be positive");
+                }
+            }
+        }
+        if (slidingWindowPattern != null) {
+            if (slidingWindowPattern.length != layerCount) {
+                throw new IllegalArgumentException("sliding-window pattern must contain exactly "
+                        + layerCount + " entries, got " + slidingWindowPattern.length);
+            }
+            for (int layer = 0; layer < slidingWindowPattern.length; layer++) {
+                if (slidingWindowPattern[layer] != 0 && slidingWindowPattern[layer] != 1) {
+                    throw new IllegalArgumentException("sliding-window pattern entry for layer " + layer
+                            + " must be 0 or 1");
+                }
+            }
+        }
     }
 
     int nKVHeadsForLayer(int layer) {
