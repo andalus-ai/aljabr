@@ -742,6 +742,52 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor applyRoPE(Tensor input, float freqBase, int rotaryDimension,
+            boolean isNeox, float positionScale, long[] positionIds) {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(positionIds, "positionIds");
+        if (input.backend() != this) throw new IllegalArgumentException("RoPE input must belong to this CPU backend instance");
+        if (input.dtype() != DType.F32) throw new UnsupportedOperationException("CPU RoPE currently supports F32 tensors only");
+        if (input.shape().rank() != 4) throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
+        if (!Float.isFinite(freqBase) || freqBase <= 1f
+                || !Float.isFinite(positionScale) || positionScale <= 0f) {
+            throw new IllegalArgumentException("Invalid RoPE frequency base or position scale");
+        }
+        long batch=input.shape().dim(0), heads=input.shape().dim(1), sequence=input.shape().dim(2);
+        int headDim=Math.toIntExact(input.shape().dim(3));
+        if (positionIds.length != Math.multiplyExact(batch, sequence)) {
+            throw new IllegalArgumentException("positionIds length must equal batch * sequence");
+        }
+        if (batch<=0 || heads<=0 || sequence<=0 || rotaryDimension<=0
+                || (rotaryDimension&1)!=0 || rotaryDimension>headDim) {
+            throw new IllegalArgumentException("rotaryDimension must be positive, even, and <= headDim");
+        }
+        for (long position : positionIds) if (position < 0) {
+            throw new IllegalArgumentException("position IDs must be non-negative");
+        }
+        long elements=input.numel();
+        long byteSize=Math.multiplyExact(elements, Float.BYTES);
+        HostAccessibleStorage output=allocateOutput(byteSize);
+        MemorySegment source=seg(input), destination=output.segment();
+        destination.copyFrom(source.asSlice(0, byteSize));
+        int half=rotaryDimension/2, sequenceInt=Math.toIntExact(sequence);
+        for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) for(int s=0;s<sequenceInt;s++) {
+            double pos=positionIds[Math.toIntExact(b)*sequenceInt+s]/positionScale;
+            long row=((b*heads+h)*sequence+s)*headDim;
+            for(int pair=0;pair<half;pair++) {
+                double angle=pos*Math.pow(freqBase,-2.0*pair/rotaryDimension);
+                float cos=(float)Math.cos(angle), sin=(float)Math.sin(angle);
+                int first=isNeox?pair:pair*2, second=isNeox?pair+half:pair*2+1;
+                long fo=(row+first)*Float.BYTES, so=(row+second)*Float.BYTES;
+                float x=source.get(ValueLayout.JAVA_FLOAT,fo), y=source.get(ValueLayout.JAVA_FLOAT,so);
+                destination.set(ValueLayout.JAVA_FLOAT,fo,x*cos-y*sin);
+                destination.set(ValueLayout.JAVA_FLOAT,so,x*sin+y*cos);
+            }
+        }
+        return out(input.shape(),output);
+    }
+
+    @Override
     public Tensor applyRoPE(Tensor input, int posOffset, float freqBase,
             int rotaryDimension, boolean isNeox, float positionScale) {
         Objects.requireNonNull(input, "input");
