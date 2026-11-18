@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Objects;
 import tech.kayys.aljabr.models.embeddinggemma2.attention.EmbeddingGemma2AttentionBlock;
 import tech.kayys.aljabr.models.embeddinggemma2.attention.EmbeddingGemma2EncoderLayer;
+import tech.kayys.aljabr.models.embeddinggemma2.attention.EmbeddingGemma2LinearProjection;
 import tech.kayys.aljabr.models.embeddinggemma2.attention.EmbeddingGemma2Mlp;
 import tech.kayys.aljabr.models.embeddinggemma2.attention.EmbeddingGemma2SequenceRmsNorm;
 import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2Config;
