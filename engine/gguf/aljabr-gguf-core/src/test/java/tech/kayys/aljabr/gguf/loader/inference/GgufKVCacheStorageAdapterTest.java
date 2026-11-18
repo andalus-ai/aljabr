@@ -108,6 +108,6 @@ class GgufKVCacheStorageAdapterTest {
 
         storage.close();
         cache.storeDirect(0, 2, new float[] {9, 10}, new float[] {11, 12}, 2);
-        assertArrayEquals(new float[] {9, 10, 0, 0, 0, 0}, cache.kLayer(0));
+        assertArrayEquals(new float[] {1, 2, 5, 6, 9, 10}, cache.kLayer(0));
     }
 }
