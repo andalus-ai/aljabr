@@ -1,10 +1,11 @@
 package tech.kayys.aljabr.gguf.javabackend;
 
 import tech.kayys.aljabr.gguf.loader.GGUFTensorInfo;
+import tech.kayys.aljabr.gguf.runtime.GgufTensorOps;
 
 /**
  * Validates the Java GGUF runner's per-layer key/value projection topology
- * before a decoder session is initialized.
+ * and matrix geometry before a decoder session is initialized.
  */
 final class GgufKvProjectionLayout {
     private GgufKvProjectionLayout() {
@@ -15,10 +16,14 @@ final class GgufKvProjectionLayout {
             GGUFTensorInfo[] valueWeights,
             int[] kvHeads,
             int[] headDimensions,
-            boolean[] slidingWindowLayers) {
+            boolean[] slidingWindowLayers,
+            int embeddingDimension) {
         if (keyWeights == null || valueWeights == null || kvHeads == null
                 || headDimensions == null || slidingWindowLayers == null) {
             throw new IllegalArgumentException("KV projection layout arrays must not be null");
+        }
+        if (embeddingDimension <= 0) {
+            throw new IllegalArgumentException("embedding dimension must be positive");
         }
 
         int layers = keyWeights.length;
@@ -33,12 +38,18 @@ final class GgufKvProjectionLayout {
             }
             boolean hasKey = keyWeights[layer] != null;
             boolean hasValue = valueWeights[layer] != null;
-
-            // K-only is an intentional architecture variant: the runner uses K as V.
-            // V-only cannot be represented by the current projection/cache contract.
             if (!hasKey && hasValue) {
                 throw new IllegalArgumentException("Layer " + layer
                         + " has a value projection but no key projection");
+            }
+
+            if (hasKey) {
+                validateProjection(keyWeights[layer], layer, "key", embeddingDimension,
+                        kvHeads[layer], headDimensions[layer]);
+            }
+            if (hasValue) {
+                validateProjection(valueWeights[layer], layer, "value", embeddingDimension,
+                        kvHeads[layer], headDimensions[layer]);
             }
 
             if (!hasKey) {
@@ -53,6 +64,22 @@ final class GgufKvProjectionLayout {
                             + headDimensions[owner] + " head dimension)");
                 }
             }
+        }
+    }
+
+    private static void validateProjection(
+            GGUFTensorInfo tensor, int layer, String projection,
+            int expectedInputDimension, int kvHeads, int headDimension) {
+        long expectedOutputDimension = Math.multiplyExact((long) kvHeads, headDimension);
+        long actualInputDimension = GgufTensorOps.matrixColumns(tensor);
+        long actualOutputDimension = GgufTensorOps.matrixRows(tensor);
+        if (actualInputDimension != expectedInputDimension
+                || actualOutputDimension != expectedOutputDimension) {
+            throw new IllegalArgumentException("Layer " + layer + " " + projection
+                    + " projection tensor '" + tensor.name() + "' has matrix shape ["
+                    + actualOutputDimension + ", " + actualInputDimension + "]"
+                    + "; expected [" + expectedOutputDimension + ", "
+                    + expectedInputDimension + "] from KV geometry");
         }
     }
 }
