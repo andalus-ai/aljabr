@@ -47,7 +47,7 @@ public final class KVCache {
             int stride = checkedProduct(nKVHeadsPerLayer[i], headDimPerLayer[i], "layer stride");
             layerStride[i] = stride;
             k[i] = new float[checkedProduct(maxSeq, stride, "layer cache size")];
-            v[i] = new float[maxSeq * stride];
+            v[i] = new float[checkedProduct(maxSeq, stride, "layer cache size")];
         }
     }
 
