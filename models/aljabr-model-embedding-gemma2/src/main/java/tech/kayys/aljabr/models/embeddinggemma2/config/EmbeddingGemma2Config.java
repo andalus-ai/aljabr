@@ -8,17 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * Validated architecture configuration for the text path of EmbeddingGemma 2.
- *
- * <p>The family config contains a nested text_config. Per-layer overrides are
- * retained verbatim because they may change attention dimensions and RoPE
- * behavior for individual layers. A runner must resolve them before allocating
- * layer weights.</p>
- *
- * <p>The documented 8,192-token input budget is separate from the raw
- * max_position_embeddings implementation limit.</p>
- */
+/** Validated architecture configuration for the text path of EmbeddingGemma 2. */
 public record EmbeddingGemma2Config(
         String modelType,
         String textModelType,
@@ -27,15 +17,17 @@ public record EmbeddingGemma2Config(
         int numHiddenLayers,
         int numAttentionHeads,
         int numKeyValueHeads,
+        int headDim,
+        int embeddingDim,
         int vocabSize,
         int maxPositionEmbeddings,
         int maxInputTokens,
-        String torchDtype,
+        String dtype,
         double rmsNormEps,
-        double ropeTheta,
         Integer slidingWindow,
         List<String> layerTypes,
-        Map<String, JsonNode> perLayerConfig) {
+        Map<String, JsonNode> perLayerConfig,
+        JsonNode ropeParameters) {
 
     public static final String MODEL_TYPE = "embedding_gemma2";
     public static final String TEXT_MODEL_TYPE = "embedding_gemma2_text";
@@ -44,12 +36,13 @@ public record EmbeddingGemma2Config(
     public EmbeddingGemma2Config {
         modelType = requireText(modelType, "model_type");
         textModelType = requireText(textModelType, "text_config.model_type");
-        torchDtype = requireText(torchDtype, "text_config.torch_dtype");
+        dtype = requireText(dtype, "text_config.dtype");
         layerTypes = layerTypes == null ? List.of() : List.copyOf(layerTypes);
         perLayerConfig = immutableJsonMap(perLayerConfig);
+        ropeParameters = ropeParameters == null ? null : ropeParameters.deepCopy();
     }
 
-    /** Parses nested text settings without discarding per-layer overrides. */
+    /** Parses nested text settings without discarding per-layer or RoPE overrides. */
     public static EmbeddingGemma2Config fromJson(JsonNode root) {
         Objects.requireNonNull(root, "root config must not be null");
         JsonNode text = root.path("text_config");
@@ -67,17 +60,18 @@ public record EmbeddingGemma2Config(
         int intermediate = positiveInt(text, "intermediate_size");
         int queryHeads = positiveInt(text, "num_attention_heads");
         int kvHeads = positiveInt(text, "num_key_value_heads");
+        int headDim = positiveInt(text, "head_dim");
+        int embeddingDim = positiveInt(text, "embedding_dim");
         int vocab = positiveInt(text, "vocab_size");
         int maxPositions = positiveInt(text, "max_position_embeddings");
         double normEps = positiveDouble(text, "rms_norm_eps");
-        double ropeTheta = positiveDouble(text, "rope_theta");
 
         if (queryHeads % kvHeads != 0) {
             throw new IllegalArgumentException(
                     "num_attention_heads must be divisible by num_key_value_heads");
         }
 
-        String dtype = textValue(text, "torch_dtype");
+        String dtype = optionalText(text, "dtype", optionalText(text, "torch_dtype", null));
         if (!"bfloat16".equalsIgnoreCase(dtype) && !"float32".equalsIgnoreCase(dtype)) {
             throw new IllegalArgumentException(
                     "EmbeddingGemma 2 text path supports bfloat16 or float32, not: " + dtype);
@@ -103,13 +97,28 @@ public record EmbeddingGemma2Config(
             }
         }
 
+        JsonNode ropeParameters = text.path("rope_parameters");
+        if (!ropeParameters.isObject()
+                || !ropeParameters.path("full_attention").isObject()
+                || !ropeParameters.path("sliding_attention").isObject()) {
+            throw new IllegalArgumentException(
+                    "text_config.rope_parameters must define full_attention and sliding_attention");
+        }
+        positiveDouble(ropeParameters.path("full_attention"), "rope_theta");
+        positiveDouble(ropeParameters.path("sliding_attention"), "rope_theta");
+
         return new EmbeddingGemma2Config(modelType, textModelType, hidden, intermediate, layers,
-                queryHeads, kvHeads, vocab, maxPositions, DOCUMENTED_MAX_INPUT_TOKENS, dtype,
-                normEps, ropeTheta, slidingWindow, layerTypes, overrides);
+                queryHeads, kvHeads, headDim, embeddingDim, vocab, maxPositions,
+                DOCUMENTED_MAX_INPUT_TOKENS, dtype, normEps, slidingWindow, layerTypes,
+                normalizeLayerKeys(overrides), ropeParameters);
     }
 
     public Map<String, JsonNode> perLayerConfig() {
         return immutableJsonMap(perLayerConfig);
+    }
+
+    public JsonNode ropeParameters() {
+        return ropeParameters == null ? null : ropeParameters.deepCopy();
     }
 
     /** Returns a defensive copy of one layer's raw override, or null. */
@@ -119,6 +128,12 @@ public record EmbeddingGemma2Config(
         }
         JsonNode override = perLayerConfig.get(Integer.toString(layerIndex));
         return override == null ? null : override.deepCopy();
+    }
+
+    private static Map<String, JsonNode> normalizeLayerKeys(Map<String, JsonNode> source) {
+        Map<String, JsonNode> normalized = new LinkedHashMap<>();
+        source.forEach((key, value) -> normalized.put(Integer.toString(Integer.parseInt(key)), value));
+        return normalized;
     }
 
     private static Map<String, JsonNode> immutableJsonMap(Map<String, JsonNode> source) {
@@ -176,12 +191,15 @@ public record EmbeddingGemma2Config(
         return value.asDouble();
     }
 
-    private static String textValue(JsonNode node, String field) {
+    private static String optionalText(JsonNode node, String field, String fallback) {
         JsonNode value = node.path(field);
-        if (!value.isTextual() || value.asText().isBlank()) {
-            throw new IllegalArgumentException(field + " must be a non-blank string");
-        }
-        return value.asText();
+        return value.isTextual() && !value.asText().isBlank() ? value.asText() : fallback;
+    }
+
+    private static String textValue(JsonNode node, String field) {
+        String value = optionalText(node, field, null);
+        if (value == null) throw new IllegalArgumentException(field + " must be a non-blank string");
+        return value;
     }
 
     private static String requireText(String value, String field) {
