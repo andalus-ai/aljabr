@@ -94,7 +94,7 @@ final class GgufLayerWeightResolver {
             slidingWindowLayers[layer] = config.isSwaLayer(layer);
         }
         GgufKvProjectionLayout.validate(
-                weights.wK, weights.wV, kvHeads, headDimensions, slidingWindowLayers);
+                weights.wK, weights.wV, kvHeads, headDimensions, slidingWindowLayers, embeddingDimension);
 
         return weights;
     }
