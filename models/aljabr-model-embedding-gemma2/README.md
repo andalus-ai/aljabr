@@ -20,24 +20,25 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   and per-layer full/sliding attention geometry.
 - A complete text encoder-layer reference operation with all four residual-path
   RMSNorms, gated GELU MLP, and the third PLE residual sub-block.
-- A composed text-backbone reference path from checkpoint-backed vocabulary
-  embeddings through sqrt(hidden_size) scaling, PLE projection, all encoder
-  layers, final RMSNorm, and token-wise projection into the shared embedding dimension.
+- A format-neutral `EmbeddingGemma2CheckpointMapper` that validates Hugging Face text tensor names and shapes and assembles the typed checkpoint bundle; storage-format decoding remains outside the model module.
+- One canonical text-backbone reference path that owns vocabulary lookup,
+  sqrt(hidden_size) embedding scaling, projection-only PLE, construction and
+  execution of every encoder layer, final RMSNorm, token-wise embedding
+  projection, and optional mask-aware mean pooling.
 - Projection-only Per-Layer Embeddings (PLE) reference operations: input
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - Text-only is the first intended execution milestone.
 
-The attention, encoder-layer, and assembled text-backbone operations are float32
-references, not yet a complete text model runner. The backbone performs checkpoint-backed vocabulary lookup and sqrt(hidden_size)
-embedding scaling, then composes projection-only PLE, every encoder layer, final
-RMSNorm, and learned per-token embedding projection. Tokenizer execution,
-checkpoint loading/mapping, mask-aware mean pooling, Matryoshka post-processing,
-and end-to-end runner registration remain separate work items. The backbone
-accepts token IDs and explicit position IDs; it does not perform tokenizer-specific
-preprocessing. All trainable projection and norm tensors are supplied
-by the checkpoint loader; these operations never randomly initialize weights.
+The attention, encoder-layer, and assembled text-backbone operations are
+float32 references, not yet a complete registered model runner. The backbone
+accepts token IDs and explicit position IDs; it does not perform tokenizer
+preprocessing or checkpoint-file deserialization. The checkpoint mapper accepts
+format-decoded named tensors, validates the complete text tensor set, and creates
+the typed weight bundle. Safetensors/GGUF decoding, tokenizer execution,
+Matryoshka post-processing integration, and end-to-end runner registration
+remain separate work items.
 
 The plugin deliberately does **not** declare
 `DIRECT_SAFETENSOR_INFERENCE`, and this module does not yet register an
@@ -58,8 +59,8 @@ override index ranges.
 Checkpoint layer keys such as `"05"`, `"11"`, `"17"`, and `"23"` are
 normalized to zero-based integer-string keys, so the runtime can reliably
 resolve an override by layer index. The raw override objects and RoPE
-parameters are defensively copied and retained; the runner must use them when
-constructing per-layer attention projections and positional encoding.
+parameters are defensively copied and retained; both the backbone and checkpoint
+mapper resolve the effective attention geometry per layer.
 
 The documented input budget (8,192 tokens) is kept distinct from the raw
 `max_position_embeddings` field.
@@ -73,8 +74,9 @@ query and document templates. Document inputs use
 same task prefix on each side. `UNSPECIFIED` preserves raw input for legacy
 callers.
 
-The formatter does not tokenize, execute the model, pool token states, or
-normalize vectors. Those remain separate stages of the model runner.
+The formatter does not tokenize or execute the model. Those remain separate
+stages of the model runner.
+
 ## Vector post-processing
 
 `EmbeddingGemma2VectorPostProcessor` accepts only the learned projection's
@@ -84,14 +86,14 @@ normalizes the retained vector using L2 normalization. It rejects non-finite,
 zero-norm, malformed, and unsupported-dimension inputs rather than returning
 invalid vectors.
 
-This utility does not perform mask-aware mean pooling or the learned
-512-to-768 projection. Those remain part of the model forward path.
+This utility is separate from mask-aware mean pooling and the learned
+512-to-768 projection.
 
 ## Required execution constraints
 
 The eventual text runner must implement bidirectional mixed full/sliding
 attention, projection-only PLE, mask-aware mean pooling, learned projection,
-Matryoshka truncation/renormalization, and L2 normalization. The PLE reference
+Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
 Image, audio, and video execution remain deferred. They must not be inferred

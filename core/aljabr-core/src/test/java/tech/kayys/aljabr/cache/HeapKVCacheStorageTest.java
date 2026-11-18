@@ -83,6 +83,45 @@ class HeapKVCacheStorageTest {
     }
 
     @Test
+    void bulkRangeAccessPreservesOffsetsAndHybridLayerStride() {
+        KVCacheLayout layout = new KVCacheLayout(
+                5, new int[] {1, 2}, new int[] {2, 2});
+        try (KVCacheStorage storage = new HeapKVCacheStorage(layout)) {
+            float[] keys = {-1, 1, 2, 3, 4, 5, 6, -1};
+            float[] values = {-1, 11, 12, 13, 14, 15, 16, -1};
+            storage.writeRange(1, 2, 2, keys, 1, values, 1);
+
+            float[] actualKeys = new float[10];
+            float[] actualValues = new float[10];
+            storage.readKeyRange(1, 2, 2, actualKeys, 3);
+            storage.readValueRange(1, 2, 2, actualValues, 3);
+
+            assertArrayEquals(new float[] {0, 0, 0, 1, 2, 3, 4, 5, 6, 0}, actualKeys);
+            assertArrayEquals(new float[] {0, 0, 0, 11, 12, 13, 14, 15, 16, 0}, actualValues);
+        }
+    }
+
+    @Test
+    void bulkWriteValidatesBothSourcesBeforeMutatingStorage() {
+        KVCacheStorage storage = new HeapKVCacheStorage(
+                KVCacheLayout.uniform(1, 3, 1, 2));
+        float[] initial = {7, 8, 9, 10};
+        storage.writeRange(0, 0, 2, initial, 0, initial, 0);
+
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> storage.writeRange(0, 0, 2,
+                        new float[] {1, 2, 3, 4}, 0,
+                        new float[] {5, 6, 7}, 0));
+
+        float[] actualKeys = new float[4];
+        float[] actualValues = new float[4];
+        storage.readKeyRange(0, 0, 2, actualKeys, 0);
+        storage.readValueRange(0, 0, 2, actualValues, 0);
+        assertArrayEquals(initial, actualKeys);
+        assertArrayEquals(initial, actualValues);
+    }
+
+    @Test
     void rejectsInvalidLayerPositionAndUseAfterClose() {
         HeapKVCacheStorage storage = new HeapKVCacheStorage(
                 KVCacheLayout.uniform(1, 2, 1, 2));
