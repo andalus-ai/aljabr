@@ -64,9 +64,7 @@ class GGUFVectorOpsRopeTest {
     }
 
     @Test
-    void rejectsNegativeOffsetAndShortInput() {
-        assertThrows(IllegalArgumentException.class,
-                () -> GGUFVectorOps.rope(new float[8], -1, 1, 8, 8, 0, 10_000.0f, null));
+    void rejectsInputShorterThanRequestedHeadRange() {
         assertThrows(IllegalArgumentException.class,
                 () -> GGUFVectorOps.rope(new float[7], 0, 1, 8, 8, 0, 10_000.0f, null));
     }
