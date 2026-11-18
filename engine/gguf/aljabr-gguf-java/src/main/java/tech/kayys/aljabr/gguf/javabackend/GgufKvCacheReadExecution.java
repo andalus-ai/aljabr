@@ -22,9 +22,28 @@ final class GgufKvCacheReadExecution {
             float[] targetValues,
             int tokenCount,
             int targetStride) {
+        if (cache == null) {
+            throw new IllegalArgumentException("KV cache must not be null");
+        }
+        if (tokenCount < 0 || tokenCount > cache.seqLen()) {
+            throw new IllegalArgumentException("tokenCount must be within the committed KV sequence");
+        }
+        int sourceStride = cache.headStride(sourceLayer);
+        if (targetStride <= 0 || targetStride > sourceStride) {
+            throw new IllegalArgumentException("targetStride must be positive and no wider than the source layer stride");
+        }
+        int targetLength;
+        try {
+            targetLength = Math.multiplyExact(tokenCount, targetStride);
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException("KV batch target size exceeds supported array size", e);
+        }
+        if (targetKeys == null || targetValues == null
+                || targetKeys.length < targetLength || targetValues.length < targetLength) {
+            throw new IllegalArgumentException("KV batch target arrays are shorter than the requested copy");
+        }
         float[] sourceKeys = cache.kLayer(sourceLayer);
         float[] sourceValues = cache.vLayer(sourceLayer);
-        int sourceStride = cache.headStride(sourceLayer);
         if (sourceStride == targetStride) {
             System.arraycopy(sourceKeys, 0, targetKeys, 0, tokenCount * targetStride);
             System.arraycopy(sourceValues, 0, targetValues, 0, tokenCount * targetStride);
