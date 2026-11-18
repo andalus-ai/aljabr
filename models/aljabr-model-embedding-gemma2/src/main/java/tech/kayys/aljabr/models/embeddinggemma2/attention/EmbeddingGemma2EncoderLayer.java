@@ -52,7 +52,7 @@ public final class EmbeddingGemma2EncoderLayer {
     public float[][] compute(float[][] hiddenStates, float[][] perLayerInput,
             int[] positionIds, boolean[] validKeys) {
         validateMatrix(hiddenStates, hiddenSize, "hiddenStates");
-        validateMatrix(perLayerInput, weights.pleNormScale().length, "perLayerInput");
+        validateMatrix(perLayerInput, weights.pleGate().length, "perLayerInput");
         if (perLayerInput.length != hiddenStates.length) {
             throw new IllegalArgumentException("perLayerInput sequence length must match hiddenStates");
         }
