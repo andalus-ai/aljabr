@@ -72,6 +72,9 @@ public record EmbeddingGemma2Config(
         int hiddenPerLayer = optionalPositiveInt(text, "hidden_size_per_layer_input",
                 DEFAULT_HIDDEN_SIZE_PER_LAYER_INPUT);
         String hiddenActivation = optionalText(text, "hidden_activation", DEFAULT_HIDDEN_ACTIVATION);
+        if (!DEFAULT_HIDDEN_ACTIVATION.equals(hiddenActivation)) {
+            throw new IllegalArgumentException("unsupported EmbeddingGemma 2 hidden_activation: " + hiddenActivation);
+        }
         int embeddingDim = positiveInt(text, "embedding_dim");
         int vocab = positiveInt(text, "vocab_size");
         int maxPositions = positiveInt(text, "max_position_embeddings");

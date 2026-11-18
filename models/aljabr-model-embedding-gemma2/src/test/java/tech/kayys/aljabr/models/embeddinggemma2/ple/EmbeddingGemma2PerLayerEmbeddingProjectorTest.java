@@ -22,10 +22,10 @@ class EmbeddingGemma2PerLayerEmbeddingProjectorTest {
         assertEquals(2, result.length);
         assertEquals(2, result[0].length);
         assertEquals(2, result[0][0].length);
-        assertEquals(1f, norm(result[0][0]), 1e-5f);
-        assertEquals(1f, norm(result[0][1]), 1e-5f);
-        assertEquals(1f, norm(result[1][0]), 1e-5f);
-        assertEquals(1f, norm(result[1][1]), 1e-5f);
+        assertEquals((float) Math.sqrt(2.0), norm(result[0][0]), 1e-5f);
+        assertEquals((float) Math.sqrt(2.0), norm(result[0][1]), 1e-5f);
+        assertEquals((float) Math.sqrt(2.0), norm(result[1][0]), 1e-5f);
+        assertEquals((float) Math.sqrt(2.0), norm(result[1][1]), 1e-5f);
     }
 
     @Test
@@ -34,8 +34,8 @@ class EmbeddingGemma2PerLayerEmbeddingProjectorTest {
         float[][] weights = {{1f, 0f}, {0f, 1f}};
         float[][][] result = EmbeddingGemma2PerLayerEmbeddingProjector.project(
                 input, weights, new float[] {1f, 1f}, 1, 2, 1e-6f);
-        assertEquals(0.6f, result[0][0][0], 1e-5f);
-        assertEquals(0.8f, result[0][0][1], 1e-5f);
+        assertEquals(0.848528f, result[0][0][0], 1e-5f);
+        assertEquals(1.131371f, result[0][0][1], 1e-5f);
     }
 
     @Test
