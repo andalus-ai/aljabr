@@ -52,20 +52,41 @@ public class RotaryEmbedding extends NNModule {
 
     @Override
     public Tensor forward(Tensor input) {
-        validateInputBackend(input);
-        if (input.shape().rank() != 4) {
-            throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
+        validateInput(input);
+        int batch = Math.toIntExact(input.shape().dim(0));
+        int sequence = Math.toIntExact(input.shape().dim(2));
+        long[] positionIds = new long[Math.multiplyExact(batch, sequence)];
+        for (int b = 0; b < batch; b++) {
+            for (int s = 0; s < sequence; s++) positionIds[b * sequence + s] = s;
         }
-        if (input.shape().dim(3) != headDim) {
-            throw new IllegalArgumentException("input head dimension does not match configured headDim");
+        return forward(input, positionIds);
+    }
+
+    /** Applies RoPE with batch-major explicit position IDs [batch, sequence]. */
+    public Tensor forward(Tensor input, long[] positionIds) {
+        validateInput(input);
+        java.util.Objects.requireNonNull(positionIds, "positionIds");
+        int batch = Math.toIntExact(input.shape().dim(0));
+        int sequence = Math.toIntExact(input.shape().dim(2));
+        if (positionIds.length != Math.multiplyExact(batch, sequence)) {
+            throw new IllegalArgumentException("positionIds length must equal batch * sequence");
         }
-        if (input.shape().dim(2) > maxSeqLen) {
-            throw new IllegalArgumentException("input sequence length exceeds maxSeqLen");
+        for (long position : positionIds) {
+            if (position < 0 || position >= maxSeqLen) {
+                throw new IllegalArgumentException("position ID must be within [0, maxSeqLen)");
+            }
         }
-        return input.backend().applyRoPE(input, 0, config.frequencyBase(),
-                config.rotaryDimension(), config.pairing() == RotaryEmbeddingConfig.Pairing.NEOX_HALF_SPLIT,
+        return input.backend().applyRoPE(input, config.frequencyBase(), config.rotaryDimension(),
+                config.pairing() == RotaryEmbeddingConfig.Pairing.NEOX_HALF_SPLIT,
                 config.scaling().type() == RotaryEmbeddingConfig.ScalingType.LINEAR
-                        ? config.scaling().factor() : 1.0f);
+                        ? config.scaling().factor() : 1.0f, positionIds);
+    }
+
+    private void validateInput(Tensor input) {
+        validateInputBackend(input);
+        if (input.shape().rank() != 4) throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
+        if (input.shape().dim(3) != headDim) throw new IllegalArgumentException("input head dimension does not match configured headDim");
+        if (input.shape().dim(2) > maxSeqLen) throw new IllegalArgumentException("input sequence length exceeds maxSeqLen");
     }
 
     public Tensor apply(Tensor q, Tensor k) {

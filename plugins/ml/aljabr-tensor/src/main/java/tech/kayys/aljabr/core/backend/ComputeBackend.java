@@ -205,6 +205,26 @@ public interface ComputeBackend extends AutoCloseable {
         return applyRoPE(input, posOffset, freqBase, isNeox);
     }
 
+    /**
+     * Applies RoPE using explicit position IDs in batch-major [batch, sequence] order.
+     * The array must contain exactly batch * sequence entries.
+     */
+    default Tensor applyRoPE(Tensor input, float freqBase, int rotaryDimension,
+            boolean isNeox, float positionScale, long[] positionIds) {
+        if (input == null || positionIds == null) throw new NullPointerException("input and positionIds are required");
+        long batch = input.shape().dim(0), sequence = input.shape().dim(2);
+        if (positionIds.length != Math.multiplyExact(batch, sequence)) {
+            throw new IllegalArgumentException("positionIds length must equal batch * sequence");
+        }
+        long offset = positionIds[0];
+        for (int b = 0; b < batch; b++) for (int s = 0; s < sequence; s++) {
+            if (positionIds[b * Math.toIntExact(sequence) + s] != offset + s) {
+                throw new UnsupportedOperationException("Backend does not support non-contiguous or batch-specific RoPE position IDs");
+            }
+        }
+        return applyRoPE(input, Math.toIntExact(offset), freqBase, rotaryDimension, isNeox, positionScale);
+    }
+
     // ── Shape manipulation ────────────────────────────────────────────
     /**
      * Concatenates tensors along an existing dimension.
