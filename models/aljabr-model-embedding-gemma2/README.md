@@ -15,11 +15,20 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention, and attention-specific RoPE metadata.
 - Text task formatting for search, question answering, fact checking, code
   retrieval, classification, clustering, and semantic similarity.
+- Checkpoint-backed float32 Q/K/V/O projection primitives and a composed
+  bidirectional attention sub-block with per-head RMSNorm, Q/K RoPE, GQA,
+  and per-layer full/sliding attention geometry.
 - Projection-only Per-Layer Embeddings (PLE) reference operations: input
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - Text-only is the first intended execution milestone.
+
+The attention sub-block is a reference operation, not a complete encoder layer:
+encoder residual/norm sequencing, MLP, PLE injection, final norm, checkpoint
+loading, tokenizer execution, and end-to-end runner registration remain separate
+work items. The projection weights are supplied by the checkpoint loader and are
+never randomly initialized by these classes.
 
 The plugin deliberately does **not** declare
 `DIRECT_SAFETENSOR_INFERENCE`, and this module does not yet register an
