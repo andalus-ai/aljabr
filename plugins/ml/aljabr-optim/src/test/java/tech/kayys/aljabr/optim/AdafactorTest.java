@@ -29,7 +29,7 @@ class AdafactorTest {
         double[][] parameterValues = {{1.0, -2.0}, {0.5, 3.0}};
         double[][] previousRows = new double[2][];
         double[][] previousColumns = new double[2][];
-        float[][] gradients = {
+        float[][][] gradients = {
                 {{0.5f, -1.0f}, {1.5f, 0.25f}},
                 {{-0.25f, 0.75f}, {0.5f, -1.25f}}
         };
