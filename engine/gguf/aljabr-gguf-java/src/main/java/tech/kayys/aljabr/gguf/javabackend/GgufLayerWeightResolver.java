@@ -93,6 +93,8 @@ final class GgufLayerWeightResolver {
             headDimensions[layer] = config.headDimForLayer(layer);
             slidingWindowLayers[layer] = config.isSwaLayer(layer);
         }
+        GgufQueryProjectionLayout.validate(
+                weights.wQ, config.nHeads(), headDimensions, embeddingDimension);
         GgufKvProjectionLayout.validate(
                 weights.wK, weights.wV, kvHeads, headDimensions, slidingWindowLayers, embeddingDimension);
         GgufAttentionOutputProjectionLayout.validate(
