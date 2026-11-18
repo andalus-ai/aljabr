@@ -85,6 +85,17 @@ final class GgufLayerWeightResolver {
             }
         }
 
+        int[] kvHeads = new int[layers];
+        int[] headDimensions = new int[layers];
+        boolean[] slidingWindowLayers = new boolean[layers];
+        for (int layer = 0; layer < layers; layer++) {
+            kvHeads[layer] = config.nKVHeadsForLayer(layer);
+            headDimensions[layer] = config.headDimForLayer(layer);
+            slidingWindowLayers[layer] = config.isSwaLayer(layer);
+        }
+        GgufKvProjectionLayout.validate(
+                weights.wK, weights.wV, kvHeads, headDimensions, slidingWindowLayers);
+
         return weights;
     }
 }
