@@ -88,4 +88,26 @@ class GgufKVCacheStorageAdapterTest {
                 () -> storage.writeRange(0, -1, 1,
                         new float[2], 0, new float[2], 0));
     }
+
+    @Test
+    void cacheExposesNonOwningStorageViewOverSameBackingArrays() {
+        KVCache cache = new KVCache(1, 3, 1, 2);
+        KVCacheStorage storage = cache.asStorage();
+
+        storage.write(0, 0, new float[] {1, 2}, 0, new float[] {3, 4}, 0);
+        assertArrayEquals(new float[] {1, 2, 0, 0, 0, 0}, cache.kLayer(0));
+        assertArrayEquals(new float[] {3, 4, 0, 0, 0, 0}, cache.vLayer(0));
+
+        cache.storeDirect(0, 1, new float[] {5, 6}, new float[] {7, 8}, 2);
+        float[] keys = new float[2];
+        float[] values = new float[2];
+        storage.readKey(0, 1, keys, 0);
+        storage.readValue(0, 1, values, 0);
+        assertArrayEquals(new float[] {5, 6}, keys);
+        assertArrayEquals(new float[] {7, 8}, values);
+
+        storage.close();
+        cache.storeDirect(0, 2, new float[] {9, 10}, new float[] {11, 12}, 2);
+        assertArrayEquals(new float[] {9, 10, 0, 0, 0, 0}, cache.kLayer(0));
+    }
 }
