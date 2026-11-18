@@ -3,8 +3,38 @@ package tech.kayys.aljabr.gguf.javabackend;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GgufModelConfigRopeTest {
+
+    @Test
+    void acceptsCompletePerLayerRoutingMetadata() {
+        GgufModelConfig.validateLayerMetadata(4, new int[] {2, 2, 4, 4}, new int[] {1, 1, 0, 1});
+    }
+
+    @Test
+    void rejectsIncompleteKvHeadMetadata() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GgufModelConfig.validateLayerMetadata(4, new int[] {2, 2, 4}, null));
+    }
+
+    @Test
+    void rejectsIncompleteSlidingWindowPattern() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GgufModelConfig.validateLayerMetadata(4, null, new int[] {1, 0, 1}));
+    }
+
+    @Test
+    void rejectsInvalidPerLayerKvHeadCounts() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GgufModelConfig.validateLayerMetadata(2, new int[] {2, 0}, null));
+    }
+
+    @Test
+    void rejectsInvalidSlidingWindowPatternValues() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GgufModelConfig.validateLayerMetadata(2, null, new int[] {0, 2}));
+    }
 
     @Test
     void prefersConfiguredRotaryDimensionsFromGgufMetadata() {
