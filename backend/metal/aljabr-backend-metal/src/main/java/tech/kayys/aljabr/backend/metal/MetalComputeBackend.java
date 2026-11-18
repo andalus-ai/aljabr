@@ -818,6 +818,28 @@ public class MetalComputeBackend implements ComputeBackend {
         return fallback("embedding", () -> wrap(cpuFallback.embedding(weight, input, paddingIdx)));
     }
 
+    /**
+     * Configurable RoPE currently uses the CPU implementation until the native
+     * Metal kernel supports partial dimensions and linear position scaling.
+     */
+    @Override
+    public Tensor applyRoPE(Tensor input, int posOffset, float freqBase,
+            int rotaryDimension, boolean isNeox, float positionScale) {
+        return fallback("applyRoPE", () -> wrap(cpuFallback.applyRoPE(
+                input, posOffset, freqBase, rotaryDimension, isNeox, positionScale)));
+    }
+
+    /**
+     * Explicit per-token positions currently use the CPU implementation until
+     * the native Metal bridge accepts a position-ID buffer.
+     */
+    @Override
+    public Tensor applyRoPE(Tensor input, float freqBase, int rotaryDimension,
+            boolean isNeox, float positionScale, long[] positionIds) {
+        return fallback("applyRoPE", () -> wrap(cpuFallback.applyRoPE(
+                input, freqBase, rotaryDimension, isNeox, positionScale, positionIds)));
+    }
+
     @Override
     public Tensor applyRoPE(Tensor input, int posOffset, float freqBase, boolean isNeox) {
         if (!isNative || input.dtype() != DType.F32) {
