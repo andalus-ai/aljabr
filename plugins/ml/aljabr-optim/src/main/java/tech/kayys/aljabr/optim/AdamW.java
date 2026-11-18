@@ -89,7 +89,11 @@ public final class AdamW implements Optimizer, AutoCloseable {
                     nextSteps.put(name, nextStep);
                 }
 
-                // Commit state only after every parameter update has been computed.
+                // Publish every parameter before committing optimizer state. If a
+                // publication fails partway through, the old moments and step counts
+                // remain intact; snapshot checks reset state for values already published.
+                updates.forEach((name, value) -> parameters.get(name).updateTensor(value));
+
                 nextFirst.forEach((name, value) -> {
                     Tensor old = state.firstMoment.put(name, value);
                     if (old != null) old.release();
@@ -99,7 +103,6 @@ public final class AdamW implements Optimizer, AutoCloseable {
                     if (old != null) old.release();
                 });
                 updates.forEach((name, value) -> {
-                    parameters.get(name).updateTensor(value);
                     state.parameterSnapshots.put(name, value);
                     state.parameterSteps.put(name, nextSteps.get(name));
                 });
