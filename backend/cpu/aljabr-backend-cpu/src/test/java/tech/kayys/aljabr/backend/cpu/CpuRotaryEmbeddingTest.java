@@ -77,4 +77,40 @@ class CpuRotaryEmbeddingTest {
             backend.close();
         }
     }
+    @Test
+    void configuredRoPERotatesOnlyPrefixAndPreservesTrailingDimensions() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] {1f, 2f, 3f, 4f}, backend, 1, 1, 1, 4);
+        Tensor output = null;
+        try {
+            output = backend.applyRoPE(input, 1, 10_000f, 2, false, 1f);
+            assertArrayEquals(new float[] {
+                    (float) (Math.cos(1.0) - 2 * Math.sin(1.0)),
+                    (float) (Math.sin(1.0) + 2 * Math.cos(1.0)),
+                    3f, 4f
+            }, output.toFloatArray(), 1e-5f);
+        } finally {
+            if (output != null) output.release();
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void configuredRoPEAppliesLinearPositionScaling() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] {1f, 0f}, backend, 1, 1, 1, 2);
+        Tensor output = null;
+        try {
+            output = backend.applyRoPE(input, 4, 10_000f, 2, false, 2f);
+            double angle = 2.0; // position 4 divided by scaling factor 2
+            assertArrayEquals(new float[] {(float) Math.cos(angle), (float) Math.sin(angle)},
+                    output.toFloatArray(), 1e-5f);
+        } finally {
+            if (output != null) output.release();
+            input.release();
+            backend.close();
+        }
+    }
+
 }

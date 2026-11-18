@@ -742,6 +742,44 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor applyRoPE(Tensor input, int posOffset, float freqBase,
+            int rotaryDimension, boolean isNeox, float positionScale) {
+        Objects.requireNonNull(input, "input");
+        if (input.backend() != this) throw new IllegalArgumentException("RoPE input must belong to this CPU backend instance");
+        if (input.dtype() != DType.F32) throw new UnsupportedOperationException("CPU RoPE currently supports F32 tensors only");
+        if (input.shape().rank() != 4) throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
+        if (posOffset < 0 || !Float.isFinite(freqBase) || freqBase <= 1f
+                || !Float.isFinite(positionScale) || positionScale <= 0f) {
+            throw new IllegalArgumentException("Invalid RoPE offset, frequency base, or position scale");
+        }
+        long batch=input.shape().dim(0), heads=input.shape().dim(1), sequence=input.shape().dim(2);
+        int headDim=Math.toIntExact(input.shape().dim(3));
+        if (batch<=0 || heads<=0 || sequence<=0 || rotaryDimension<=0
+                || (rotaryDimension&1)!=0 || rotaryDimension>headDim) {
+            throw new IllegalArgumentException("rotaryDimension must be positive, even, and <= headDim");
+        }
+        long elements=input.numel();
+        HostAccessibleStorage output=allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        MemorySegment source=seg(input), destination=output.segment();
+        destination.copyFrom(source.asSlice(0, Math.multiplyExact(elements, Float.BYTES)));
+        int half=rotaryDimension/2;
+        for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) for(long s=0;s<sequence;s++) {
+            double pos=(posOffset+s)/positionScale;
+            long row=((b*heads+h)*sequence+s)*headDim;
+            for(int pair=0;pair<half;pair++) {
+                double angle=pos*Math.pow(freqBase,-2.0*pair/rotaryDimension);
+                float cos=(float)Math.cos(angle), sin=(float)Math.sin(angle);
+                int first=isNeox?pair:pair*2, second=isNeox?pair+half:pair*2+1;
+                long fo=(row+first)*Float.BYTES, so=(row+second)*Float.BYTES;
+                float x=source.get(ValueLayout.JAVA_FLOAT,fo), y=source.get(ValueLayout.JAVA_FLOAT,so);
+                destination.set(ValueLayout.JAVA_FLOAT,fo,x*cos-y*sin);
+                destination.set(ValueLayout.JAVA_FLOAT,so,x*sin+y*cos);
+            }
+        }
+        return out(input.shape(),output);
+    }
+
+    @Override
     public Tensor applyRoPE(Tensor input, int posOffset, float freqBase, boolean isNeox) {
         Objects.requireNonNull(input, "input");
         if (input.backend() != this) {

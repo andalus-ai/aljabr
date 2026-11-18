@@ -196,6 +196,15 @@ public interface ComputeBackend extends AutoCloseable {
         throw new UnsupportedOperationException("RoPE is not supported by backend " + getClass().getName());
     }
 
+    /** Configurable rotary embedding; default supports standard full-dimension RoPE only. */
+    default Tensor applyRoPE(Tensor input, int posOffset, float freqBase,
+            int rotaryDimension, boolean isNeox, float positionScale) {
+        if (rotaryDimension != input.shape().dim(3) || positionScale != 1.0f) {
+            throw new UnsupportedOperationException("Configurable RoPE is not supported by backend " + getClass().getName());
+        }
+        return applyRoPE(input, posOffset, freqBase, isNeox);
+    }
+
     // ── Shape manipulation ────────────────────────────────────────────
     /**
      * Concatenates tensors along an existing dimension.
