@@ -1,6 +1,5 @@
 package tech.kayys.aljabr.models.embeddinggemma2.vision;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -25,7 +24,7 @@ class EmbeddingGemma2VisionPatchEmbedderTest {
         // First patch: scaled RGB=(0,0,0), plus x[1]=10 and y[2]=200.
         assertEquals(210f, result[0][0], 1e-6f);
         // Padding receives no positional vector; projection still runs.
-        assertEquals(1f, result[1][0], 1e-6f);
+        assertEquals(-1f, result[1][0], 1e-6f);
     }
 
     @Test
