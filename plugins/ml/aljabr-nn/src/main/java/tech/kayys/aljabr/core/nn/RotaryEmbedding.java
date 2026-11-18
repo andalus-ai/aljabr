@@ -134,7 +134,7 @@ public class RotaryEmbedding extends NNModule {
         if (q.dtype() != k.dtype()) {
             throw new IllegalArgumentException("Q and K tensors must have the same dtype");
         }
-        Tensor rotatedQuery = forward(q);
+        Tensor rotatedQuery = forward(q, positionIds);
         try {
             Tensor rotatedKey = forward(k, positionIds);
             return new QueryKey(rotatedQuery, rotatedKey);
