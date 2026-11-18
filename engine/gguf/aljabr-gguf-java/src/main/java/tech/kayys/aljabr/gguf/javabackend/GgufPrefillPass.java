@@ -140,7 +140,8 @@ final class GgufPrefillPass {
             int kvDim = layerNKVH * layerHDim;
             boolean hasOwnKv = GgufDecodeEligibility.hasOwnKvCache(layerWeights.wK[layer] != null);
             int kvLayerToUse = GgufKvCacheRouting.resolveCacheLayer(layer, hasOwnKv, isSwa);
-            int attentionKVHeads = hasOwnKv ? layerNKVH : cache.nKVHeads(kvLayerToUse);
+            GgufKvCacheRouting.validateCacheGeometry(cache, kvLayerToUse, layerNKVH, layerHDim);
+            int attentionKVHeads = cache.nKVHeads(kvLayerToUse);
             int attentionKvDim = attentionKVHeads * layerHDim;
 
             // ── 3a. QKV projections for all T tokens ─────────────────────────
