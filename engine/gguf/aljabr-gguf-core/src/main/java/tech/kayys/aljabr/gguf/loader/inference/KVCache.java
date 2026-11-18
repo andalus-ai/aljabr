@@ -73,8 +73,8 @@ public final class KVCache {
         if (seqLen >= layout.maxSequenceLength()) {
             throw new IllegalStateException("KV cache capacity exceeded: " + seqLen + " >= " + layout.maxSequenceLength());
         }
-        int base = seqLen * layerStride[layer];
-        int len  = layerStride[layer];
+        int base = seqLen * layout.layerStride(layer);
+        int len  = layout.layerStride(layer);
         requireArrayLength(kVec, len, "kVec");
         requireArrayLength(vVec, len, "vVec");
         System.arraycopy(kVec, 0, k[layer], base, len);
@@ -92,10 +92,10 @@ public final class KVCache {
      */
     public void storeDirect(int layer, int pos, float[] kVec, float[] vVec, int len) {
         validateLayer(layer);
-        validateWriteRange(pos, len, layerStride[layer]);
+        validateWriteRange(pos, len, layout.layerStride(layer));
         requireArrayLength(kVec, len, "kVec");
         requireArrayLength(vVec, len, "vVec");
-        int base = pos * layerStride[layer];
+        int base = pos * layout.layerStride(layer);
         System.arraycopy(kVec, 0, k[layer], base, len);
         System.arraycopy(vVec, 0, v[layer], base, len);
     }
@@ -109,20 +109,20 @@ public final class KVCache {
      * @param kOff      offset into {@code kBatch}
      * @param vBatch    V vector batch buffer
      * @param vOff      offset into {@code vBatch}
-     * @param count     number of floats to copy (e.g. {@code batchSize * layerStride[layer]})
+     * @param count     number of floats to copy (e.g. {@code batchSize * layout.layerStride(layer)})
      */
     public void storeBatch(int layer, int startPos, float[] kBatch, int kOff, float[] vBatch, int vOff, int count) {
         validateLayer(layer);
-        if (count < 0 || count % layerStride[layer] != 0) {
+        if (count < 0 || count % layout.layerStride(layer) != 0) {
             throw new IllegalArgumentException("count must be a non-negative multiple of the layer stride");
         }
-        int tokenCount = count / layerStride[layer];
+        int tokenCount = count / layout.layerStride(layer);
         if (startPos < 0 || startPos > layout.maxSequenceLength() || tokenCount > layout.maxSequenceLength() - startPos) {
             throw new IndexOutOfBoundsException("KV batch write exceeds cache capacity");
         }
         requireArrayRange(kBatch, kOff, count, "kBatch");
         requireArrayRange(vBatch, vOff, count, "vBatch");
-        int base = startPos * layerStride[layer];
+        int base = startPos * layout.layerStride(layer);
         System.arraycopy(kBatch, kOff, k[layer], base, count);
         System.arraycopy(vBatch, vOff, v[layer], base, count);
     }
@@ -151,7 +151,7 @@ public final class KVCache {
     public void readK(int layer, int pos, int kvHead, float[] dst, int dstOff) {
         validateRead(layer, pos, kvHead, dst, dstOff);
         int hd  = layout.headDimension(layer);
-        int src = pos * layerStride[layer] + kvHead * hd;
+        int src = pos * layout.layerStride(layer) + kvHead * hd;
         System.arraycopy(k[layer], src, dst, dstOff, hd);
     }
 
@@ -160,8 +160,8 @@ public final class KVCache {
      */
     public void readV(int layer, int pos, int kvHead, float[] dst, int dstOff) {
         validateRead(layer, pos, kvHead, dst, dstOff);
-        int hd  = layerHDim[layer];
-        int src = pos * layerStride[layer] + kvHead * hd;
+        int hd  = layout.headDimension(layer);
+        int src = pos * layout.layerStride(layer) + kvHead * hd;
         System.arraycopy(v[layer], src, dst, dstOff, hd);
     }
 
@@ -180,7 +180,7 @@ public final class KVCache {
     /** Per-layer stride in floats ({@code nKVHeads[layer] * headDim[layer]}). */
     public int headStride(int layer)  {
         validateLayer(layer);
-        return layerStride[layer];
+        return layout.layerStride(layer);
     }
 
     /** Number of KV heads for {@code layer}. */
@@ -192,7 +192,7 @@ public final class KVCache {
     /** Head dimension (K/V) for {@code layer}. */
     public int headDim(int layer)     {
         validateLayer(layer);
-        return layerHDim[layer];
+        return layout.headDimension(layer);
     }
 
     /** Current filled sequence length (same for all layers). */
@@ -230,10 +230,10 @@ public final class KVCache {
         if (position < 0 || position >= seqLen) {
             throw new IndexOutOfBoundsException("KV read position is outside committed sequence length");
         }
-        if (kvHead < 0 || kvHead >= layerNKVH[layer]) {
+        if (kvHead < 0 || kvHead >= layout.kvHeads(layer)) {
             throw new IndexOutOfBoundsException("KV head index out of range: " + kvHead);
         }
-        requireArrayRange(destination, destinationOffset, layerHDim[layer], "destination");
+        requireArrayRange(destination, destinationOffset, layout.headDimension(layer), "destination");
     }
 
     private void validateLayer(int layer) {
@@ -290,14 +290,14 @@ public final class KVCache {
         // must not leave earlier layers overwritten under the destination's
         // previously committed sequence length.
         for (int l = 0; l < nLayers; l++) {
-            if (src.layout.layerStride(l) != layerStride[l]
-                    || src.layout.kvHeads(l) != layerNKVH[l]
-                    || src.layout.headDimension(l) != layerHDim[l]) {
+            if (src.layout.layerStride(l) != layout.layerStride(l)
+                    || src.layout.kvHeads(l) != layout.kvHeads(l)
+                    || src.layout.headDimension(l) != layout.headDimension(l)) {
                 throw new IllegalArgumentException("KV cache layer geometry differs at layer " + l);
             }
         }
         for (int l = 0; l < nLayers; l++) {
-            int count = numTokens * layerStride[l];
+            int count = numTokens * layout.layerStride(l);
             System.arraycopy(src.k[l], 0, this.k[l], 0, count);
             System.arraycopy(src.v[l], 0, this.v[l], 0, count);
         }
