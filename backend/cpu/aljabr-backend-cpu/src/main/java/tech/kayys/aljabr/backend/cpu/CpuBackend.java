@@ -1041,11 +1041,11 @@ public final class CpuBackend implements ComputeBackend {
                 // The common ForkJoinPool bounds CPU attention workers globally
                 // across backend instances and concurrent inference requests.
                 java.util.stream.IntStream.range(0, groupCount).parallel().forEach(group ->
-                        computeAttentionGroup(q, k, v, mask, out, group,
+                        computeAttentionGroup(q, k, v, mask, out, group, group,
                                 queryLength, keyLength, headDim, scale, causal));
             } else {
                 for (int group = 0; group < groupCount; group++) {
-                    computeAttentionGroup(q, k, v, mask, out, group,
+                    computeAttentionGroup(q, k, v, mask, out, group, group,
                             queryLength, keyLength, headDim, scale, causal);
                 }
             }
