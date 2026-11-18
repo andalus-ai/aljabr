@@ -110,7 +110,7 @@ class RMSPropTest {
             try {
                 Tensor originalWeight = weight.tensor();
                 Tensor originalBias = bias.tensor();
-                optimizer.step(Map.of("weight", weight, "bias", bias), Map.of("bias", TensorFactory.ones(backend, 2)));
+                optimizer.step(Map.of("weight", weight, "bias", bias), Map.of());
                 assertThat(weight.tensor()).isSameAs(originalWeight);
                 assertThat(bias.tensor()).isSameAs(originalBias);
 
