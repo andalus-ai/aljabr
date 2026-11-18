@@ -79,6 +79,7 @@ public final class Adagrad implements Optimizer, AutoCloseable {
                     boolean replaced = parameterSnapshots.containsKey(name)
                             && parameterSnapshots.get(name) != current;
                     Tensor previous = replaced ? null : accumulatedSquares.get(name);
+                    Tensor base = null;
                     Tensor squared = null;
                     Tensor accumulated = null;
                     Tensor root = null;
@@ -87,7 +88,8 @@ public final class Adagrad implements Optimizer, AutoCloseable {
                     Tensor scaled = null;
                     try {
                         squared = gradient.mul(gradient);
-                        accumulated = previous == null ? squared.copy() : previous.add(squared);
+                        base = previous == null ? gradient.zerosLike() : null;
+                        accumulated = previous == null ? base.add(squared) : previous.add(squared);
                         nextAccumulatedSquares.put(name, accumulated);
 
                         root = accumulated.sqrt();
@@ -96,6 +98,7 @@ public final class Adagrad implements Optimizer, AutoCloseable {
                         scaled = normalized.mul(learningRate);
                         updates.put(name, current.sub(scaled));
                     } finally {
+                        if (base != null) base.release();
                         if (squared != null) squared.release();
                         if (root != null) root.release();
                         if (denominator != null) denominator.release();
