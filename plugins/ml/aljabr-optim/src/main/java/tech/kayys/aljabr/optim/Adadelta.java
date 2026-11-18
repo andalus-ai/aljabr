@@ -72,50 +72,50 @@ public final class Adadelta implements Optimizer, AutoCloseable {
                     Tensor previousGradientSquares = replaced ? null : gradientSquareAverages.get(name);
                     Tensor previousUpdateSquares = replaced ? null : updateSquareAverages.get(name);
 
-                    Tensor gradientSquares = updateAverage(gradient, previousGradientSquares, true);
+                    Tensor gradientSquares = updateAverage(gradient, previousGradientSquares);
                     nextGradientSquares.put(name, gradientSquares);
 
-                    Tensor previousUpdateBase = previousUpdateSquares == null
-                            ? gradient.zerosLike() : previousUpdateSquares;
+                    Tensor gradientPlusEpsilon = null;
                     Tensor gradientRoot = null;
+                    Tensor updatePlusEpsilon = null;
                     Tensor updateRoot = null;
-                    Tensor numerator = null;
-                    Tensor denominator = null;
                     Tensor ratio = null;
                     Tensor delta = null;
                     Tensor deltaSquares = null;
                     Tensor updateContribution = null;
-                    Tensor nextUpdateSquares = null;
+                    Tensor decayedUpdateSquares = null;
+                    Tensor nextUpdateAverage = null;
                     try {
-                        gradientRoot = gradientSquares.add(epsilon).sqrt();
-                        updateRoot = previousUpdateBase.add(epsilon).sqrt();
-                        numerator = updateRoot;
-                        denominator = gradientRoot;
-                        ratio = numerator.div(denominator);
+                        gradientPlusEpsilon = gradientSquares.add(epsilon);
+                        gradientRoot = gradientPlusEpsilon.sqrt();
+                        Tensor previousUpdate = previousUpdateSquares == null
+                                ? gradient.zerosLike() : previousUpdateSquares;
+                        try {
+                            updatePlusEpsilon = previousUpdate.add(epsilon);
+                        } finally {
+                            if (previousUpdateSquares == null) previousUpdate.release();
+                        }
+                        updateRoot = updatePlusEpsilon.sqrt();
+                        ratio = updateRoot.div(gradientRoot);
                         delta = gradient.mul(ratio).mul(-1.0f);
+
                         deltaSquares = delta.mul(delta);
                         updateContribution = deltaSquares.mul(1.0f - rho);
-                        Tensor decayedUpdateSquares = previousUpdateSquares == null
+                        decayedUpdateSquares = previousUpdateSquares == null
                                 ? deltaSquares.zerosLike() : previousUpdateSquares.mul(rho);
-                        try {
-                            nextUpdateSquares = decayedUpdateSquares.add(updateContribution);
-                        } finally {
-                            decayedUpdateSquares.release();
-                        }
-                        nextUpdateSquares = track(nextUpdateSquares, nextUpdateSquares);
-                        nextUpdateSquaresMapPut(nextUpdateSquares, name, nextUpdateSquares);
+                        nextUpdateAverage = decayedUpdateSquares.add(updateContribution);
+                        nextUpdateSquares.put(name, nextUpdateAverage);
                         updates.put(name, current.add(delta));
                     } finally {
-                        if (previousUpdateSquares == null) previousUpdateBase.release();
-                        gradientRoot.release();
-                        if (previousUpdateSquares == null) {
-                            // updateRoot owns the zero-initialized numerator tensor.
-                            updateRoot.release();
-                        }
+                        if (gradientPlusEpsilon != null) gradientPlusEpsilon.release();
+                        if (gradientRoot != null) gradientRoot.release();
+                        if (updatePlusEpsilon != null) updatePlusEpsilon.release();
+                        if (updateRoot != null) updateRoot.release();
                         if (ratio != null) ratio.release();
                         if (delta != null) delta.release();
                         if (deltaSquares != null) deltaSquares.release();
                         if (updateContribution != null) updateContribution.release();
+                        if (decayedUpdateSquares != null) decayedUpdateSquares.release();
                     }
                 }
 
@@ -144,7 +144,7 @@ public final class Adadelta implements Optimizer, AutoCloseable {
         }
     }
 
-    private Tensor updateAverage(Tensor gradient, Tensor previous, boolean gradientAverage) {
+    private Tensor updateAverage(Tensor gradient, Tensor previous) {
         Tensor base = previous == null ? gradient.zerosLike() : previous.mul(rho);
         Tensor squared = null;
         Tensor contribution = null;
@@ -157,14 +157,6 @@ public final class Adadelta implements Optimizer, AutoCloseable {
             if (squared != null) squared.release();
             if (contribution != null) contribution.release();
         }
-    }
-
-    private static Tensor track(Tensor tensor, Tensor same) {
-        return tensor;
-    }
-
-    private void nextUpdateSquaresMapPut(Tensor value, String name, Tensor ignored) {
-        nextUpdateSquares.put(name, value);
     }
 
     @Override
