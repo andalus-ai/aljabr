@@ -1057,6 +1057,84 @@ public final class CpuBackend implements ComputeBackend {
     }
 
 
+    @Override
+    public Tensor attentionGqa(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
+        if (Q == null || K == null || V == null) {
+            throw new IllegalArgumentException("attention Q, K, and V must not be null");
+        }
+        if (Q.backend() != this || K.backend() != this || V.backend() != this) {
+            throw new IllegalArgumentException("attention tensors must belong to this CPU backend instance");
+        }
+        if (Q.dtype() != DType.F32 || K.dtype() != DType.F32 || V.dtype() != DType.F32) {
+            throw new UnsupportedOperationException("CPU attention currently supports F32 tensors only");
+        }
+        if (Q.shape().rank() != 4 || K.shape().rank() != 4 || V.shape().rank() != 4) {
+            throw new IllegalArgumentException("GQA expects rank-4 [B,H,S,D] Q/K/V tensors");
+        }
+
+        long batch = Q.shape().dim(0);
+        long queryHeads = Q.shape().dim(1);
+        long queryLength = Q.shape().dim(2);
+        long headDim = Q.shape().dim(3);
+        long keyValueHeads = K.shape().dim(1);
+        long keyLength = K.shape().dim(2);
+
+        if (batch <= 0 || queryHeads <= 0 || keyValueHeads <= 0
+                || queryLength <= 0 || keyLength <= 0 || headDim <= 0
+                || queryHeads % keyValueHeads != 0
+                || K.shape().dim(0) != batch || V.shape().dim(0) != batch
+                || K.shape().dim(3) != headDim || V.shape().dim(1) != keyValueHeads
+                || V.shape().dim(2) != keyLength || V.shape().dim(3) != headDim) {
+            throw new IllegalArgumentException(
+                    "GQA expects Q[B,Hq,Sq,D], K/V[B,Hkv,Sk,D] with Hq divisible by Hkv");
+        }
+
+        if (additiveMask != null && (additiveMask.backend() != this
+                || additiveMask.dtype() != DType.F32
+                || additiveMask.shape().rank() != 2
+                || additiveMask.shape().dim(0) != queryLength
+                || additiveMask.shape().dim(1) != keyLength)) {
+            throw new IllegalArgumentException(
+                    "GQA additive attention mask must be F32 [queryLength, keyLength] on this backend");
+        }
+
+        MemorySegment mask = additiveMask == null ? null : seg(additiveMask);
+        if (mask != null) validateAttentionMask(mask, queryLength, keyLength);
+
+        Shape outputShape = new Shape(batch, queryHeads, queryLength, headDim);
+        HostAccessibleStorage output =
+                allocateOutput(Math.multiplyExact(outputShape.numel(), Float.BYTES));
+        MemorySegment q = seg(Q), k = seg(K), v = seg(V), out = output.segment();
+        float scale = (float) (1.0 / Math.sqrt(headDim));
+        int groupCount = Math.toIntExact(Math.multiplyExact(batch, queryHeads));
+        int queriesPerKeyValueHead = Math.toIntExact(queryHeads / keyValueHeads);
+        try {
+            if (shouldParallelizeAttention(groupCount, queryLength, keyLength, headDim)) {
+                java.util.stream.IntStream.range(0, groupCount).parallel().forEach(group -> {
+                    int queryHead = group % Math.toIntExact(queryHeads);
+                    int keyValueHead = queryHead / queriesPerKeyValueHead;
+                    computeAttentionGroup(q, k, v, mask, out, group,
+                            (group / Math.toIntExact(queryHeads))
+                                    * Math.toIntExact(keyValueHeads) + keyValueHead,
+                            queryLength, keyLength, headDim, scale, causal);
+                });
+            } else {
+                for (int group = 0; group < groupCount; group++) {
+                    int queryHead = group % Math.toIntExact(queryHeads);
+                    int keyValueHead = queryHead / queriesPerKeyValueHead;
+                    computeAttentionGroup(q, k, v, mask, out, group,
+                            (group / Math.toIntExact(queryHeads))
+                                    * Math.toIntExact(keyValueHeads) + keyValueHead,
+                            queryLength, keyLength, headDim, scale, causal);
+                }
+            }
+            return out(outputShape, output);
+        } catch (RuntimeException | Error failure) {
+            output.release();
+            throw failure;
+        }
+    }
+
     /**
      * Validates a shared additive mask once before attention work is scheduled.
      * The same mask is reused by every batch/head group, so validation must not
@@ -1107,6 +1185,7 @@ public final class CpuBackend implements ComputeBackend {
             MemorySegment mask,
             MemorySegment out,
             int group,
+            int keyGroup,
             long queryLength,
             long keyLength,
             long headDim,
@@ -1114,7 +1193,7 @@ public final class CpuBackend implements ComputeBackend {
             boolean causal) {
         int dimension = Math.toIntExact(headDim);
         long qBase = (long) group * queryLength * dimension;
-        long kBase = (long) group * keyLength * dimension;
+        long kBase = (long) keyGroup * keyLength * dimension;
         double[] weightedValues = new double[dimension];
 
         for (long qi = 0; qi < queryLength; qi++) {
