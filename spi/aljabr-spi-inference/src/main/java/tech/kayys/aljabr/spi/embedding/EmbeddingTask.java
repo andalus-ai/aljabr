@@ -14,6 +14,8 @@ public enum EmbeddingTask {
     RETRIEVAL_QUERY,
     /** Encode a document or passage for asymmetric information retrieval. */
     RETRIEVAL_DOCUMENT,
+    /** Encode a question for retrieval-augmented question answering. */
+    QUESTION_ANSWERING,
     /** Encode inputs for code retrieval. */
     CODE_RETRIEVAL,
     /** Encode inputs for fact checking. */

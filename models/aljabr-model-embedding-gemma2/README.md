@@ -13,8 +13,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   attention-type-specific RoPE parameters.
 - Resolution of effective per-layer attention geometry, mixed full/sliding
   attention, and attention-specific RoPE metadata.
-- Text task formatting for retrieval, code retrieval, fact checking,
-  classification, clustering, and semantic similarity.
+- Text task formatting for search, question answering, fact checking, code
+  retrieval, classification, clustering, and semantic similarity.
 - Text-only is the first intended execution milestone.
 
 The plugin deliberately does **not** declare
@@ -45,8 +45,8 @@ The documented input budget (8,192 tokens) is kept distinct from the raw
 ## Text task formatting
 
 Use `EmbeddingGemma2InputFormatter` with an explicit
-`EmbeddingGemma2InputRole`. Asymmetric retrieval tasks intentionally use
-different query and document templates. Document inputs use
+`EmbeddingGemma2InputRole`. Asymmetric tasks intentionally use different
+query and document templates. Document inputs use
 `title: none | text: ...` when no title is supplied. Symmetric tasks use the
 same task prefix on each side. `UNSPECIFIED` preserves raw input for legacy
 callers.

@@ -34,14 +34,13 @@ public final class EmbeddingGemma2InputFormatter {
 
         return switch (task) {
             case UNSPECIFIED -> requireSingle(role, input);
-            case RETRIEVAL_QUERY -> {
-                requireRole(role, EmbeddingGemma2InputRole.QUERY, task);
-                yield "task: search result | query: " + input;
-            }
-            case RETRIEVAL_DOCUMENT -> {
-                requireRole(role, EmbeddingGemma2InputRole.DOCUMENT, task);
-                yield document(title, input);
-            }
+            case RETRIEVAL_QUERY -> query(role, task, "search result", input);
+            case RETRIEVAL_DOCUMENT -> documentOnly(role, task, title, input);
+            case QUESTION_ANSWERING -> switch (role) {
+                case QUERY -> "task: question answering | query: " + input;
+                case DOCUMENT -> document(title, input);
+                case SINGLE -> throw incompatible(task, role);
+            };
             case CODE_RETRIEVAL -> switch (role) {
                 case QUERY -> "task: code retrieval | query: " + input;
                 case DOCUMENT -> document(title, input);
@@ -61,13 +60,24 @@ public final class EmbeddingGemma2InputFormatter {
         };
     }
 
+    private static String query(
+            EmbeddingGemma2InputRole role, EmbeddingTask task, String instruction, String input) {
+        requireRole(role, EmbeddingGemma2InputRole.QUERY, task);
+        return "task: " + instruction + " | query: " + input;
+    }
+
+    private static String documentOnly(
+            EmbeddingGemma2InputRole role, EmbeddingTask task, String title, String input) {
+        requireRole(role, EmbeddingGemma2InputRole.DOCUMENT, task);
+        return document(title, input);
+    }
+
     private static String document(String title, String input) {
         String normalizedTitle = title == null || title.isBlank() ? "none" : title;
         return "title: " + normalizedTitle + " | text: " + input;
     }
 
-    private static String symmetric(
-            EmbeddingGemma2InputRole role, String formatted) {
+    private static String symmetric(EmbeddingGemma2InputRole role, String formatted) {
         requireRole(role, EmbeddingGemma2InputRole.SINGLE, null);
         return formatted;
     }
