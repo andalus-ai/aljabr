@@ -165,6 +165,7 @@ public final class KVCache {
      * @param dstOff  offset into {@code dst}
      */
     public void readK(int layer, int pos, int kvHead, float[] dst, int dstOff) {
+        validateRead(layer, pos, kvHead, dst, dstOff);
         int hd  = layerHDim[layer];
         int src = pos * layerStride[layer] + kvHead * hd;
         System.arraycopy(k[layer], src, dst, dstOff, hd);
@@ -174,25 +175,41 @@ public final class KVCache {
      * Copy one KV-head's V vector at sequence position {@code pos} into {@code dst}.
      */
     public void readV(int layer, int pos, int kvHead, float[] dst, int dstOff) {
+        validateRead(layer, pos, kvHead, dst, dstOff);
         int hd  = layerHDim[layer];
         int src = pos * layerStride[layer] + kvHead * hd;
         System.arraycopy(v[layer], src, dst, dstOff, hd);
     }
 
     /** Raw K backing array for layer (allows direct indexed access in the attention loop). */
-    public float[] kLayer(int layer) { return k[layer]; }
+    public float[] kLayer(int layer) {
+        validateLayer(layer);
+        return k[layer];
+    }
 
     /** Raw V backing array for layer. */
-    public float[] vLayer(int layer) { return v[layer]; }
+    public float[] vLayer(int layer) {
+        validateLayer(layer);
+        return v[layer];
+    }
 
     /** Per-layer stride in floats ({@code nKVHeads[layer] * headDim[layer]}). */
-    public int headStride(int layer)  { return layerStride[layer]; }
+    public int headStride(int layer)  {
+        validateLayer(layer);
+        return layerStride[layer];
+    }
 
     /** Number of KV heads for {@code layer}. */
-    public int nKVHeads(int layer)    { return layerNKVH[layer]; }
+    public int nKVHeads(int layer)    {
+        validateLayer(layer);
+        return layerNKVH[layer];
+    }
 
     /** Head dimension (K/V) for {@code layer}. */
-    public int headDim(int layer)     { return layerHDim[layer]; }
+    public int headDim(int layer)     {
+        validateLayer(layer);
+        return layerHDim[layer];
+    }
 
     /** Current filled sequence length (same for all layers). */
     public int seqLen() { return seqLen; }
@@ -219,6 +236,17 @@ public final class KVCache {
         } catch (ArithmeticException e) {
             throw new IllegalArgumentException(description + " exceeds supported array size", e);
         }
+    }
+
+    private void validateRead(int layer, int position, int kvHead, float[] destination, int destinationOffset) {
+        validateLayer(layer);
+        if (position < 0 || position >= seqLen) {
+            throw new IndexOutOfBoundsException("KV read position is outside committed sequence length");
+        }
+        if (kvHead < 0 || kvHead >= layerNKVH[layer]) {
+            throw new IndexOutOfBoundsException("KV head index out of range: " + kvHead);
+        }
+        requireArrayRange(destination, destinationOffset, layerHDim[layer], "destination");
     }
 
     private void validateLayer(int layer) {
