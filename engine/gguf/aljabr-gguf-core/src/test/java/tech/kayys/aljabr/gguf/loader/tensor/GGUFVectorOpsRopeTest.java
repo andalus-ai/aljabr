@@ -42,6 +42,34 @@ class GGUFVectorOpsRopeTest {
     }
 
     @Test
+    void rejectsNegativeInputOffsetAndPosition() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(new float[8], -1, 1, 8, 8, 0, 10_000.0f, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(new float[8], 0, 1, 8, 8, -1, 10_000.0f, null));
+    }
+
+    @Test
+    void rejectsInvalidFrequencyBaseAndFrequencyFactors() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(new float[8], 1, 8, 8, 0, 1.0f, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(new float[8], 1, 8, 8, 0, Float.NaN, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(new float[8], 1, 8, 8, 0, 10_000.0f,
+                        new float[] {1.0f, 0.0f, 1.0f, 1.0f}));
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(new float[8], 1, 8, 8, 0, 10_000.0f,
+                        new float[] {1.0f, Float.POSITIVE_INFINITY, 1.0f, 1.0f}));
+    }
+
+    @Test
+    void rejectsInputShorterThanRequestedHeadRange() {
+        assertThrows(IllegalArgumentException.class,
+                () -> GGUFVectorOps.rope(new float[7], 0, 1, 8, 8, 0, 10_000.0f, null));
+    }
+
+    @Test
     void rejectsOddRotaryDimension() {
         assertThrows(IllegalArgumentException.class,
                 () -> GGUFVectorOps.rope(new float[8], 1, 8, 5, 1, 10_000.0f, null));

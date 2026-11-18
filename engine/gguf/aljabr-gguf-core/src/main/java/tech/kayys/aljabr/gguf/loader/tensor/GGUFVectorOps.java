@@ -383,18 +383,33 @@ public final class GGUFVectorOps {
     public static void rope(
             float[] x, int xOff, int nHeads, int headDim, int rotaryDim, int pos,
             float freqBase, float[] freqFactors) {
+        java.util.Objects.requireNonNull(x, "input vector must not be null");
         if (headDim <= 0 || nHeads <= 0 || rotaryDim < 2 || rotaryDim > headDim
                 || (rotaryDim & 1) != 0) {
             throw new IllegalArgumentException(
                     "invalid RoPE dimensions: heads=" + nHeads
                             + ", headDim=" + headDim + ", rotaryDim=" + rotaryDim);
         }
-        if (x.length < (long) xOff + (long) nHeads * headDim) {
+        if (xOff < 0 || pos < 0) {
+            throw new IllegalArgumentException("RoPE input offset and position must be non-negative");
+        }
+        if (!Float.isFinite(freqBase) || freqBase <= 1.0f) {
+            throw new IllegalArgumentException("RoPE frequency base must be finite and greater than one");
+        }
+        if ((long) xOff + (long) nHeads * headDim > x.length) {
             throw new IllegalArgumentException(
                     "input vector is shorter than xOff + nHeads * headDim");
         }
 
         int half = rotaryDim / 2;
+        if (freqFactors != null) {
+            for (int i = 0; i < Math.min(half, freqFactors.length); i++) {
+                if (!Float.isFinite(freqFactors[i]) || freqFactors[i] <= 0.0f) {
+                    throw new IllegalArgumentException(
+                            "RoPE frequency factors must be finite and positive");
+                }
+            }
+        }
         float[] table = ROPE_TABLE_CACHE.get();
         if (table.length < half * 2) {
             table = new float[half * 2];
