@@ -255,10 +255,13 @@ public abstract class NNModule implements AutoCloseable {
 
     /** Updates the module's live parameter map while retaining the previous value until close. */
     private void replaceRegisteredParameter(String name, Tensor replacement) {
-        Tensor previous = parameters.put(name, replacement);
+        Tensor previous = parameters.get(name);
         if (previous != null && previous != replacement) {
+            // Retain before publishing the replacement so a failed retention
+            // cannot leave the module map ahead of its Parameter handle.
             retiredStateTensors.add(previous);
         }
+        parameters.put(name, replacement);
     }
 
     /**
