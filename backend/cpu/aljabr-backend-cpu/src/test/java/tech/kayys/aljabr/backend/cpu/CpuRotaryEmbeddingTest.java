@@ -38,12 +38,13 @@ class CpuRotaryEmbeddingTest {
         Tensor output = null;
         try {
             output = backend.applyRoPE(input, 1, 10_000f, true);
-            double angle = 1.0;
+            double firstPairAngle = 1.0;
+            double secondPairAngle = 0.01;
             assertArrayEquals(new float[] {
-                    (float) (Math.cos(angle) - 3 * Math.sin(angle)),
-                    (float) (2 * Math.cos(angle) - 4 * Math.sin(angle)),
-                    (float) (Math.sin(angle) + 3 * Math.cos(angle)),
-                    (float) (2 * Math.sin(angle) + 4 * Math.cos(angle))
+                    (float) (Math.cos(firstPairAngle) - 3 * Math.sin(firstPairAngle)),
+                    (float) (2 * Math.cos(secondPairAngle) - 4 * Math.sin(secondPairAngle)),
+                    (float) (Math.sin(firstPairAngle) + 3 * Math.cos(firstPairAngle)),
+                    (float) (2 * Math.sin(secondPairAngle) + 4 * Math.cos(secondPairAngle))
             }, output.toFloatArray(), 1e-5f);
         } finally {
             if (output != null) output.release();

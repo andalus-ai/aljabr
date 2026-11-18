@@ -312,7 +312,8 @@ final class GgufDecodePass {
             GGUFVectorOps.rope(q, nH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq, layerRopeFreqs);
 
             int kvLayerToUse = GgufKvCacheRouting.resolveCacheLayer(
-                    layer, layerWeights.wK[layer] != null, cfg.isSwaLayer(layer));
+                    layer, layerWeights.wK, cfg.isSwaLayer(layer));
+            GgufKvCacheRouting.validateCacheGeometry(cache, kvLayerToUse, layerNKVH, layerHDim);
             if (layerWeights.wK[layer] != null) {
 
                 if (layerWeights.attnKNorm[layer] != null) {

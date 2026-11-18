@@ -141,12 +141,15 @@ public final class LLaMA {
             int dimension = Math.toIntExact(shape[2]);
             float scale = (float) (1.0 / Math.sqrt(headDim));
 
-            Tensor q = reshape4d(wQ.forward(input), batch, sequence, nHeads, headDim);
-            Tensor k = reshape4d(wK.forward(input), batch, sequence, nHeads, headDim);
+            Tensor qProjected = reshape4d(wQ.forward(input), batch, sequence, nHeads, headDim);
+            Tensor kProjected = reshape4d(wK.forward(input), batch, sequence, nHeads, headDim);
             Tensor v = reshape4d(wV.forward(input), batch, sequence, nHeads, headDim);
 
-            q = rope.apply(q, q);
-            k = rope.apply(k, k);
+            RotaryEmbedding.QueryKey rotated = rope.apply(qProjected, kProjected);
+            qProjected.release();
+            kProjected.release();
+            Tensor q = rotated.query();
+            Tensor k = rotated.key();
 
             Tensor scores = TensorOps.einsum("bhid,bhjd->bhij", q, k).mul(scale);
             scores = applyCausalMask(scores, sequence);
