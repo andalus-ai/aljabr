@@ -17,15 +17,17 @@ autograd and training orchestration.
 
 - `SGD`: stateless gradient descent.
 - `MomentumSGD`: SGD with per-parameter momentum buffers and optional Nesterov lookahead.
+- `RMSProp`: adaptive learning rates from an exponentially decaying average of squared gradients.
 - `AdamW`: adaptive moments with decoupled weight decay.
 
 All optimizers consume stable, fully qualified parameter names and gradient
 maps. Missing gradients and frozen parameters are skipped. Gradient shape,
 dtype, backend, and device are validated before parameter replacement. Stateful
-optimizer state is explicitly released by `reset()`; `MomentumSGD` and `AdamW`
-are also `AutoCloseable`.
+optimizer state is explicitly released by `reset()`; `MomentumSGD`, `RMSProp`,
+and `AdamW` are also `AutoCloseable`.
 
 This is an initial F32-oriented API built on the currently supported tensor
-arithmetic. Mixed precision, gradient scaling, sparse gradients, parameter
-groups, schedulers, checkpoint serialization, and distributed optimizer
-semantics are not claimed.
+arithmetic. RMSProp currently provides the uncentered, no-momentum form; centered statistics,
+optimizer momentum, and weight decay are not included. Mixed precision, gradient
+scaling, sparse gradients, parameter groups, schedulers, checkpoint serialization,
+and distributed optimizer semantics are not claimed.
