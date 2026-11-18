@@ -50,6 +50,27 @@ class ParameterTest {
     }
 
     @Test
+    void updateTensorKeepsCurrentValueWhenOwnerRejectsReplacement() {
+        CpuBackend backend = new CpuBackend();
+        var original = tech.kayys.aljabr.core.tensor.TensorFactory.zeros(backend, 2);
+        var replacement = tech.kayys.aljabr.core.tensor.TensorFactory.ones(backend, 2);
+        Parameter parameter = new Parameter("weight", original, ignored -> {
+            throw new IllegalStateException("owner rejected replacement");
+        });
+
+        try {
+            assertThat(org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalStateException.class, () -> parameter.updateTensor(replacement)))
+                    .hasMessage("owner rejected replacement");
+            assertThat(parameter.tensor()).isSameAs(original);
+        } finally {
+            original.release();
+            replacement.release();
+            backend.close();
+        }
+    }
+
+    @Test
     void updateTensorRejectsIncompatibleShape() {
         CpuBackend backend = new CpuBackend();
         try (Linear layer = new Linear(backend, 2, 2, true)) {
