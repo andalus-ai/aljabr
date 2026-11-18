@@ -29,6 +29,10 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
+- A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
+  followed by the checkpoint-backed bias-free modality-to-text projection, while
+  preserving per-image token sequences. A separate splitter restores per-image
+  boundaries from padded patch-position metadata and the configured pooling kernel.
 - Text-only is the first intended execution milestone.
 
 The attention, encoder-layer, and assembled text-backbone operations are
@@ -96,5 +100,7 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-Image, audio, and video execution remain deferred. They must not be inferred
-from the broader model family's multimodal embedding-space description.
+The Gemma 4 vision tower, image preprocessing/patchification, vision checkpoint
+mapping, and end-to-end image execution remain deferred. Current vision components
+cover only post-tower projection and reference per-image soft-token splitting.
+Audio and video execution also remain deferred.
