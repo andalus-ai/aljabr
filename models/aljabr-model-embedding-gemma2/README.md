@@ -29,6 +29,7 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
+- A Gemma4 vision patch embedder that applies reference pixel scaling, bias-free RGB patch projection, and learned x/y positional-table lookup. Image preprocessing and patch extraction remain processor responsibilities.
 - A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
   followed by the checkpoint-backed bias-free modality-to-text projection, while
   preserving per-image token sequences. A separate splitter restores per-image
@@ -100,7 +101,8 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-The Gemma 4 vision tower, image preprocessing/patchification, vision checkpoint
-mapping, and end-to-end image execution remain deferred. Current vision components
-cover only post-tower projection and reference per-image soft-token splitting.
+The bidirectional Gemma4 vision transformer, 2D RoPE, image preprocessing/patchification,
+vision checkpoint mapping, pooling/standardization, and end-to-end image execution remain
+deferred. Current vision components cover patch projection and learned 2D position lookup,
+post-tower projection, and reference per-image soft-token splitting.
 Audio and video execution also remain deferred.

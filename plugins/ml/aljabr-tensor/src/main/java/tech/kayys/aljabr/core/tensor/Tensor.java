@@ -244,10 +244,26 @@ public interface Tensor extends AutoCloseable {
 
     Tensor logSoftmax(int dim);
 
+    /**
+     * Computes the arithmetic mean along one axis.
+     *
+     * <p>Negative axes count from the final dimension ({@code -1} is the last
+     * axis). When {@code keepDim} is true, the reduced axis remains with size
+     * one; otherwise it is removed. Implementations must reject axes outside
+     * {@code [-rank, rank)} and empty reduction dimensions.</p>
+     */
     Tensor mean(int dim, boolean keepDim);
 
     Tensor sum();
 
+    /**
+     * Computes the sum along one axis.
+     *
+     * <p>Negative axes count from the final dimension ({@code -1} is the last
+     * axis). When {@code keepDim} is true, the reduced axis remains with size
+     * one; otherwise it is removed. Implementations must reject axes outside
+     * {@code [-rank, rank)}. Summing an empty reduction dimension yields zeros.</p>
+     */
     Tensor sum(int dim, boolean keepDim);
 
     java.util.List<Tensor> split(int axis, int parts);

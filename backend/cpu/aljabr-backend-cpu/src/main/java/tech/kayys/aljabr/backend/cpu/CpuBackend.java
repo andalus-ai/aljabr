@@ -937,6 +937,10 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor mean(Tensor a) {
+        Objects.requireNonNull(a, "tensor must not be null");
+        if (a.numel() == 0) {
+            throw new IllegalArgumentException("Mean is undefined for an empty tensor");
+        }
         float total = CpuOps.reduceSum(seg(a), a.numel());
         HostAccessibleStorage o = allocateOutput(4);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, total / a.numel());
@@ -958,12 +962,22 @@ public final class CpuBackend implements ComputeBackend {
 
     /** Shared reduce-along-dim logic for sum and mean. */
     private Tensor reduceAlongDim(Tensor a, int dim, boolean keepDim, boolean isSum) {
+        Objects.requireNonNull(a, "tensor must not be null");
         long[] inDims = a.shape().dims();
         int rank = inDims.length;
-        if (dim < 0) {
-            dim = rank + dim;
+        if (rank == 0) {
+            throw new IllegalArgumentException("Axis reduction requires a tensor with rank greater than zero");
         }
+        int normalizedDim = dim < 0 ? rank + dim : dim;
+        if (normalizedDim < 0 || normalizedDim >= rank) {
+            throw new IllegalArgumentException(
+                    "Reduction axis " + dim + " is out of range for tensor rank " + rank);
+        }
+        dim = normalizedDim;
         long dimLen = inDims[dim];
+        if (!isSum && dimLen == 0) {
+            throw new IllegalArgumentException("Mean is undefined for an empty reduction dimension");
+        }
 
         long[] outDims = new long[keepDim ? rank : rank - 1];
         int outIdx = 0;
