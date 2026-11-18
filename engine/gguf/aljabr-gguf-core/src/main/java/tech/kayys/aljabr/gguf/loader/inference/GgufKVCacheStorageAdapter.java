@@ -35,7 +35,9 @@ public final class GgufKVCacheStorageAdapter implements KVCacheStorage {
         int stride = checkedPosition(layer, position);
         checkArrayRange(key, keyOffset, stride, "key");
         checkArrayRange(value, valueOffset, stride, "value");
-        cache.storeDirect(layer, position, key, value, stride);
+        int destinationOffset = Math.multiplyExact(position, stride);
+        System.arraycopy(key, keyOffset, cache.kLayer(layer), destinationOffset, stride);
+        System.arraycopy(value, valueOffset, cache.vLayer(layer), destinationOffset, stride);
     }
 
     @Override
