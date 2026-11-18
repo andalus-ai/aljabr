@@ -69,6 +69,10 @@ final class GgufPrefillPass {
     }
 
     float[] execute(int[] tokenIds, KVCache cache) {
+        validateTokenIds(tokenIds, cfg.vocabSize(), cfg.contextLength());
+        if (cache == null) {
+            throw new IllegalArgumentException("KV cache must not be null");
+        }
         int T = tokenIds.length;
         int dim = cfg.embeddingDim();
         int nH = cfg.nHeads();
@@ -225,6 +229,27 @@ final class GgufPrefillPass {
             logPrefillLogits(T, xLast, xbFinal, logits);
         }
         return logits;
+    }
+
+    static void validateTokenIds(int[] tokenIds, int vocabSize, int contextLength) {
+        if (tokenIds == null) {
+            throw new IllegalArgumentException("Prompt token IDs must not be null");
+        }
+        if (tokenIds.length == 0) {
+            throw new IllegalArgumentException("Prompt must contain at least one token");
+        }
+        if (tokenIds.length > contextLength) {
+            throw new IllegalArgumentException(
+                    "Prompt token count " + tokenIds.length
+                            + " exceeds model context length " + contextLength);
+        }
+        for (int i = 0; i < tokenIds.length; i++) {
+            if (tokenIds[i] < 0 || tokenIds[i] >= vocabSize) {
+                throw new IllegalArgumentException(
+                        "Prompt token ID at index " + i + " is outside vocabulary range [0, "
+                                + vocabSize + "): " + tokenIds[i]);
+            }
+        }
     }
 
     void syncMetalCache(int tokenCount, KVCache cache) {
