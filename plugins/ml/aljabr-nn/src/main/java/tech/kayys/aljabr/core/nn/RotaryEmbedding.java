@@ -40,7 +40,16 @@ public class RotaryEmbedding extends NNModule {
     @Override
     public Tensor forward(Tensor input) {
         validateInputBackend(input);
-        return input; // placeholder
+        if (input.shape().rank() != 4) {
+            throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
+        }
+        if (input.shape().dim(3) != headDim) {
+            throw new IllegalArgumentException("input head dimension does not match configured headDim");
+        }
+        if (input.shape().dim(2) > maxSeqLen) {
+            throw new IllegalArgumentException("input sequence length exceeds maxSeqLen");
+        }
+        return input.backend().applyRoPE(input, 0, 10_000f, false);
     }
 
     public Tensor apply(Tensor q, Tensor k) {
