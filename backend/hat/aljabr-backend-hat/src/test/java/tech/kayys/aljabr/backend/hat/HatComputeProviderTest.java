@@ -220,6 +220,13 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.max", Map.of(
                             "dtype", "F32", "rank", "2", "dim", "0")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "1",
+                            "dim_size", "4", "numel", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "1", "dim_size", "0")).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.mean", Map.of(
                             "dtype", "F32", "numel", "0")).support());
