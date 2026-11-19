@@ -70,9 +70,15 @@ public final class EmbeddingGemma2VisionAttention {
         if (validPatches != null && validPatches.length != sequence) {
             throw new IllegalArgumentException("validPatches length must equal sequence length");
         }
+        boolean[] effectiveValidKeys = new boolean[sequence];
         int validCount = 0;
         for (int i = 0; i < sequence; i++) {
-            if (validPatches == null || validPatches[i]) validCount++;
+            boolean paddingPosition = pixelPositionIds[i][0] == -1;
+            if (validPatches != null && validPatches[i] && paddingPosition) {
+                throw new IllegalArgumentException("a padding position cannot be marked as a valid key");
+            }
+            effectiveValidKeys[i] = validPatches == null ? !paddingPosition : validPatches[i];
+            if (effectiveValidKeys[i]) validCount++;
         }
         if (validCount == 0) {
             throw new IllegalArgumentException("vision attention requires at least one valid key patch");
@@ -93,7 +99,7 @@ public final class EmbeddingGemma2VisionAttention {
         query = rotaryEmbedding.apply(query, pixelPositionIds);
         key = rotaryEmbedding.apply(key, pixelPositionIds);
 
-        float[][][] attended = attend(query, key, value, validPatches);
+        float[][][] attended = attend(query, key, value, effectiveValidKeys);
         return EmbeddingGemma2LinearProjection.apply(flatten(attended), weights.output(), null);
     }
 
