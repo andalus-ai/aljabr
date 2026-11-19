@@ -19,7 +19,7 @@ class EmbeddingGemma2VisionPoolerTest {
 
     @Test
     void paddingContributesZeroButStillUsesFixedKernelAreaDenominator() {
-        var pooler = new EmbeddingGemma2VisionPooler(4);
+        var pooler = new EmbeddingGemma2VisionPooler(2);
         float[][] states = {{2f, 4f}, {6f, 8f}, {100f, 100f}, {100f, 100f}};
         int[][] positions = {{0, 0}, {1, 0}, {-1, -1}, {-1, -1}};
 
