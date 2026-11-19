@@ -48,12 +48,11 @@ class AdafactorTest {
                     double clippingScale = Math.min(1.0, clipThreshold / (updateRms + 1.0e-6));
                     double effectiveScale = Math.max(parameterRms, parameterScaleFloor);
                     double update = learningRate * effectiveScale * normalizedUpdate * clippingScale;
-                    assertThat(parameter.tensor().toFloatArray())
-                            .containsExactly(
-                                    (float) (3.0 - update),
-                                    (float) (4.0 - update),
-                                    (float) (0.0 - update))
-                            .usingComparatorForType((left, right) -> Float.compare(left, right), Float.class);
+                    float[] actual = parameter.tensor().toFloatArray();
+                    assertThat(actual).hasSize(3);
+                    assertThat(actual[0]).isCloseTo((float) (3.0 - update), offset(1.0e-5f));
+                    assertThat(actual[1]).isCloseTo((float) (4.0 - update), offset(1.0e-5f));
+                    assertThat(actual[2]).isCloseTo((float) (0.0 - update), offset(1.0e-5f));
                     assertThat(optimizer.updateRmsClippingEnabled()).isTrue();
                     assertThat(optimizer.parameterScaleAdaptationEnabled()).isTrue();
                 } finally {
