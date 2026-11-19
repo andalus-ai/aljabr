@@ -21,8 +21,8 @@ class EmbeddingGemma2VisionRotaryEmbeddingTest {
         float[][][] input = {{{1f, 0f, 1f, 0f}}};
         float[][][] output = rope.apply(input, new int[][]{{1, 2}});
         assertEquals((float) Math.cos(1), output[0][0][0], 1e-6f);
-        assertEquals((float) Math.sin(1), output[0][0][2], 1e-6f);
-        assertEquals((float) Math.cos(2), output[0][0][1], 1e-6f);
+        assertEquals((float) Math.sin(1), output[0][0][1], 1e-6f);
+        assertEquals((float) Math.cos(2), output[0][0][2], 1e-6f);
         assertEquals((float) Math.sin(2), output[0][0][3], 1e-6f);
     }
 
