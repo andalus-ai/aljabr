@@ -33,5 +33,8 @@ class EmbeddingGemma2VisionEncoderLayerTest {
                 new EmbeddingGemma2VisionEncoderLayer.Weights(ones, ones, ones, ones));
         assertThrows(IllegalArgumentException.class,
                 () -> layer.compute(new float[][]{{1f, 2f}}, new int[][]{{-1, 0}}, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> layer.compute(new float[][]{{1f, 2f}, {2f, 3f}},
+                        new int[][]{{-1, -1}, {-1, -1}}, null));
     }
 }
