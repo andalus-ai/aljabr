@@ -22,7 +22,7 @@ autograd and training orchestration.
 - `AdamW`: adaptive moments with decoupled weight decay.
 - `Nadam`: Adam-style adaptive moments with Dozat-formulation Nesterov lookahead.
 - `Adadelta`: adaptive updates using accumulated squared gradients and parameter updates.
-- `Adafactor`: factored row/column second moments for rank-2+ tensors, with an unfactored vector state.
+- `Adafactor`: factored row/column second moments for rank-2+ tensors, with an unfactored vector state; optional update-RMS clipping and parameter-RMS scaling.
 
 All optimizers consume stable, fully qualified parameter names and gradient
 maps. Missing gradients and frozen parameters are skipped. Gradient shape,

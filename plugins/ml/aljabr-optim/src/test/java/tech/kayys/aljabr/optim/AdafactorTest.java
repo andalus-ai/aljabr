@@ -23,6 +23,50 @@ class AdafactorTest {
     }
 
     @Test
+    void validatesAdaptiveScalingOptions() {
+        assertThrows(IllegalArgumentException.class, () -> new Adafactor(0.1f, 1.0e-6f, -0.1f, 1.0e-3f));
+        assertThrows(IllegalArgumentException.class, () -> new Adafactor(0.1f, 1.0e-6f, 1.0f, Float.NaN));
+        try (Adafactor optimizer = new Adafactor(0.1f, 1.0e-6f, 0.0f, 1.0e-3f)) {
+            assertThat(optimizer.updateRmsClippingEnabled()).isFalse();
+            assertThat(optimizer.parameterScaleAdaptationEnabled()).isTrue();
+        }
+    }
+
+    @Test
+    void clipsUpdateRmsAndScalesLearningRateByParameterRms() {
+        float learningRate = 0.1f;
+        float clipThreshold = 0.5f;
+        float parameterScaleFloor = 1.0e-3f;
+        try (CpuBackend backend = new CpuBackend()) {
+            Tensor initial = TensorFactory.of(new float[] {3.0f, 4.0f, 0.0f}, backend, 3);
+            Tensor gradient = TensorFactory.of(new float[] {2.0f, 2.0f, 2.0f}, backend, 3);
+            try (Linear layer = new Linear(initial, null);
+                 Adafactor optimizer = new Adafactor(
+                         learningRate, 1.0e-6f, clipThreshold, parameterScaleFloor)) {
+                Parameter parameter = layer.namedParameterObjects().get("weight");
+                try {
+                    optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
+                    double parameterRms = Math.sqrt((9.0 + 16.0) / 3.0);
+                    double normalizedUpdate = 2.0 / (2.0 + 1.0e-6);
+                    double updateRms = normalizedUpdate;
+                    double clippingScale = Math.min(1.0, clipThreshold / (updateRms + 1.0e-6));
+                    double effectiveScale = Math.max(parameterRms, parameterScaleFloor);
+                    double update = learningRate * effectiveScale * normalizedUpdate * clippingScale;
+                    float[] actual = parameter.tensor().toFloatArray();
+                    assertThat(actual).hasSize(3);
+                    assertThat(actual[0]).isCloseTo((float) (3.0 - update), offset(1.0e-5f));
+                    assertThat(actual[1]).isCloseTo((float) (4.0 - update), offset(1.0e-5f));
+                    assertThat(actual[2]).isCloseTo((float) (0.0 - update), offset(1.0e-5f));
+                    assertThat(optimizer.updateRmsClippingEnabled()).isTrue();
+                    assertThat(optimizer.parameterScaleAdaptationEnabled()).isTrue();
+                } finally {
+                    gradient.release();
+                }
+            }
+        }
+    }
+
+    @Test
     void factoredMatrixUpdatesMatchIndependentTwoStepReference() {
         double learningRate = 0.05;
         double epsilon = 1.0e-6;
