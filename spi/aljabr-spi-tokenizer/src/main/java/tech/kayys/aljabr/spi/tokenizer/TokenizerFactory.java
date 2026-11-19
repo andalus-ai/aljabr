@@ -25,14 +25,14 @@ public class TokenizerFactory {
 
         Path hfConfig = modelDir.resolve("tokenizer.json");
         if (Files.exists(hfConfig)) {
-            return new HuggingFaceBpeLoader().load(hfConfig);
+            return loadHuggingFaceTokenizer(hfConfig);
         }
 
         Path subDir = modelDir.resolve("tokenizer");
         if (Files.isDirectory(subDir)) {
             Path subHf = subDir.resolve("tokenizer.json");
             if (Files.exists(subHf)) {
-                return new HuggingFaceBpeLoader().load(subHf);
+                return loadHuggingFaceTokenizer(subHf);
             }
         }
 
@@ -43,6 +43,16 @@ public class TokenizerFactory {
         if (config == null || config.getTokenizerPath() == null) {
             throw new IllegalArgumentException("ModelConfig or tokenizerPath is null");
         }
-        return new HuggingFaceBpeLoader().load(config.getTokenizerPath());
+        return loadHuggingFaceTokenizer(config.getTokenizerPath());
+    }
+
+    private static Tokenizer loadHuggingFaceTokenizer(Path path) {
+        HuggingFaceGemmaBpeLoader gemmaLoader = new HuggingFaceGemmaBpeLoader();
+        try {
+            if (gemmaLoader.supports(path)) return gemmaLoader.load(path);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to inspect tokenizer pipeline: " + path, e);
+        }
+        return new HuggingFaceBpeLoader().load(path);
     }
 }
