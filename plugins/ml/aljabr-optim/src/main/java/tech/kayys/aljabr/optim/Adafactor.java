@@ -16,8 +16,10 @@ import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
  * gradient, row and column means of its squared values are maintained
  * independently and combined as
  * {@code variance = rowMean * columnMean / mean(rowMean)}. Lower-rank
- * gradients use a full element-wise second-moment estimate. The update is
- * {@code parameter -= learningRate * gradient / (sqrt(variance) + epsilon)}.</p>
+ * gradients use a full element-wise second-moment estimate. The normalized
+ * gradient is optionally RMS-clipped, then optionally scaled by
+ * {@code max(RMS(parameter), parameterScaleEpsilon)} before applying the fixed
+ * learning rate.</p>
  *
  * <p>The two-argument constructor retains fixed-rate behavior. The four-argument
  * constructor enables update-RMS clipping and parameter-scale adaptation.
@@ -48,8 +50,8 @@ public final class Adafactor implements Optimizer, AutoCloseable {
      *
      * @param learningRate fixed base learning rate
      * @param epsilon denominator stability epsilon
-     * @param updateRmsClipThreshold maximum RMS of the normalized update; must be positive
-     * @param parameterScaleEpsilon lower bound for RMS(parameter); must be positive
+     * @param updateRmsClipThreshold maximum RMS of the normalized update; zero disables clipping
+     * @param parameterScaleEpsilon lower bound for RMS(parameter); zero disables parameter scaling
      */
     public Adafactor(float learningRate, float epsilon,
             float updateRmsClipThreshold, float parameterScaleEpsilon) {
@@ -59,11 +61,11 @@ public final class Adafactor implements Optimizer, AutoCloseable {
         if (!Float.isFinite(epsilon) || epsilon <= 0.0f) {
             throw new IllegalArgumentException("epsilon must be finite and positive");
         }
-        if (!Float.isFinite(updateRmsClipThreshold) || updateRmsClipThreshold <= 0.0f) {
-            throw new IllegalArgumentException("Update RMS clip threshold must be finite and positive");
+        if (!Float.isFinite(updateRmsClipThreshold) || updateRmsClipThreshold < 0.0f) {
+            throw new IllegalArgumentException("Update RMS clip threshold must be finite and non-negative");
         }
-        if (!Float.isFinite(parameterScaleEpsilon) || parameterScaleEpsilon <= 0.0f) {
-            throw new IllegalArgumentException("Parameter scale epsilon must be finite and positive");
+        if (!Float.isFinite(parameterScaleEpsilon) || parameterScaleEpsilon < 0.0f) {
+            throw new IllegalArgumentException("Parameter scale epsilon must be finite and non-negative");
         }
         this.learningRate = learningRate;
         this.epsilon = epsilon;
