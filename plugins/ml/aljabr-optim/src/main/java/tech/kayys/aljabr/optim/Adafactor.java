@@ -177,7 +177,7 @@ public final class Adafactor implements Optimizer, AutoCloseable {
                             normalized = gradient.div(denominator);
                             clipped = normalized;
                             if (updateRmsClippingEnabled()) {
-                                clipScale = clippingScale(normalized, updateRmsClipThreshold);
+                                clipScale = clippingScale(normalized, updateRmsClipThreshold, epsilon);
                                 clipped = normalized.mul(clipScale);
                             }
                             if (parameterScaleAdaptationEnabled()) {
@@ -249,10 +249,11 @@ public final class Adafactor implements Optimizer, AutoCloseable {
      * Returns min(1, threshold / RMS(update)) as a rank-zero tensor.
      * The min is expressed with tensor arithmetic, without host scalar extraction.
      */
-    private static Tensor clippingScale(Tensor update, float threshold) {
+    private static Tensor clippingScale(Tensor update, float threshold, float epsilon) {
         Tensor squared = null;
         Tensor meanSquare = null;
         Tensor rms = null;
+        Tensor stabilizedRms = null;
         Tensor inverseRms = null;
         Tensor ratio = null;
         Tensor one = null;
@@ -264,7 +265,8 @@ public final class Adafactor implements Optimizer, AutoCloseable {
             squared = update.mul(update);
             meanSquare = squared.mean();
             rms = meanSquare.sqrt();
-            inverseRms = rms.pow(-1.0f);
+            stabilizedRms = rms.add(epsilon);
+            inverseRms = stabilizedRms.pow(-1.0f);
             ratio = inverseRms.mul(threshold);
             one = TensorFactory.ones(update.backend());
             sum = one.add(ratio);
@@ -279,6 +281,7 @@ public final class Adafactor implements Optimizer, AutoCloseable {
             if (squared != null) squared.release();
             if (meanSquare != null) meanSquare.release();
             if (rms != null) rms.release();
+            if (stabilizedRms != null) stabilizedRms.release();
             if (inverseRms != null) inverseRms.release();
             if (ratio != null) ratio.release();
             if (one != null) one.release();
