@@ -24,6 +24,20 @@ import java.util.Map;
 public final class HuggingFaceGemmaBpeLoader {
     private final ObjectMapper mapper = new ObjectMapper();
 
+    public boolean supports(Path path) throws IOException {
+        JsonNode root = mapper.readTree(path.toFile());
+        JsonNode model = root.path("model");
+        if (!"BPE".equals(model.path("type").asText())
+                || !model.path("byte_fallback").asBoolean(false)
+                || !model.path("fuse_unk").asBoolean(false)) return false;
+        try {
+            validatePipeline(root.path("normalizer"), root.path("pre_tokenizer"), root.path("decoder"));
+            return true;
+        } catch (IllegalArgumentException unsupported) {
+            return false;
+        }
+    }
+
     public Tokenizer load(Path path) {
         try {
             JsonNode root = mapper.readTree(path.toFile());
