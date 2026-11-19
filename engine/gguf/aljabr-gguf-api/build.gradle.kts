@@ -18,6 +18,7 @@ repositories {
 }
 
 dependencies {
+    api(project(":core:aljabr-core"))
     api(project(":spi:aljabr-spi-inference"))
     api(project(":spi:aljabr-spi-model"))
     api("io.smallrye.reactive:mutiny:2.5.5")
