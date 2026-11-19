@@ -199,6 +199,46 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
                             "dtype", "F32", "rank", "4", "output_h", "0", "output_w", "1")).support());
             assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.mean", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.sum", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "-1", "keep_dim", "true")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.sum", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "-2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "2")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "dim", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "rank", "0", "dim", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.max", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "0")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "1",
+                            "dim_size", "4", "numel", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "rank", "2", "dim", "1", "dim_size", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.mean", Map.of(
+                            "dtype", "F32", "numel", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.max", Map.of(
+                            "dtype", "F32", "numel", "0")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.sum", Map.of(
+                            "dtype", "F32", "numel", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.sum", Map.of("dtype", "F16")).support());
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.dropout", Map.of()).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.dropout", Map.of("training", "true", "p", "0.25")).support());

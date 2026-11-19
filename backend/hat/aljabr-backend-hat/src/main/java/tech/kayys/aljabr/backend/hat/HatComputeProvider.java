@@ -232,6 +232,12 @@ public final class HatComputeProvider implements ComputeProvider {
             if ("tensor.adaptive_avg_pool2d".equals(operationId))
                 return poolingSupport(operationId, constraints, "output_h", "output_w", null);
 
+            if ("tensor.mean".equals(operationId)
+                    || "tensor.sum".equals(operationId)
+                    || "tensor.max".equals(operationId)) {
+                return reductionSupport(operationId, constraints);
+            }
+
             if ("tensor.dropout".equals(operationId)) {
                 return dropoutSupport(operationId, constraints);
             }
@@ -406,6 +412,88 @@ public final class HatComputeProvider implements ComputeProvider {
             if (value == null) return OperationSupport.UNKNOWN;
             try { return Integer.parseInt(value) >= 0 ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED; }
             catch (NumberFormatException invalid) { return OperationSupport.UNKNOWN; }
+        }
+
+        /**
+         * Models global and axis reductions exposed by CpuBackend. The CPU
+         * backend supports axis sum/mean (including negative axes), but max
+         * currently has only a global-reduction overload.
+         */
+        private OperationSupportDescriptor reductionSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            if (dtype == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+
+            String rankValue = constraints.get("rank");
+            Integer rank = null;
+            if (rankValue != null) {
+                try {
+                    rank = Integer.valueOf(rankValue);
+                    if (rank < 0) throw new NumberFormatException("negative rank");
+                } catch (NumberFormatException invalidRank) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+            }
+
+            String dimension = constraints.get("dim");
+            if (dimension != null) {
+                if ("tensor.max".equals(operationId)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                if (rank == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (rank == 0) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                try {
+                    int axis = Integer.parseInt(dimension);
+                    if (axis < 0) axis += rank;
+                    if (axis < 0 || axis >= rank) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                } catch (NumberFormatException invalidDimension) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                String dimensionSize = constraints.get("dim_size");
+                if (dimensionSize != null) {
+                    try {
+                        long size = Long.parseLong(dimensionSize);
+                        if (size < 0) throw new NumberFormatException("negative dimension size");
+                        if (size == 0 && "tensor.mean".equals(operationId)) {
+                            return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                        }
+                    } catch (NumberFormatException invalidDimensionSize) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                    }
+                }
+            }
+
+            String keepDim = constraints.get("keep_dim");
+            if (keepDim != null && !"true".equalsIgnoreCase(keepDim)
+                    && !"false".equalsIgnoreCase(keepDim)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+
+            String numelValue = constraints.get("numel");
+            if (numelValue != null) {
+                try {
+                    long numel = Long.parseLong(numelValue);
+                    if (numel < 0) throw new NumberFormatException("negative numel");
+                    if (numel == 0 && dimension == null
+                            && ("tensor.mean".equals(operationId) || "tensor.max".equals(operationId))) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                } catch (NumberFormatException invalidNumel) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
         /**
