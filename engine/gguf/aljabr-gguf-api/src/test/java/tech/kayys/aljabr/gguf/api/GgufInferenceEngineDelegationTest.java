@@ -3,6 +3,8 @@ package tech.kayys.aljabr.gguf.api;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.cache.HeapKVCacheStorage;
+import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.execution.ModelExecutionContext;
 import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
 import tech.kayys.aljabr.spi.embedding.EmbeddingResponse;
@@ -103,6 +105,26 @@ class GgufInferenceEngineDelegationTest {
             assertEquals("context stream", chunks.get(0).delta());
         } finally {
             Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void defaultContextMethodsRejectUnconsumedExternalCacheStorage() {
+        HeapKVCacheStorage storage = new HeapKVCacheStorage(KVCacheLayout.uniform(1, 8, 1, 4));
+        ModelExecutionContext context = ModelExecutionContext.withKVCacheStorage("model", "request", storage);
+        GgufBackend backend = new TestBackend();
+
+        try {
+            UnsupportedOperationException executeFailure = assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> backend.execute(request(), context));
+            assertTrue(executeFailure.getMessage().contains("must override"));
+
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> backend.stream(request(), context));
+        } finally {
+            storage.close();
         }
     }
 
