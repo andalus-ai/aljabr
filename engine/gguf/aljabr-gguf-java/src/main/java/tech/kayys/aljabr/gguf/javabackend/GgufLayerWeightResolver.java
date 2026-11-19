@@ -27,8 +27,13 @@ final class GgufLayerWeightResolver {
             String prefix = "blk." + layer + ".";
             int headDimension = config.headDimForLayer(layer);
 
-            weights.attnNorm[layer] = tensors.dequantizeVector(
-                    tensors.requireTensor(prefix + "attn_norm.weight"), embeddingDimension);
+            GGUFTensorInfo attnNorm = tensors.requireTensor(prefix + "attn_norm.weight");
+            GGUFTensorInfo postAttnNorm = tensors.findTensor(prefix + "post_attention_norm.weight").orElse(null);
+            GgufResidualNormLayout.validateRequiredTensor(
+                    attnNorm, prefix + "attn_norm.weight", layer, embeddingDimension);
+            GgufResidualNormLayout.validateOptionalTensor(
+                    postAttnNorm, prefix + "post_attention_norm.weight", layer, embeddingDimension);
+            weights.attnNorm[layer] = tensors.dequantizeVector(attnNorm, embeddingDimension);
             GGUFTensorInfo qNorm = tensors.findTensor(prefix + "attn_q_norm.weight").orElse(null);
             GGUFTensorInfo kNorm = tensors.findTensor(prefix + "attn_k_norm.weight").orElse(null);
             GGUFTensorInfo vNorm = tensors.findTensor(prefix + "attn_v_norm.weight").orElse(null);
@@ -41,9 +46,8 @@ final class GgufLayerWeightResolver {
             weights.attnQNorm[layer] = qNorm == null ? null : tensors.dequantizeVector(qNorm, headDimension);
             weights.attnKNorm[layer] = kNorm == null ? null : tensors.dequantizeVector(kNorm, headDimension);
             weights.attnVNorm[layer] = vNorm == null ? null : tensors.dequantizeVector(vNorm, headDimension);
-            weights.postAttnNorm[layer] = tensors.findTensor(prefix + "post_attention_norm.weight")
-                    .map(tensor -> tensors.dequantizeVector(tensor, embeddingDimension))
-                    .orElse(null);
+            weights.postAttnNorm[layer] = postAttnNorm == null
+                    ? null : tensors.dequantizeVector(postAttnNorm, embeddingDimension);
 
             // Prefer a layer-local proportional RoPE tensor; otherwise use a
             // global tensor only when its width matches this layer's rotary half.
@@ -86,9 +90,11 @@ final class GgufLayerWeightResolver {
             if (perLayerTokenEmbedding != null) {
                 weights.perLayerInpGate[layer] = tensors.findTensor(prefix + "inp_gate.weight").orElse(null);
                 weights.perLayerProj[layer] = tensors.findTensor(prefix + "proj.weight").orElse(null);
-                weights.perLayerPostNorm[layer] = tensors.findTensor(prefix + "post_norm.weight")
-                        .map(tensor -> tensors.dequantizeVector(tensor, embeddingDimension))
-                        .orElse(null);
+                GGUFTensorInfo perLayerPostNorm = tensors.findTensor(prefix + "post_norm.weight").orElse(null);
+                GgufResidualNormLayout.validateOptionalTensor(
+                        perLayerPostNorm, prefix + "post_norm.weight", layer, embeddingDimension);
+                weights.perLayerPostNorm[layer] = perLayerPostNorm == null
+                        ? null : tensors.dequantizeVector(perLayerPostNorm, embeddingDimension);
             }
         }
 
