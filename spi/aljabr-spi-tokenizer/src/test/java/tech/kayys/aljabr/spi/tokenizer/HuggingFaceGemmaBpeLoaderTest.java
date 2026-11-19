@@ -75,6 +75,27 @@ class HuggingFaceGemmaBpeLoaderTest {
                 () -> new HuggingFaceGemmaBpeLoader().load(file));
     }
 
+
+    @Test
+    void tokenizerFactorySelectsGemmaPipelineAutomatically() throws Exception {
+        Path modelDir = tempDir.resolve("model");
+        Files.createDirectories(modelDir);
+        Files.writeString(modelDir.resolve("tokenizer.json"), """
+                {
+                  "normalizer":{"type":"Replace","pattern":{"String":" "},"content":"▁"},
+                  "pre_tokenizer":{"type":"Split","pattern":{"String":" "},"behavior":"MergedWithPrevious"},
+                  "decoder":{"type":"Sequence","decoders":[
+                    {"type":"Replace","pattern":{"String":"▁"},"content":" "},
+                    {"type":"ByteFallback"},{"type":"Fuse"}]},
+                  "model":{"type":"BPE","byte_fallback":true,"fuse_unk":true,
+                    "vocab":{"<unk>":0,"<bos>":1,"<eos>":2,"<pad>":3,"h":4,"i":5,"▁":6},
+                    "merges":[]}
+                }
+                """);
+        Tokenizer tokenizer = TokenizerFactory.load(modelDir, null);
+        assertArrayEquals(new long[]{4, 5, 6, 4}, tokenizer.encode("hi h", EncodeOptions.defaultOptions()));
+    }
+
     private Tokenizer load(String json) throws Exception {
         Path file = tempDir.resolve("tokenizer-" + System.nanoTime() + ".json");
         Files.writeString(file, json);
