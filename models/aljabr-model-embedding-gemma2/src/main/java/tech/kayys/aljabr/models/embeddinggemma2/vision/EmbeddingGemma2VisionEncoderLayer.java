@@ -101,6 +101,7 @@ public final class EmbeddingGemma2VisionEncoderLayer {
         if (positions == null || positions.length != sequence) {
             throw new IllegalArgumentException("pixelPositionIds length must equal sequence length");
         }
+        boolean hasValidPatch = false;
         for (int i = 0; i < positions.length; i++) {
             if (positions[i] == null || positions[i].length != 2) {
                 throw new IllegalArgumentException("pixel position " + i + " must contain (x,y)");
@@ -109,9 +110,10 @@ public final class EmbeddingGemma2VisionEncoderLayer {
             if (!((x == -1 && y == -1) || (x >= 0 && y >= 0))) {
                 throw new IllegalArgumentException("padding position must be exactly (-1,-1)");
             }
-            if (x == -1 && y == -1 && positions.length == 1) {
-                throw new IllegalArgumentException("an image must contain at least one valid patch");
-            }
+            if (x >= 0 && y >= 0) hasValidPatch = true;
+        }
+        if (!hasValidPatch) {
+            throw new IllegalArgumentException("an image must contain at least one valid patch");
         }
     }
 
