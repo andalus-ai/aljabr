@@ -30,7 +30,7 @@ not an alias for the causal `gemma2` or `gemma4` modules.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - A Gemma4 vision patch embedder that applies the reference pixel scaling, bias-free RGB patch projection, and learned x/y positional-table lookup. Image preprocessing and patch extraction remain processor responsibilities.
-- A Gemma4 vision encoder-layer reference with the four checkpoint-backed RMSNorm scales, injected bidirectional attention operation, gated GELU MLP, and exact two-residual ordering. Axial 2D RoPE and the concrete vision attention kernel remain separate components.
+- A Gemma4 vision encoder-layer reference with the four checkpoint-backed RMSNorm scales, injected bidirectional attention operation, gated GELU MLP, and exact two-residual ordering. Gemma4-compatible axial 2D RoPE is implemented as a separate float32 operation; the concrete vision attention kernel remains separate.
 - A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
   followed by the checkpoint-backed bias-free modality-to-text projection, while
   preserving per-image token sequences. A separate splitter restores per-image
@@ -102,7 +102,7 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-The concrete Gemma4 vision attention kernel, axial 2D RoPE, full encoder stack, image preprocessing/patchification,
+The concrete Gemma4 vision attention kernel, full encoder stack, image preprocessing/patchification,
 vision checkpoint mapping, pooling/standardization, and end-to-end image execution remain
 deferred. Current vision components cover patch projection and learned 2D position lookup,
 post-tower projection, and reference per-image soft-token splitting.
