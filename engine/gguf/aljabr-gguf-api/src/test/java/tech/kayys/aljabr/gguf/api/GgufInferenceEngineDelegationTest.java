@@ -3,6 +3,7 @@ package tech.kayys.aljabr.gguf.api;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.execution.ModelExecutionContext;
 import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
 import tech.kayys.aljabr.spi.embedding.EmbeddingResponse;
 import tech.kayys.aljabr.spi.inference.InferenceRequest;
@@ -64,6 +65,42 @@ class GgufInferenceEngineDelegationTest {
                     .await().indefinitely();
             assertTrue(embedCalled.get());
             assertSame(expected, actual);
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void forwardsModelExecutionContextToBackend() throws Exception {
+        Path model = Files.createTempFile("gguf-execution-context", ".gguf");
+        ModelExecutionContext context = ModelExecutionContext.withoutKVCache("model", "request");
+        AtomicBoolean executeCalled = new AtomicBoolean();
+        AtomicBoolean streamCalled = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public InferenceResponse execute(
+                    InferenceRequest request, ModelExecutionContext suppliedContext) {
+                assertSame(context, suppliedContext);
+                executeCalled.set(true);
+                return response("context output");
+            }
+
+            @Override
+            public Multi<StreamingInferenceChunk> stream(
+                    InferenceRequest request, ModelExecutionContext suppliedContext) {
+                assertSame(context, suppliedContext);
+                streamCalled.set(true);
+                return Multi.createFrom().item(
+                        StreamingInferenceChunk.finalChunk(request.getRequestId(), 0, "context stream"));
+            }
+        };
+        try (GgufInferenceEngine engine = engine(model, backend)) {
+            assertEquals("context output", engine.execute("model", request(), context).getContent());
+            List<StreamingInferenceChunk> chunks = engine.streamExecute("model", request(), context)
+                    .collect().asList().await().indefinitely();
+            assertTrue(executeCalled.get());
+            assertTrue(streamCalled.get());
+            assertEquals("context stream", chunks.get(0).delta());
         } finally {
             Files.deleteIfExists(model);
         }
