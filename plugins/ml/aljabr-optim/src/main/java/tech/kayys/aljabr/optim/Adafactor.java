@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 import tech.kayys.aljabr.core.nn.Parameter;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
 import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
 
 /**
@@ -18,13 +19,15 @@ import tech.kayys.aljabr.core.tensor.autograd.AutogradContext;
  * gradients use a full element-wise second-moment estimate. The update is
  * {@code parameter -= learningRate * gradient / (sqrt(variance) + epsilon)}.</p>
  *
- * <p>This implementation deliberately exposes the fixed-rate core only. It
- * does not claim relative-step scheduling, parameter-scale adaptation, or
- * update-RMS clipping.</p>
+ * <p>The two-argument constructor retains fixed-rate behavior. The four-argument
+ * constructor enables update-RMS clipping and parameter-scale adaptation.
+ * Relative-step scheduling and learning-rate warmup are not included.</p>
  */
 public final class Adafactor implements Optimizer, AutoCloseable {
     private final float learningRate;
     private final float epsilon;
+    private final float updateRmsClipThreshold;
+    private final float parameterScaleEpsilon;
 
     private final Map<String, Tensor> rowSecondMoments = new LinkedHashMap<>();
     private final Map<String, Tensor> columnSecondMoments = new LinkedHashMap<>();
@@ -37,18 +40,41 @@ public final class Adafactor implements Optimizer, AutoCloseable {
     }
 
     public Adafactor(float learningRate, float epsilon) {
+        this(learningRate, epsilon, 0.0f, 0.0f);
+    }
+
+    /**
+     * Creates Adafactor with update-RMS clipping and parameter-scale adaptation.
+     *
+     * @param learningRate fixed base learning rate
+     * @param epsilon denominator stability epsilon
+     * @param updateRmsClipThreshold maximum RMS of the normalized update; must be positive
+     * @param parameterScaleEpsilon lower bound for RMS(parameter); must be positive
+     */
+    public Adafactor(float learningRate, float epsilon,
+            float updateRmsClipThreshold, float parameterScaleEpsilon) {
         if (!Float.isFinite(learningRate) || learningRate < 0.0f) {
             throw new IllegalArgumentException("Learning rate must be finite and non-negative");
         }
         if (!Float.isFinite(epsilon) || epsilon <= 0.0f) {
             throw new IllegalArgumentException("epsilon must be finite and positive");
         }
+        if (!Float.isFinite(updateRmsClipThreshold) || updateRmsClipThreshold <= 0.0f) {
+            throw new IllegalArgumentException("Update RMS clip threshold must be finite and positive");
+        }
+        if (!Float.isFinite(parameterScaleEpsilon) || parameterScaleEpsilon <= 0.0f) {
+            throw new IllegalArgumentException("Parameter scale epsilon must be finite and positive");
+        }
         this.learningRate = learningRate;
         this.epsilon = epsilon;
+        this.updateRmsClipThreshold = updateRmsClipThreshold;
+        this.parameterScaleEpsilon = parameterScaleEpsilon;
     }
 
     public float learningRate() { return learningRate; }
     public float epsilon() { return epsilon; }
+    public boolean updateRmsClippingEnabled() { return updateRmsClipThreshold > 0.0f; }
+    public boolean parameterScaleAdaptationEnabled() { return parameterScaleEpsilon > 0.0f; }
 
     @Override
     public void step(Map<String, Parameter> parameters, Map<String, Tensor> gradients) {
@@ -140,17 +166,38 @@ public final class Adafactor implements Optimizer, AutoCloseable {
                         Tensor root = null;
                         Tensor denominator = null;
                         Tensor normalized = null;
+                        Tensor clipped = null;
+                        Tensor clipScale = null;
+                        Tensor parameterScale = null;
                         Tensor scaled = null;
+                        Tensor learningRateScaled = null;
                         try {
                             root = variance.sqrt();
                             denominator = root.add(epsilon);
                             normalized = gradient.div(denominator);
-                            scaled = normalized.mul(learningRate);
+                            clipped = normalized;
+                            if (updateRmsClippingEnabled()) {
+                                clipScale = clippingScale(normalized, updateRmsClipThreshold);
+                                clipped = normalized.mul(clipScale);
+                            }
+                            if (parameterScaleAdaptationEnabled()) {
+                                parameterScale = parameterScale(current, parameterScaleEpsilon);
+                                learningRateScaled = clipped.mul(parameterScale);
+                            } else {
+                                learningRateScaled = clipped;
+                            }
+                            scaled = learningRateScaled.mul(learningRate);
                             updates.put(name, current.sub(scaled));
                         } finally {
                             if (root != null) root.release();
                             if (denominator != null) denominator.release();
                             if (normalized != null) normalized.release();
+                            if (clipped != null && clipped != normalized) clipped.release();
+                            if (clipScale != null) clipScale.release();
+                            if (parameterScale != null) parameterScale.release();
+                            if (learningRateScaled != null && learningRateScaled != clipped) {
+                                learningRateScaled.release();
+                            }
                             if (scaled != null) scaled.release();
                         }
                     } finally {
@@ -195,6 +242,83 @@ public final class Adafactor implements Optimizer, AutoCloseable {
                 });
                 throw failure;
             }
+        }
+    }
+
+    /**
+     * Returns min(1, threshold / RMS(update)) as a rank-zero tensor.
+     * The min is expressed with tensor arithmetic, without host scalar extraction.
+     */
+    private static Tensor clippingScale(Tensor update, float threshold) {
+        Tensor squared = null;
+        Tensor meanSquare = null;
+        Tensor rms = null;
+        Tensor inverseRms = null;
+        Tensor ratio = null;
+        Tensor one = null;
+        Tensor sum = null;
+        Tensor difference = null;
+        Tensor absoluteDifference = null;
+        Tensor result = null;
+        try {
+            squared = update.mul(update);
+            meanSquare = squared.mean();
+            rms = meanSquare.sqrt();
+            inverseRms = rms.pow(-1.0f);
+            ratio = inverseRms.mul(threshold);
+            one = TensorFactory.ones(update.backend());
+            sum = one.add(ratio);
+            difference = one.sub(ratio);
+            absoluteDifference = difference.abs();
+            result = sum.sub(absoluteDifference).mul(0.5f);
+            return result;
+        } catch (RuntimeException | Error failure) {
+            if (result != null) result.release();
+            throw failure;
+        } finally {
+            if (squared != null) squared.release();
+            if (meanSquare != null) meanSquare.release();
+            if (rms != null) rms.release();
+            if (inverseRms != null) inverseRms.release();
+            if (ratio != null) ratio.release();
+            if (one != null) one.release();
+            if (sum != null) sum.release();
+            if (difference != null) difference.release();
+            if (absoluteDifference != null) absoluteDifference.release();
+        }
+    }
+
+    /** Returns max(RMS(parameter), floor) as a rank-zero tensor. */
+    private static Tensor parameterScale(Tensor parameter, float floor) {
+        Tensor squared = null;
+        Tensor meanSquare = null;
+        Tensor rms = null;
+        Tensor floorAdjusted = null;
+        Tensor difference = null;
+        Tensor absoluteDifference = null;
+        Tensor sum = null;
+        Tensor result = null;
+        try {
+            squared = parameter.mul(parameter);
+            meanSquare = squared.mean();
+            rms = meanSquare.sqrt();
+            floorAdjusted = rms.add(floor);
+            difference = rms.add(-floor);
+            absoluteDifference = difference.abs();
+            sum = floorAdjusted.add(absoluteDifference);
+            result = sum.mul(0.5f);
+            return result;
+        } catch (RuntimeException | Error failure) {
+            if (result != null) result.release();
+            throw failure;
+        } finally {
+            if (squared != null) squared.release();
+            if (meanSquare != null) meanSquare.release();
+            if (rms != null) rms.release();
+            if (floorAdjusted != null) floorAdjusted.release();
+            if (difference != null) difference.release();
+            if (absoluteDifference != null) absoluteDifference.release();
+            if (sum != null) sum.release();
         }
     }
 
