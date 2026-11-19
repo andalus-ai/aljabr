@@ -3,6 +3,7 @@ package tech.kayys.aljabr.gguf.api;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
+import tech.kayys.aljabr.execution.ModelExecutionContext;
 import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
 import tech.kayys.aljabr.spi.embedding.EmbeddingResponse;
 import tech.kayys.aljabr.spi.exception.InferenceException;
@@ -104,6 +105,38 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         return execute(request.getModel(), request);
     }
 
+    /**
+     * Execute a request with its model execution context.
+     *
+     * <p>The context is passed unchanged to the selected backend. The engine
+     * does not allocate, mutate, or close any cache storage exposed by it.</p>
+     */
+    public InferenceResponse execute(
+            String modelId, InferenceRequest request, ModelExecutionContext context) {
+        Objects.requireNonNull(context, "context");
+        activeCount.incrementAndGet();
+        totalCount.incrementAndGet();
+        try {
+            return backendFor(modelId).execute(request, context);
+        } catch (Exception error) {
+            failedCount.incrementAndGet();
+            if (error instanceof InferenceException inferenceException) {
+                throw inferenceException;
+            }
+            throw new InferenceException("GGUF inference failed: " + error.getMessage(), error);
+        } finally {
+            activeCount.decrementAndGet();
+        }
+    }
+
+    /** Execute asynchronously while preserving the supplied execution context. */
+    public Uni<InferenceResponse> executeAsync(
+            String modelId, InferenceRequest request, ModelExecutionContext context) {
+        Objects.requireNonNull(context, "context");
+        return Uni.createFrom().item(() -> execute(modelId, request, context))
+                .runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
+    }
+
     @Override
     public Multi<StreamingInferenceChunk> stream(InferenceRequest request) {
         return streamExecute(request.getModel(), request);
@@ -116,6 +149,25 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             totalCount.incrementAndGet();
             try {
                 return backendFor(modelId).stream(request)
+                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+            } catch (Exception error) {
+                failedCount.incrementAndGet();
+                activeCount.decrementAndGet();
+                return Multi.createFrom().failure(error);
+            }
+        });
+    }
+
+    /** Stream inference while preserving the supplied model execution context. */
+    public Multi<StreamingInferenceChunk> streamExecute(
+            String modelId, InferenceRequest request, ModelExecutionContext context) {
+        Objects.requireNonNull(context, "context");
+        return Multi.createFrom().deferred(() -> {
+            activeCount.incrementAndGet();
+            totalCount.incrementAndGet();
+            try {
+                return backendFor(modelId).stream(request, context)
                         .onFailure().invoke(failure -> failedCount.incrementAndGet())
                         .onTermination().invoke(() -> activeCount.decrementAndGet());
             } catch (Exception error) {
