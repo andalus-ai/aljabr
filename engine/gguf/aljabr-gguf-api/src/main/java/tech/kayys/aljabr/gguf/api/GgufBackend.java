@@ -45,7 +45,7 @@ public interface GgufBackend extends AutoCloseable {
      */
     default InferenceResponse execute(
             InferenceRequest request, ModelExecutionContext context) {
-        java.util.Objects.requireNonNull(context, "context");
+        requireNoExternalKVCache(context);
         return execute(request);
     }
 
@@ -69,7 +69,7 @@ public interface GgufBackend extends AutoCloseable {
      */
     default Multi<StreamingInferenceChunk> stream(
             InferenceRequest request, ModelExecutionContext context) {
-        java.util.Objects.requireNonNull(context, "context");
+        requireNoExternalKVCache(context);
         return stream(request);
     }
 
