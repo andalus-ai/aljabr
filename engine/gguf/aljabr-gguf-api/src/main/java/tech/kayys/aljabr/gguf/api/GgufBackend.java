@@ -2,6 +2,7 @@ package tech.kayys.aljabr.gguf.api;
 
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import tech.kayys.aljabr.execution.ModelExecutionContext;
 import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
 import tech.kayys.aljabr.spi.embedding.EmbeddingResponse;
 import tech.kayys.aljabr.spi.inference.InferenceRequest;
@@ -36,6 +37,19 @@ public interface GgufBackend extends AutoCloseable {
     InferenceResponse execute(InferenceRequest request);
 
     /**
+     * Execute inference with request-scoped model execution state.
+     *
+     * <p>The default preserves compatibility with existing backends. Backends
+     * using Aljabr-managed KV storage may override this method and read the
+     * non-owning storage binding from the context.</p>
+     */
+    default InferenceResponse execute(
+            InferenceRequest request, ModelExecutionContext context) {
+        java.util.Objects.requireNonNull(context, "context");
+        return execute(request);
+    }
+
+    /**
      * Stream inference output. The default adapts a synchronous response into
      * one final chunk; backends with token streaming should override this.
      */
@@ -45,6 +59,18 @@ public interface GgufBackend extends AutoCloseable {
             String content = response == null || response.getContent() == null ? "" : response.getContent();
             return StreamingInferenceChunk.finalChunk(request.getRequestId(), 0, content);
         });
+    }
+
+    /**
+     * Stream inference with request-scoped model execution state.
+     *
+     * <p>The default preserves compatibility with existing backends. A backend
+     * that consumes the context during streaming should override this method.</p>
+     */
+    default Multi<StreamingInferenceChunk> stream(
+            InferenceRequest request, ModelExecutionContext context) {
+        java.util.Objects.requireNonNull(context, "context");
+        return stream(request);
     }
 
     /**
