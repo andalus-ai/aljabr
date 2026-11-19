@@ -216,19 +216,16 @@ public final class EmbeddingGemma2VisionAttention {
     }
 
     private static float[][] flatten(float[][][] tensor) {
-        int width = tensor[0].length * tensor[0][0].length;
+        int headDimension = tensor[0][0].length;
+        int width = tensor[0].length * headDimension;
         float[][] result = new float[tensor.length][width];
         for (int token = 0; token < tensor.length; token++) {
             for (int head = 0; head < tensor[token].length; head++) {
                 System.arraycopy(tensor[token][head], 0, result[token],
-                        head * headDimension(tensor), tensor[token][head].length);
+                        head * headDimension, headDimension);
             }
         }
         return result;
-    }
-
-    private static int headDimension(float[][][] tensor) {
-        return tensor[0][0].length;
     }
 
     /** Bias-free checkpoint matrices in output-major [output][input] layout. */
