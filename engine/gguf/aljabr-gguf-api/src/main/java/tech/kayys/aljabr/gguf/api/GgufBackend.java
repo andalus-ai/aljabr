@@ -50,6 +50,19 @@ public interface GgufBackend extends AutoCloseable {
     }
 
     /**
+     * Rejects caller-managed KV cache storage when using default delegation.
+     * Backends supporting external storage must override the context-aware methods.
+     */
+    default void requireNoExternalKVCache(ModelExecutionContext context) {
+        java.util.Objects.requireNonNull(context, "context");
+        if (context.kvCacheStorage().isPresent()) {
+            throw new UnsupportedOperationException(
+                    "GGUF backend '" + name() + "' does not support external KV cache storage; "
+                            + "backends consuming context with KV cache storage must override execute/stream with ModelExecutionContext");
+        }
+    }
+
+    /**
      * Stream inference output. The default adapts a synchronous response into
      * one final chunk; backends with token streaming should override this.
      */
