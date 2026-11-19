@@ -26,6 +26,22 @@ class EmbeddingGemma2VisionAttentionTest {
     }
 
     @Test
+    void allowsEveryPatchToAttendToEveryOtherPatch() {
+        float[][] identity = identity(4);
+        float[] scale = {1f, 1f, 1f, 1f};
+        var attention = new EmbeddingGemma2VisionAttention(
+                4, 1, 1, 4, 1e-6f, 100.0,
+                new EmbeddingGemma2VisionAttention.Weights(
+                        identity, identity, identity, identity, scale, scale));
+        float[][] output = attention.compute(
+                new float[][]{{1f, 0f, 0f, 0f}, {0f, 0f, 1f, 0f}},
+                new int[][]{{0, 0}, {0, 0}}, null);
+
+        assertTrue(output[0][2] > 0.2f, "first patch must attend to the second patch");
+        assertTrue(output[1][0] > 0.2f, "second patch must attend to the first patch");
+    }
+
+    @Test
     void rejectsAnAllMaskedKeySequence() {
         float[][] identity = identity(4);
         float[] scale = {1f, 1f, 1f, 1f};
