@@ -460,6 +460,18 @@ public final class HatComputeProvider implements ComputeProvider {
                 } catch (NumberFormatException invalidDimension) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
+                String dimensionSize = constraints.get("dim_size");
+                if (dimensionSize != null) {
+                    try {
+                        long size = Long.parseLong(dimensionSize);
+                        if (size < 0) throw new NumberFormatException("negative dimension size");
+                        if (size == 0 && "tensor.mean".equals(operationId)) {
+                            return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                        }
+                    } catch (NumberFormatException invalidDimensionSize) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                    }
+                }
             }
 
             String keepDim = constraints.get("keep_dim");
@@ -473,8 +485,8 @@ public final class HatComputeProvider implements ComputeProvider {
                 try {
                     long numel = Long.parseLong(numelValue);
                     if (numel < 0) throw new NumberFormatException("negative numel");
-                    if (numel == 0 && ("tensor.mean".equals(operationId)
-                            || "tensor.max".equals(operationId))) {
+                    if (numel == 0 && dimension == null
+                            && ("tensor.mean".equals(operationId) || "tensor.max".equals(operationId))) {
                         return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
                     }
                 } catch (NumberFormatException invalidNumel) {
