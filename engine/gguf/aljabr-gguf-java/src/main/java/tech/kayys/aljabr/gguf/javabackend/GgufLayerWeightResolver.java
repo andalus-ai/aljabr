@@ -70,11 +70,15 @@ final class GgufLayerWeightResolver {
             weights.wV[layer] = tensors.findTensor(prefix + "attn_v.weight").orElse(null);
             weights.wO[layer] = tensors.requireTensor(prefix + "attn_output.weight");
 
-            weights.ffnNorm[layer] = tensors.dequantizeVector(
-                    tensors.requireTensor(prefix + "ffn_norm.weight"), embeddingDimension);
-            weights.postFfnNorm[layer] = tensors.findTensor(prefix + "post_ffw_norm.weight")
-                    .map(tensor -> tensors.dequantizeVector(tensor, embeddingDimension))
-                    .orElse(null);
+            GGUFTensorInfo ffnNorm = tensors.requireTensor(prefix + "ffn_norm.weight");
+            GGUFTensorInfo postFfnNorm = tensors.findTensor(prefix + "post_ffw_norm.weight").orElse(null);
+            GgufFfnNormLayout.validateRequiredTensor(
+                    ffnNorm, prefix + "ffn_norm.weight", layer, embeddingDimension);
+            GgufFfnNormLayout.validateOptionalTensor(
+                    postFfnNorm, prefix + "post_ffw_norm.weight", layer, embeddingDimension);
+            weights.ffnNorm[layer] = tensors.dequantizeVector(ffnNorm, embeddingDimension);
+            weights.postFfnNorm[layer] = postFfnNorm == null
+                    ? null : tensors.dequantizeVector(postFfnNorm, embeddingDimension);
             weights.ffnGate[layer] = tensors.findTensor(prefix + "ffn_gate.weight").orElse(null);
             weights.ffnUp[layer] = tensors.requireTensor(prefix + "ffn_up.weight");
             weights.ffnDown[layer] = tensors.requireTensor(prefix + "ffn_down.weight");
