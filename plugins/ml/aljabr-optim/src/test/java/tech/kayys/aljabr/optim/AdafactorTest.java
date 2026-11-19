@@ -24,8 +24,12 @@ class AdafactorTest {
 
     @Test
     void validatesAdaptiveScalingOptions() {
-        assertThrows(IllegalArgumentException.class, () -> new Adafactor(0.1f, 1.0e-6f, 0.0f, 1.0e-3f));
+        assertThrows(IllegalArgumentException.class, () -> new Adafactor(0.1f, 1.0e-6f, -0.1f, 1.0e-3f));
         assertThrows(IllegalArgumentException.class, () -> new Adafactor(0.1f, 1.0e-6f, 1.0f, Float.NaN));
+        try (Adafactor optimizer = new Adafactor(0.1f, 1.0e-6f, 0.0f, 1.0e-3f)) {
+            assertThat(optimizer.updateRmsClippingEnabled()).isFalse();
+            assertThat(optimizer.parameterScaleAdaptationEnabled()).isTrue();
+        }
     }
 
     @Test
