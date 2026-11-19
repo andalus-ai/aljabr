@@ -246,3 +246,18 @@ Never equate source presence, Gradle inclusion, provider declaration, or a passi
 - Tafkir owns training workflow orchestration, datasets/pipelines, experiment lifecycle and fine-tuning. Do not put trainers or training loops in the autograd module.
 - Do not bulk-move the legacy autograd project. Audit trainers, data loaders, metrics, augmentation, model hub/export and IR graph differentiation independently; move each only to an established owning module with real consumers and tests.
 - See [ADR-0004: Tensor Autograd and Optimization Module Boundaries](docs/architecture/ADR-0004-AUTOGRAD-AND-OPTIMIZATION-BOUNDARIES.md) for the migration sequence and acceptance criteria.
+
+
+## Triad ecosystem alignment: Aljabr, Tafkir, and AQLI
+
+The product-level direction for the Java AI/ML ecosystem is described in the [Triad Ecosystem Vision](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/TRIAD_ECOSYSTEM_VISION.md). Aljabr is one independently usable product in that triad; do not interpret the ecosystem goal as permission to absorb the responsibilities of Tafkir or AQLI.
+
+- **Aljabr owns the reusable framework and compute foundation:** tensor and numerical semantics, operators/kernels, model abstractions and reusable model execution, formats, tokenizers, autograd/optimizers and ML primitives where implemented, backend/provider SPIs, and optional native/accelerated providers.
+- **Tafkir owns training workflows:** training loops, fine-tuning/adaptation orchestration, datasets/batching pipelines, evaluation workflows, and training lifecycle built on Aljabr. Aljabr may provide reusable algorithms and primitives but must not own Tafkir's workflow policy.
+- **AQLI owns inference and production serving:** model serving, request scheduling, inference runtime lifecycle, deployment, streaming, service APIs, and production operations. Aljabr provides reusable computation/model-execution primitives, not the serving control plane.
+- Aljabr must remain independently consumable without AQLI or Tafkir. Never introduce a dependency on either project into foundational Aljabr modules.
+- The triad should support embedded Java libraries, Java SDKs, CLI tools, JBang/scripts, JShell/Jupyter workflows, and production AQLI runtime deployments. Aljabr APIs should be usable directly from Java applications and scripts without launching an AQLI process.
+- Keep adapters and entry points thin: CLI, notebooks, REST, and gRPC must not become independent owners of computation or model semantics.
+- Aim for practical capability coverage of workflows commonly served by PyTorch, Hugging Face Transformers, and scikit-learn, but do not claim blanket or drop-in parity. Track each capability as implemented, partial, experimental, planned, or unsupported, with tests, examples, provider/format constraints, and known limitations.
+- Framework-generic numerical/statistical/ML algorithms belong in Aljabr only when they are reusable framework capabilities. Training workflow orchestration belongs in Tafkir; inference-serving and production policy belong in AQLI.
+- Prefer portable, documented public contracts and artifacts so work developed with Aljabr/Tafkir can be consumed by AQLI without duplicate compute stacks or format-specific ownership confusion.
