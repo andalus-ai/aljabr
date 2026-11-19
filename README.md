@@ -197,3 +197,14 @@ Avoid model-name-specific branches when a general runtime capability can represe
 ## License
 
 MIT. See [LICENSE.md](LICENSE.md).
+
+
+## The Java AI/ML ecosystem
+
+Aljabr is the independently usable framework and computational foundation of the **AQLI + Aljabr + Tafkir** ecosystem. The strategic goal is practical Java capability coverage across workflows commonly assembled from PyTorch, Hugging Face Transformers, scikit-learn, training toolkits, and inference servers—not a claim of complete or drop-in API parity.
+
+- **Aljabr:** reusable tensors, numerical/ML computation, model foundations, formats, tokenizers, and execution providers.
+- **Tafkir:** training, fine-tuning, adaptation, and evaluation workflows built on Aljabr.
+- **AQLI:** inference runtime, model lifecycle, deployment, scheduling, SDK/CLI/APIs, and production serving built on Aljabr.
+
+Aljabr must remain usable directly as an embedded Java library and from Java applications, SDKs, JBang/scripts, JShell/Jupyter workflows, and other JVM tooling. It does not require an AQLI process, and it must not depend on Tafkir. See the [Triad Ecosystem Vision](https://github.com/andalus-ai/aqli/blob/main/docs/architecture/TRIAD_ECOSYSTEM_VISION.md) for shared ownership, interoperability, developer-experience, and capability-maturity principles.
