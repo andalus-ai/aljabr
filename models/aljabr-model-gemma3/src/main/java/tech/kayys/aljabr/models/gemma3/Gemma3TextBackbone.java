@@ -90,15 +90,17 @@ public final class Gemma3TextBackbone {
      * are vocabulary logits for the newly appended token.
      */
     public final class DecodeSession implements AutoCloseable {
-        private final float[][] keyCache;
-        private final float[][] valueCache;
+        private float[][] keyCache;
+        private float[][] valueCache;
         private final int cacheWidth = Math.multiplyExact(kvHeads, headDim);
         private final int maximumPositions = config.maxPositionEmbeddings();
+        private int cacheCapacity;
         private int position;
         private boolean closed;
 
         private DecodeSession() {
-            int cacheElements = Math.multiplyExact(maximumPositions, cacheWidth);
+            cacheCapacity = Math.min(maximumPositions, 16);
+            int cacheElements = Math.multiplyExact(cacheCapacity, cacheWidth);
             keyCache = new float[weights.layers().size()][cacheElements];
             valueCache = new float[weights.layers().size()][cacheElements];
         }
@@ -177,6 +179,18 @@ public final class Gemma3TextBackbone {
             if (closed) throw new IllegalStateException("decode session is closed");
         }
 
+        private void ensureCacheCapacity(int requiredPositions) {
+            if (requiredPositions <= cacheCapacity) return;
+            int doubled = cacheCapacity == 0 ? 1 : Math.multiplyExact(cacheCapacity, 2);
+            int nextCapacity = Math.min(maximumPositions, Math.max(requiredPositions, doubled));
+            int nextElements = Math.multiplyExact(nextCapacity, cacheWidth);
+            for (int layer = 0; layer < keyCache.length; layer++) {
+                keyCache[layer] = java.util.Arrays.copyOf(keyCache[layer], nextElements);
+                valueCache[layer] = java.util.Arrays.copyOf(valueCache[layer], nextElements);
+            }
+            cacheCapacity = nextCapacity;
+        }
+
         private float[][] forwardIncrementalLayer(
                 float[][] input,
                 Gemma3TextCheckpointMapper.LayerWeights layer,
@@ -197,6 +211,7 @@ public final class Gemma3TextBackbone {
                     config.ropeThetaForLayer(layerIndex),
                     config.partialRotaryFactorForLayer(layerIndex));
 
+            ensureCacheCapacity(absolutePosition + 1);
             int cacheOffset = Math.multiplyExact(absolutePosition, cacheWidth);
             float[] layerKeys = keyCache[layerIndex];
             float[] layerValues = valueCache[layerIndex];
