@@ -47,7 +47,7 @@ class EmbeddingGemma2VisionSafetensorPipelineTest {
                 checkpoint;
         try (session) {
             checkpoint = new EmbeddingGemma2VisionSafetensorLoader(new SafetensorShardLoader())
-                    .mapTensors(session, SafetensorDType.F32);
+                    .mapTensors(session);
             assertEquals(shapes.size() - 1, checkpoint.size());
             assertFalse(checkpoint.containsKey("language_model.embed_tokens.weight"));
         }
