@@ -38,8 +38,6 @@ public final class EmbeddingGemma2VisionProcessorOutput {
         if (patchWidth == 0) throw new IllegalArgumentException("patch pixel width must be positive");
         this.pixelValues = new float[pixelValues.length][patchCount][patchWidth];
         this.imagePositionIds = new int[imagePositionIds.length][patchCount][2];
-        this.numSoftTokensPerImage = numSoftTokensPerImage.clone();
-
         for (int image = 0; image < pixelValues.length; image++) {
             if (pixelValues[image] == null || pixelValues[image].length != patchCount
                     || imagePositionIds[image] == null || imagePositionIds[image].length != patchCount) {
