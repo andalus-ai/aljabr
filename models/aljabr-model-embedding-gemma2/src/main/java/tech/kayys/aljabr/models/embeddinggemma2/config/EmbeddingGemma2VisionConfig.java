@@ -97,20 +97,27 @@ public record EmbeddingGemma2VisionConfig(
         int patchSize = positiveInt(vision, "patch_size", DEFAULT_PATCH_SIZE);
         int poolingKernel = positiveInt(vision, "pooling_kernel_size", DEFAULT_POOLING_KERNEL_SIZE);
 
-        if (processorConfig != null && !processorConfig.isNull() && !processorConfig.isMissingNode()) {
-            int processorPatch = positiveInt(processorConfig, "patch_size", patchSize);
-            int processorPool = positiveInt(processorConfig, "pooling_kernel_size", poolingKernel);
+        // EmbeddingGemma2Processor stores image settings under image_processor,
+        // while standalone Gemma4 processor configs may expose them at the root.
+        JsonNode imageProcessor = processorConfig;
+        if (processorConfig != null && processorConfig.isObject()
+                && processorConfig.path("image_processor").isObject()) {
+            imageProcessor = processorConfig.path("image_processor");
+        }
+        if (imageProcessor != null && !imageProcessor.isNull() && !imageProcessor.isMissingNode()) {
+            int processorPatch = positiveInt(imageProcessor, "patch_size", patchSize);
+            int processorPool = positiveInt(imageProcessor, "pooling_kernel_size", poolingKernel);
             if (processorPatch != patchSize) {
-                throw new IllegalArgumentException("preprocessor patch_size does not match vision_config.patch_size");
+                throw new IllegalArgumentException("preprocessor image_processor.patch_size does not match vision_config.patch_size");
             }
             if (processorPool != poolingKernel) {
                 throw new IllegalArgumentException(
-                        "preprocessor pooling_kernel_size does not match vision_config.pooling_kernel_size");
+                        "preprocessor image_processor.pooling_kernel_size does not match vision_config.pooling_kernel_size");
             }
         }
-        int maxSoftTokens = processorConfig == null || processorConfig.isNull()
+        int maxSoftTokens = imageProcessor == null || imageProcessor.isNull()
                 ? DEFAULT_MAX_SOFT_TOKENS
-                : positiveInt(processorConfig, "max_soft_tokens", DEFAULT_MAX_SOFT_TOKENS);
+                : positiveInt(imageProcessor, "max_soft_tokens", DEFAULT_MAX_SOFT_TOKENS);
 
         double ropeTheta = DEFAULT_ROPE_THETA;
         JsonNode rope = vision.path("rope_parameters");
