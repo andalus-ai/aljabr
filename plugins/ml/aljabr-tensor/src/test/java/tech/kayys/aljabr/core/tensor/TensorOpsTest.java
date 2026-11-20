@@ -272,4 +272,25 @@ class TensorOpsTest {
         }
     }
 
+
+    @Test
+    void defaultTensorCatUsesSharedValidationAndReportsContractFailure() {
+        Tensor a = tensor(new float[] {1, 2}, 1, 2);
+        Tensor b = tensor(new float[] {3, 4, 5}, 1, 3);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        try {
+            assertThatThrownBy(() -> DefaultTensor.cat(List.of(a, b), 0, diagnostics::add))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("shape mismatch");
+            assertThat(diagnostics).hasSize(1);
+            assertThat(diagnostics.getFirst().code()).isEqualTo("tensor.operation.shape-mismatch");
+            assertThat(diagnostics.getFirst().context())
+                    .containsEntry("operation", "cat")
+                    .containsEntry("operandIndex", "1")
+                    .containsEntry("axis", "1");
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
 }

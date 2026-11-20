@@ -17,6 +17,7 @@ import tech.kayys.aljabr.core.tensor.lazy.OperationBackwardFunctions;
 import tech.kayys.aljabr.diagnostics.Diagnostic;
 import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 
 /**
  * Default eager tensor backed by backend-neutral {@link TensorStorage}.
@@ -412,53 +413,25 @@ public final class DefaultTensor implements Tensor {
      * source participates in autograd.
      */
     public static Tensor cat(java.util.List<Tensor> tensors, int axis) {
-        Objects.requireNonNull(tensors, "tensors must not be null");
-        if (tensors.isEmpty()) {
-            throw new IllegalArgumentException("At least one tensor is required for concatenation");
-        }
-        Tensor first = Objects.requireNonNull(tensors.get(0), "tensor must not be null");
-        if (!(first instanceof DefaultTensor firstEager)) {
-            throw new UnsupportedOperationException("Concatenation currently requires eager DefaultTensor inputs");
-        }
-        firstEager.ensureOpen();
-        int rank = first.shape().rank();
-        int normalizedAxis = axis < 0 ? rank + axis : axis;
-        if (normalizedAxis < 0 || normalizedAxis >= rank) {
-            throw new IllegalArgumentException(
-                    "Concatenation axis " + axis + " is out of range for tensor rank " + rank);
-        }
+        return cat(tensors, axis, DiagnosticSink.noop());
+    }
 
-        boolean requiresGrad = false;
-        for (Tensor tensor : tensors) {
-            Objects.requireNonNull(tensor, "tensor must not be null");
+    /** Concatenates eager tensors and reports input contract failures to the supplied sink. */
+    public static Tensor cat(java.util.List<Tensor> tensors, int axis, DiagnosticSink diagnosticSink) {
+        Objects.requireNonNull(tensors, "tensors must not be null");
+        for (int i = 0; i < tensors.size(); i++) {
+            Tensor tensor = Objects.requireNonNull(tensors.get(i), "tensor at index " + i + " must not be null");
             if (!(tensor instanceof DefaultTensor eager)) {
                 throw new UnsupportedOperationException(
                         "Concatenation currently requires eager DefaultTensor inputs");
             }
             eager.ensureOpen();
-            if (tensor.backend() != first.backend()) {
-                throw new IllegalArgumentException("All concatenated tensors must use the same backend instance");
-            }
-            if (tensor.dtype() != first.dtype() || tensor.device() != first.device()) {
-                throw new IllegalArgumentException("All concatenated tensors must have the same dtype and device");
-            }
-            if (tensor.shape().rank() != rank) {
-                throw new IllegalArgumentException("All concatenated tensors must have the same rank");
-            }
-            for (int dimension = 0; dimension < rank; dimension++) {
-                if (dimension != normalizedAxis
-                        && tensor.shape().dim(dimension) != first.shape().dim(dimension)) {
-                    throw new IllegalArgumentException(
-                            "Concatenation dimensions must match outside axis " + normalizedAxis);
-                }
-            }
-            requiresGrad |= tensor.requiresGrad();
         }
-
-        Tensor result = first.backend().cat(tensors, normalizedAxis);
-        if (!AutogradContext.isRecordingEnabled() || !requiresGrad) {
-            return result;
-        }
+        TensorOperationValidator.CatPlan plan =
+                TensorOperationValidator.validateCat(tensors, axis, diagnosticSink);
+        boolean requiresGrad = tensors.stream().anyMatch(Tensor::requiresGrad);
+        Tensor result = plan.first().backend().cat(tensors, plan.axis());
+        if (!AutogradContext.isRecordingEnabled() || !requiresGrad) return result;
         if (!(result instanceof DefaultTensor eagerResult)) {
             result.release();
             throw new UnsupportedOperationException(
@@ -468,15 +441,9 @@ public final class DefaultTensor implements Tensor {
                 .map(tensor -> {
                     DefaultTensor eager = (DefaultTensor) tensor;
                     return eager.autogradNode != null ? eager.autogradNode : GraphNode.constant(tensor);
-                })
-                .toList();
-        GraphNode node = new GraphNode(
-                OpType.CAT,
-                inputNodes,
-                new Object[] { normalizedAxis },
-                eagerResult.shape(),
-                eagerResult.dtype(),
-                OperationBackwardFunctions.forOperation(OpType.CAT));
+                }).toList();
+        GraphNode node = new GraphNode(OpType.CAT, inputNodes, new Object[] { plan.axis() },
+                eagerResult.shape(), eagerResult.dtype(), OperationBackwardFunctions.forOperation(OpType.CAT));
         node.setMaterializedData(result);
         eagerResult.autogradNode = node;
         return result;

@@ -5,6 +5,8 @@ import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
 import tech.kayys.aljabr.backend.cpu.ops.NormOps;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.*;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
+import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 import tech.kayys.aljabr.core.memory.*;
 
 import java.lang.foreign.MemorySegment;
@@ -1644,40 +1646,18 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor cat(List<Tensor> tensors, int axis) {
-        if (tensors == null || tensors.isEmpty()) {
-            throw new IllegalArgumentException("cat requires at least one tensor");
+        TensorOperationValidator.CatPlan plan =
+                TensorOperationValidator.validateCat(tensors, axis, DiagnosticSink.noop());
+        if (plan.first().dtype() != DType.F32) {
+            throw new UnsupportedOperationException("CPU cat currently supports F32 tensors only");
         }
-        Tensor first = tensors.get(0);
+        long[] outputDims = plan.outputDimensions();
+        int normalizedAxis = plan.axis();
+        Tensor first = plan.first();
         int rank = first.shape().rank();
-        if (rank == 0) {
-            throw new IllegalArgumentException("cat does not support scalar tensors");
-        }
-        if (axis < 0 || axis >= rank) {
-            throw new IllegalArgumentException("cat axis out of range: " + axis);
-        }
-        long[] outputDims = first.shape().dims();
-        long axisTotal = 0;
-        for (int i = 0; i < tensors.size(); i++) {
-            Tensor tensor = tensors.get(i);
-            if (tensor.dtype() != DType.F32) {
-                throw new UnsupportedOperationException("CPU cat currently supports F32 tensors only");
-            }
-            if (tensor.shape().rank() != rank) {
-                throw new IllegalArgumentException("cat rank mismatch at tensor " + i);
-            }
-            for (int d = 0; d < rank; d++) {
-                if (d != axis && tensor.shape().dim(d) != first.shape().dim(d)) {
-                    throw new IllegalArgumentException("cat shape mismatch at tensor " + i + " dimension " + d);
-                }
-            }
-            axisTotal = Math.addExact(axisTotal, tensor.shape().dim(axis));
-        }
-        outputDims[axis] = axisTotal;
-        long outer = 1;
-        long inner = 1;
-        for (int d = 0; d < axis; d++) outer = Math.multiplyExact(outer, first.shape().dim(d));
-        for (int d = axis + 1; d < rank; d++) inner = Math.multiplyExact(inner, first.shape().dim(d));
-
+        long outer = 1, inner = 1;
+        for (int d = 0; d < normalizedAxis; d++) outer = Math.multiplyExact(outer, first.shape().dim(d));
+        for (int d = normalizedAxis + 1; d < rank; d++) inner = Math.multiplyExact(inner, first.shape().dim(d));
         float[][] sources = new float[tensors.size()][];
         for (int i = 0; i < tensors.size(); i++) sources[i] = tensors.get(i).toFloatArray();
         long outputElements = new Shape(outputDims).numel();
@@ -1688,7 +1668,7 @@ public final class CpuBackend implements ComputeBackend {
         int destination = 0;
         for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
             for (int i = 0; i < tensors.size(); i++) {
-                long blockElements = Math.multiplyExact(tensors.get(i).shape().dim(axis), inner);
+                long blockElements = Math.multiplyExact(tensors.get(i).shape().dim(normalizedAxis), inner);
                 int blockLength = Math.toIntExact(blockElements);
                 int sourceOffset = Math.toIntExact(Math.multiplyExact(outerIndex, blockElements));
                 System.arraycopy(sources[i], sourceOffset, output, destination, blockLength);
@@ -1697,5 +1677,6 @@ public final class CpuBackend implements ComputeBackend {
         }
         return TensorFactory.of(output, this, outputDims);
     }
+
 
 }

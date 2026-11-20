@@ -8,6 +8,7 @@ import java.util.Map;
 import tech.kayys.aljabr.diagnostics.Diagnostic;
 import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 
 /**
  * Tensor operations that are not tied to a single tensor instance.
@@ -226,86 +227,12 @@ public final class TensorOps {
 
     /** Reports operand contract failures to the supplied sink. */
     public static Tensor cat(List<Tensor> tensors, int dim, DiagnosticSink diagnosticSink) {
-        Objects.requireNonNull(diagnosticSink, "diagnosticSink must not be null");
-        Objects.requireNonNull(tensors, "tensors must not be null");
-        if (tensors.isEmpty()) {
-            throw new IllegalArgumentException("cat requires at least one tensor");
-        }
-
-        Tensor first = Objects.requireNonNull(tensors.get(0), "tensor at index 0 must not be null");
-        int rank = first.shape().rank();
-        if (rank == 0) {
-            throw new IllegalArgumentException("cat does not support scalar tensors");
-        }
-        int axis = dim < 0 ? rank + dim : dim;
-        if (axis < 0 || axis >= rank) {
-            throw new IllegalArgumentException("dimension " + dim + " out of range for rank " + rank);
-        }
-        if (first.dtype() != DType.F32) {
+        TensorOperationValidator.CatPlan plan =
+                TensorOperationValidator.validateCat(tensors, dim, diagnosticSink);
+        if (plan.first().dtype() != DType.F32) {
             throw new UnsupportedOperationException("cat currently supports F32 tensors only");
         }
-
-        long[] outputDims = first.shape().dims();
-        long axisTotal = 0;
-        for (int i = 0; i < tensors.size(); i++) {
-            Tensor tensor = Objects.requireNonNull(tensors.get(i), "tensor at index " + i + " must not be null");
-            if (tensor.shape().rank() != rank) {
-                throw contractFailure(diagnosticSink, "tensor.operation.rank-mismatch",
-                        "rank mismatch at tensor " + i + ": expected " + rank
-                                + " but got " + tensor.shape().rank(),
-                        Map.of("operation", "cat", "operandIndex", Integer.toString(i),
-                                "expectedRank", Integer.toString(rank),
-                                "actualRank", Integer.toString(tensor.shape().rank())));
-            }
-            if (tensor.dtype() != first.dtype() || tensor.device() != first.device()) {
-                throw contractFailure(diagnosticSink, "tensor.operation.dtype-device-mismatch",
-                        "dtype/device mismatch at tensor " + i,
-                        Map.of("operation", "cat", "operandIndex", Integer.toString(i),
-                                "expectedDType", first.dtype().name(), "actualDType", tensor.dtype().name(),
-                                "expectedDevice", first.device().name(), "actualDevice", tensor.device().name()));
-            }
-            if (tensor.backend() != first.backend()) {
-                throw contractFailure(diagnosticSink, "tensor.operation.backend-mismatch",
-                        "compute backend mismatch at tensor " + i,
-                        Map.of("operation", "cat", "operandIndex", Integer.toString(i),
-                                "backendType", tensor.backend().getClass().getName()));
-            }
-            for (int d = 0; d < rank; d++) {
-                if (d != axis && tensor.shape().dim(d) != first.shape().dim(d)) {
-                    throw contractFailure(diagnosticSink, "tensor.operation.shape-mismatch",
-                            "shape mismatch at tensor " + i + " dimension " + d
-                                    + ": expected " + first.shape().dim(d) + " but got " + tensor.shape().dim(d),
-                            Map.of("operation", "cat", "operandIndex", Integer.toString(i),
-                                    "axis", Integer.toString(d),
-                                    "expectedDimension", Long.toString(first.shape().dim(d)),
-                                    "actualDimension", Long.toString(tensor.shape().dim(d))));
-                }
-            }
-            try {
-                axisTotal = Math.addExact(axisTotal, tensor.shape().dim(axis));
-            } catch (ArithmeticException e) {
-                throw new IllegalArgumentException("concatenated dimension overflows long", e);
-            }
-        }
-        outputDims[axis] = axisTotal;
-        long outputElements = new Shape(outputDims).numel();
-        if (outputElements > Integer.MAX_VALUE) {
-            throw new IllegalArgumentException("cat result is too large for a Java float[]: " + outputElements);
-        }
-
-        long outer = 1;
-        long inner = 1;
-        try {
-            for (int d = 0; d < axis; d++) {
-                outer = Math.multiplyExact(outer, first.shape().dim(d));
-            }
-            for (int d = axis + 1; d < rank; d++) {
-                inner = Math.multiplyExact(inner, first.shape().dim(d));
-            }
-        } catch (ArithmeticException e) {
-            throw new IllegalArgumentException("cat block size overflows long", e);
-        }
-
-        return first.backend().cat(tensors, axis);
+        return plan.first().backend().cat(tensors, plan.axis());
     }
+
 }
