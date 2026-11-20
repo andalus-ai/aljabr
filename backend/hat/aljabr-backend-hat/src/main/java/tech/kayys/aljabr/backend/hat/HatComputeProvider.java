@@ -173,6 +173,9 @@ public final class HatComputeProvider implements ComputeProvider {
             if ("tensor.attention.masked".equals(operationId)) {
                 return attentionSupport(operationId, constraints, true);
             }
+            if ("tensor.attention.gqa".equals(operationId)) {
+                return gqaSupport(operationId, constraints);
+            }
 
             if ("tensor.matmul".equals(operationId)) {
                 String dtype = constraints.get("dtype");
@@ -399,6 +402,64 @@ public final class HatComputeProvider implements ComputeProvider {
                 }
             } else if (maskDtype != null || maskRankValue != null || causal) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * CpuBackend GQA fallback requires rank-4 F32 Q/K/V, with query heads
+         * divisible by key/value heads. Optional additive masks are F32 rank-2;
+         * exact batch/sequence/head dimensions are checked by CpuBackend.
+         */
+        private OperationSupportDescriptor gqaSupport(
+                String operationId, Map<String, String> constraints) {
+            String queryDtype = constraints.get("dtype");
+            String keyDtype = constraints.get("key_dtype");
+            String valueDtype = constraints.get("value_dtype");
+            String queryRankValue = constraints.get("rank");
+            String keyRankValue = constraints.get("key_rank");
+            String valueRankValue = constraints.get("value_rank");
+            String queryHeadsValue = constraints.get("query_heads");
+            String keyValueHeadsValue = constraints.get("key_value_heads");
+            String causalValue = constraints.get("causal");
+            String maskDtype = constraints.get("mask_dtype");
+            String maskRankValue = constraints.get("mask_rank");
+
+            if (queryDtype == null || keyDtype == null || valueDtype == null
+                    || queryRankValue == null || keyRankValue == null || valueRankValue == null
+                    || queryHeadsValue == null || keyValueHeadsValue == null || causalValue == null
+                    || ((maskDtype == null) != (maskRankValue == null))) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(queryDtype) || !isF32(keyDtype) || !isF32(valueDtype)
+                    || (maskDtype != null && !isF32(maskDtype))) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+
+            Integer queryRank = parseInteger(queryRankValue);
+            Integer keyRank = parseInteger(keyRankValue);
+            Integer valueRank = parseInteger(valueRankValue);
+            Integer queryHeads = parseInteger(queryHeadsValue);
+            Integer keyValueHeads = parseInteger(keyValueHeadsValue);
+            if (queryRank == null || keyRank == null || valueRank == null
+                    || queryHeads == null || keyValueHeads == null
+                    || !("true".equalsIgnoreCase(causalValue) || "false".equalsIgnoreCase(causalValue))) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (queryRank != 4 || keyRank != 4 || valueRank != 4
+                    || queryHeads <= 0 || keyValueHeads <= 0
+                    || queryHeads % keyValueHeads != 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (maskDtype != null) {
+                Integer maskRank = parseInteger(maskRankValue);
+                if (maskRank == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (maskRank != 2) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
             }
             return new OperationSupportDescriptor(
                     operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
