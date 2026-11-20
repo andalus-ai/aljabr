@@ -619,6 +619,22 @@ class HatComputeProviderTest {
     }
 
     @Test
+    void signFallbackExecutesOnCpuAndReturnsSignedValues() {
+        CpuBackend cpu = new CpuBackend();
+        HatComputeBackend hat = new HatComputeBackend(cpu);
+        try (var input = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {-4f, 0f, 3f}, hat, 3);
+                var output = hat.sign(input)) {
+            assertEquals(cpu, output.backend());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new float[] {-1f, 0f, 1f}, output.toFloatArray(), 1.0e-6f);
+        } finally {
+            hat.close();
+            cpu.close();
+        }
+    }
+
+    @Test
     void providerCloseClosesOutstandingSessions() throws Exception {
         HatComputeProvider provider = new HatComputeProvider();
         provider.initialize(new ProviderContext("test", Map.of()));
@@ -773,7 +789,7 @@ class HatComputeProviderTest {
         provider.initialize(new ProviderContext("test", Map.of()));
         try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
             for (String operation : Set.of(
-                    "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
+                    "tensor.sign", "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
                     "tensor.sigmoid", "tensor.tanh", "tensor.sqrt", "tensor.exp", "tensor.log")) {
                 assertEquals(OperationSupport.UNKNOWN,
                         session.operationSupport(operation, Map.of()).support(), operation);
