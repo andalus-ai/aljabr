@@ -186,12 +186,14 @@ public final class Adamax implements Optimizer, AutoCloseable {
         Tensor sum = null;
         Tensor difference = null;
         Tensor absoluteDifference = null;
+        Tensor combined = null;
         Tensor result = null;
         try {
             sum = a.add(b);
             difference = a.sub(b);
             absoluteDifference = difference.abs();
-            result = sum.add(absoluteDifference).mul(0.5f);
+            combined = sum.add(absoluteDifference);
+            result = combined.mul(0.5f);
             return result;
         } catch (RuntimeException | Error failure) {
             if (result != null) result.release();
@@ -200,6 +202,7 @@ public final class Adamax implements Optimizer, AutoCloseable {
             if (sum != null) sum.release();
             if (difference != null) difference.release();
             if (absoluteDifference != null) absoluteDifference.release();
+            if (combined != null) combined.release();
         }
     }
 
