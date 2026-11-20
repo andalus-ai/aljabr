@@ -369,4 +369,29 @@ class HatComputeProviderTest {
             provider.close();
         }
     }
+
+    @Test
+    void unaryElementwiseOperationsRequireF32ForCpuFallback() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            for (String operation : Set.of(
+                    "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
+                    "tensor.sigmoid", "tensor.tanh", "tensor.sqrt", "tensor.exp", "tensor.log")) {
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of()).support(), operation);
+                assertEquals(OperationSupport.DELEGATED,
+                        session.operationSupport(operation, Map.of("dtype", "F32")).support(), operation);
+                assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                        session.operationSupport(operation, Map.of("dtype", "F32")).effectiveBackendId(),
+                        operation);
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "F16")).support(), operation);
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "Q4_0")).support(), operation);
+            }
+        } finally {
+            provider.close();
+        }
+    }
 }
