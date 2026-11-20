@@ -186,7 +186,10 @@ public final class HatComputeProvider implements ComputeProvider {
             }
 
             if ("tensor.pow".equals(operationId)) {
-                return floatInputSupport(operationId, constraints, -1);
+                String dtype = constraints.get("dtype");
+                if (dtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                if (!isF32(dtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
             if ("tensor.slice".equals(operationId)) return sliceSupport(operationId, constraints);
             if ("tensor.transpose".equals(operationId)) return transposeSupport(operationId, constraints);
