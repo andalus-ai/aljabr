@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.core.tensor;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -17,7 +18,6 @@ import tech.kayys.aljabr.diagnostics.Diagnostic;
 import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 
-import java.util.Map;
 
 /**
  * Default eager tensor backed by backend-neutral {@link TensorStorage}.
