@@ -54,6 +54,7 @@ public class LazyTensor implements Tensor {
     }
 
     public GraphNode getNode() {
+        ensureOpen();
         return node;
     }
 
@@ -63,6 +64,10 @@ public class LazyTensor implements Tensor {
         GraphNode evaluated = executionNode;
         if (evaluated != null && evaluated.isEvaluated()) {
             return evaluated.getMaterializedData();
+        }
+        if (node.isEvaluated()) {
+            executionNode = node;
+            return node.getMaterializedData();
         }
 
         // Differentiable graphs retain their original VJP structure. For
