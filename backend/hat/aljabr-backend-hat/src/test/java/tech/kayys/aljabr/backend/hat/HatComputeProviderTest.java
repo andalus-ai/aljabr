@@ -355,6 +355,42 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.attention.masked", Map.of(
                             "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
                             "rank", "4", "key_rank", "4", "value_rank", "4")).support());
+            Map<String, String> validGqa = Map.of(
+                    "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                    "rank", "4", "key_rank", "4", "value_rank", "4",
+                    "query_heads", "8", "key_value_heads", "2", "causal", "true");
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.attention.gqa", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.attention.gqa", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4",
+                            "query_heads", "8", "causal", "true")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.attention.gqa", validGqa).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.attention.gqa", validGqa).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention.gqa", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4",
+                            "query_heads", "7", "key_value_heads", "2", "causal", "false")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention.gqa", Map.of(
+                            "dtype", "F32", "key_dtype", "F16", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4",
+                            "query_heads", "8", "key_value_heads", "2", "causal", "false")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention.gqa", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "2", "key_rank", "4", "value_rank", "4",
+                            "query_heads", "8", "key_value_heads", "2", "causal", "false")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention.gqa", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4",
+                            "query_heads", "8", "key_value_heads", "2", "causal", "false",
+                            "mask_dtype", "F32", "mask_rank", "3")).support());
             Map<String, String> maskedAttention = Map.of(
                     "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
                     "rank", "4", "key_rank", "4", "value_rank", "4",
@@ -462,6 +498,26 @@ class HatComputeProviderTest {
             assertEquals(cpu, output.backend());
             org.junit.jupiter.api.Assertions.assertArrayEquals(
                     new float[] {3f, 5f}, output.toFloatArray(), 1.0e-5f);
+        } finally {
+            hat.close();
+            cpu.close();
+        }
+    }
+
+    @Test
+    void groupedQueryAttentionStagesDifferentQueryAndKeyValueHeadCountsIntoCpuFallback() {
+        CpuBackend cpu = new CpuBackend();
+        HatComputeBackend hat = new HatComputeBackend(cpu);
+        try (var query = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 0f, 0f, 1f}, hat, 1, 2, 1, 2);
+                var key = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 0f}, hat, 1, 1, 1, 2);
+                var value = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {3f, 4f}, hat, 1, 1, 1, 2);
+                var output = hat.attentionGqa(query, key, value, null, false)) {
+            assertEquals(cpu, output.backend());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new float[] {3f, 4f, 3f, 4f}, output.toFloatArray(), 1.0e-5f);
         } finally {
             hat.close();
             cpu.close();
