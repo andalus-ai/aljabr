@@ -402,6 +402,13 @@ public class HatComputeBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor upsampleNearest2d(Tensor input, int outputH, int outputW) {
+        try (Tensor cpuInput = stageForCpu(input, "input")) {
+            return cpuFallback.upsampleNearest2d(cpuInput, outputH, outputW);
+        }
+    }
+
+    @Override
     public Tensor zerosLike(Tensor a) {
         return cpuFallback.zerosLike(a);
     }
