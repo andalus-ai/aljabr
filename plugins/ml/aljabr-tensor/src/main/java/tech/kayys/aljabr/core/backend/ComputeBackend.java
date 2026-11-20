@@ -271,6 +271,11 @@ public interface ComputeBackend extends AutoCloseable {
 
     Tensor max(Tensor a);
 
+    /** Element-wise sign; backends may override when the operation is supported. */
+    default Tensor sign(Tensor a) {
+        throw new UnsupportedOperationException("Sign is not supported by backend " + getClass().getName());
+    }
+
     Tensor abs(Tensor a);
 
     // ── Activations ───────────────────────────────────────────────────

@@ -76,6 +76,11 @@ public interface Tensor extends AutoCloseable {
 
     Tensor mean();
 
+    /** Returns the element-wise sign (-1, 0, or 1; NaN is preserved). */
+    default Tensor sign() {
+        return backend().sign(this);
+    }
+
     Tensor abs();
 
     Tensor crossEntropy(Tensor target);
