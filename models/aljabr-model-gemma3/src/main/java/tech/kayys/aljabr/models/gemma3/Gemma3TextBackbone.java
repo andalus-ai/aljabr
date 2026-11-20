@@ -74,6 +74,190 @@ public final class Gemma3TextBackbone {
         return logits;
     }
 
+
+    /**
+     * Creates isolated incremental decode state for one sequence. Each session
+     * owns its own per-layer key/value cache and may be used independently of
+     * other sessions sharing this immutable backbone.
+     */
+    public DecodeSession newDecodeSession() {
+        return new DecodeSession();
+    }
+
+    /**
+     * Stateful single-sequence decoder. Call {@link #prefill(int[])} once, then
+     * call {@link #decode(int)} for each newly generated token. Returned values
+     * are vocabulary logits for the newly appended token.
+     */
+    public final class DecodeSession implements AutoCloseable {
+        private final float[][] keyCache;
+        private final float[][] valueCache;
+        private final int cacheWidth = Math.multiplyExact(kvHeads, headDim);
+        private final int maximumPositions = config.maxPositionEmbeddings();
+        private int position;
+        private boolean closed;
+
+        private DecodeSession() {
+            int cacheElements = Math.multiplyExact(maximumPositions, cacheWidth);
+            keyCache = new float[weights.layers().size()][cacheElements];
+            valueCache = new float[weights.layers().size()][cacheElements];
+        }
+
+        /** Processes a prompt on a fresh session and returns logits for every prompt token. */
+        public float[][] prefill(int[] inputIds) {
+            ensureOpen();
+            Objects.requireNonNull(inputIds, "inputIds");
+            if (position != 0) {
+                throw new IllegalStateException("prefill is only valid on a fresh decode session");
+            }
+            if (inputIds.length == 0) {
+                throw new IllegalArgumentException("inputIds must not be empty");
+            }
+            float[][] result = new float[inputIds.length][];
+            for (int index = 0; index < inputIds.length; index++) {
+                result[index] = decode(inputIds[index]);
+            }
+            return result;
+        }
+
+        /** Appends one token and returns its vocabulary logits. */
+        public float[] decode(int tokenId) {
+            ensureOpen();
+            if (tokenId < 0 || tokenId >= config.vocabSize()) {
+                throw new IllegalArgumentException("token ID out of vocabulary range: " + tokenId);
+            }
+            if (position >= maximumPositions) {
+                throw new IllegalArgumentException("decode exceeds maxPositionEmbeddings");
+            }
+
+            float scale = (float) Math.sqrt(hidden) * config.resolvedEmbeddingMultiplier();
+            float[][] embeddingTable = weights.tokenEmbeddings();
+            float[][] state = new float[1][hidden];
+            for (int dimension = 0; dimension < hidden; dimension++) {
+                state[0][dimension] = embeddingTable[tokenId][dimension] * scale;
+            }
+
+            for (int layerIndex = 0; layerIndex < weights.layers().size(); layerIndex++) {
+                state = forwardIncrementalLayer(
+                        state, weights.layers().get(layerIndex), layerIndex, position);
+            }
+
+            float[][] normalized = rmsNorm(state, weights.finalNorm());
+            float[][] logits = linear(normalized, weights.languageModelHead());
+            float softcap = config.finalLogitSoftcapping() == null
+                    ? 0.0f : config.finalLogitSoftcapping().floatValue();
+            float lmScale = config.resolvedLmHeadMultiplier();
+            float[] result = logits[0];
+            for (int vocab = 0; vocab < result.length; vocab++) {
+                float value = result[vocab] * lmScale;
+                result[vocab] = softcap > 0.0f
+                        ? (float) (Math.tanh(value / softcap) * softcap) : value;
+            }
+            position++;
+            return result;
+        }
+
+        /** Number of tokens already processed by this session. */
+        public int position() {
+            ensureOpen();
+            return position;
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                for (float[] layer : keyCache) java.util.Arrays.fill(layer, 0.0f);
+                for (float[] layer : valueCache) java.util.Arrays.fill(layer, 0.0f);
+                position = 0;
+                closed = true;
+            }
+        }
+
+        private void ensureOpen() {
+            if (closed) throw new IllegalStateException("decode session is closed");
+        }
+
+        private float[][] forwardIncrementalLayer(
+                float[][] input,
+                Gemma3TextCheckpointMapper.LayerWeights layer,
+                int layerIndex,
+                int absolutePosition) {
+            float[][] normalized = rmsNorm(input, layer.attentionNorm());
+            float[][] queryFlat = linear(normalized, layer.query());
+            float[][] keyFlat = linear(normalized, layer.key());
+            float[][] valueFlat = linear(normalized, layer.value());
+
+            float[][][] query = reshape(queryFlat, queryHeads, headDim);
+            float[][][] key = headRmsNorm(reshape(keyFlat, kvHeads, headDim), layer.keyNorm());
+            query = headRmsNorm(query, layer.queryNorm());
+            query = applyRope(query, new int[] {absolutePosition},
+                    config.ropeThetaForLayer(layerIndex),
+                    config.partialRotaryFactorForLayer(layerIndex));
+            key = applyRope(key, new int[] {absolutePosition},
+                    config.ropeThetaForLayer(layerIndex),
+                    config.partialRotaryFactorForLayer(layerIndex));
+
+            int cacheOffset = Math.multiplyExact(absolutePosition, cacheWidth);
+            float[] layerKeys = keyCache[layerIndex];
+            float[] layerValues = valueCache[layerIndex];
+            for (int head = 0; head < kvHeads; head++) {
+                for (int dimension = 0; dimension < headDim; dimension++) {
+                    int cacheIndex = cacheOffset + head * headDim + dimension;
+                    layerKeys[cacheIndex] = key[0][head][dimension];
+                    layerValues[cacheIndex] = valueFlat[0][head * headDim + dimension];
+                }
+            }
+
+            float[][][] attended = new float[1][queryHeads][headDim];
+            int groups = queryHeads / kvHeads;
+            int firstVisible = config.isSlidingAttentionLayer(layerIndex)
+                    ? Math.max(0, absolutePosition - config.slidingWindowSize() + 1) : 0;
+            double scoreScale = 1.0d / Math.sqrt(config.queryPreAttnScalar());
+            Double configuredSoftcap = config.attnLogitSoftcapping();
+            double softcap = configuredSoftcap == null ? 0.0d : configuredSoftcap;
+            for (int head = 0; head < queryHeads; head++) {
+                int kvHead = head / groups;
+                double maximum = Double.NEGATIVE_INFINITY;
+                double[] scores = new double[absolutePosition - firstVisible + 1];
+                for (int source = firstVisible; source <= absolutePosition; source++) {
+                    int sourceOffset = source * cacheWidth + kvHead * headDim;
+                    double dot = 0.0d;
+                    for (int dimension = 0; dimension < headDim; dimension++) {
+                        dot += (double) query[0][head][dimension]
+                                * layerKeys[sourceOffset + dimension];
+                    }
+                    double score = dot * scoreScale;
+                    if (softcap > 0.0d) score = Math.tanh(score / softcap) * softcap;
+                    scores[source - firstVisible] = score;
+                    maximum = Math.max(maximum, score);
+                }
+                double denominator = 0.0d;
+                for (double score : scores) denominator += Math.exp(score - maximum);
+                for (int source = firstVisible; source <= absolutePosition; source++) {
+                    int sourceOffset = source * cacheWidth + kvHead * headDim;
+                    double probability = Math.exp(scores[source - firstVisible] - maximum) / denominator;
+                    for (int dimension = 0; dimension < headDim; dimension++) {
+                        attended[0][head][dimension] +=
+                                (float) (probability * layerValues[sourceOffset + dimension]);
+                    }
+                }
+            }
+
+            float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
+            attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
+            float[][] afterAttention = add(input, attentionOutput);
+            normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
+            float[][] gate = linear(normalized, layer.feedForwardGate());
+            float[][] up = linear(normalized, layer.feedForwardUp());
+            for (int dimension = 0; dimension < gate[0].length; dimension++) {
+                gate[0][dimension] = geluTanh(gate[0][dimension]) * up[0][dimension];
+            }
+            float[][] feedForward = linear(gate, layer.feedForwardDown());
+            feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
+            return add(afterAttention, feedForward);
+        }
+    }
+
     public int hiddenSize() { return hidden; }
     public int layerCount() { return weights.layers().size(); }
     public int vocabularySize() { return config.vocabSize(); }
