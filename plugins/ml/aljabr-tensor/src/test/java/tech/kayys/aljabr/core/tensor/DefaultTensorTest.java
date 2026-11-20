@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Proxy;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
@@ -297,4 +299,40 @@ class DefaultTensorTest {
         assertEquals(1, storage.references());
         storage.release();
     }
+
+    @Test
+    void rejectsGradientAssignmentAfterReleaseWithoutTakingGradientOwnership() {
+        DefaultTensor owner = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL,
+                new DeviceOnlyStorage(Float.BYTES), unusedBackend());
+        DeviceOnlyStorage gradientStorage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor gradient = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, gradientStorage, unusedBackend());
+
+        owner.release();
+        try {
+            assertThrows(IllegalStateException.class, () -> owner.setGrad(gradient));
+            assertEquals(1, gradientStorage.references());
+        } finally {
+            gradient.release();
+        }
+
+        assertEquals(0, gradientStorage.references());
+    }
+
+    @Test
+    void concurrentReleaseReleasesOwnedStorageExactlyOnce() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, storage, unusedBackend());
+
+        CompletableFuture<?>[] releases = IntStream.range(0, 32)
+                .mapToObj(ignored -> CompletableFuture.runAsync(tensor::release))
+                .toArray(CompletableFuture[]::new);
+
+        assertDoesNotThrow(() -> CompletableFuture.allOf(releases).join());
+        assertEquals(0, storage.references());
+        assertThrows(IllegalStateException.class, tensor::storage);
+    }
+
 }
