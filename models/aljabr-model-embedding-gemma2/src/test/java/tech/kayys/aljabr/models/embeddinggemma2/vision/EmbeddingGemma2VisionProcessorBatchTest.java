@@ -13,12 +13,27 @@ class EmbeddingGemma2VisionProcessorBatchTest {
         var tower = tower();
         var processorOutput = new EmbeddingGemma2VisionProcessorOutput(
                 new float[][][]{
-                        {{0.5f, 0.5f, 0.5f}, {0f, 0f, 0f}},
-                        {{0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}}
+                        {
+                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}
+                        },
+                        {
+                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}
+                        }
                 },
                 new int[][][]{
-                        {{0, 0}, {-1, -1}},
-                        {{0, 0}, {1, 0}}
+                        {
+                                {0, 0}, {1, 0}, {0, 1}, {1, 1},
+                                {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}
+                        },
+                        {
+                                {0, 0}, {1, 0}, {2, 0}, {3, 0},
+                                {0, 1}, {1, 1}, {2, 1}, {3, 1}
+                        }
                 },
                 new int[]{1, 2});
 
@@ -35,8 +50,8 @@ class EmbeddingGemma2VisionProcessorBatchTest {
     void rejectsProcessorMetadataWhenItDoesNotMatchValidPooledTokens() {
         var tower = tower();
         var processorOutput = new EmbeddingGemma2VisionProcessorOutput(
-                new float[][][]{{{0.5f, 0.5f, 0.5f}, {0f, 0f, 0f}}},
-                new int[][][]{{{0, 0}, {-1, -1}}},
+                new float[][][]{{{0.5f, 0.5f, 0.5f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}}},
+                new int[][][]{{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}}},
                 new int[]{2});
 
         assertThrows(IllegalArgumentException.class, () -> tower.encodeAndProject(processorOutput));
@@ -101,6 +116,6 @@ class EmbeddingGemma2VisionProcessorBatchTest {
         };
         var embedder = new EmbeddingGemma2MultimodalEmbedder(
                 4, 4, 1e-6f, new EmbeddingGemma2MultimodalEmbedder.Weights(projection));
-        return EmbeddingGemma2VisionTower.fromCheckpoint(spec, weights, embedder, 1e-6f, 100d, 1);
+        return EmbeddingGemma2VisionTower.fromCheckpoint(spec, weights, embedder, 1e-6f, 100d, 2);
     }
 }
