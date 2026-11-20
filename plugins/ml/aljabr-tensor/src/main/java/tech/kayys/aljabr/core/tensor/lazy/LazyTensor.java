@@ -84,9 +84,9 @@ public class LazyTensor implements Tensor {
         if (!released.compareAndSet(false, true)) {
             return;
         }
-        if (node.isEvaluated() && node.getOp() != OpType.CONSTANT) {
+        if (node.getOp() != OpType.CONSTANT) {
             Tensor materialized = node.getMaterializedData();
-            if (materialized != null && materialized != this) {
+            if (materialized != null && materialized != this && node.clearMaterializedData(materialized)) {
                 materialized.release();
             }
         }
