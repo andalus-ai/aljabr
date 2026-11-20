@@ -12,15 +12,30 @@ package tech.kayys.aljabr.core.memory;
  * owner must eventually balance that reference with {@link #release()}.
  * Implementations define their behavior after the final release; callers
  * must not access storage once they have relinquished their last reference.</p>
+ *
+ * <p>Methods returning a {@code TensorStorage} from a tensor generally expose a
+ * borrowed reference. Such a reference does not represent an additional owner.
+ * Call {@link #retain()} to establish an independent ownership reference and
+ * balance it with exactly one {@link #release()}.</p>
  */
 public interface TensorStorage {
 
     /** Returns the storage capacity in bytes. */
     long sizeBytes();
 
-    /** Retains this storage for an additional owner. */
+    /**
+     * Acquires one additional ownership reference.
+     *
+     * @throws IllegalStateException if the storage has already been released
+     *         or cannot accept another reference
+     */
     void retain();
 
-    /** Releases one ownership reference to this storage. */
+    /**
+     * Relinquishes one ownership reference. The final release ends the
+     * storage lifetime; using the storage afterward is invalid.
+     *
+     * @throws IllegalStateException if no live reference remains
+     */
     void release();
 }
