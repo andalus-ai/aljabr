@@ -81,6 +81,33 @@ class EmbeddingGemma2VisionImageProcessorTest {
     }
 
     @Test
+    void matchesTorchvisionBicubicAntialiasReferenceFixtureIncludingOvershoot() {
+        byte[] rgb = new byte[7 * 9 * 3];
+        for (int i = 0; i < rgb.length; i++) rgb[i] = (byte) (i & 0xff);
+        var image = EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(9, 7, rgb);
+
+        var output = processor().process(image);
+        float[] actual = output.pixelValues()[0][0];
+
+        // Reference generated with torchvision.transforms.v2.functional.resize:
+        // [1,3,7,9] -> [1,3,28,36], BICUBIC, antialias=True, then /255.
+        // Patch layout is [y, x, channel] for the top-left 2x2 patch.
+        float[] expected = {
+                -0.013169447f, -0.009247878f, -0.005326311f,
+                -0.012467078f, -0.008545508f, -0.004623939f,
+                -0.006848112f, -0.002926543f,  0.000995024f,
+                -0.006145743f, -0.002224173f,  0.001697396f
+        };
+        assertEquals(63, output.numSoftTokensPerImage()[0]);
+        assertEquals(expected.length, actual.length);
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], actual[i], 2e-6f, "pixel " + i);
+        }
+        // Bicubic filtering legitimately overshoots below zero; the adapter must preserve it.
+        org.junit.jupiter.api.Assertions.assertTrue(actual[0] < 0f);
+    }
+
+    @Test
     void convertsGrayscaleAndRgbaInputsToRgbWithoutAlphaCompositing() {
         var gray = EmbeddingGemma2VisionImageProcessor.RgbImage.fromGrayscale8(
                 1, 1, new byte[]{(byte) 128});
