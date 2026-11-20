@@ -232,6 +232,10 @@ public final class HatComputeProvider implements ComputeProvider {
             if ("tensor.adaptive_avg_pool2d".equals(operationId))
                 return poolingSupport(operationId, constraints, "output_h", "output_w", null);
 
+            if ("tensor.softmax".equals(operationId) || "tensor.log_softmax".equals(operationId)) {
+                return softmaxSupport(operationId, constraints);
+            }
+
             if ("tensor.mean".equals(operationId)
                     || "tensor.sum".equals(operationId)
                     || "tensor.max".equals(operationId)) {
@@ -412,6 +416,49 @@ public final class HatComputeProvider implements ComputeProvider {
             if (value == null) return OperationSupport.UNKNOWN;
             try { return Integer.parseInt(value) >= 0 ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED; }
             catch (NumberFormatException invalid) { return OperationSupport.UNKNOWN; }
+        }
+
+        /**
+         * CpuBackend softmax uses a non-negative axis directly; it does not
+         * normalize negative dimensions. The no-axis softmax overload selects
+         * the final dimension, while log_softmax requires an explicit axis.
+         */
+        private OperationSupportDescriptor softmaxSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            if (dtype == null || rankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            int rank;
+            try {
+                rank = Integer.parseInt(rankValue);
+            } catch (NumberFormatException invalidRank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (rank <= 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+
+            String dimension = constraints.get("dim");
+            if (dimension == null) {
+                if ("tensor.log_softmax".equals(operationId)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+            try {
+                int axis = Integer.parseInt(dimension);
+                if (axis < 0 || axis >= rank) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+            } catch (NumberFormatException invalidDimension) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
         /**
