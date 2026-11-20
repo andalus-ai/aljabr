@@ -57,6 +57,21 @@ public final class EmbeddingGemma2VisionTower {
             float epsilon,
             double ropeTheta,
             int poolingKernelSize) {
+        return fromCheckpoint(spec, weights, null, epsilon, ropeTheta, poolingKernelSize);
+    }
+
+    /**
+     * Constructs the complete image path, including the checkpoint-backed
+     * modality-to-text bridge. The supplied embedder is normally created by
+     * {@link EmbeddingGemma2MultimodalCheckpointMapper#mapVisionEmbedder}.
+     */
+    public static EmbeddingGemma2VisionTower fromCheckpoint(
+            EmbeddingGemma2VisionCheckpointMapper.VisionSpec spec,
+            EmbeddingGemma2VisionCheckpointMapper.Weights weights,
+            EmbeddingGemma2MultimodalEmbedder multimodalEmbedder,
+            float epsilon,
+            double ropeTheta,
+            int poolingKernelSize) {
         Objects.requireNonNull(spec, "spec must not be null");
         Objects.requireNonNull(weights, "weights must not be null");
         if (weights.layers().size() != spec.numHiddenLayers()) {
@@ -93,7 +108,7 @@ public final class EmbeddingGemma2VisionTower {
                     spec.hiddenSize(), weights.standardizationBias(), weights.standardizationScale());
         }
         return new EmbeddingGemma2VisionTower(
-                encoder, pooler, standardizer, null, poolingKernelSize);
+                encoder, pooler, standardizer, multimodalEmbedder, poolingKernelSize);
     }
 
     /**
