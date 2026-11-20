@@ -9,11 +9,14 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
-
-import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 import org.junit.jupiter.api.io.TempDir;
+
+import tech.kayys.aljabr.diagnostics.Diagnostic;
+import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 
 class ProviderDiscoveryTest {
     @TempDir
@@ -56,8 +59,7 @@ class ProviderDiscoveryTest {
 
     @Test
     void emitsStructuredDiagnosticsForExcludedProviders() throws Exception {
-        java.util.List<tech.kayys.aljabr.diagnostics.Diagnostic> diagnostics =
-                new java.util.ArrayList<>();
+        List<Diagnostic> diagnostics = new ArrayList<>();
         try (URLClassLoader loader = loaderWith(ThrowingConstructorProvider.class, HealthyProvider.class)) {
             ProviderDiscoveryResult result = ProviderDiscovery.discover(loader, diagnostics::add);
 
@@ -68,7 +70,7 @@ class ProviderDiscoveryTest {
             assertEquals(DiagnosticSeverity.WARNING, diagnostics.getFirst().severity());
             assertEquals(ThrowingConstructorProvider.class.getName(),
                     diagnostics.getFirst().context().get("providerType"));
-            assertEquals("java.lang.IllegalStateException",
+            assertEquals(result.failures().getFirst().cause().getClass().getName(),
                     diagnostics.getFirst().context().get("causeType"));
         }
     }
