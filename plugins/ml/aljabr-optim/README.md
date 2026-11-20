@@ -26,20 +26,23 @@ autograd and training orchestration.
 - `Lion`: sign-based momentum with configurable beta coefficients and decoupled weight decay.
 - `RAdam`: rectified Adam with an unrectified first-moment warm-up before variance normalization becomes reliable.
 - `Adamax`: Adam's infinity-norm variant with bias-corrected first moments.
+- `AdaBelief`: Adam-style first moments with a second moment of gradient prediction residuals.
 - `Adafactor`: factored row/column second moments for rank-2+ tensors, with an unfactored vector state; optional update-RMS clipping and parameter-RMS scaling.
 
 All optimizers consume stable, fully qualified parameter names and gradient
 maps. Missing gradients and frozen parameters are skipped. Gradient shape,
 dtype, backend, and device are validated before parameter replacement. Stateful
 optimizer state is explicitly released by `reset()`; `MomentumSGD`, `RMSProp`,
-`Adagrad`, `Nadam`, `Adadelta`, `Adafactor`, `Lion`, `RAdam`, and `AdamW` are also `AutoCloseable`.
-`Adagrad`, `Nadam`, `Adadelta`, `Adafactor`, `Lion`, `Adamax`, and `AdamW` are also `AutoCloseable`.
+All stateful optimizers implement `AutoCloseable`; `close()` releases their per-parameter state.
 
 This is an initial F32-oriented API built on the currently supported tensor
 arithmetic. RMSProp currently provides the uncentered, no-momentum form; centered statistics,
 optimizer momentum, and weight decay are not included. Adagrad currently omits
 learning-rate decay and weight decay. Nadam currently implements the Dozat
-lookahead formulation without weight decay or configurable schedules. Adadelta
+lookahead formulation without weight decay or configurable schedules. AdaBelief
+uses the squared residual between the current gradient and updated first-moment
+estimate; alternate rectification and epsilon-placement variants are not included.
+Adadelta
 uses its standard learning-rate-free update rule without configurable schedules. Mixed
 precision, gradient scaling, sparse gradients, parameter groups, schedulers,
 checkpoint serialization, and distributed optimizer semantics are not claimed.
