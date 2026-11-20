@@ -68,6 +68,10 @@ public class LazyTensor implements Tensor {
 
     /**
      * Direct storage access materializes the lazy graph first.
+     *
+     * <p>The returned storage is borrowed from the materialized tensor and is
+     * not an independent ownership reference. Retain it explicitly if it must
+     * outlive this lazy wrapper.</p>
      */
     @Override
     public TensorStorage storage() {
@@ -169,11 +173,19 @@ public class LazyTensor implements Tensor {
         executor.backward(node, outputGradient);
     }
 
+    /**
+     * Returns the materialized tensor's gradient as a borrowed reference.
+     * Callers must not release it.
+     */
     @Override
     public Tensor grad() {
         return eval().grad();
     }
 
+    /**
+     * Transfers gradient ownership to the materialized tensor, matching the
+     * {@link Tensor#setGrad(Tensor)} contract.
+     */
     @Override
     public void setGrad(Tensor grad) {
         eval().setGrad(grad);

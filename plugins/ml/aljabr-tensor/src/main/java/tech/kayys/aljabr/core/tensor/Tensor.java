@@ -14,11 +14,24 @@ import tech.kayys.aljabr.core.memory.TensorStorage;
  * <p>Storage access is an optional capability for tensor implementations.
  * Eager tensors expose their backing storage; lazy or remote implementations
  * may materialize or reject direct storage access.</p>
+ *
+ * <p>Ownership is explicit: methods documented as returning borrowed values do
+ * not transfer ownership. A borrowed value must not be released by the caller.
+ * To keep borrowed storage alive independently of its tensor, call
+ * {@link TensorStorage#retain()} while the tensor is live and balance that
+ * reference with {@link TensorStorage#release()}.</p>
  */
 public interface Tensor extends AutoCloseable {
     /**
      * Evaluates and materializes this Tensor if it is a lazy computation graph
      * node. For eager tensors, this returns the tensor itself.
+     *
+     * <p>The returned tensor is borrowed from this tensor wrapper. This method
+     * does not transfer ownership or create an independent reference; do not
+     * release the returned tensor. Close the wrapper to release a materialized
+     * result owned by a lazy implementation.</p>
+     *
+     * @return this tensor or its borrowed materialized result
      */
     Tensor eval();
 
@@ -33,10 +46,15 @@ public interface Tensor extends AutoCloseable {
     /**
      * Returns this tensor's backing storage when the implementation exposes it.
      *
-     * <p>Implementations that do not expose backing storage should retain the
-     * default unsupported behavior. Lazy implementations may evaluate before
-     * returning storage.</p>
+     * <p>The returned storage is borrowed: this method does not retain it or
+     * transfer ownership. Its lifetime is therefore bounded by the tensor's
+     * ownership of that storage. Call {@link TensorStorage#retain()} before
+     * allowing the storage to outlive this tensor, and release that additional
+     * reference when finished. Lazy implementations may evaluate before
+     * returning storage; the returned storage remains borrowed from the
+     * materialized result.</p>
      *
+     * @return borrowed backing storage; never release this reference directly
      * @throws UnsupportedOperationException when backing storage is not exposed
      */
     default TensorStorage storage() {
@@ -134,7 +152,9 @@ public interface Tensor extends AutoCloseable {
 
     /**
      * Returns the gradient currently owned by this tensor, or {@code null}.
-     * The returned reference is borrowed; callers must not release it.
+     * The returned reference is borrowed; callers must not release it. If the
+     * gradient must outlive this tensor, first establish an independent
+     * ownership reference according to the gradient implementation's contract.
      */
     Tensor grad();
 
@@ -143,9 +163,12 @@ public interface Tensor extends AutoCloseable {
      *
      * <p>Ownership of {@code grad} is transferred to this tensor. Replacing an
      * existing gradient releases the previously owned gradient. Passing
-     * {@code null} clears the gradient.</p>
+     * {@code null} clears the gradient. The caller relinquishes its ownership
+     * when this method succeeds and must not subsequently release the
+     * transferred reference. To retain a separate caller-owned reference,
+     * retain the gradient before transferring it.</p>
      *
-     * @param grad gradient tensor to take ownership of, or {@code null}
+     * @param grad gradient tensor whose ownership is transferred, or {@code null}
      */
     void setGrad(Tensor grad);
 
@@ -154,8 +177,10 @@ public interface Tensor extends AutoCloseable {
     void setRequiresGrad(boolean requiresGrad);
 
     /**
-     * Releases this tensor's owned resources. Implementations that own storage
-     * must make repeated release calls harmless.
+     * Releases this tensor's owned resources, including storage and any
+     * gradient whose ownership was transferred to it. Borrowed values obtained
+     * from this tensor must not be released by callers. Implementations that
+     * own storage must make repeated release calls harmless.
      */
     default void release() {
     }
