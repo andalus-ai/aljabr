@@ -293,4 +293,33 @@ class TensorOpsTest {
             b.release();
         }
     }
+
+    @Test
+    void sharedMatmulShapeValidationBuildsBroadcastedBatchOutputShape() {
+        TensorOperationValidator.MatmulPlan plan =
+                TensorOperationValidator.validateMatmul(new Shape(2, 1, 3, 4), new Shape(1, 5, 4, 6));
+        assertThat(plan.batchDimensions()).containsExactly(2, 5);
+        assertThat(plan.outputDimensions()).containsExactly(2, 5, 3, 6);
+        assertThat(plan.rows()).isEqualTo(3);
+        assertThat(plan.inner()).isEqualTo(4);
+        assertThat(plan.columns()).isEqualTo(6);
+    }
+
+    @Test
+    void sharedMatmulShapeValidationRejectsRankAndContractionMismatches() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateMatmul(new Shape(4), new Shape(4, 2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least 2D");
+        assertThatThrownBy(() -> TensorOperationValidator.validateMatmul(new Shape(2, 3), new Shape(4, 5)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Dimension mismatch");
+    }
+
+    @Test
+    void sharedMatmulShapeValidationRejectsIncompatibleBatchDimensions() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateMatmul(
+                new Shape(2, 3, 4), new Shape(5, 4, 6)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("batch dimensions are not broadcast-compatible");
+    }
 }
