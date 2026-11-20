@@ -100,6 +100,17 @@ public final class ManagedArena implements AutoCloseable {
     }
 
     /**
+     * Returns whether this managed arena still owns an open reference.
+     *
+     * <p>This reports the managed reference-count lifecycle; it does not
+     * guarantee that an externally wrapped {@link Arena} has not been closed
+     * directly by its owner.</p>
+     */
+    public boolean isOpen() {
+        return refCount.get() > 0;
+    }
+
+    /**
      * Returns the current reference count.
      */
     public int refCount() {
