@@ -16,7 +16,7 @@ class EmbeddingGemma2EncoderLayerTest {
                   "text_config":{
                     "model_type":"embedding_gemma2_text","hidden_size":2,"intermediate_size":2,
                     "num_hidden_layers":1,"num_attention_heads":1,"num_key_value_heads":1,
-                    "head_dim":2,"embedding_dim":2,"vocab_size":16,"max_position_embeddings":16,
+                    "head_dim":2,"hidden_size_per_layer_input":2,"embedding_dim":2,"vocab_size":16,"max_position_embeddings":16,
                     "rms_norm_eps":0.000001,"dtype":"float32",
                     "layer_types":["full_attention"],
                     "rope_parameters":{
