@@ -30,7 +30,8 @@ not an alias for the causal `gemma2` or `gemma4` modules.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
 - A Gemma4 vision patch embedder that applies the reference pixel scaling, bias-free RGB patch projection, and learned x/y positional-table lookup. Image preprocessing and patch extraction remain processor responsibilities.
-- A Gemma4 vision spatial pooler that groups patch states by their 2D coordinates, applies fixed-area k×k averaging with zero-valued padding, returns a pooled padding mask, and scales pooled states by sqrt(hidden_size) in float32. The optional checkpoint standardization step remains separate.
+- A Gemma4 vision spatial pooler that groups patch states by their 2D coordinates, applies fixed-area k×k averaging with zero-valued padding, returns a pooled padding mask, and scales pooled states by sqrt(hidden_size) in float32.
+- An optional Gemma4 vision soft-token standardizer that applies the checkpoint-provided feature-wise `(x - std_bias) * std_scale` operation after pooling, in float32 and before the caller casts to its working dtype.
 - A configurable Gemma4 vision encoder stack that validates the checkpoint layer count, executes every vision encoder layer in order, supports either RGB patch vectors or precomputed patch embeddings, and returns unpooled final hidden states without adding a non-reference final normalization.
 - A Gemma4 vision encoder-layer reference with the four checkpoint-backed RMSNorm scales, injected bidirectional attention operation, gated GELU MLP, and exact two-residual ordering. Gemma4-compatible axial 2D RoPE and a concrete float32 bidirectional vision attention operation are implemented. The attention path includes bias-free Q/K/V/O projections, Q/K learned RMSNorm, unscaled V RMSNorm, masked non-causal GQA, and no KV cache.
 - A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
@@ -104,8 +105,5 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-Image preprocessing/patchification,
-vision checkpoint mapping, pooling/standardization, and end-to-end image execution remain
-deferred. Current vision components cover patch projection and learned 2D position lookup,
-post-tower projection, and reference per-image soft-token splitting.
+Image preprocessing/patchification, complete vision checkpoint mapping, and end-to-end image execution remain deferred. Current vision components cover patch projection and learned 2D position lookup, the encoder tower and spatial pooler, optional post-pool standardization, post-tower modality projection, and reference per-image soft-token splitting.
 Audio and video execution also remain deferred.
