@@ -38,10 +38,10 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 
@@ -844,7 +844,6 @@ class SafetensorFFMLoaderTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxMetadataEntries");
     }
-
 
     @Test
     void loadResult_concurrentTensorLookupReturnsSingleCachedView() throws Exception {
