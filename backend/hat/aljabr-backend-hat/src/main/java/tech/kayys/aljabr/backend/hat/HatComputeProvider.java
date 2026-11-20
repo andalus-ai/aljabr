@@ -55,7 +55,7 @@ public final class HatComputeProvider implements ComputeProvider {
             "tensor.zeros_like");
 
     private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
-            "tensor.cat", "tensor.upsample_nearest2d", "tensor.attention",
+            "tensor.cat", "tensor.upsample_nearest2d",
             "tensor.attention.masked", "tensor.rope");
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
@@ -167,6 +167,10 @@ public final class HatComputeProvider implements ComputeProvider {
             Objects.requireNonNull(operationId, "operationId");
             Objects.requireNonNull(constraints, "constraints");
             if (closed) throw new IllegalStateException("HAT provider session is closed");
+
+            if ("tensor.attention".equals(operationId)) {
+                return attentionSupport(operationId, constraints);
+            }
 
             if ("tensor.matmul".equals(operationId)) {
                 String dtype = constraints.get("dtype");
@@ -319,6 +323,41 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+        }
+
+        /**
+         * Unmasked CPU attention accepts F32 Q/K/V tensors with matching
+         * rank (2 or 4). Detailed dimension compatibility is validated by
+         * CpuBackend at execution because the provider metadata does not carry
+         * every tensor dimension.
+         */
+        private OperationSupportDescriptor attentionSupport(
+                String operationId, Map<String, String> constraints) {
+            String queryDtype = constraints.get("dtype");
+            String keyDtype = constraints.get("key_dtype");
+            String valueDtype = constraints.get("value_dtype");
+            String queryRankValue = constraints.get("rank");
+            String keyRankValue = constraints.get("key_rank");
+            String valueRankValue = constraints.get("value_rank");
+            if (queryDtype == null || keyDtype == null || valueDtype == null
+                    || queryRankValue == null || keyRankValue == null || valueRankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(queryDtype) || !isF32(keyDtype) || !isF32(valueDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer queryRank = parseInteger(queryRankValue);
+            Integer keyRank = parseInteger(keyRankValue);
+            Integer valueRank = parseInteger(valueRankValue);
+            if (queryRank == null || keyRank == null || valueRank == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if ((queryRank != 2 && queryRank != 4)
+                    || !queryRank.equals(keyRank) || !queryRank.equals(valueRank)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
         private OperationSupportDescriptor sliceSupport(
