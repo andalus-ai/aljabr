@@ -239,6 +239,31 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.sum", Map.of("dtype", "F16")).support());
             assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.softmax", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.softmax", Map.of("dtype", "F32", "rank", "3")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.softmax", Map.of(
+                            "dtype", "F32", "rank", "3", "dim", "1")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.softmax", Map.of(
+                            "dtype", "F32", "rank", "3", "dim", "-1")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.softmax", Map.of(
+                            "dtype", "F32", "rank", "3", "dim", "3")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.log_softmax", Map.of(
+                            "dtype", "F32", "rank", "3")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.log_softmax", Map.of(
+                            "dtype", "F32", "rank", "3", "dim", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.log_softmax", Map.of(
+                            "dtype", "F32", "rank", "3", "dim", "-1")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.softmax", Map.of(
+                            "dtype", "F16", "rank", "3")).support());
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.dropout", Map.of()).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.dropout", Map.of("training", "true", "p", "0.25")).support());

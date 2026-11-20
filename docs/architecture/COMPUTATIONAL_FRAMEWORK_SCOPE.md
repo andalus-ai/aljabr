@@ -295,3 +295,21 @@ Developer entry points:
 - Tutorials should include expected outputs, deterministic fixtures, prerequisites and tested commands.
 
 The API should remain Java-native. Python interoperability may be offered as an optional bridge, not a prerequisite for using the framework.
+
+## Additional capability direction: integrated scientific and generative computing
+
+Aljabr should provide a coherent Java-native experience across mathematical foundations, numerical computing, linear algebra, probability, statistics, optimization, scientific algorithms, datasets and AI/ML. These capabilities share numerical semantics and reusable execution contracts, but remain independently selectable. Tensor/array computation is a first-class capability for AI/ML, scientific workloads and differentiable computation; it is not a mandatory dependency for every domain.
+
+### Generative and multimodal model families
+
+Include diffusion and iterative generative computation explicitly in the model scope, alongside autoregressive, embedding, classification, regression and other model families. Candidate reusable building blocks include noise schedules, timestep and conditioning representations, samplers/solvers, latent tensor operations and model/sampler composition. Keep these in focused generative/model modules rather than the generic tensor core.
+
+Multimodal scope includes text, image, audio, video, spatial/3D and cross-modal systems. Reusable components include modality-specific encoders, projections, fusion, cross-attention, temporal/spatial encodings and preprocessing. Capability support must be stated per architecture, operator, dtype, format and provider; a modality label alone is not proof of executable support.
+
+### Dataset and data-science boundaries
+
+Aljabr may provide general-purpose dataset/source abstractions, typed transformations, streaming, batching and deterministic sampling where useful across scientific and ML consumers. A DataFrame/Series capability remains an optional tabular extension with explicit schema, null, conversion and ownership semantics. Tafkir owns higher-level training dataset pipelines, experiment orchestration and fine-tuning workflows. External Arrow, Parquet, SQL and data-engine integrations remain opt-in adapters.
+
+### Interoperability
+
+Aljabr should integrate with existing Java numerical, scientific and data libraries through replaceable adapters. Conversions must document precision, shape, layout, null/missing-value behavior, aliasing, copying, ownership and lifecycle. Aljabr-owned types and diagnostics remain the stable API; adapters must not leak third-party types or exceptions.

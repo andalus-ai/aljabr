@@ -163,3 +163,45 @@ Resolve these through the graph audit and small consumer prototypes. Do not pre-
 - [Computational Capability Inventory](COMPUTATIONAL_CAPABILITY_INVENTORY.md)
 - [Framework Architecture](FRAMEWORK_ARCHITECTURE.md)
 - [Research and Training Readiness](RESEARCH_TRAINING_READINESS.md)
+
+## Additional consumer profiles and packaging principles
+
+Aljabr distribution should make it easy to consume only the capabilities an application needs while preserving a coherent framework experience.
+
+### Artifact and bundle model
+
+- **Feature artifacts** are the source of truth for modular dependency selection.
+- **BOM** aligns versions for artifacts the consumer explicitly selects; it must not pull all Aljabr modules transitively.
+- **Optional starter bundles** provide convenience for common combinations without becoming mandatory foundations.
+- **Provider artifacts** remain opt-in and separately versioned where practical.
+- **Model catalogues, dataset connectors, native runtimes, accelerator SDKs and training-only facilities** must not enter minimal consumers by default.
+
+Candidate documented consumer profiles include:
+- **numerics:** scalar numerical foundations and essential math.
+- **scientific:** numerical methods and selected scientific algorithms.
+- **statistics-data:** probability, statistics and optional tabular/data capabilities.
+- **tensor:** tensor/array operations and selected CPU execution.
+- **ml:** classical ML and neural primitives as explicitly selected.
+- **multimodal:** selected modality/model-family extensions.
+- **training-primitives:** autograd, losses, optimizers and reusable training computation; not Tafkir workflows.
+- **cpu:** portable CPU/reference and optional SIMD implementations.
+- **accelerator:** explicitly selected hardware providers and their platform prerequisites.
+- **research:** optional curated convenience bundle for experimentation.
+- **embedded-minimal:** smallest supported runtime dependency set.
+
+These names are profile concepts, not a requirement to create a separate artifact for every profile. Prefer dependency snippets, Gradle platforms/catalogs or small starter artifacts only when they provide measurable onboarding value.
+
+### Packaging and tree-shaking
+
+The first optimization is to keep unused capabilities out of the dependency graph. Avoid a monolithic artifact with the expectation that bytecode shrinking will remove unwanted systems later. JPMS/jlink, GraalVM Native Image and other shrinkers are optional packaging stages, validated against reflection, generated metadata, ServiceLoader, FFM, resources, native access and provider discovery. Publish no universal tree-shaking guarantee.
+
+For every supported profile, maintain clean external Gradle and Maven consumer fixtures that verify:
+- Selected artifacts resolve from the published repository without composite-build leakage.
+- Generated POM and Gradle module metadata express intended API/runtime dependencies.
+- Unselected providers and domains are absent from the resolved graph.
+- Optional-provider absence produces actionable capability diagnostics.
+- The packaged application starts and can execute its documented smoke test.
+
+### Development and distribution entry points
+
+The same APIs and dependency coordinates should work in ordinary Java applications, Gradle/Maven, JShell, JBang and Jupyter through established Java kernels. Provide examples for each supported path and a promotion route from experiment to regular project. Do not create a separate notebook-only API or require a custom kernel.
