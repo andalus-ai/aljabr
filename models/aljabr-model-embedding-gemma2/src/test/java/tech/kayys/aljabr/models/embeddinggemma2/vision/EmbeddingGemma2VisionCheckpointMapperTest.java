@@ -24,7 +24,7 @@ class EmbeddingGemma2VisionCheckpointMapperTest {
         assertEquals(4, mapped.layers().get(0).attention().query().length);
         assertEquals(6, mapped.layers().get(0).mlp().gate().length);
         assertEquals(4, mapped.layers().get(0).norms().inputNormScale().length);
-        assertEquals(4, mapped.poolerScale().length);
+        assertEquals(4, mapped.legacyPoolerScale().length);
         assertEquals(4, mapped.standardizationBias().length);
         assertEquals(4, mapped.standardizationScale().length);
     }
@@ -34,6 +34,14 @@ class EmbeddingGemma2VisionCheckpointMapperTest {
         var mapped = EmbeddingGemma2VisionCheckpointMapper.map(spec(false), tensors(false));
         assertNull(mapped.standardizationBias());
         assertNull(mapped.standardizationScale());
+    }
+
+    @Test
+    void acceptsCheckpointsWithoutLegacyPoolerScale() {
+        Map<String, CheckpointTensor> tensors = tensors(false);
+        tensors.remove(PREFIX + "pooler.scale");
+        var mapped = EmbeddingGemma2VisionCheckpointMapper.map(spec(false), tensors);
+        assertNull(mapped.legacyPoolerScale());
     }
 
     @Test
