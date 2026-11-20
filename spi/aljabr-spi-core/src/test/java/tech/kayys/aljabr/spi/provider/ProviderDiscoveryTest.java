@@ -11,6 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
+
+import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 import org.junit.jupiter.api.io.TempDir;
 
 class ProviderDiscoveryTest {
@@ -49,6 +51,25 @@ class ProviderDiscoveryTest {
             assertEquals("test/healthy", result.providers().getFirst().descriptor().id());
             assertEquals(1, result.failures().size());
             assertTrue(result.failures().getFirst().message().contains("discovery failed"));
+        }
+    }
+
+    @Test
+    void emitsStructuredDiagnosticsForExcludedProviders() throws Exception {
+        java.util.List<tech.kayys.aljabr.diagnostics.Diagnostic> diagnostics =
+                new java.util.ArrayList<>();
+        try (URLClassLoader loader = loaderWith(ThrowingConstructorProvider.class, HealthyProvider.class)) {
+            ProviderDiscoveryResult result = ProviderDiscovery.discover(loader, diagnostics::add);
+
+            assertEquals(1, result.failures().size());
+            assertEquals(1, diagnostics.size());
+            assertEquals("provider.discovery.failed", diagnostics.getFirst().code());
+            assertEquals("provider.discovery", diagnostics.getFirst().category());
+            assertEquals(DiagnosticSeverity.WARNING, diagnostics.getFirst().severity());
+            assertEquals(ThrowingConstructorProvider.class.getName(),
+                    diagnostics.getFirst().context().get("providerType"));
+            assertEquals("java.lang.IllegalStateException",
+                    diagnostics.getFirst().context().get("causeType"));
         }
     }
 
