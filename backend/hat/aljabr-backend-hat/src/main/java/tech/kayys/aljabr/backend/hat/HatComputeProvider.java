@@ -172,6 +172,42 @@ public final class HatComputeProvider implements ComputeProvider {
                 return attentionSupport(operationId, constraints);
             }
 
+        /**
+         * CpuBackend attention fallback supports matching F32 Q/K/V ranks:
+         * rank-2 for unmasked, non-causal attention and rank-4 for the
+         * batched/head-aware path. Shape compatibility is validated by the
+         * CPU execution method because the provider metadata does not carry
+         * every dimension.
+         */
+        private OperationSupportDescriptor attentionSupport(
+                String operationId, Map<String, String> constraints) {
+            String queryDtype = constraints.get("dtype");
+            String keyDtype = constraints.get("key_dtype");
+            String valueDtype = constraints.get("value_dtype");
+            String queryRankValue = constraints.get("rank");
+            String keyRankValue = constraints.get("key_rank");
+            String valueRankValue = constraints.get("value_rank");
+            if (queryDtype == null || keyDtype == null || valueDtype == null
+                    || queryRankValue == null || keyRankValue == null || valueRankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(queryDtype) || !isF32(keyDtype) || !isF32(valueDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer queryRank = parseInteger(queryRankValue);
+            Integer keyRank = parseInteger(keyRankValue);
+            Integer valueRank = parseInteger(valueRankValue);
+            if (queryRank == null || keyRank == null || valueRank == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!queryRank.equals(keyRank) || !queryRank.equals(valueRank)
+                    || (queryRank != 2 && queryRank != 4)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
             if ("tensor.matmul".equals(operationId)) {
                 String dtype = constraints.get("dtype");
                 String rank = constraints.get("rank");
@@ -378,6 +414,11 @@ public final class HatComputeProvider implements ComputeProvider {
             if (!Float.isFinite(theta) || theta <= 1.0f) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
          * CpuBackend.embedding reads F32 embedding rows and accepts integral
          * I32 or I8 token indices. The input rank is unrestricted; the output
          * appends the embedding dimension to the input shape.
