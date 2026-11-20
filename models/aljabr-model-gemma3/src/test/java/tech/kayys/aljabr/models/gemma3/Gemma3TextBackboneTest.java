@@ -56,6 +56,50 @@ class Gemma3TextBackboneTest {
         assertArrayEquals(backbone.forward(new int[] { 0 })[0], logits[0], 1.0e-6f);
     }
 
+
+    @Test
+    void incrementalDecodeMatchesFullCausalForwardAndKeepsSessionStateIsolated() throws Exception {
+        ModelConfig config = config();
+        Gemma3TextFamily architecture = new Gemma3TextFamily();
+        Map<String, Gemma3TextCheckpointMapper.CheckpointTensor> tensors = new LinkedHashMap<>();
+        putPatternMatrix(tensors, architecture.embedTokensWeight(), 5, 4);
+        putVector(tensors, architecture.finalNormWeight(), 4, 0.0f);
+        putMatrix(tensors, architecture.layerQueryWeight(0), 4, 4, 0.02f);
+        putMatrix(tensors, architecture.layerKeyWeight(0), 2, 4, 0.015f);
+        putMatrix(tensors, architecture.layerValueWeight(0), 2, 4, 0.03f);
+        putMatrix(tensors, architecture.layerOutputWeight(0), 4, 4, 0.025f);
+        putVector(tensors, architecture.layerAttentionNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerPostAttnNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerPreFfnNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerPostFfnNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerQueryNormWeight(0), 2, 0.0f);
+        putVector(tensors, architecture.layerKeyNormWeight(0), 2, 0.0f);
+        putMatrix(tensors, architecture.layerFfnGateWeight(0), 6, 4, 0.01f);
+        putMatrix(tensors, architecture.layerFfnUpWeight(0), 6, 4, 0.012f);
+        putMatrix(tensors, architecture.layerFfnDownWeight(0), 4, 6, 0.008f);
+        Gemma3TextBackbone backbone = new Gemma3TextBackbone(
+                config, Gemma3TextCheckpointMapper.map(config, architecture, tensors));
+
+        int[] prompt = {0, 1, 2};
+        float[][] expected = backbone.forward(prompt);
+        try (Gemma3TextBackbone.DecodeSession session = backbone.newDecodeSession()) {
+            float[][] prefill = session.prefill(new int[] {0, 1});
+            assertEquals(2, session.position());
+            assertArrayEquals(expected[0], prefill[0], 1.0e-5f);
+            assertArrayEquals(expected[1], prefill[1], 1.0e-5f);
+            assertArrayEquals(expected[2], session.decode(2), 1.0e-5f);
+            assertEquals(3, session.position());
+        }
+
+        try (Gemma3TextBackbone.DecodeSession first = backbone.newDecodeSession();
+                Gemma3TextBackbone.DecodeSession second = backbone.newDecodeSession()) {
+            first.decode(0);
+            assertEquals(1, first.position());
+            assertEquals(0, second.position());
+            assertArrayEquals(backbone.forward(new int[] {1})[0], second.decode(1), 1.0e-5f);
+        }
+    }
+
     @Test
     void rejectsEmptyAndOutOfRangeTokenSequences() throws Exception {
         Gemma3TextBackbone backbone = new Gemma3TextBackbone(config(), emptyMappedWeights());
