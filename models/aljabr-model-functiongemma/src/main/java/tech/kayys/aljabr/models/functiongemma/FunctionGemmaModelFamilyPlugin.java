@@ -48,6 +48,6 @@ public class FunctionGemmaModelFamilyPlugin implements ModelFamilyPlugin {
 
     @Override
     public List<ModelTokenizerDescriptor> tokenizerDescriptors() {
-        return List.of(ModelTokenizerDescriptor.sentencePieceBpe("functiongemma-gemma-bpe"));
+        return List.of(ModelTokenizerDescriptor.huggingFaceBpe("functiongemma-gemma-bpe"));
     }
 }
