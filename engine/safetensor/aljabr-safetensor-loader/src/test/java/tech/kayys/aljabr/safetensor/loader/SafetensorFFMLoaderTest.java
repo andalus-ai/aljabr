@@ -312,7 +312,7 @@ class SafetensorFFMLoaderTest {
             MemorySegment seg = toSegment(payload, arena);
             assertThatThrownBy(() -> PARSER.parse(seg, Path.of("fractional-shape.safetensors")))
                     .isInstanceOf(SafetensorException.HeaderParseException.class)
-                    .hasMessageContaining("exactly representable");
+                    .hasMessageContaining("must be an integer");
         }
     }
 
