@@ -293,6 +293,48 @@ class DefaultTensorTest {
     }
 
     @Test
+    void replacementRemainsOwnedWhenPreviousGradientCleanupFails() {
+        DeviceOnlyStorage ownerStorage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor owner = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, ownerStorage, unusedBackend());
+        DeviceOnlyStorage replacementStorage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor replacement = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, replacementStorage, unusedBackend());
+        IllegalStateException cleanupFailure = new IllegalStateException("previous gradient cleanup failed");
+        Tensor failingPreviousGradient = (Tensor) Proxy.newProxyInstance(
+                Tensor.class.getClassLoader(),
+                new Class<?>[] { Tensor.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("release")) {
+                        throw cleanupFailure;
+                    }
+                    if (method.getName().equals("toString")) {
+                        return "FailingPreviousGradient";
+                    }
+                    throw new UnsupportedOperationException("Unexpected gradient method: " + method.getName());
+                });
+
+        try {
+            owner.setGrad(failingPreviousGradient);
+
+            IllegalStateException thrown = assertThrows(
+                    IllegalStateException.class, () -> owner.setGrad(replacement));
+
+            assertSame(cleanupFailure, thrown);
+            assertSame(replacement, owner.grad(),
+                    "The replacement is installed before cleanup of the previous gradient");
+            assertEquals(1, replacementStorage.references(),
+                    "The owner must retain the replacement even when previous-gradient cleanup fails");
+        } finally {
+            owner.release();
+        }
+
+        assertEquals(0, ownerStorage.references());
+        assertEquals(0, replacementStorage.references(),
+                "Releasing the owner must release the replacement whose ownership transferred");
+    }
+
+    @Test
     void releasesOwnedStorageWhenGradientCleanupFails() {
         DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
         DefaultTensor owner = new DefaultTensor(
