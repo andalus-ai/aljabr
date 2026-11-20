@@ -100,6 +100,16 @@ public final class ManagedArena implements AutoCloseable {
     }
 
     /**
+     * Returns whether the managed arena still owns a live underlying scope.
+     *
+     * <p>This also reflects an externally closed arena supplied through
+     * {@link #wrap(Arena)}.</p>
+     */
+    public boolean isOpen() {
+        return refCount.get() > 0 && arena.scope().isAlive();
+    }
+
+    /**
      * Returns the current reference count.
      */
     public int refCount() {
