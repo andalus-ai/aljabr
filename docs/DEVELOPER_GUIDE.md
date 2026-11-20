@@ -105,3 +105,38 @@ Use the status terms from AGENTS.md: Target, Planned, In progress, Implemented, 
 - [Modular distribution](architecture/MODULAR_DISTRIBUTION.md)
 - [Computational capability inventory](architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md)
 - [Research and training readiness](architecture/RESEARCH_TRAINING_READINESS.md)
+
+## 10. Java API styles and development entry points
+
+Aljabr APIs should be idiomatic Java and support different developer preferences over one semantic core:
+
+- Traditional Java: explicit types, interfaces, constructors and control flow.
+- Fluent Java: builders and method chaining for configuration, tensor/model composition and pipelines.
+- Declarative/annotation-assisted Java: annotations and generated metadata for discovery, configuration, validation and documentation.
+- Functional Java: typed transformations and composable operators.
+
+These styles must interoperate and must not create separate execution semantics. Annotations are optional; generated metadata is preferred to runtime reflection in hot paths; explicit APIs remain available for debugging and advanced control.
+
+The same published API should be usable from:
+- Gradle/Maven applications and IDEs.
+- JShell for short experiments.
+- JBang for executable scripts and examples.
+- Jupyter through an established Java kernel such as IJava.
+
+Provide tested snippets with real dependency coordinates, setup instructions, expected output, cleanup behavior and known limitations. Show how to promote an experiment into a normal Java project. Do not require a custom notebook kernel or a separate notebook API.
+
+## 11. Building model, algorithm and runner extensions
+
+Extension authors should be able to implement a model family, algorithm, operator, format adapter, dataset source or backend without forking Aljabr or depending on AQLI/Tafkir. Start from the smallest relevant Aljabr API/SPI, declare stable capability IDs and compatibility, register explicitly or through ServiceLoader, and implement lifecycle, diagnostics and conformance tests.
+
+A library-level model runner may compose a model, input/output contracts, preprocessing/postprocessing, execution options, inspection and resource lifecycle. It is not an HTTP server or serving runtime. AQLI owns request handling, scheduling, streaming, cancellation policy and production deployment. Tafkir owns training workflow orchestration, dataset pipelines and adaptation policy; Aljabr supplies reusable tensor/autograd/loss/optimizer computation primitives.
+
+## 12. Memory, zero-copy and diagnostics
+
+For every tensor/data/model API, explain ownership, borrowing, aliasing, mutation, view-versus-copy, lifetime, thread access and cleanup. Make copies, materialization and host/device transfers visible where practical. Zero-copy must list its preconditions and fallback behavior. Prefer safe defaults and offer explicit scoped allocation/pooling/mapped/native/device facilities for advanced users.
+
+Use actionable Aljabr-owned diagnostics: identify the operation, input shape/dtype/layout, failed constraint, selected provider, resource context and remediation. Include numerical assertions, gradient checks, NaN/Inf detection, backend parity tests, memory/copy inspection and profiling examples where relevant.
+
+## 13. Scientific, data and generative examples
+
+Examples should cover numerical/math foundations, linear algebra, statistics, scientific computation, dataset transformations, classical ML, tensors/autograd, neural models, multimodal composition and diffusion/generative workflows as those capabilities become implemented and validated. Clearly label planned versus executable examples. Never present a target API as runnable until its dependency coordinates and example are tested.
