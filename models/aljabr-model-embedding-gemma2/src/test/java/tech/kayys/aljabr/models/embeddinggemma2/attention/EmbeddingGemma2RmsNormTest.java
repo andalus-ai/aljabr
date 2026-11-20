@@ -19,8 +19,8 @@ class EmbeddingGemma2RmsNormTest {
     @Test
     void supportsUnscaledValueNorm() {
         float[][][] output = EmbeddingGemma2RmsNorm.apply(new float[][][]{{{3f, 4f}}}, null, 1e-6f);
-        assertEquals(0.6f, output[0][0][0], 1e-5f);
-        assertEquals(0.8f, output[0][0][1], 1e-5f);
+        assertEquals(0.8485281f, output[0][0][0], 1e-5f);
+        assertEquals(1.1313708f, output[0][0][1], 1e-5f);
     }
 
     @Test

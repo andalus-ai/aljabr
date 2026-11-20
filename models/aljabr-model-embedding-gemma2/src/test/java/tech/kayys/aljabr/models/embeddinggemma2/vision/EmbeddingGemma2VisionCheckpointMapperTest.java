@@ -127,7 +127,7 @@ class EmbeddingGemma2VisionCheckpointMapperTest {
     void validatesHeadGeometry() {
         assertThrows(IllegalArgumentException.class,
                 () -> new EmbeddingGemma2VisionCheckpointMapper.VisionSpec(
-                        4, 6, 1, 2, 1, 2, 1, 3, false));
+                        4, 6, 1, 2, 1, 1, 1, 3, false));
     }
 
     private static EmbeddingGemma2VisionCheckpointMapper.VisionSpec spec(boolean standardize) {

@@ -66,7 +66,7 @@ class EmbeddingGemma2BidirectionalAttentionTest {
 
     @Test
     void usesStableSoftmaxForLargeScores() {
-        float[][][] query = {{{1000f}}};
+        float[][][] query = {{{1000f}}, {{1000f}}};
         float[][][] key = {{{1f}}, {{0f}}};
         float[][][] value = {{{7f}}, {{1f}}};
 

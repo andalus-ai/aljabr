@@ -21,8 +21,8 @@ class EmbeddingGemma2MultimodalCheckpointMapperTest {
         float[][] result = embedder.project(new float[][]{{3f, 4f, 0f}});
 
         assertEquals(2, result[0].length);
-        assertEquals(0.6f, result[0][0], 1e-5f);
-        assertEquals(0.8f, result[0][1], 1e-5f);
+        assertEquals(1.0392305f, result[0][0], 1e-5f);
+        assertEquals(1.3856406f, result[0][1], 1e-5f);
     }
 
     @Test
