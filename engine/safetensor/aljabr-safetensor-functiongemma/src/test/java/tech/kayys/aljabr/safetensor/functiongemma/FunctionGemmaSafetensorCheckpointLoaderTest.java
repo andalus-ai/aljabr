@@ -4,6 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader;
+import tech.kayys.aljabr.models.functiongemma.FunctionGemmaArchitecture;
+import tech.kayys.aljabr.spi.model.ModelConfig;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +20,51 @@ class FunctionGemmaSafetensorCheckpointLoaderTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void acceptsTheCompleteGemma3TextTensorLayout() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ModelConfig config = mapper.readValue("""
+                {
+                  "model_type": "gemma3_text",
+                  "architectures": ["Gemma3ForCausalLM"],
+                  "num_hidden_layers": 2
+                }
+                """, ModelConfig.class);
+        FunctionGemmaArchitecture architecture = new FunctionGemmaArchitecture();
+        Set<String> tensors = new LinkedHashSet<>();
+        tensors.add(architecture.embedTokensWeight());
+        tensors.add(architecture.finalNormWeight());
+        for (int layer = 0; layer < config.numHiddenLayers(); layer++) {
+            tensors.add(architecture.layerQueryWeight(layer));
+            tensors.add(architecture.layerKeyWeight(layer));
+            tensors.add(architecture.layerValueWeight(layer));
+            tensors.add(architecture.layerOutputWeight(layer));
+            tensors.add(architecture.layerFfnGateWeight(layer));
+            tensors.add(architecture.layerFfnUpWeight(layer));
+            tensors.add(architecture.layerFfnDownWeight(layer));
+        }
+
+        FunctionGemmaSafetensorCheckpointLoader.validateTensorLayout(
+                tensors, config, architecture);
+    }
+
+    @Test
+    void reportsMissingRequiredWeightsBeforeReturningCheckpoint() throws Exception {
+        ModelConfig config = new ObjectMapper().readValue("""
+                {
+                  "model_type": "gemma3_text",
+                  "architectures": ["Gemma3ForCausalLM"],
+                  "num_hidden_layers": 1
+                }
+                """, ModelConfig.class);
+
+        IllegalArgumentException failure = assertThrows(
+                IllegalArgumentException.class,
+                () -> FunctionGemmaSafetensorCheckpointLoader.validateTensorLayout(
+                        Set.of(), config, new FunctionGemmaArchitecture()));
+        assertTrue(failure.getMessage().contains("missing 9 required tensors"));
+    }
 
     @Test
     void rejectsOrdinaryGemma3BeforeOpeningSafetensors() throws Exception {
