@@ -14,7 +14,7 @@ FunctionGemmaSafetensorCheckpointLoader loader;
 // The memory-mapped SafeTensors session is closed before the method returns.
 FunctionGemmaModel model = loader.loadModel(Path.of("/models/functiongemma-270m-it"));
 
-long[] inputIds = model.tokenizer().encode("Who are you?", EncodeOptions.defaults());
+long[] inputIds = model.tokenizer().encode("Who are you?", EncodeOptions.defaultOptions());
 float[][] logits = model.forward(inputIds);
 ```
 
