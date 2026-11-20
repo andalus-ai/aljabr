@@ -84,7 +84,7 @@ class HatComputeProviderTest {
                                 Map.of("dtype", "Q4_0", "rhs_dtype", "Q4_0")).support());
             }
             assertInstanceOf(CpuBackend.class,
-                    session.computeBackends().get(fallback.effectiveBackendId()));
+                    session.computeBackends().get(HatComputeProvider.CPU_FALLBACK_BACKEND_ID));
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.reshape", Map.of()).support());
             assertEquals(OperationSupport.DELEGATED,
