@@ -87,6 +87,25 @@ public final class GraphNode {
         this.materializedData = Objects.requireNonNull(materializedData, "materializedData");
     }
 
+    /**
+     * Clears a value installed by a failed evaluation attempt, but only when
+     * the node still references the exact tensor produced by that attempt.
+     *
+     * @return true when the expected materialization was cleared
+     */
+    boolean clearMaterializedData(Tensor expected) {
+        if (op == OpType.CONSTANT) {
+            return false;
+        }
+        synchronized (this) {
+            if (materializedData != expected) {
+                return false;
+            }
+            materializedData = null;
+            return true;
+        }
+    }
+
     public boolean isEvaluated() {
         return materializedData != null;
     }
