@@ -164,7 +164,6 @@ class GraphExecutorTest {
                 invalidGradientShape, contributionReleaseAttempts, contributionCleanupFailure);
         Tensor seed = tensorWithScalarAdd(
                 outputShape, seedCopyReleaseAttempts, seedCleanupFailure);
-        AtomicInteger leafGradientReleases = new AtomicInteger();
         Tensor leaf = (Tensor) Proxy.newProxyInstance(
                 Tensor.class.getClassLoader(),
                 new Class<?>[] { Tensor.class },
@@ -204,7 +203,6 @@ class GraphExecutorTest {
         assertEquals(1, thrown.getSuppressed()[0].getSuppressed().length,
                 "later cleanup failures must remain suppressed on the first cleanup failure");
         assertSame(seedCleanupFailure, thrown.getSuppressed()[0].getSuppressed()[0]);
-        assertEquals(0, leafGradientReleases.get());
     }
 
 
