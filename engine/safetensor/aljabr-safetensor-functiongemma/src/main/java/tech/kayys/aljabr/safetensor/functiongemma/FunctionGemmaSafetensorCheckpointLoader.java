@@ -6,6 +6,8 @@ import jakarta.inject.Inject;
 import tech.kayys.aljabr.models.functiongemma.FunctionGemmaArchitecture;
 import tech.kayys.aljabr.models.functiongemma.FunctionGemmaModelFamilyPlugin;
 import tech.kayys.aljabr.models.functiongemma.FunctionGemmaTokenizer;
+import tech.kayys.aljabr.models.gemma3.Gemma3TextBackbone;
+import tech.kayys.aljabr.models.gemma3.Gemma3TextCheckpointMapper;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader.SafetensorShardSession;
 import tech.kayys.aljabr.spi.model.ModelArchitecture;
@@ -15,6 +17,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -84,6 +88,62 @@ public final class FunctionGemmaSafetensorCheckpointLoader {
         }
     }
 
+    /**
+     * Loads a FunctionGemma checkpoint into a detached, executable CPU
+     * reference model. The SafeTensors session is closed after all required
+     * weights have been materialized into the mapper's canonical float32
+     * representation.
+     */
+    public FunctionGemmaModel loadModel(Path modelDirectory) throws IOException {
+        try (LoadedCheckpoint checkpoint = load(modelDirectory)) {
+            Map<String, Gemma3TextCheckpointMapper.CheckpointTensor> tensors =
+                    materializeTensors(checkpoint);
+            Gemma3TextCheckpointMapper.Weights weights =
+                    Gemma3TextCheckpointMapper.map(
+                            checkpoint.config(), checkpoint.architecture(), tensors);
+            Gemma3TextBackbone backbone =
+                    new Gemma3TextBackbone(checkpoint.config(), weights);
+            return new FunctionGemmaModel(checkpoint.config(), checkpoint.tokenizer(), backbone);
+        }
+    }
+
+    private static Map<String, Gemma3TextCheckpointMapper.CheckpointTensor> materializeTensors(
+            LoadedCheckpoint checkpoint) {
+        FunctionGemmaArchitecture architecture = checkpoint.architecture();
+        ModelConfig config = checkpoint.config();
+        List<String> names = new ArrayList<>();
+        names.add(architecture.embedTokensWeight());
+        names.add(architecture.finalNormWeight());
+        for (int layer = 0; layer < config.numHiddenLayers(); layer++) {
+            names.add(architecture.layerQueryWeight(layer));
+            names.add(architecture.layerKeyWeight(layer));
+            names.add(architecture.layerValueWeight(layer));
+            names.add(architecture.layerOutputWeight(layer));
+            names.add(architecture.layerAttentionNormWeight(layer));
+            names.add(architecture.layerPostAttnNormWeight(layer));
+            names.add(architecture.layerPreFfnNormWeight(layer));
+            names.add(architecture.layerPostFfnNormWeight(layer));
+            names.add(architecture.layerQueryNormWeight(layer));
+            names.add(architecture.layerKeyNormWeight(layer));
+            names.add(architecture.layerFfnGateWeight(layer));
+            names.add(architecture.layerFfnUpWeight(layer));
+            names.add(architecture.layerFfnDownWeight(layer));
+        }
+
+        Map<String, Gemma3TextCheckpointMapper.CheckpointTensor> result = new LinkedHashMap<>();
+        for (String name : names) {
+            var tensor = checkpoint.tensors().tensor(name);
+            long[] longShape = tensor.shape();
+            int[] shape = new int[longShape.length];
+            for (int dimension = 0; dimension < longShape.length; dimension++) {
+                shape[dimension] = Math.toIntExact(longShape[dimension]);
+            }
+            result.put(name, new Gemma3TextCheckpointMapper.CheckpointTensor(
+                    shape, tensor.toFloatArray()));
+        }
+        return result;
+    }
+
     private FunctionGemmaArchitecture selectArchitecture() {
         List<ModelArchitecture> adapters = familyPlugin.architectureAdapters();
         if (adapters.size() != 1 || !(adapters.getFirst() instanceof FunctionGemmaArchitecture architecture)) {
@@ -116,6 +176,18 @@ public final class FunctionGemmaSafetensorCheckpointLoader {
                     architecture.layerFfnUpWeightCandidates(layer));
             requireOne(available, missing, "layer " + layer + " FFN down",
                     architecture.layerFfnDownWeightCandidates(layer));
+            requireOne(available, missing, "layer " + layer + " attention norm",
+                    architecture.layerAttentionNormWeightCandidates(layer));
+            requireOne(available, missing, "layer " + layer + " post-attention norm",
+                    architecture.layerPostAttnNormWeightCandidates(layer));
+            requireOne(available, missing, "layer " + layer + " pre-FFN norm",
+                    architecture.layerPreFfnNormWeightCandidates(layer));
+            requireOne(available, missing, "layer " + layer + " post-FFN norm",
+                    architecture.layerPostFfnNormWeightCandidates(layer));
+            requireOne(available, missing, "layer " + layer + " query norm",
+                    architecture.layerQueryNormWeightCandidates(layer));
+            requireOne(available, missing, "layer " + layer + " key norm",
+                    architecture.layerKeyNormWeightCandidates(layer));
         }
 
         if (!missing.isEmpty()) {
