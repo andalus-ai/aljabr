@@ -81,6 +81,21 @@ class EmbeddingGemma2VisionImageProcessorTest {
     }
 
     @Test
+    void convertsGrayscaleAndRgbaInputsToRgbWithoutAlphaCompositing() {
+        var gray = EmbeddingGemma2VisionImageProcessor.RgbImage.fromGrayscale8(
+                1, 1, new byte[]{(byte) 128});
+        assertEquals(128f, gray.channelForTest(0), 0f);
+        assertEquals(128f, gray.channelForTest(1), 0f);
+        assertEquals(128f, gray.channelForTest(2), 0f);
+
+        var rgba = EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgba8(
+                1, 1, new byte[]{10, 20, 30, 0});
+        assertEquals(10f, rgba.channelForTest(0), 0f);
+        assertEquals(20f, rgba.channelForTest(1), 0f);
+        assertEquals(30f, rgba.channelForTest(2), 0f);
+    }
+
+    @Test
     void rejectsInvalidProcessorConfigurationAndRgbInput() {
         assertThrows(IllegalArgumentException.class,
                 () -> new EmbeddingGemma2VisionImageProcessor(16, 100, 3));
