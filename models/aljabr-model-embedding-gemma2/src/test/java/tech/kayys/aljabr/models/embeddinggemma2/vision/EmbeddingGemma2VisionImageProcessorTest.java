@@ -75,8 +75,8 @@ class EmbeddingGemma2VisionImageProcessorTest {
         assertEquals(55, output.numSoftTokensPerImage()[1]);
         assertEquals(127f / 255f, pixels[0][0][0], 1e-5f);
         assertEquals(64f / 255f, pixels[1][0][0], 1e-5f);
-        assertEquals(9, positions[0][219][0]);
-        assertEquals(21, positions[0][219][1]);
+        assertEquals(21, positions[0][219][0]);
+        assertEquals(9, positions[0][219][1]);
         assertEquals(-1, positions[0][220][0]);
         assertEquals(21, positions[1][219][0]);
         assertEquals(9, positions[1][219][1]);
