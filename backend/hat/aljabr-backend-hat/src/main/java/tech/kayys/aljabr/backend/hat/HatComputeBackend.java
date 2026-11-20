@@ -434,12 +434,28 @@ public class HatComputeBackend implements ComputeBackend {
 
     @Override
     public Tensor cast(Tensor a, tech.kayys.aljabr.core.tensor.DType dtype) {
-        return cpuFallback.cast(a, dtype);
+        java.util.Objects.requireNonNull(a, "tensor must not be null");
+        java.util.Objects.requireNonNull(dtype, "dtype must not be null");
+        if (a.dtype() == dtype) {
+            // A no-op cast preserves the original tensor and its HAT ownership.
+            return a;
+        }
+        throw new UnsupportedOperationException(
+                "HAT backend does not yet stage tensors for CPU dtype conversion: "
+                        + a.dtype() + " -> " + dtype);
     }
 
     @Override
     public Tensor to(Tensor a, tech.kayys.aljabr.core.tensor.DeviceType device) {
-        return cpuFallback.to(a, device);
+        java.util.Objects.requireNonNull(a, "tensor must not be null");
+        java.util.Objects.requireNonNull(device, "device must not be null");
+        if (a.device() == device) {
+            // A no-op device transfer must not change backend ownership.
+            return a;
+        }
+        throw new UnsupportedOperationException(
+                "HAT backend does not yet implement device transfer: "
+                        + a.device() + " -> " + device);
     }
 
     @Override
