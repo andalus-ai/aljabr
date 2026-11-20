@@ -273,6 +273,24 @@ class SafetensorFFMLoaderTest {
 
     @Test
     @Order(24)
+    void parser_offsetAdditionOverflow_throws() {
+        // The relative end offset fits in a signed long, but adding the data
+        // section's absolute start would overflow and previously bypass bounds checks.
+        String json = """
+                {"huge": {"dtype":"U8","shape":[9223372036854775807],
+                          "data_offsets":[0,9223372036854775807]}}""";
+        byte[] payload = buildSafetensors(json, new byte[0]);
+
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = toSegment(payload, arena);
+            assertThatThrownBy(() -> PARSER.parse(seg, Path.of("overflow.safetensors")))
+                    .isInstanceOf(SafetensorException.ValidationException.class)
+                    .hasMessageContaining("extend beyond data section");
+        }
+    }
+
+    @Test
+    @Order(25)
     void parser_unknownDtype_throws() {
         String json = """
                 {"x": {"dtype":"FLOAT128","shape":[4],"data_offsets":[0,64]}}""";
@@ -285,7 +303,7 @@ class SafetensorFFMLoaderTest {
     }
 
     @Test
-    @Order(25)
+    @Order(26)
     void parser_multiTensor_orderPreserved() {
         String json = """
                 {
