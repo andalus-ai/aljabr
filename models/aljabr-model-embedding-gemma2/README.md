@@ -29,7 +29,7 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
-- A Gemma4 vision patch embedder that applies the reference pixel scaling, bias-free RGB patch projection, and learned x/y positional-table lookup. Image preprocessing and patch extraction remain processor responsibilities.
+- A Gemma4 vision patch embedder that applies the reference pixel scaling, bias-free RGB patch projection, and learned x/y positional-table lookup.\n- `EmbeddingGemma2VisionImageProcessor` accepts decoded interleaved RGB images without an AWT or image-codec dependency, applies Gemma4's patch-budget aspect-ratio resize and bicubic antialias filter, rescales RGB to [0,1], extracts row-major patches, emits (x,y) position IDs, and pads each image to the configured common patch axis. It returns the immutable `EmbeddingGemma2VisionProcessorOutput` consumed by the composed tower.
 - A Gemma4 vision spatial pooler that groups patch states by their 2D coordinates, applies fixed-area k×k averaging with zero-valued padding, returns a pooled padding mask, and scales pooled states by sqrt(hidden_size) in float32.
 - `EmbeddingGemma2VisionSoftTokenStandardizer` applies the optional checkpoint-provided feature-wise `(x - std_bias) * std_scale` operation after spatial pooling and sqrt(hidden_size) scaling. It computes in float32; the caller casts to its working dtype after standardization and enables it only when `vision_config.standardize=true`.
 - A configurable Gemma4 vision encoder stack that validates the checkpoint layer count, executes every vision encoder layer in order, supports either RGB patch vectors or precomputed patch embeddings, and returns unpooled final hidden states without adding a non-reference final normalization.
@@ -46,7 +46,7 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   complete vision-to-text soft-token path without a separately injected
   projection at call time. A separate splitter restores per-image boundaries
   from padded patch-position metadata and the configured pooling kernel.
-- `EmbeddingGemma2VisionProcessorOutput` is an immutable adapter for Gemma4-compatible processor tensors (`pixel_values`, `image_position_ids`, and `num_soft_tokens_per_image`). `EmbeddingGemma2VisionTower.encodeAndProject(processorOutput)` executes each padded image sequence, checks the actual valid pooled-token count against processor metadata, applies the checkpoint-backed bridge, and returns one text-space soft-token sequence per image without flattening away image boundaries.
+- `EmbeddingGemma2VisionProcessorOutput` is an immutable adapter for Gemma4-compatible processor tensors (`pixel_values`, `image_position_ids`, and `num_soft_tokens_per_image`). `EmbeddingGemma2VisionTower.encodeAndProject(processorOutput)` executes each padded image sequence, checks the actual valid pooled-token count against processor metadata, applies the checkpoint-backed bridge, and returns one text-space soft-token sequence per image without flattening away image boundaries. Callers can now create this output directly with `new EmbeddingGemma2VisionImageProcessor(patchSize, maxSoftTokens, poolingKernelSize).process(rgbImage)` or process a list of images.
 - Text-only is the first intended execution milestone.
 
 The attention, encoder-layer, and assembled text-backbone operations are
@@ -114,7 +114,7 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-Image decoding, RGB conversion, aspect-ratio-preserving resizing, and end-to-end registered runner execution remain deferred. The processor-output contract and per-image execution bridge are implemented; callers still supply processor-produced patches and metadata. Current vision components
+Image decoding and end-to-end registered runner execution remain deferred. The Java image processor accepts already-decoded RGB samples; codec integration remains the responsibility of the application or a separate image-I/O module. The image processor and per-image execution bridge are reference implementations; numeric parity against the pinned upstream torchvision implementation and full checkpoint inference still require fixture-based validation. Current vision components
 cover patch projection and learned 2D position lookup, the encoder tower and
 spatial pooler, optional post-pool standardization, post-tower modality
 projection, and reference per-image soft-token splitting.
