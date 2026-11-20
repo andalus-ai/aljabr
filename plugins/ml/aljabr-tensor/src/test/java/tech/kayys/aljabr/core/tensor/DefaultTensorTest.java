@@ -185,7 +185,7 @@ class DefaultTensorTest {
         DefaultTensor tensor = new DefaultTensor(
                 new Shape(3), DType.F32, DeviceType.CPU, buffer, unusedBackend(), layout);
         try {
-            assertArrayEquals(new float[] {11f, 12f, 13f}, tensor.toFloatArray());
+            assertArrayEquals(new float[] {11f, 12f, 13f}, tensor.toFloatArray(), 0f);
         } finally {
             tensor.release();
         }
@@ -201,7 +201,7 @@ class DefaultTensorTest {
         DefaultTensor tensor = new DefaultTensor(
                 new Shape(3, 2), DType.F32, DeviceType.CPU, buffer, unusedBackend(), transposed);
         try {
-            assertArrayEquals(new float[] {1f, 4f, 2f, 5f, 3f, 6f}, tensor.toFloatArray());
+            assertArrayEquals(new float[] {1f, 4f, 2f, 5f, 3f, 6f}, tensor.toFloatArray(), 0f);
         } finally {
             tensor.release();
         }
@@ -217,7 +217,7 @@ class DefaultTensorTest {
         DefaultTensor tensor = new DefaultTensor(
                 new Shape(2, 2), DType.F32, DeviceType.CPU, buffer, unusedBackend(), sliced);
         try {
-            assertArrayEquals(new float[] {2f, 6f, 10f, 14f}, tensor.toFloatArray());
+            assertArrayEquals(new float[] {2f, 6f, 10f, 14f}, tensor.toFloatArray(), 0f);
         } finally {
             tensor.release();
         }
@@ -229,7 +229,7 @@ class DefaultTensorTest {
         DefaultTensor tensor = new DefaultTensor(
                 new Shape(0, 3), DType.F32, DeviceType.CPU, storage, unusedBackend());
         try {
-            assertArrayEquals(new float[0], tensor.toFloatArray());
+            assertArrayEquals(new float[0], tensor.toFloatArray(), 0f);
         } finally {
             tensor.release();
         }
