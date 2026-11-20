@@ -112,10 +112,9 @@ public class GraphOptimizer {
                 node.getOutputShape(),
                 node.getOutputDType(),
                 node.getBackwardFunction());
-        if (node.isEvaluated()) {
-            optimized.setMaterializedData(node.getMaterializedData());
-        }
-
+        // Rewritten nodes must not inherit cached Tensor references from the
+        // source graph. The source and rewritten graph have independent
+        // materialization leases; sharing this pointer would double-release it.
         memo.put(node, optimized);
         return optimized;
     }
