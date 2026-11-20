@@ -2,6 +2,7 @@ package tech.kayys.aljabr.spi.model.ir;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -95,8 +96,10 @@ class ModelDescriptorTest {
     @Test
     void rejectsInvalidIdentityAndNullMetadataValues() {
         assertThrows(IllegalArgumentException.class, () -> ModelIdentity.of(" "));
+        var invalidMetadata = new HashMap<String, String>();
+        invalidMetadata.put("invalid", null);
         assertThrows(IllegalArgumentException.class, () -> new ModelDescriptor(
                 ModelIdentity.of("model"), "decoder", "safetensors",
-                Map.of("invalid", null), Map.of(), List.of()));
+                invalidMetadata, Map.of(), List.of()));
     }
 }
