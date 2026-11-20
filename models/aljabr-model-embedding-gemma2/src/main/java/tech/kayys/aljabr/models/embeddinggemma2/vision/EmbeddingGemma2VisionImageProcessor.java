@@ -155,8 +155,10 @@ public final class EmbeddingGemma2VisionImageProcessor {
     }
 
     /**
-     * Separable bicubic resize with antialiasing. The cubic coefficient is
-     * -0.5 (Pillow/torchvision bicubic); the support expands when downsampling.
+     * Separable bicubic resize with antialiasing, matching torchvision's
+     * tensor backend and ATen's Pillow-compatible Keys cubic filter (a=-0.5).
+     * Filter support expands when downsampling; taps outside the input are
+     * excluded and the remaining weights are normalized.
      */
     private static RgbImage resizeBicubicAntialias(RgbImage source, int targetHeight, int targetWidth) {
         float[] horizontal = new float[Math.multiplyExact(
@@ -185,32 +187,33 @@ public final class EmbeddingGemma2VisionImageProcessor {
                         value += horizontal[(contribution.indices[i] * targetWidth + x) * 3 + channel]
                                 * contribution.weights[i];
                     }
-                    output[(y * targetWidth + x) * 3 + channel] =
-                            (float) Math.max(0d, Math.min(255d, value));
+                    // Tensor bicubic interpolation preserves cubic overshoot;
+                    // do not clamp before the processor's 1/255 rescale.
+                    output[(y * targetWidth + x) * 3 + channel] = (float) value;
                 }
             }
         }
-        return RgbImage.fromFloatSamples(targetWidth, targetHeight, output);
+        return RgbImage.fromResizedFloatSamples(targetWidth, targetHeight, output);
     }
 
     private static Contributions contributions(int inputSize, int outputSize, int outputIndex) {
         double scale = (double) inputSize / outputSize;
-        double filterScale = Math.max(1d, scale);
-        double center = (outputIndex + 0.5d) * scale;
-        int first = (int) Math.floor(center - 2d * filterScale - 0.5d);
-        int last = (int) Math.ceil(center + 2d * filterScale - 0.5d);
-        int length = last - first + 1;
+        double support = scale >= 1d ? 2d * scale : 2d;
+        double inverseScale = scale >= 1d ? 1d / scale : 1d;
+        double center = scale * (outputIndex + 0.5d);
+
+        // Mirrors ATen HelperInterpBase::_compute_indices_min_size_weights_aa.
+        // Java's cast from finite double to int truncates toward zero, as C++ does.
+        int first = Math.max((int) (center - support + 0.5d), 0);
+        int end = Math.min((int) (center + support + 0.5d), inputSize);
+        int length = Math.max(0, end - first);
         int[] indices = new int[length];
         double[] weights = new double[length];
         double sum = 0d;
         for (int i = 0; i < length; i++) {
-            int sample = first + i;
-            double distance = (sample + 0.5d - center) / filterScale;
-            double weight = cubic(distance);
-            // Match edge extension: samples beyond the image use the nearest edge pixel.
-            indices[i] = Math.max(0, Math.min(inputSize - 1, sample));
-            weights[i] = weight;
-            sum += weight;
+            indices[i] = first + i;
+            weights[i] = cubic((i + first - center + 0.5d) * inverseScale);
+            sum += weights[i];
         }
         if (sum == 0d) throw new IllegalStateException("bicubic resize produced an empty filter");
         for (int i = 0; i < length; i++) weights[i] /= sum;
