@@ -6,8 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.models.embeddinggemma2.EmbeddingGemma2CheckpointMapper.CheckpointTensor;
+import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig;
 
 class EmbeddingGemma2VisionImagePipelineTest {
     @Test
@@ -28,6 +30,50 @@ class EmbeddingGemma2VisionImagePipelineTest {
             assertEquals(3, token.length);
             for (float value : token) assertEquals(0f, value, 0f);
         }
+    }
+
+    @Test
+    void parsesHuggingFaceVisionAndProcessorConfigAndBuildsPipeline() throws Exception {
+        var mapper = new ObjectMapper();
+        var modelConfig = mapper.readTree("""
+                {
+                  "vision_config": {
+                    "model_type": "gemma4_vision",
+                    "hidden_size": 4,
+                    "intermediate_size": 4,
+                    "num_hidden_layers": 1,
+                    "num_attention_heads": 1,
+                    "num_key_value_heads": 1,
+                    "head_dim": 4,
+                    "patch_size": 1,
+                    "position_embedding_size": 32,
+                    "pooling_kernel_size": 2,
+                    "standardize": false,
+                    "rms_norm_eps": 0.000001,
+                    "rope_parameters": {"rope_type": "axial", "rope_theta": 100.0},
+                    "hidden_activation": "gelu_pytorch_tanh",
+                    "use_clipped_linears": false
+                  }
+                }
+                """);
+        var processorConfig = mapper.readTree("""
+                {"patch_size": 1, "pooling_kernel_size": 2, "max_soft_tokens": 70}
+                """);
+
+        var config = EmbeddingGemma2VisionConfig.fromJson(modelConfig, processorConfig);
+        assertEquals(1, config.patchSize());
+        assertEquals(2, config.poolingKernelSize());
+        assertEquals(70, config.maxSoftTokens());
+        assertEquals(32, config.positionEmbeddingSize());
+
+        var pipeline = EmbeddingGemma2VisionImagePipeline.fromCheckpoint(
+                config, tinyCheckpoint(), 3, 1e-6f);
+        var image = EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(
+                4, 4, solidRgb(4, 4, (byte) 128));
+        float[][] features = pipeline.encode(image);
+
+        assertEquals(64, features.length);
+        assertEquals(3, features[0].length);
     }
 
     @Test
