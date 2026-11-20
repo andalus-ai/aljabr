@@ -62,7 +62,7 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.matmul", Map.of("dtype", "F32")).support());
 
-            for (String operation : List.of("tensor.add", "tensor.sub", "tensor.mul", "tensor.div")) {
+            for (String operation : Set.of("tensor.add", "tensor.sub", "tensor.mul", "tensor.div")) {
                 assertEquals(OperationSupport.UNKNOWN,
                         session.operationSupport(operation, Map.of()).support());
                 assertEquals(OperationSupport.UNKNOWN,
