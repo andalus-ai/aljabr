@@ -61,6 +61,27 @@ class EmbeddingGemma2VisionTowerTest {
     }
 
     @Test
+    void constructsTowerWithCheckpointMappedMultimodalProjection() {
+        var tensors = java.util.Map.of(
+                "embed_vision.embedding_projection.weight",
+                new tech.kayys.aljabr.models.embeddinggemma2.EmbeddingGemma2CheckpointMapper.CheckpointTensor(
+                        new int[]{2, 4},
+                        new float[]{1f, 1f, 1f, 1f, 0.5f, 0.5f, 0.5f, 0.5f}));
+        var embedder = EmbeddingGemma2MultimodalCheckpointMapper.mapVisionEmbedder(
+                4, 2, 1e-6f, tensors);
+        var tower = EmbeddingGemma2VisionTower.fromCheckpoint(
+                spec(true), weights(true), embedder, 1e-6f, 100d, 1);
+
+        float[][] projected = tower.encodeAndProject(
+                new float[][]{{0f, 0f, 0f}},
+                new int[][]{{0, 0}},
+                1,
+                null);
+
+        assertArrayEquals(new float[]{-4f, -2f}, projected[0], 1e-5f);
+    }
+
+    @Test
     void rejectsCheckpointLayerCountMismatch() {
         var spec = spec(true);
         var weights = new EmbeddingGemma2VisionCheckpointMapper.Weights(
