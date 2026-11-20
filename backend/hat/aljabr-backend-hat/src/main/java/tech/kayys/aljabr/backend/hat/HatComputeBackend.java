@@ -402,6 +402,20 @@ public class HatComputeBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor cat(List<Tensor> tensors, int axis) {
+        java.util.Objects.requireNonNull(tensors, "tensors must not be null");
+        List<Tensor> staged = new java.util.ArrayList<>(tensors.size());
+        try {
+            for (int i = 0; i < tensors.size(); i++) {
+                staged.add(stageForCpu(tensors.get(i), "tensors[" + i + "]"));
+            }
+            return cpuFallback.cat(staged, axis);
+        } finally {
+            for (Tensor tensor : staged) tensor.close();
+        }
+    }
+
+    @Override
     public Tensor upsampleNearest2d(Tensor input, int outputH, int outputW) {
         try (Tensor cpuInput = stageForCpu(input, "input")) {
             return cpuFallback.upsampleNearest2d(cpuInput, outputH, outputW);

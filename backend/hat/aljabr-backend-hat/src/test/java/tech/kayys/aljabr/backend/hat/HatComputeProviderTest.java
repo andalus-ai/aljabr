@@ -571,6 +571,54 @@ class HatComputeProviderTest {
     }
 
     @Test
+    void catRequiresCompleteCompatibleInputMetadata() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.cat", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.cat", Map.of(
+                            "input_dtypes", "F32,F32", "input_shapes", "2,3;2,4")).support());
+            Map<String, String> valid = Map.of(
+                    "input_dtypes", "F32,F32", "input_shapes", "2,3;2,4", "axis", "1");
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.cat", valid).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.cat", valid).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.cat", Map.of(
+                            "input_dtypes", "F32,F16", "input_shapes", "2,3;2,4", "axis", "1")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.cat", Map.of(
+                            "input_dtypes", "F32,F32", "input_shapes", "2,3;3,4", "axis", "1")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.cat", Map.of(
+                            "input_dtypes", "F32,F32", "input_shapes", "2,3;2,4", "axis", "2")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void catStagesEveryHatOwnedInputIntoCpuFallback() {
+        CpuBackend cpu = new CpuBackend();
+        HatComputeBackend hat = new HatComputeBackend(cpu);
+        try (var first = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 2f}, hat, 1, 2);
+                var second = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {3f, 4f, 5f}, hat, 1, 3);
+                var output = hat.cat(java.util.List.of(first, second), 1)) {
+            assertEquals(cpu, output.backend());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new float[] {1f, 2f, 3f, 4f, 5f}, output.toFloatArray(), 1.0e-5f);
+        } finally {
+            hat.close();
+            cpu.close();
+        }
+    }
+
+    @Test
     void providerCloseClosesOutstandingSessions() throws Exception {
         HatComputeProvider provider = new HatComputeProvider();
         provider.initialize(new ProviderContext("test", Map.of()));
