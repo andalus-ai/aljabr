@@ -155,7 +155,7 @@ public final class SafetensorLoadResult implements AutoCloseable {
      * @throws IllegalStateException                       if this result has been
      *                                                     closed
      */
-    public SafetensorTensor tensor(String name) {
+    public synchronized SafetensorTensor tensor(String name) {
         checkOpen();
         return tensorCache.computeIfAbsent(name, this::buildTensor);
     }
@@ -166,7 +166,7 @@ public final class SafetensorLoadResult implements AutoCloseable {
      * @param name tensor key
      * @return an {@link Optional} containing the tensor, or empty
      */
-    public Optional<SafetensorTensor> findTensor(String name) {
+    public synchronized Optional<SafetensorTensor> findTensor(String name) {
         checkOpen();
         if (!header.hasTensor(name))
             return Optional.empty();
@@ -179,7 +179,7 @@ public final class SafetensorLoadResult implements AutoCloseable {
      *
      * @return ordered map of tensor name → tensor
      */
-    public Map<String, SafetensorTensor> allTensors() {
+    public synchronized Map<String, SafetensorTensor> allTensors() {
         checkOpen();
         // Ensure all tensors are in the cache
         for (String name : header.tensors().keySet()) {
@@ -217,7 +217,7 @@ public final class SafetensorLoadResult implements AutoCloseable {
      * Idempotent — safe to call multiple times.
      */
     @Override
-    public void close() {
+    public synchronized void close() {
         if (!closed.compareAndSet(false, true)) {
             return; // already closed
         }
