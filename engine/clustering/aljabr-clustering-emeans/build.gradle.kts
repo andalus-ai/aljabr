@@ -5,6 +5,7 @@ plugins {
 dependencies {
     api(project(":engine:clustering:aljabr-clustering-api"))
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
+    testImplementation(project(":engine:clustering:aljabr-clustering-kmeans"))
 }
 
 val jmh by sourceSets.creating {
