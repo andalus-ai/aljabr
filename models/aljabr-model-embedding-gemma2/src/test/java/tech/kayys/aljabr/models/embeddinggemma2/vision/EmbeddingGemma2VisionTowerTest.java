@@ -27,6 +27,20 @@ class EmbeddingGemma2VisionTowerTest {
     }
 
     @Test
+    void removesPaddedSpatialTokensBeforeReturningVisionFeatures() {
+        var tower = EmbeddingGemma2VisionTower.fromCheckpoint(
+                spec(false), weights(false), 1e-6f, 100d, 2);
+        var output = tower.encode(
+                new float[][]{
+                        {0f, 0f, 0f}, {0f, 0f, 0f},
+                        {0f, 0f, 0f}, {0f, 0f, 0f}
+                },
+                new int[][]{{0, 0}, {1, 0}, {0, 1}, {-1, -1}},
+                1);
+        assertEquals(1, output.hiddenStates().length);
+    }
+
+    @Test
     void projectsTowerTokensIntoTextHiddenSpaceAfterStandardization() {
         var tower = EmbeddingGemma2VisionTower.fromCheckpoint(
                 spec(true), weights(true), 1e-6f, 100d, 1);
