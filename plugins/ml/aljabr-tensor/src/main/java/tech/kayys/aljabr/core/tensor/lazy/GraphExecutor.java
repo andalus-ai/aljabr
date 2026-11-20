@@ -173,13 +173,15 @@ public class GraphExecutor {
                         }
                     } finally {
                         // Also release contributions not yet consumed if accumulation fails.
-                        release(inputGradients);
-                        gradient.release();
+                        releaseAll(inputGradients, gradient);
                     }
                 }
             } finally {
-                gradients.values().forEach(Tensor::release);
-                gradients.clear();
+                try {
+                    releaseAll(gradients.values().toArray(Tensor[]::new));
+                } finally {
+                    gradients.clear();
+                }
             }
         }
     }
@@ -194,19 +196,50 @@ public class GraphExecutor {
             return;
         }
         Tensor accumulated = previous.add(contribution);
-        previous.release();
-        contribution.release();
+        // Publish the replacement before cleanup: if either release fails,
+        // the map still owns the accumulated gradient and can clean it up.
         gradients.put(node, accumulated);
+        releaseAll(previous, contribution);
     }
 
-    private static void release(Tensor[] tensors) {
+    /**
+     * Attempts every release even when an earlier tensor fails cleanup.
+     * The first failure is propagated and subsequent failures are suppressed.
+     */
+    static void releaseAll(Tensor... tensors) {
+        Throwable failure = null;
         if (tensors != null) {
             for (Tensor tensor : tensors) {
-                if (tensor != null) {
+                if (tensor == null) {
+                    continue;
+                }
+                try {
                     tensor.release();
+                } catch (RuntimeException | Error cleanupFailure) {
+                    if (failure == null) {
+                        failure = cleanupFailure;
+                    } else {
+                        failure.addSuppressed(cleanupFailure);
+                    }
                 }
             }
         }
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error errorFailure) {
+            throw errorFailure;
+        }
+    }
+
+    private static void releaseAll(Tensor[] tensors, Tensor additional) {
+        if (tensors == null) {
+            releaseAll(additional);
+            return;
+        }
+        Tensor[] all = java.util.Arrays.copyOf(tensors, tensors.length + 1);
+        all[tensors.length] = additional;
+        releaseAll(all);
     }
 
     private void buildTopoOrder(GraphNode node, Set<GraphNode> visited, List<GraphNode> topoOrder) {
