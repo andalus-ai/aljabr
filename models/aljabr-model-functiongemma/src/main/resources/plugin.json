@@ -1,0 +1,20 @@
+{
+  "id": "model-family/functiongemma",
+  "name": "FunctionGemma Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "FunctionGemma model-family adapter, tokenizer routing, and native function-calling chat protocol",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.functiongemma.FunctionGemmaModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "optional",
+    "families": ["functiongemma"],
+    "baseArchitecture": "gemma3_text",
+    "tokenizerKind": "gemma-bpe",
+    "chatProtocol": "functiongemma",
+    "functionCalling": "native-control-tokens",
+    "defaultCheckpoint": "google/functiongemma-270m-it"
+  }
+}
