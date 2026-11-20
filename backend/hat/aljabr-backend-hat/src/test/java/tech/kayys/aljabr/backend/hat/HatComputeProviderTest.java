@@ -371,6 +371,36 @@ class HatComputeProviderTest {
     }
 
     @Test
+    void embeddingRequiresIntegralIndicesAndF32RankTwoWeights() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.embedding", Map.of("dtype", "I32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F32", "weight_rank", "2")).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I8", "weight_dtype", "F32", "weight_rank", "2")).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "F32", "weight_dtype", "F32", "weight_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F16", "weight_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F32", "weight_rank", "1")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F32", "weight_rank", "unknown")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
     void powerRequiresF32ForCpuFallback() throws Exception {
         HatComputeProvider provider = new HatComputeProvider();
         provider.initialize(new ProviderContext("test", Map.of()));
