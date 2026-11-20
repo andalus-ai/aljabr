@@ -90,8 +90,9 @@ public final class HuggingFaceGemmaBpeLoader {
                     }
                 }
             }
+            String unknownToken = model.path("unk_token").asText("<unk>");
             return new GemmaBpeTokenizer(vocab, merges, specials,
-                    vocab.getOrDefault("<unk>", -1), vocab.getOrDefault("<bos>", -1),
+                    vocab.getOrDefault(unknownToken, -1), vocab.getOrDefault("<bos>", -1),
                     vocab.getOrDefault("<eos>", -1), vocab.getOrDefault("<pad>", -1));
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load Gemma tokenizer: " + path, e);
@@ -142,10 +143,4 @@ public final class HuggingFaceGemmaBpeLoader {
                 && "Fuse".equals(fuse.path("type").asText());
     }
 
-    private static boolean containsType(JsonNode node, String type) {
-        if (node == null || node.isMissingNode()) return false;
-        if (type.equals(node.path("type").asText())) return true;
-        for (JsonNode child : node) if (containsType(child, type)) return true;
-        return false;
-    }
 }
