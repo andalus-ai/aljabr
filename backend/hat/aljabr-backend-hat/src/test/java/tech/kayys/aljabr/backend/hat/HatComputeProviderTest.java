@@ -83,6 +83,16 @@ class HatComputeProviderTest {
                         session.operationSupport(operation,
                                 Map.of("dtype", "Q4_0", "rhs_dtype", "Q4_0")).support());
             }
+            for (String operation : Set.of("tensor.add_scalar", "tensor.mul_scalar", "tensor.div_scalar")) {
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of()).support());
+                assertEquals(OperationSupport.DELEGATED,
+                        session.operationSupport(operation, Map.of("dtype", "F32")).support());
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "F16")).support());
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "Q4_0")).support());
+            }
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(HatComputeProvider.CPU_FALLBACK_BACKEND_ID));
             assertEquals(OperationSupport.DELEGATED,
