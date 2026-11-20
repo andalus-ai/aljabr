@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 import org.junit.jupiter.api.Test;
 
@@ -39,8 +40,9 @@ class CpuBufferTest {
         parent.release();
         assertTrue(view.segment().scope().isAlive());
 
+        MemorySegment viewSegment = view.segment();
         view.release();
-        assertTrue(!view.segment().scope().isAlive());
+        assertTrue(!viewSegment.scope().isAlive());
     }
 
     @Test
@@ -65,6 +67,84 @@ class CpuBufferTest {
             assertThrows(IllegalArgumentException.class, () -> CpuBuffer.view(unrelated, parent));
         } finally {
             parent.release();
+        }
+    }
+
+
+    @Test
+    void siblingViewsObserveSharedWritesAndOwnIndependentParentReferences() {
+        CpuBuffer parent = new CpuBuffer(32);
+        CpuBuffer first = CpuBuffer.view(parent, 8, 8);
+        CpuBuffer second = CpuBuffer.view(parent, 8, 8);
+
+        try {
+            first.segment().set(ValueLayout.JAVA_INT, 0, 0x12345678);
+            assertEquals(0x12345678, second.segment().get(ValueLayout.JAVA_INT, 0));
+
+            parent.release();
+            first.release();
+            assertTrue(second.segment().scope().isAlive());
+            assertEquals(0x12345678, second.segment().get(ValueLayout.JAVA_INT, 0));
+        } finally {
+            second.release();
+        }
+
+        assertTrue(!second.segment().scope().isAlive());
+    }
+
+    @Test
+    void nestedViewKeepsOriginalAllocationAliveAfterIntermediateViewsRelease() {
+        CpuBuffer parent = new CpuBuffer(64);
+        CpuBuffer outer = CpuBuffer.view(parent, 16, 32);
+        CpuBuffer inner = CpuBuffer.view(outer, 8, 8);
+
+        parent.release();
+        outer.release();
+
+        try {
+            assertTrue(inner.segment().scope().isAlive());
+            inner.segment().set(ValueLayout.JAVA_LONG, 0, 42L);
+            assertEquals(42L, inner.segment().get(ValueLayout.JAVA_LONG, 0));
+        } finally {
+            inner.release();
+        }
+
+        assertTrue(!inner.segment().scope().isAlive());
+    }
+
+    @Test
+    void pooledAllocationIsNotReusedUntilTheLastViewIsReleased() {
+        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
+            MemorySegment firstLease = pool.acquire(64);
+            CpuBuffer parent = new CpuBuffer(firstLease, pool.arena(), pool);
+            long firstAddress = firstLease.address();
+            CpuBuffer view = CpuBuffer.view(parent, 0, 32);
+
+            parent.release();
+            MemorySegment secondLease = pool.acquire(64);
+            assertTrue(secondLease.address() != firstAddress);
+
+            pool.release(secondLease);
+            view.release();
+
+            MemorySegment reusedLease = pool.acquire(64);
+            assertEquals(firstAddress, reusedLease.address());
+            pool.release(reusedLease);
+        }
+    }
+
+    @Test
+    void releasedBufferRejectsSegmentAccessAfterItsPoolLeaseIsReused() {
+        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
+            MemorySegment lease = pool.acquire(64);
+            CpuBuffer buffer = new CpuBuffer(lease, pool.arena(), pool);
+            long address = lease.address();
+
+            buffer.release();
+            MemorySegment reused = pool.acquire(64);
+            assertEquals(address, reused.address());
+            assertThrows(IllegalStateException.class, buffer::segment);
+            pool.release(reused);
         }
     }
 

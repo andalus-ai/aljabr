@@ -62,13 +62,29 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.matmul", Map.of("dtype", "F32")).support());
 
-            var fallbackUnknown = session.operationSupport("tensor.add", Map.of());
-            assertEquals(OperationSupport.UNKNOWN, fallbackUnknown.support());
-            var fallback = session.operationSupport("tensor.add", Map.of("dtype", "F32"));
-            assertEquals(OperationSupport.DELEGATED, fallback.support());
-            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID, fallback.effectiveBackendId());
+            for (String operation : Set.of("tensor.add", "tensor.sub", "tensor.mul", "tensor.div")) {
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of()).support());
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of("dtype", "F32")).support());
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of("rhs_dtype", "F32")).support());
+                var bothF32 = session.operationSupport(operation,
+                        Map.of("dtype", "F32", "rhs_dtype", "F32"));
+                assertEquals(OperationSupport.DELEGATED, bothF32.support());
+                assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID, bothF32.effectiveBackendId());
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation,
+                                Map.of("dtype", "F16", "rhs_dtype", "F32")).support());
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation,
+                                Map.of("dtype", "F32", "rhs_dtype", "F16")).support());
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation,
+                                Map.of("dtype", "Q4_0", "rhs_dtype", "Q4_0")).support());
+            }
             assertInstanceOf(CpuBackend.class,
-                    session.computeBackends().get(fallback.effectiveBackendId()));
+                    session.computeBackends().get(HatComputeProvider.CPU_FALLBACK_BACKEND_ID));
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.reshape", Map.of()).support());
             assertEquals(OperationSupport.DELEGATED,

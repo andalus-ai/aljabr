@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Proxy;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
@@ -222,6 +224,74 @@ class DefaultTensorTest {
     }
 
     @Test
+    void tensorViewRemainsUsableAfterParentTensorIsReleased() {
+        CpuBuffer parentBuffer = new CpuBuffer(2L * Float.BYTES);
+        parentBuffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 2.5f);
+        parentBuffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, Float.BYTES, 9.0f);
+
+        CpuBuffer viewBuffer = CpuBuffer.view(parentBuffer, 0L, Float.BYTES);
+        DefaultTensor parent = new DefaultTensor(
+                new Shape(2), DType.F32, DeviceType.CPU, parentBuffer, unusedBackend());
+        DefaultTensor view = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.CPU, viewBuffer, unusedBackend());
+
+        parent.release();
+
+        try {
+            assertEquals(2.5f, view.item(), 0f);
+        } finally {
+            view.release();
+        }
+
+        assertFalse(parentBuffer.segment().scope().isAlive());
+    }
+
+    @Test
+    void replacingAndClearingGradientReleasesPreviouslyOwnedGradient() {
+        DefaultTensor owner = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL,
+                new DeviceOnlyStorage(Float.BYTES), unusedBackend());
+        DeviceOnlyStorage firstStorage = new DeviceOnlyStorage(Float.BYTES);
+        DeviceOnlyStorage replacementStorage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor firstGradient = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, firstStorage, unusedBackend());
+        DefaultTensor replacementGradient = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, replacementStorage, unusedBackend());
+
+        try {
+            owner.setGrad(firstGradient);
+            assertSame(firstGradient, owner.grad());
+            assertEquals(1, firstStorage.references());
+
+            owner.setGrad(replacementGradient);
+            assertSame(replacementGradient, owner.grad());
+            assertEquals(0, firstStorage.references());
+            assertEquals(1, replacementStorage.references());
+
+            owner.setGrad(null);
+            assertNull(owner.grad());
+            assertEquals(0, replacementStorage.references());
+        } finally {
+            owner.release();
+        }
+    }
+
+    @Test
+    void rejectsOwningItselfAsGradientWithoutChangingOwnership() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, storage, unusedBackend());
+
+        try {
+            assertThrows(IllegalArgumentException.class, () -> tensor.setGrad(tensor));
+            assertNull(tensor.grad());
+            assertEquals(1, storage.references());
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
     void rejectsStorageSmallerThanTensorWithoutTakingOwnership() {
         DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES - 1L);
         assertThrows(IllegalArgumentException.class,
@@ -229,4 +299,40 @@ class DefaultTensorTest {
         assertEquals(1, storage.references());
         storage.release();
     }
+
+    @Test
+    void rejectsGradientAssignmentAfterReleaseWithoutTakingGradientOwnership() {
+        DefaultTensor owner = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL,
+                new DeviceOnlyStorage(Float.BYTES), unusedBackend());
+        DeviceOnlyStorage gradientStorage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor gradient = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, gradientStorage, unusedBackend());
+
+        owner.release();
+        try {
+            assertThrows(IllegalStateException.class, () -> owner.setGrad(gradient));
+            assertEquals(1, gradientStorage.references());
+        } finally {
+            gradient.release();
+        }
+
+        assertEquals(0, gradientStorage.references());
+    }
+
+    @Test
+    void concurrentReleaseReleasesOwnedStorageExactlyOnce() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, storage, unusedBackend());
+
+        CompletableFuture<?>[] releases = IntStream.range(0, 32)
+                .mapToObj(ignored -> CompletableFuture.runAsync(tensor::release))
+                .toArray(CompletableFuture[]::new);
+
+        assertDoesNotThrow(() -> CompletableFuture.allOf(releases).join());
+        assertEquals(0, storage.references());
+        assertThrows(IllegalStateException.class, tensor::storage);
+    }
+
 }
