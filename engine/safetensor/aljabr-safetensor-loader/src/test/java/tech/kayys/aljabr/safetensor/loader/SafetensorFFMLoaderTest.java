@@ -304,6 +304,34 @@ class SafetensorFFMLoaderTest {
 
     @Test
     @Order(26)
+    void parser_fractionalShapeDimension_throws() {
+        String json = """
+                {"x": {"dtype":"F32","shape":[1.5],"data_offsets":[0,4]}}""";
+        byte[] payload = buildSafetensors(json, new byte[4]);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = toSegment(payload, arena);
+            assertThatThrownBy(() -> PARSER.parse(seg, Path.of("fractional-shape.safetensors")))
+                    .isInstanceOf(SafetensorException.HeaderParseException.class)
+                    .hasMessageContaining("exactly representable");
+        }
+    }
+
+    @Test
+    @Order(27)
+    void parser_fractionalOffset_throws() {
+        String json = """
+                {"x": {"dtype":"F32","shape":[1],"data_offsets":[0,4.5]}}""";
+        byte[] payload = buildSafetensors(json, new byte[4]);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = toSegment(payload, arena);
+            assertThatThrownBy(() -> PARSER.parse(seg, Path.of("fractional-offset.safetensors")))
+                    .isInstanceOf(SafetensorException.HeaderParseException.class)
+                    .hasMessageContaining("exactly representable");
+        }
+    }
+
+    @Test
+    @Order(28)
     void parser_multiTensor_orderPreserved() {
         String json = """
                 {
