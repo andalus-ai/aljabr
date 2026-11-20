@@ -49,8 +49,12 @@ public final class DefaultTensor implements Tensor {
     /**
      * Creates a tensor using backend-neutral storage.
      *
-     * <p>On successful construction this tensor owns the supplied storage
-     * reference and releases it from {@link #release()}.</p>
+     * <p>On successful construction this tensor takes ownership of the one
+     * existing storage reference supplied by the caller and releases that
+     * reference from {@link #release()}. The caller must not release that
+     * transferred reference afterward. If validation or construction fails,
+     * ownership remains with the caller. Call {@link TensorStorage#retain()}
+     * first when the caller also needs to keep an independent reference.</p>
      */
     public DefaultTensor(Shape shape, DType dtype, DeviceType device, TensorStorage storage, ComputeBackend backend) {
         this.shape = Objects.requireNonNull(shape, "shape must not be null");
@@ -97,7 +101,12 @@ public final class DefaultTensor implements Tensor {
         return backend;
     }
 
-    /** Returns the canonical backend-neutral storage contract. */
+    /**
+     * Returns the canonical backend-neutral storage contract as a borrowed
+     * reference. The tensor continues to own the storage; callers must not
+     * release this reference. Retain it explicitly if it must outlive this
+     * tensor.
+     */
     @Override
     public TensorStorage storage() {
         ensureOpen();
@@ -105,7 +114,9 @@ public final class DefaultTensor implements Tensor {
     }
 
     /**
-     * Returns the legacy FFM/Arena buffer view.
+     * Returns the legacy FFM/Arena buffer as a borrowed view. The returned
+     * buffer does not carry an independent ownership reference and must not be
+     * released by the caller.
      *
      * @throws UnsupportedOperationException when this tensor is backed by
      *         storage that does not implement the legacy Buffer contract
@@ -636,11 +647,19 @@ public final class DefaultTensor implements Tensor {
         return autogradNode;
     }
 
+    /**
+     * Returns the currently owned gradient as a borrowed reference.
+     * Callers must not release it.
+     */
     @Override
     public Tensor grad() {
         return grad;
     }
 
+    /**
+     * Transfers ownership of {@code g} to this tensor. Replacing the current
+     * gradient releases the previous gradient; passing {@code null} clears it.
+     */
     @Override
     public void setGrad(Tensor g) {
         ensureOpen();
@@ -670,6 +689,11 @@ public final class DefaultTensor implements Tensor {
         this.requiresGrad = r;
     }
 
+    /**
+     * Releases this tensor's storage reference and its owned gradient exactly
+     * once. Any borrowed storage, buffer, or gradient reference obtained from
+     * this tensor must no longer be used after release.
+     */
     @Override
     public void release() {
         if (released.compareAndSet(false, true)) {
