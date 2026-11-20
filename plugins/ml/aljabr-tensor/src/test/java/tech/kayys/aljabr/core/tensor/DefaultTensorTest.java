@@ -161,6 +161,81 @@ class DefaultTensorTest {
     }
 
     @Test
+    void itemReadsScalarAtNonZeroStorageOffset() {
+        CpuBuffer buffer = new CpuBuffer(3L * Float.BYTES);
+        buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, -1f);
+        buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, Float.BYTES, 12.5f);
+        TensorLayout layout = new TensorLayout(new Shape(1), new long[] {1}, 1);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.CPU, buffer, unusedBackend(), layout);
+        try {
+            assertEquals(12.5f, tensor.item(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportReadsOffsetContiguousLayout() {
+        CpuBuffer buffer = new CpuBuffer(5L * Float.BYTES);
+        for (int i = 0; i < 5; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES, i + 10f);
+        }
+        TensorLayout layout = new TensorLayout(new Shape(3), new long[] {1}, 1);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(3), DType.F32, DeviceType.CPU, buffer, unusedBackend(), layout);
+        try {
+            assertArrayEquals(new float[] {11f, 12f, 13f}, tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportGathersTransposedStridedLayoutInLogicalOrder() {
+        CpuBuffer buffer = new CpuBuffer(6L * Float.BYTES);
+        for (int i = 0; i < 6; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES, i + 1f);
+        }
+        TensorLayout transposed = new TensorLayout(new Shape(3, 2), new long[] {1, 3}, 0);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(3, 2), DType.F32, DeviceType.CPU, buffer, unusedBackend(), transposed);
+        try {
+            assertArrayEquals(new float[] {1f, 4f, 2f, 5f, 3f, 6f}, tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportHandlesStridedSliceWithNonZeroOffset() {
+        CpuBuffer buffer = new CpuBuffer(8L * Float.BYTES);
+        for (int i = 0; i < 8; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES, i * 2f);
+        }
+        TensorLayout sliced = new TensorLayout(new Shape(2, 2), new long[] {4, 2}, 1);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, buffer, unusedBackend(), sliced);
+        try {
+            assertArrayEquals(new float[] {2f, 6f, 10f, 14f}, tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportOfEmptyTensorDoesNotReadStorage() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(0);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(0, 3), DType.F32, DeviceType.CPU, storage, unusedBackend());
+        try {
+            assertArrayEquals(new float[0], tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
     void itemReturnsActualScalarValue() {
         CpuBuffer buffer = new CpuBuffer(Float.BYTES);
         buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 3.5f);

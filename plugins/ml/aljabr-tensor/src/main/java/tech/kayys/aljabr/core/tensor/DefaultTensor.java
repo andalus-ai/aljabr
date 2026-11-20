@@ -634,24 +634,60 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public float[] toFloatArray() {
+        ensureOpen();
         if (dtype != DType.F32) {
             throw new UnsupportedOperationException(
                     "toFloatArray currently requires F32 tensors; actual dtype is " + dtype);
         }
-        return requireHostSegment("toFloatArray")
-                .asSlice(0, Math.multiplyExact(numel(), Float.BYTES))
-                .toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
+        int length = Math.toIntExact(numel());
+        float[] values = new float[length];
+        if (length == 0) {
+            return values;
+        }
+
+        MemorySegment segment = requireHostSegment("toFloatArray");
+        long[] strides = layout.strides();
+        if (layout.isContiguous()) {
+            long byteOffset = Math.multiplyExact(layout.storageOffset(), Float.BYTES);
+            return segment.asSlice(byteOffset, Math.multiplyExact((long) length, Float.BYTES))
+                    .toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
+        }
+
+        for (int linearIndex = 0; linearIndex < length; linearIndex++) {
+            long elementOffset = elementOffsetForLinearIndex(linearIndex, strides);
+            long byteOffset = Math.multiplyExact(elementOffset, Float.BYTES);
+            values[linearIndex] = segment.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, byteOffset);
+        }
+        return values;
+    }
+
+    /**
+     * Maps a row-major logical element index to its backing-storage element
+     * offset. The caller must supply a live tensor and a valid logical index.
+     */
+    private long elementOffsetForLinearIndex(long linearIndex, long[] strides) {
+        long offset = layout.storageOffset();
+        for (int dimension = shape.rank() - 1; dimension >= 0; dimension--) {
+            long size = shape.dim(dimension);
+            long coordinate = linearIndex % size;
+            linearIndex /= size;
+            offset = Math.addExact(offset, Math.multiplyExact(coordinate, strides[dimension]));
+        }
+        return offset;
     }
 
     @Override
     public float item() {
+        ensureOpen();
         if (numel() != 1) {
             throw new IllegalStateException("item() requires exactly one element; tensor has " + numel());
         }
+        long byteOffset = Math.multiplyExact(layout.storageOffset(), dtype.blockByteSize());
+        MemorySegment segment = requireHostSegment("item()");
         return switch (dtype) {
-            case F32 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0);
-            case I32 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_INT, 0);
-            case I8, INT8 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_BYTE, 0);
+            case F32 -> segment.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, byteOffset);
+            case I32 -> segment.get(java.lang.foreign.ValueLayout.JAVA_INT, byteOffset);
+            case I8, INT8 -> segment.get(java.lang.foreign.ValueLayout.JAVA_BYTE, byteOffset);
             default -> throw new UnsupportedOperationException("item() is not supported for dtype " + dtype);
         };
     }
