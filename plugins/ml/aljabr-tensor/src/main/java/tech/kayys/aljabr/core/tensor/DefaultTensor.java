@@ -715,7 +715,7 @@ public final class DefaultTensor implements Tensor {
         if (numel() != 1) {
             throw new IllegalStateException("item() requires exactly one element; tensor has " + numel());
         }
-        long byteOffset = Math.multiplyExact(layout.storageOffset(), dtype.elementSizeBytes());
+        long byteOffset = Math.multiplyExact(layout.storageOffset(), dtype.blockByteSize());
         MemorySegment segment = requireHostSegment("item()");
         return switch (dtype) {
             case F32 -> segment.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, byteOffset);
