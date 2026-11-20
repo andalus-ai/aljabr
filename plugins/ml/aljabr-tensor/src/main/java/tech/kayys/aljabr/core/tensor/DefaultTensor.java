@@ -32,6 +32,7 @@ import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 public final class DefaultTensor implements Tensor {
 
     private final Shape shape;
+    private final TensorLayout layout;
     private final DType dtype;
     private final DeviceType device;
     private final TensorStorage storage;
@@ -81,18 +82,70 @@ public final class DefaultTensor implements Tensor {
             TensorStorage storage,
             ComputeBackend backend,
             DiagnosticSink diagnosticSink) {
+        this(shape, dtype, device, storage, backend, TensorLayout.contiguous(shape), diagnosticSink);
+    }
+
+    /**
+     * Creates a tensor with an explicit immutable layout.
+     *
+     * <p>The layout is metadata only: operations must still be implemented by
+     * a backend that understands the supplied strides. Existing constructors
+     * continue to create canonical contiguous tensors.</p>
+     *
+     * <p>On successful construction this tensor takes ownership of the one
+     * existing storage reference. If validation fails, ownership remains with
+     * the caller.</p>
+     */
+    public DefaultTensor(
+            Shape shape,
+            DType dtype,
+            DeviceType device,
+            TensorStorage storage,
+            ComputeBackend backend,
+            TensorLayout layout) {
+        this(shape, dtype, device, storage, backend, layout, DiagnosticSink.noop());
+    }
+
+    /**
+     * Creates a tensor with an explicit layout and diagnostic sink.
+     *
+     * <p>Block-quantized tensors currently require canonical contiguous
+     * layouts with zero storage offset because their storage addressing is
+     * block-based rather than element-strided.</p>
+     */
+    public DefaultTensor(
+            Shape shape,
+            DType dtype,
+            DeviceType device,
+            TensorStorage storage,
+            ComputeBackend backend,
+            TensorLayout layout,
+            DiagnosticSink diagnosticSink) {
         this.shape = Objects.requireNonNull(shape, "shape must not be null");
         this.dtype = Objects.requireNonNull(dtype, "dtype must not be null");
         this.device = Objects.requireNonNull(device, "device must not be null");
         this.storage = Objects.requireNonNull(storage, "storage must not be null");
         this.backend = Objects.requireNonNull(backend, "backend must not be null");
+        this.layout = Objects.requireNonNull(layout, "layout must not be null");
         Objects.requireNonNull(diagnosticSink, "diagnosticSink must not be null");
 
-        // Larger allocations are valid for pooled storage and tensor views.
-        // A tensor must never expose less capacity than its logical shape needs.
+        if (!shape.equals(layout.shape())) {
+            throw new IllegalArgumentException(
+                    "Tensor layout shape does not match tensor shape: shape=" + shape
+                            + ", layoutShape=" + layout.shape());
+        }
+
         final long requiredBytes;
         try {
-            requiredBytes = dtype.memoryFootprintBytes(shape.numel());
+            if (dtype.isQuantized()) {
+                if (!layout.isContiguous() || layout.storageOffset() != 0) {
+                    throw new IllegalArgumentException(
+                            "Block-quantized tensors currently require a contiguous layout with zero storage offset");
+                }
+                requiredBytes = dtype.memoryFootprintBytes(shape.numel());
+            } else {
+                requiredBytes = dtype.memoryFootprintBytes(layout.requiredStorageElements());
+            }
         } catch (IllegalArgumentException failure) {
             diagnosticSink.accept(new Diagnostic(
                     "tensor.dtype.element-count-invalid",
@@ -101,6 +154,7 @@ public final class DefaultTensor implements Tensor {
                     failure.getMessage(),
                     Map.of(
                             "shape", shape.toString(),
+                            "layout", layout.toString(),
                             "dtype", dtype.name(),
                             "numel", Long.toString(shape.numel()),
                             "causeType", failure.getClass().getName())));
@@ -110,6 +164,7 @@ public final class DefaultTensor implements Tensor {
         final long availableBytes = storage.sizeBytes();
         if (availableBytes < requiredBytes) {
             String message = "Tensor storage is too small: shape=" + shape
+                    + ", layout=" + layout
                     + ", dtype=" + dtype
                     + ", requires=" + requiredBytes + " bytes"
                     + ", available=" + availableBytes + " bytes";
@@ -120,6 +175,7 @@ public final class DefaultTensor implements Tensor {
                     message,
                     Map.of(
                             "shape", shape.toString(),
+                            "layout", layout.toString(),
                             "dtype", dtype.name(),
                             "device", device.name(),
                             "requiredBytes", Long.toString(requiredBytes),
@@ -136,6 +192,12 @@ public final class DefaultTensor implements Tensor {
     @Override
     public Shape shape() {
         return shape;
+    }
+
+    /** Returns this tensor's immutable element-based storage layout. */
+    @Override
+    public TensorLayout layout() {
+        return layout;
     }
 
     @Override
