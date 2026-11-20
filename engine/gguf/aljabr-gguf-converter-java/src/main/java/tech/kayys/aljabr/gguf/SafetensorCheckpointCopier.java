@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.gguf;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import tech.kayys.aljabr.safetensor.loader.SafetensorFFMLoader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorHeader;
@@ -33,6 +34,7 @@ import java.util.Objects;
  * no tensor payload is accumulated in heap memory. This is the first reusable
  * source-to-target pipeline primitive for format conversion.
  */
+@ApplicationScoped
 public final class SafetensorCheckpointCopier {
 
     private static final long COPY_CHUNK_BYTES = 1024L * 1024L;
