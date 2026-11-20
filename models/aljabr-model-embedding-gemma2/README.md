@@ -38,8 +38,14 @@ not an alias for the causal `gemma2` or `gemma4` modules.
 - `EmbeddingGemma2VisionTower` composes the patch embedder, ordered vision encoder layers, spatial pooler, and optional standardizer from mapped checkpoint weights. It removes padded pooled tokens before standardization, matching the Hugging Face forward path, and exposes a separate final operation for modality-to-text projection. Image preprocessing and patch extraction remain processor responsibilities.
 - A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
   followed by the checkpoint-backed bias-free modality-to-text projection, while
-  preserving per-image token sequences. A separate splitter restores per-image
-  boundaries from padded patch-position metadata and the configured pooling kernel.
+  preserving per-image token sequences. The `EmbeddingGemma2MultimodalCheckpointMapper` maps
+  the Hugging Face `embed_vision.embedding_projection.weight` tensor
+  (output-major [text hidden][vision hidden]) and rejects unknown tensors in
+  the image-bridge namespace. `EmbeddingGemma2VisionTower.fromCheckpoint`
+  can receive this mapped embedder so `encodeAndProject` executes the
+  complete vision-to-text soft-token path without a separately injected
+  projection at call time. A separate splitter restores per-image boundaries
+  from padded patch-position metadata and the configured pooling kernel.
 - Text-only is the first intended execution milestone.
 
 The attention, encoder-layer, and assembled text-backbone operations are
