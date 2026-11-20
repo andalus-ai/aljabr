@@ -93,8 +93,8 @@ class GraphExecutorTest {
         Shape shape = new Shape(2, 2);
         AtomicInteger propagatedGradientReleases = new AtomicInteger();
         AtomicInteger accumulatedGradientReleases = new AtomicInteger();
-        Tensor propagatedGradient = tensorWithAdd(shape, accumulatedGradientReleases);
-        Tensor accumulatedGradient = tensor(propagatedGradientReleases);
+        Tensor propagatedGradient = tensor(propagatedGradientReleases);
+        Tensor accumulatedGradient = tensorWithAdd(shape, accumulatedGradientReleases);
         IllegalStateException replacementFailure = new IllegalStateException("setGrad cleanup failed");
 
         AtomicInteger leafGradientReleases = new AtomicInteger();
