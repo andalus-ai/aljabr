@@ -49,6 +49,43 @@ public final class EmbeddingGemma2VisionSafetensorLoader {
     }
 
     /**
+     * Loads a single-file or sharded checkpoint, inferring the vision checkpoint
+     * dtype from its first selected tensor and rejecting mixed selected dtypes.
+     */
+    public EmbeddingGemma2VisionImagePipeline load(
+            Path checkpoint,
+            EmbeddingGemma2VisionConfig config,
+            int textHiddenSize,
+            float bridgeEpsilon) {
+        Objects.requireNonNull(checkpoint, "checkpoint must not be null");
+        try (SafetensorShardLoader.SafetensorShardSession session = shardLoader.open(checkpoint)) {
+            return EmbeddingGemma2VisionImagePipeline.fromCheckpoint(
+                    config, mapTensors(session), textHiddenSize, bridgeEpsilon);
+        }
+    }
+
+    /**
+     * Materializes vision and bridge tensors, inferring dtype from the first
+     * selected tensor. The caller retains responsibility for closing session.
+     */
+    public Map<String, EmbeddingGemma2CheckpointMapper.CheckpointTensor> mapTensors(
+            SafetensorShardLoader.SafetensorShardSession session) {
+        Objects.requireNonNull(session, "session must not be null");
+        SafetensorDType inferred = null;
+        for (String name : session.tensorNames()) {
+            if (name.startsWith(VISION_PREFIX) || name.startsWith(BRIDGE_PREFIX)) {
+                inferred = session.tensor(name).dtype();
+                break;
+            }
+        }
+        if (inferred == null) {
+            throw new IllegalArgumentException(
+                    "checkpoint contains no EmbeddingGemma 2 vision or bridge tensors");
+        }
+        return mapTensors(session, inferred);
+    }
+
+    /**
      * Materializes the named vision and bridge tensors from an open session.
      * The caller retains responsibility for closing the session.
      */
