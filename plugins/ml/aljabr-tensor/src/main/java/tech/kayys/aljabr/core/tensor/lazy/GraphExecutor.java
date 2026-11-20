@@ -112,9 +112,9 @@ public class GraphExecutor {
                                 try {
                                     Tensor accumulated = previous.add(gradient);
                                     leaf.setGrad(accumulated);
-                                } catch (RuntimeException | Error backwardFailure) {
-                                    releaseAfterFailure(backwardFailure, gradient);
-                                    throw backwardFailure;
+                                } catch (RuntimeException | Error accumulationFailure) {
+                                    releaseAfterFailure(accumulationFailure, gradient);
+                                    throw accumulationFailure;
                                 }
                                 gradient.release();
                             }
