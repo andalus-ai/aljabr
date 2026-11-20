@@ -108,8 +108,13 @@ public class GraphExecutor {
                             if (previous == null) {
                                 leaf.setGrad(gradient);
                             } else {
-                                Tensor accumulated = previous.add(gradient);
-                                leaf.setGrad(accumulated);
+                                try {
+                                    Tensor accumulated = previous.add(gradient);
+                                    leaf.setGrad(accumulated);
+                                } catch (RuntimeException | Error backwardFailure) {
+                                    releaseAfterFailure(backwardFailure, gradient);
+                                    throw backwardFailure;
+                                }
                                 gradient.release();
                             }
                         } else {
@@ -136,7 +141,7 @@ public class GraphExecutor {
                         inputGradients = node.getBackwardFunction().apply(
                                 node.getMaterializedData(), gradient, inputValues, node.getArgs());
                     } catch (RuntimeException | Error failure) {
-                        gradient.release();
+                        releaseAfterFailure(failure, gradient);
                         throw failure;
                     }
                     try {
@@ -211,6 +216,14 @@ public class GraphExecutor {
         // the map still owns the accumulated gradient and can clean it up.
         gradients.put(node, accumulated);
         releaseAll(previous, contribution);
+    }
+
+    private static void releaseAfterFailure(Throwable failure, Tensor tensor) {
+        try {
+            releaseAll(tensor);
+        } catch (RuntimeException | Error cleanupFailure) {
+            failure.addSuppressed(cleanupFailure);
+        }
     }
 
     /**
