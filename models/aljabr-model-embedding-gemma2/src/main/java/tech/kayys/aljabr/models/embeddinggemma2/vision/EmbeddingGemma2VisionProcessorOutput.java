@@ -9,9 +9,11 @@ import java.util.Objects;
  * <p>Shapes follow the processor contract:
  * {@code pixelValues[images][paddedPatches][patchPixels]},
  * {@code imagePositionIds[images][paddedPatches][2]}, and one actual
- * soft-token count per image. Pixel values are RGB patch vectors already
- * rescaled to [0,1]; patch ordering is row-major with channels-last values
- * within each patch. Padding positions are exactly (-1,-1).</p>
+ * soft-token count per image. Pixel values are RGB patch vectors rescaled by
+ * 1/255; bicubic antialias filtering can produce small values outside [0,1],
+ * so finite overshoot is retained exactly as in torchvision. Patch ordering
+ * is row-major with channels-last values within each patch. Padding positions
+ * are exactly (-1,-1).</p>
  *
  * <p>Resizing and RGB decoding are intentionally outside this adapter. It
  * accepts processor-produced patch tensors without introducing an image
@@ -55,8 +57,8 @@ public final class EmbeddingGemma2VisionProcessorOutput {
                             + " must have width " + patchWidth);
                 }
                 for (float value : pixels) {
-                    if (!Float.isFinite(value) || value < 0f || value > 1f) {
-                        throw new IllegalArgumentException("processor pixel values must be finite and in [0,1]");
+                    if (!Float.isFinite(value)) {
+                        throw new IllegalArgumentException("processor pixel values must be finite");
                     }
                 }
                 if (position == null || position.length != 2) {
