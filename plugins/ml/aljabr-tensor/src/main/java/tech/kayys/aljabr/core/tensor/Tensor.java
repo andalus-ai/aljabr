@@ -37,6 +37,18 @@ public interface Tensor extends AutoCloseable {
 
     Shape shape();
 
+    /**
+     * Returns the tensor's immutable element-based layout.
+     *
+     * <p>Implementations with canonical contiguous storage may use this
+     * default. Implementations with views, offsets, or non-canonical strides
+     * must override it. The descriptor does not imply that every backend
+     * operation supports arbitrary layouts.</p>
+     */
+    default TensorLayout layout() {
+        return TensorLayout.contiguous(shape());
+    }
+
     DeviceType device();
 
     DType dtype();
