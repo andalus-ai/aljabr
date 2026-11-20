@@ -343,7 +343,10 @@ public final class SafetensorHeaderParser {
      * which is not acceptable for dimensions or byte offsets from an untrusted file.
      */
     private static long exactLong(Object value, String field, String tensorName, Path path) {
-        if (!(value instanceof Number number)) {
+        if (!(value instanceof Number number)
+                || number instanceof Float
+                || number instanceof Double
+                || (number instanceof java.math.BigDecimal decimal && decimal.scale() > 0)) {
             throw new SafetensorException.HeaderParseException(
                     "'" + field + "' must be an integer for tensor '" + tensorName + "'",
                     path, -1L, null);
