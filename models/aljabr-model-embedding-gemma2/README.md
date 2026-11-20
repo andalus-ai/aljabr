@@ -34,7 +34,7 @@ not an alias for the causal `gemma2` or `gemma4` modules.
 - `EmbeddingGemma2VisionSoftTokenStandardizer` applies the optional checkpoint-provided feature-wise `(x - std_bias) * std_scale` operation after spatial pooling and sqrt(hidden_size) scaling. It computes in float32; the caller casts to its working dtype after standardization and enables it only when `vision_config.standardize=true`.
 - A configurable Gemma4 vision encoder stack that validates the checkpoint layer count, executes every vision encoder layer in order, supports either RGB patch vectors or precomputed patch embeddings, and returns unpooled final hidden states without adding a non-reference final normalization.
 - A Gemma4 vision encoder-layer reference with the four checkpoint-backed RMSNorm scales, injected bidirectional attention operation, gated GELU MLP, and exact two-residual ordering. Gemma4-compatible axial 2D RoPE and a concrete float32 bidirectional vision attention operation are implemented. The attention path includes bias-free Q/K/V/O projections, Q/K learned RMSNorm, unscaled V RMSNorm, masked non-causal GQA, and no KV cache.
-- A format-neutral `EmbeddingGemma2VisionCheckpointMapper` that validates the Hugging Face `vision_tower.*` state-dict namespace, patch/position tensors, every encoder layer's attention/MLP/norm weights, the pooler scale, and optional standardization vectors. It consumes format-decoded dense tensors and rejects unknown vision tensors. The current reference pooler still needs a follow-up to apply the mapped learned pooler scale.
+- A format-neutral `EmbeddingGemma2VisionCheckpointMapper` that validates the Hugging Face `vision_tower.*` state-dict namespace, patch/position tensors, every encoder layer's attention/MLP/norm weights, optional legacy `pooler.scale` metadata, and optional standardization vectors. It consumes format-decoded dense tensors and rejects unknown vision tensors. The legacy pooler tensor is retained only when present: the current Hugging Face Gemma4 vision pooler forward path does not consume it.
 - A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
   followed by the checkpoint-backed bias-free modality-to-text projection, while
   preserving per-image token sequences. A separate splitter restores per-image
@@ -106,8 +106,8 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-Image preprocessing/patchification, application of the mapped pooler scale,
-and end-to-end image execution remain deferred. Current vision components
+Image preprocessing/patchification and end-to-end image execution remain
+deferred. Current vision components
 cover patch projection and learned 2D position lookup, the encoder tower and
 spatial pooler, optional post-pool standardization, post-tower modality
 projection, and reference per-image soft-token splitting.
