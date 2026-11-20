@@ -185,6 +185,13 @@ public final class HatComputeProvider implements ComputeProvider {
                         operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
 
+            if ("tensor.pow".equals(operationId)) {
+                return floatInputSupport(operationId, constraints, -1);
+            }
+            if ("tensor.slice".equals(operationId)) return sliceSupport(operationId, constraints);
+            if ("tensor.transpose".equals(operationId)) return transposeSupport(operationId, constraints);
+            if ("tensor.split".equals(operationId)) return splitSupport(operationId, constraints);
+
             if ("tensor.layer_norm".equals(operationId)) {
                 return normalizationSupport(operationId, constraints, false, false, true);
             }
@@ -309,6 +316,96 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+        }
+
+        private OperationSupportDescriptor sliceSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            if (dtype == null || rankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            if (rank == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            if (rank <= 0) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            Integer offsetsRank = parseInteger(constraints.get("offsets_rank"));
+            Integer sizesRank = parseInteger(constraints.get("sizes_rank"));
+            if (offsetsRank == null || sizesRank == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (offsetsRank != rank || sizesRank != rank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupportDescriptor transposeSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            if (dtype == null || rankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            if (rank == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            if (rank <= 0) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            String dim0Value = constraints.get("dim0");
+            String dim1Value = constraints.get("dim1");
+            if (dim0Value == null && dim1Value == null) {
+                return new OperationSupportDescriptor(operationId,
+                        rank >= 2 ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED,
+                        rank >= 2 ? CPU_FALLBACK_BACKEND_ID : null);
+            }
+            if (dim0Value == null || dim1Value == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            Integer dim0 = parseInteger(dim0Value), dim1 = parseInteger(dim1Value);
+            if (dim0 == null || dim1 == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (dim0 < 0 || dim1 < 0 || dim0 >= rank || dim1 >= rank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupportDescriptor splitSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            if (dtype == null || rankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            Integer axis = parseInteger(constraints.get("axis"));
+            Integer parts = parseInteger(constraints.get("parts"));
+            Integer axisSize = parseInteger(constraints.get("axis_size"));
+            if (rank == null || axis == null || parts == null || axisSize == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (rank <= 0 || axis < 0 || axis >= rank || parts <= 0
+                    || axisSize <= 0 || parts > axisSize || axisSize % parts != 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private Integer parseInteger(String value) {
+            if (value == null) return null;
+            try {
+                return Integer.valueOf(value);
+            } catch (NumberFormatException invalid) {
+                return null;
+            }
         }
 
         /**
