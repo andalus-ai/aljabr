@@ -27,6 +27,7 @@ autograd and training orchestration.
 - `RAdam`: rectified Adam with an unrectified first-moment warm-up before variance normalization becomes reliable.
 - `Adamax`: Adam's infinity-norm variant with bias-corrected first moments.
 - `AdaBelief`: Adam-style first moments with a second moment of gradient prediction residuals.
+- `Yogi`: Adam-style first moments with a signed second-moment correction.
 - `Adafactor`: factored row/column second moments for rank-2+ tensors, with an unfactored vector state; optional update-RMS clipping and parameter-RMS scaling.
 
 All optimizers consume stable, fully qualified parameter names and gradient
@@ -41,7 +42,8 @@ optimizer momentum, and weight decay are not included. Adagrad currently omits
 learning-rate decay and weight decay. Nadam currently implements the Dozat
 lookahead formulation without weight decay or configurable schedules. AdaBelief
 uses the squared residual between the current gradient and updated first-moment
-estimate; alternate rectification and epsilon-placement variants are not included.
+estimate; alternate rectification and epsilon-placement variants are not included. Yogi
+uses the signed second-moment update from its adaptive-gradient formulation.
 Adadelta
 uses its standard learning-rate-free update rule without configurable schedules. Mixed
 precision, gradient scaling, sparse gradients, parameter groups, schedulers,
