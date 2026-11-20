@@ -207,6 +207,72 @@ class GraphExecutorTest {
         assertEquals(0, leafGradientReleases.get());
     }
 
+
+    @Test
+    void backwardPreservesVjpFailureWhenRemainingGradientCleanupFails() {
+        Shape shape = new Shape(2, 2);
+        IllegalStateException backwardFailure = new IllegalStateException("right VJP failed");
+        IllegalArgumentException rightGradientCleanup =
+                new IllegalArgumentException("right gradient cleanup failed");
+        IllegalStateException leftGradientCleanup =
+                new IllegalStateException("pending gradient cleanup failed");
+        AtomicInteger rightGradientReleases = new AtomicInteger();
+        AtomicInteger leftGradientReleases = new AtomicInteger();
+        Tensor leftContribution = releaseFailingTensor(
+                shape, leftGradientReleases, leftGradientCleanup);
+        Tensor rightContribution = releaseFailingTensor(
+                shape, rightGradientReleases, rightGradientCleanup);
+
+        Tensor leftLeaf = differentiableLeaf(shape);
+        Tensor rightLeaf = differentiableLeaf(shape);
+        GraphNode left = new GraphNode(
+                OpType.RELU, List.of(GraphNode.constant(leftLeaf)), new Object[0], shape, DType.F32,
+                (forward, outputGradient, inputs, arguments) -> new Tensor[1]);
+        GraphNode right = new GraphNode(
+                OpType.RELU, List.of(GraphNode.constant(rightLeaf)), new Object[0], shape, DType.F32,
+                (forward, outputGradient, inputs, arguments) -> {
+                    throw backwardFailure;
+                });
+        left.setMaterializedData(tensor(new AtomicInteger()));
+        right.setMaterializedData(tensor(new AtomicInteger()));
+        GraphNode root = new GraphNode(
+                OpType.ADD, List.of(left, right), new Object[0], shape, DType.F32,
+                (forward, outputGradient, inputs, arguments) ->
+                        new Tensor[] { leftContribution, rightContribution });
+        root.setMaterializedData(tensor(new AtomicInteger()));
+
+        Tensor seed = tensorWithScalarAdd(shape, new AtomicInteger());
+        IllegalStateException thrown = assertThrows(
+                IllegalStateException.class,
+                () -> new GraphExecutor(null).backward(root, seed));
+
+        assertSame(backwardFailure, thrown);
+        assertEquals(1, rightGradientReleases.get(),
+                "the gradient whose VJP failed must still be released");
+        assertEquals(1, leftGradientReleases.get(),
+                "the remaining accumulated gradient must be released in the outer cleanup");
+        assertEquals(2, thrown.getSuppressed().length,
+                "both node-local and remaining-gradient cleanup failures must be suppressed");
+        assertSame(rightGradientCleanup, thrown.getSuppressed()[0]);
+        assertSame(leftGradientCleanup, thrown.getSuppressed()[1]);
+    }
+
+    private static Tensor differentiableLeaf(Shape shape) {
+        return (Tensor) Proxy.newProxyInstance(
+                Tensor.class.getClassLoader(),
+                new Class<?>[] { Tensor.class },
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "shape" -> shape;
+                    case "dtype" -> DType.F32;
+                    case "device" -> DeviceType.CPU;
+                    case "requiresGrad" -> true;
+                    case "toString" -> "DifferentiableLeaf";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
     private static Tensor tensorWithScalarAdd(Shape shape, AtomicInteger releases) {
         return tensorWithScalarAdd(shape, releases, null);
     }
