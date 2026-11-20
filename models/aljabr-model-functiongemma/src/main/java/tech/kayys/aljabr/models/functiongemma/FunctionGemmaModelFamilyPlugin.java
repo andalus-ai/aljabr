@@ -64,7 +64,9 @@ public class FunctionGemmaModelFamilyPlugin implements ModelFamilyPlugin {
         }
         Path configPath = modelDirectory.resolve("config.json");
         Path tokenizerConfigPath = modelDirectory.resolve("tokenizer_config.json");
-        if (!Files.isRegularFile(configPath) || !Files.isRegularFile(tokenizerConfigPath)) {
+        Path tokenizerJsonPath = modelDirectory.resolve("tokenizer.json");
+        if (!Files.isRegularFile(configPath)
+                || (!Files.isRegularFile(tokenizerConfigPath) && !Files.isRegularFile(tokenizerJsonPath))) {
             return false;
         }
         try {
@@ -73,15 +75,10 @@ public class FunctionGemmaModelFamilyPlugin implements ModelFamilyPlugin {
                     || !"Gemma3ForCausalLM".equals(config.primaryArchitecture())) {
                 return false;
             }
-            String tokenizerConfig = Files.readString(tokenizerConfigPath);
-            if (REQUIRED_PROTOCOL_TOKENS.stream().allMatch(tokenizerConfig::contains)) {
-                return true;
-            }
-            Path tokenizerJsonPath = modelDirectory.resolve("tokenizer.json");
-            if (!Files.isRegularFile(tokenizerJsonPath)) {
-                return false;
-            }
-            String tokenizerJson = Files.readString(tokenizerJsonPath);
+            String tokenizerConfig = Files.isRegularFile(tokenizerConfigPath)
+                    ? Files.readString(tokenizerConfigPath) : "";
+            String tokenizerJson = Files.isRegularFile(tokenizerJsonPath)
+                    ? Files.readString(tokenizerJsonPath) : "";
             return REQUIRED_PROTOCOL_TOKENS.stream()
                     .allMatch(token -> tokenizerConfig.contains(token) || tokenizerJson.contains(token));
         } catch (IOException | RuntimeException ignored) {
