@@ -66,10 +66,10 @@ public final class EmbeddingGemma2VisionCheckpointMapper {
             layers.add(new LayerWeights(attention, mlp, norms));
         }
 
-        // Gemma4's pooler checkpoint carries a learned per-feature scale. Keep
-        // it in the bundle even though the current reference pooler integration
-        // is a separate follow-up increment.
-        float[] poolerScale = mapping.vectorOrExpanded(
+        // Some converted Orbax checkpoints carry this legacy tensor, although
+        // the current Hugging Face Gemma4VisionPooler forward path does not use it.
+        // Accept and retain it when present; never require it for HF state dicts.
+        float[] legacyPoolerScale = mapping.optionalVectorOrExpanded(
                 PREFIX + "pooler.scale", spec.hiddenSize(), new int[]{1, 1, spec.hiddenSize()});
 
         float[] stdBias = null;
@@ -85,7 +85,7 @@ public final class EmbeddingGemma2VisionCheckpointMapper {
         mapping.rejectUnknownVisionTensors();
         return new Weights(
                 new EmbeddingGemma2VisionPatchEmbedder.Weights(patchProjection, positionTable),
-                layers, poolerScale, stdBias, stdScale);
+                layers, legacyPoolerScale, stdBias, stdScale);
     }
 
     /** Configuration values required to validate the vision checkpoint. */
@@ -119,13 +119,13 @@ public final class EmbeddingGemma2VisionCheckpointMapper {
     public record Weights(
             EmbeddingGemma2VisionPatchEmbedder.Weights patchEmbedder,
             List<LayerWeights> layers,
-            float[] poolerScale,
+            float[] legacyPoolerScale,
             float[] standardizationBias,
             float[] standardizationScale) {
         public Weights {
             Objects.requireNonNull(patchEmbedder, "patchEmbedder must not be null");
             layers = List.copyOf(Objects.requireNonNull(layers, "layers must not be null"));
-            poolerScale = poolerScale.clone();
+            legacyPoolerScale = legacyPoolerScale == null ? null : legacyPoolerScale.clone();
             standardizationBias = standardizationBias == null ? null : standardizationBias.clone();
             standardizationScale = standardizationScale == null ? null : standardizationScale.clone();
             if ((standardizationBias == null) != (standardizationScale == null)) {
@@ -190,8 +190,9 @@ public final class EmbeddingGemma2VisionCheckpointMapper {
             return tensor.values();
         }
 
-        private float[] vectorOrExpanded(String name, int length, int[] expandedShape) {
-            var tensor = required(name);
+        private float[] optionalVectorOrExpanded(String name, int length, int[] expandedShape) {
+            var tensor = tensors.get(name);
+            if (tensor == null) return null;
             int[] shape = tensor.shape();
             if (!java.util.Arrays.equals(shape, new int[]{length})
                     && !java.util.Arrays.equals(shape, expandedShape)) {
