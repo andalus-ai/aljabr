@@ -78,8 +78,8 @@ class EmbeddingGemma2VisionImageProcessorTest {
         assertEquals(21, positions[0][219][0]);
         assertEquals(9, positions[0][219][1]);
         assertEquals(-1, positions[0][220][0]);
-        assertEquals(21, positions[1][219][0]);
-        assertEquals(9, positions[1][219][1]);
+        assertEquals(9, positions[1][219][0]);
+        assertEquals(21, positions[1][219][1]);
         assertEquals(-1, positions[1][220][1]);
     }
 
