@@ -31,14 +31,38 @@ public class GraphExecutor {
 
         buildTopoOrder(root, visited, topoOrder);
 
-        for (GraphNode node : topoOrder) {
-            if (!node.isEvaluated()) {
-                Tensor result = executeNode(node);
-                node.setMaterializedData(result);
+        List<GraphNode> materializedNodes = new ArrayList<>();
+        List<Tensor> materializedTensors = new ArrayList<>();
+        try {
+            for (GraphNode node : topoOrder) {
+                if (!node.isEvaluated()) {
+                    Tensor result = executeNode(node);
+                    if (result == null) {
+                        throw new IllegalStateException(
+                                "Backend returned null while evaluating operation " + node.getOp());
+                    }
+                    node.setMaterializedData(result);
+                    materializedNodes.add(node);
+                    materializedTensors.add(result);
+                }
             }
+            return root.getMaterializedData();
+        } catch (RuntimeException | Error failure) {
+            // Roll back only outputs created by this attempt. Previously cached
+            // nodes and caller-owned CONSTANT tensors remain untouched.
+            for (int index = materializedTensors.size() - 1; index >= 0; index--) {
+                GraphNode node = materializedNodes.get(index);
+                Tensor tensor = materializedTensors.get(index);
+                if (node.clearMaterializedData(tensor)) {
+                    try {
+                        tensor.release();
+                    } catch (RuntimeException | Error cleanupFailure) {
+                        failure.addSuppressed(cleanupFailure);
+                    }
+                }
+            }
+            throw failure;
         }
-
-        return root.getMaterializedData();
     }
 
     /**
