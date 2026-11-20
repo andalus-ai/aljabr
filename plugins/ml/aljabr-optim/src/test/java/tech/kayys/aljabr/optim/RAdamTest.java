@@ -20,6 +20,20 @@ class RAdamTest {
     void validatesHyperparameters() {
         assertThrows(IllegalArgumentException.class, () -> new RAdam(-0.1f));
         assertThrows(IllegalArgumentException.class, () -> new RAdam(Float.NaN));
+        assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, -0.1f, 0.99f, 1.0e-8f));
+        assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, 1.0f, 0.99f, 1.0e-8f));
+        assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, 0.9f, Float.NaN, 1.0e-8f));
+        assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, 0.9f, 1.0f, 1.0e-8f));
+        assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, 0.9f, 0.99f, 0.0f));
+        assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, 0.9f, 0.99f, Float.POSITIVE_INFINITY));
+    }
+
+    @Test
+    void usesBiasCorrectedFirstMomentBeforeVarianceRectificationIsAvailable() {
+        try (CpuBackend backend = new CpuBackend()) {
+            Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
+            Tensor firstGradient = TensorFactory.of(new float[] { 0.5f }, backend, 1, 1);
+            Tensor secondGradient = TensorFactory.of(new float[] { 0.25f }, backend, 1, 1);
         assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, -0.1f, 0.999f, 1.0e-8f));
         assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, 1.0f, 0.999f, 1.0e-8f));
         assertThrows(IllegalArgumentException.class, () -> new RAdam(0.1f, 0.9f, Float.NaN, 1.0e-8f));
@@ -39,6 +53,14 @@ class RAdamTest {
                 Parameter parameter = layer.namedParameterObjects().get("weight");
                 try {
                     optimizer.step(Map.of("weight", parameter), Map.of("weight", firstGradient));
+                    assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.95f, offset(1.0e-6f));
+
+                    optimizer.step(Map.of("weight", parameter), Map.of("weight", secondGradient));
+                    assertThat(parameter.tensor().toFloatArray()[0])
+                            .isCloseTo(0.95f - (1.0f / 30.0f), offset(1.0e-6f));
+                    assertThat(optimizer.learningRate()).isEqualTo(0.1f);
+                    assertThat(optimizer.beta1()).isEqualTo(0.5f);
+                    assertThat(optimizer.beta2()).isEqualTo(0.5f);
                     assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.9f, offset(2.0e-6f));
 
                     optimizer.step(Map.of("weight", parameter), Map.of("weight", secondGradient));
@@ -128,6 +150,34 @@ class RAdamTest {
     }
 
     @Test
+    void validatesAllTrainableGradientsBeforePublishingUpdatesAndSkipsFrozenParameters() {
+        try (CpuBackend backend = new CpuBackend();
+             Linear layer = new Linear(backend, 2, 2, true);
+             RAdam optimizer = new RAdam(0.1f)) {
+            Parameter weight = layer.namedParameterObjects().get("weight");
+            Parameter bias = layer.namedParameterObjects().get("bias");
+            bias.setTrainable(false);
+            Tensor originalWeight = weight.tensor();
+            Tensor originalBias = bias.tensor();
+            Tensor validGradient = TensorFactory.ones(backend, 2, 2);
+            Tensor invalidGradient = TensorFactory.zeros(backend, 3);
+            try {
+                assertThrows(IllegalArgumentException.class, () -> optimizer.step(
+                        Map.of("weight", weight, "bias", bias),
+                        Map.of("weight", validGradient, "bias", invalidGradient)));
+                assertThat(weight.tensor()).isSameAs(originalWeight);
+                assertThat(bias.tensor()).isSameAs(originalBias);
+
+                optimizer.step(Map.of("weight", weight, "bias", bias), Map.of("weight", validGradient));
+                assertThat(weight.tensor()).isNotSameAs(originalWeight);
+                assertThat(bias.tensor()).isSameAs(originalBias);
+                optimizer.reset();
+                Tensor beforeReset = weight.tensor();
+                optimizer.step(Map.of("weight", weight), Map.of("weight", validGradient));
+                assertThat(weight.tensor()).isNotSameAs(beforeReset);
+            } finally {
+                validGradient.release();
+                invalidGradient.release();
     void resetRestartsRectificationSchedule() {
         try (CpuBackend backend = new CpuBackend();
              Linear layer = new Linear(backend, 1, 1, false);

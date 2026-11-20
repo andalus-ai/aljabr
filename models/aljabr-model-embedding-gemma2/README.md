@@ -29,16 +29,24 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
   768-dimensional vectors.
-- A Gemma4 vision patch embedder that applies the reference pixel scaling, bias-free RGB patch projection, and learned x/y positional-table lookup. Image preprocessing and patch extraction remain processor responsibilities.
+- A Gemma4 vision patch embedder that applies the reference pixel scaling, bias-free RGB patch projection, and learned x/y positional-table lookup.\n- `EmbeddingGemma2VisionImageProcessor` accepts decoded RGB, RGBA, grayscale, or BGR samples without an AWT or image-codec dependency, applies Gemma4's patch-budget aspect-ratio resize and bicubic antialias filter, rescales RGB to [0,1], extracts row-major patches, emits (x,y) position IDs, and pads each image to the configured common patch axis. It returns the immutable `EmbeddingGemma2VisionProcessorOutput` consumed by the composed tower.
 - A Gemma4 vision spatial pooler that groups patch states by their 2D coordinates, applies fixed-area k×k averaging with zero-valued padding, returns a pooled padding mask, and scales pooled states by sqrt(hidden_size) in float32.
 - `EmbeddingGemma2VisionSoftTokenStandardizer` applies the optional checkpoint-provided feature-wise `(x - std_bias) * std_scale` operation after spatial pooling and sqrt(hidden_size) scaling. It computes in float32; the caller casts to its working dtype after standardization and enables it only when `vision_config.standardize=true`.
 - A configurable Gemma4 vision encoder stack that validates the checkpoint layer count, executes every vision encoder layer in order, supports either RGB patch vectors or precomputed patch embeddings, and returns unpooled final hidden states without adding a non-reference final normalization.
 - A Gemma4 vision encoder-layer reference with the four checkpoint-backed RMSNorm scales, injected bidirectional attention operation, gated GELU MLP, and exact two-residual ordering. Gemma4-compatible axial 2D RoPE and a concrete float32 bidirectional vision attention operation are implemented. The attention path includes bias-free Q/K/V/O projections, Q/K learned RMSNorm, unscaled V RMSNorm, masked non-causal GQA, and no KV cache.
 - A format-neutral `EmbeddingGemma2VisionCheckpointMapper` that validates the Hugging Face `vision_tower.*` state-dict namespace, patch/position tensors, every encoder layer's attention/MLP/norm weights, optional legacy `pooler.scale` metadata, and optional standardization vectors. It consumes format-decoded dense tensors and rejects unknown vision tensors. The legacy pooler tensor is retained only when present: the current Hugging Face Gemma4 vision pooler forward path does not consume it.
+- `EmbeddingGemma2VisionTower` composes the patch embedder, ordered vision encoder layers, spatial pooler, and optional standardizer from mapped checkpoint weights. It removes padded pooled tokens before standardization, matching the Hugging Face forward path, and exposes a separate final operation for modality-to-text projection. Image preprocessing and patch extraction remain processor responsibilities.
 - A format-neutral multimodal soft-token embedder that applies unscaled RMSNorm
   followed by the checkpoint-backed bias-free modality-to-text projection, while
-  preserving per-image token sequences. A separate splitter restores per-image
-  boundaries from padded patch-position metadata and the configured pooling kernel.
+  preserving per-image token sequences. The `EmbeddingGemma2MultimodalCheckpointMapper` maps
+  the Hugging Face `embed_vision.embedding_projection.weight` tensor
+  (output-major [text hidden][vision hidden]) and rejects unknown tensors in
+  the image-bridge namespace. `EmbeddingGemma2VisionTower.fromCheckpoint`
+  can receive this mapped embedder so `encodeAndProject` executes the
+  complete vision-to-text soft-token path without a separately injected
+  projection at call time. A separate splitter restores per-image boundaries
+  from padded patch-position metadata and the configured pooling kernel.
+- `EmbeddingGemma2VisionProcessorOutput` is an immutable adapter for Gemma4-compatible processor tensors (`pixel_values`, `image_position_ids`, and `num_soft_tokens_per_image`). `EmbeddingGemma2VisionTower.encodeAndProject(processorOutput)` executes each padded image sequence, checks the actual valid pooled-token count against processor metadata, applies the checkpoint-backed bridge, and returns one text-space soft-token sequence per image without flattening away image boundaries. Callers can now create this output directly with `new EmbeddingGemma2VisionImageProcessor(patchSize, maxSoftTokens, poolingKernelSize).process(rgbImage)` or process a list of images.
 - Text-only is the first intended execution milestone.
 
 The attention, encoder-layer, and assembled text-backbone operations are
@@ -106,8 +114,7 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-Image preprocessing/patchification and end-to-end image execution remain
-deferred. Current vision components
+Image decoding and end-to-end registered runner execution remain deferred. The Java image processor accepts already-decoded RGB samples; codec integration remains the responsibility of the application or a separate image-I/O module. The image processor and per-image execution bridge are reference implementations; numeric parity against the pinned upstream torchvision implementation and full checkpoint inference still require fixture-based validation. Current vision components
 cover patch projection and learned 2D position lookup, the encoder tower and
 spatial pooler, optional post-pool standardization, post-tower modality
 projection, and reference per-image soft-token splitting.
