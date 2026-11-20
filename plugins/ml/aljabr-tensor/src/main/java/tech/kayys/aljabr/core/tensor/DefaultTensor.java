@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.core.tensor;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -13,6 +14,9 @@ import tech.kayys.aljabr.core.tensor.lazy.GraphExecutor;
 import tech.kayys.aljabr.core.tensor.lazy.GraphNode;
 import tech.kayys.aljabr.core.tensor.lazy.OpType;
 import tech.kayys.aljabr.core.tensor.lazy.OperationBackwardFunctions;
+import tech.kayys.aljabr.diagnostics.Diagnostic;
+import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
+import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 
 /**
  * Default eager tensor backed by backend-neutral {@link TensorStorage}.
@@ -57,22 +61,70 @@ public final class DefaultTensor implements Tensor {
      * first when the caller also needs to keep an independent reference.</p>
      */
     public DefaultTensor(Shape shape, DType dtype, DeviceType device, TensorStorage storage, ComputeBackend backend) {
+        this(shape, dtype, device, storage, backend, DiagnosticSink.noop());
+    }
+
+    /**
+     * Creates a tensor and reports construction-time validation failures to an
+     * explicitly supplied diagnostic sink.
+     *
+     * <p>The sink is consulted only when validation fails. Successful tensor
+     * construction does not create diagnostics or invoke the sink. Existing
+     * constructors remain silent and source-compatible.</p>
+     *
+     * @param diagnosticSink receives structured validation failures
+     */
+    public DefaultTensor(
+            Shape shape,
+            DType dtype,
+            DeviceType device,
+            TensorStorage storage,
+            ComputeBackend backend,
+            DiagnosticSink diagnosticSink) {
         this.shape = Objects.requireNonNull(shape, "shape must not be null");
         this.dtype = Objects.requireNonNull(dtype, "dtype must not be null");
         this.device = Objects.requireNonNull(device, "device must not be null");
         this.storage = Objects.requireNonNull(storage, "storage must not be null");
         this.backend = Objects.requireNonNull(backend, "backend must not be null");
+        Objects.requireNonNull(diagnosticSink, "diagnosticSink must not be null");
 
         // Larger allocations are valid for pooled storage and tensor views.
         // A tensor must never expose less capacity than its logical shape needs.
-        final long requiredBytes = dtype.memoryFootprintBytes(shape.numel());
+        final long requiredBytes;
+        try {
+            requiredBytes = dtype.memoryFootprintBytes(shape.numel());
+        } catch (IllegalArgumentException failure) {
+            diagnosticSink.accept(new Diagnostic(
+                    "tensor.dtype.element-count-invalid",
+                    DiagnosticSeverity.ERROR,
+                    "tensor.validation",
+                    failure.getMessage(),
+                    Map.of(
+                            "shape", shape.toString(),
+                            "dtype", dtype.name(),
+                            "numel", Long.toString(shape.numel()),
+                            "causeType", failure.getClass().getName())));
+            throw failure;
+        }
+
         final long availableBytes = storage.sizeBytes();
         if (availableBytes < requiredBytes) {
-            throw new IllegalArgumentException(
-                    "Tensor storage is too small: shape=" + shape
-                            + ", dtype=" + dtype
-                            + ", requires=" + requiredBytes + " bytes"
-                            + ", available=" + availableBytes + " bytes");
+            String message = "Tensor storage is too small: shape=" + shape
+                    + ", dtype=" + dtype
+                    + ", requires=" + requiredBytes + " bytes"
+                    + ", available=" + availableBytes + " bytes";
+            diagnosticSink.accept(new Diagnostic(
+                    "tensor.storage.capacity-insufficient",
+                    DiagnosticSeverity.ERROR,
+                    "tensor.validation",
+                    message,
+                    Map.of(
+                            "shape", shape.toString(),
+                            "dtype", dtype.name(),
+                            "device", device.name(),
+                            "requiredBytes", Long.toString(requiredBytes),
+                            "availableBytes", Long.toString(availableBytes))));
+            throw new IllegalArgumentException(message);
         }
     }
 
