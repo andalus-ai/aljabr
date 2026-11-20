@@ -74,6 +74,7 @@ class HostAccessibleStorageViewTest {
         MemorySegment segment = view.segment();
 
         view.release();
+        parent.release();
 
         assertFalse(segment.scope().isAlive());
         assertThrows(IllegalStateException.class, view::segment);
