@@ -339,7 +339,7 @@ public final class HatComputeProvider implements ComputeProvider {
             if (offsetsRank == null || sizesRank == null) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
             }
-            if (offsetsRank != rank || sizesRank != rank) {
+            if (!offsetsRank.equals(rank) || !sizesRank.equals(rank)) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
