@@ -305,4 +305,38 @@ class CpuBackendStorageTest {
         allocatingBackend.close();
     }
 
+    @Test
+    void reshapedContiguousSlicePreservesAliasingAndTransitiveOwnership() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 2, 2);
+        Tensor slice = null;
+        Tensor reshaped = null;
+        try {
+            slice = backend.slice(input, new long[] { 1, 0 }, new long[] { 1, 2 });
+            reshaped = backend.reshape(slice, 2);
+
+            assertSame(slice.storage(), reshaped.storage());
+            assertEquals(2, storage.references());
+
+            HostAccessibleStorage viewStorage = (HostAccessibleStorage) slice.storage();
+            viewStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0L, 30f);
+            assertArrayEquals(new float[] { 1f, 2f, 30f, 4f }, input.toFloatArray(), 0f);
+
+            input.release();
+            slice.release();
+
+            assertEquals(1, storage.references());
+            assertArrayEquals(new float[] { 30f, 4f }, reshaped.toFloatArray(), 0f);
+        } finally {
+            if (reshaped != null) {
+                reshaped.release();
+            }
+            if (slice != null) {
+                slice.release();
+            }
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
 }
