@@ -25,6 +25,7 @@ public final class GraphNode {
     private final DType outputDType;
     private final BackwardFunction backwardFunction;
     private volatile Tensor materializedData;
+    private int materializationLeaseCount;
 
     public GraphNode(OpType op, List<GraphNode> inputs, Object[] args, Shape outputShape, DType outputDType) {
         this(op, inputs, args, outputShape, outputDType, null);
@@ -104,6 +105,42 @@ public final class GraphNode {
             materializedData = null;
             return true;
         }
+    }
+
+    
+    /**
+     * Pins this operation node's materialization for one live lazy graph.
+     * CONSTANT nodes are borrowed leaves and are deliberately not leased.
+     */
+    synchronized void acquireMaterializationLease() {
+        if (op != OpType.CONSTANT) {
+            materializationLeaseCount++;
+        }
+    }
+
+    /**
+     * Releases one graph pin and detaches the cached output when the final
+     * graph no longer depends on this node. The caller owns releasing the
+     * returned tensor outside the node monitor.
+     */
+    synchronized Tensor releaseMaterializationLease() {
+        if (op == OpType.CONSTANT) {
+            return null;
+        }
+        if (materializationLeaseCount <= 0) {
+            throw new IllegalStateException("No materialization lease is held for this graph node");
+        }
+        materializationLeaseCount--;
+        if (materializationLeaseCount != 0) {
+            return null;
+        }
+        Tensor materialized = materializedData;
+        materializedData = null;
+        return materialized;
+    }
+
+    synchronized int materializationLeaseCount() {
+        return materializationLeaseCount;
     }
 
     public boolean isEvaluated() {
