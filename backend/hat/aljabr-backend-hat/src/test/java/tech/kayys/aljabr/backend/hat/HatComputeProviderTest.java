@@ -2,6 +2,7 @@ package tech.kayys.aljabr.backend.hat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Map;
@@ -807,4 +808,20 @@ class HatComputeProviderTest {
             provider.close();
         }
     }
+    @Test
+    void castAndDeviceIdentityPreserveHatOwnershipWithoutUnsafeCpuFallback() {
+        CpuBackend cpu = new CpuBackend();
+        HatComputeBackend hat = new HatComputeBackend(cpu);
+        try (var input = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 2f}, hat, 2)) {
+            assertSame(input, hat.cast(input, tech.kayys.aljabr.core.tensor.DType.F32));
+            assertSame(input, hat.to(input, tech.kayys.aljabr.core.tensor.DeviceType.CPU));
+            assertThrows(UnsupportedOperationException.class,
+                    () -> hat.cast(input, tech.kayys.aljabr.core.tensor.DType.Q8_0));
+        } finally {
+            hat.close();
+            cpu.close();
+        }
+    }
+
 }
