@@ -318,3 +318,7 @@ The framework scope includes numerical foundations, math, linear algebra, probab
 ### Acceptance gates
 
 A new public capability or convenience layer must demonstrate: (1) Aljabr-owned semantics and API; (2) a useful independent dependency boundary; (3) explicit memory/lifecycle and error behavior; (4) reference correctness and conformance tests; (5) tested examples in the relevant Java workflows; (6) compatibility with supported profiles and published artifacts; and (7) no inversion of AQLI/Tafkir/product ownership. Mark target, planned, implemented, validated, stable and optimized status separately.
+
+## 17. SDK audit execution gate
+
+Before adding new public SDK abstractions or reorganizing modules, consult `docs/architecture/SDK_CAPABILITY_AUDIT.md`. Treat its findings as an initial repository inventory, not a certification of runtime support. Verify current source, implementations, dependency metadata, tests and external-consumer behavior before changing contracts. Use the audit's status vocabulary (present, implemented, tested, validated, supported, experimental, planned, legacy) consistently. Prefer small compatibility-preserving increments and keep the Tensor/memory API, model-extension path and publication graph evidence-driven.
