@@ -40,6 +40,7 @@ public enum OpType {
 
     // Math
     POW,
+    SIGN,
     ABS,
     SQRT,
     EXP,
