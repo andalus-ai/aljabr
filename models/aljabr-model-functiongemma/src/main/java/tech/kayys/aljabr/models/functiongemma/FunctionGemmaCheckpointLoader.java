@@ -6,6 +6,8 @@ import jakarta.inject.Inject;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader.SafetensorShardSession;
 import tech.kayys.aljabr.spi.model.ModelConfig;
+import tech.kayys.aljabr.spi.model.ModelFamilyPlugin;
+import tech.kayys.aljabr.spi.model.ModelFamilyPluginRegistry;
 import tech.kayys.aljabr.spi.model.ModelRuntimeTraits;
 
 import java.io.IOException;
@@ -16,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.ServiceLoader;
 
 /**
  * Opens a FunctionGemma Hugging Face checkpoint through Aljabr's shared
@@ -51,10 +54,15 @@ public class FunctionGemmaCheckpointLoader {
         }
 
         ModelConfig config = ModelConfig.load(root.resolve("config.json"), objectMapper);
-        FunctionGemmaModelFamilyPlugin family = new FunctionGemmaModelFamilyPlugin();
-        if (!family.matchesCheckpoint(root)) {
+        ModelFamilyPluginRegistry registry = ModelFamilyPluginRegistry.create();
+        ServiceLoader.load(ModelFamilyPlugin.class).forEach(registry::register);
+        ModelFamilyPlugin family = registry.pluginForCheckpoint(root)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "No unique model-family plugin recognizes checkpoint: " + root));
+        if (!(family instanceof FunctionGemmaModelFamilyPlugin)) {
             throw new IllegalArgumentException(
-                    "Checkpoint does not match the FunctionGemma config and tokenizer protocol: " + root);
+                    "Checkpoint resolved to model family '" + family.descriptor().id()
+                            + "', not FunctionGemma: " + root);
         }
 
         FunctionGemmaArchitecture architecture = new FunctionGemmaArchitecture();
