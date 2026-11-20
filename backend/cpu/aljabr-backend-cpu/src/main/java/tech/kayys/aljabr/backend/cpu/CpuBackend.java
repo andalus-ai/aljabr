@@ -5,6 +5,8 @@ import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
 import tech.kayys.aljabr.backend.cpu.ops.NormOps;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.*;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
+import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 import tech.kayys.aljabr.core.memory.*;
 
 import java.lang.foreign.MemorySegment;
