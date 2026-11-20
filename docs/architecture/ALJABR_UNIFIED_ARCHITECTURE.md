@@ -273,3 +273,57 @@ Examples and tutorials must contain tested dependency coordinates, prerequisites
 ## 15. Contributor and extension-author guidance
 
 See [Developer Guide](../DEVELOPER_GUIDE.md) for source inspection, dependency direction, API design, numerical correctness, Vector API/FFM policy, extension criteria, examples and validation/reporting requirements. Root AGENTS.md remains the authoritative coding-agent instruction file.
+
+## 16. Unified Java-native scientific and AI programming model
+
+The framework should feel integrated to its consumers even though its capabilities are modular. Aljabr spans mathematics, numerical computing, statistics, scientific computing, structured data, dataset abstractions and AI/ML. Tensor computation is a first-class foundation for AI/ML and other numerical workloads, not a mandatory dependency for statistics-only or domain-science consumers.
+
+The goal is not to reproduce Python's package-by-package fragmentation in Java. Aljabr should own coherent contracts and semantics, then interoperate with the existing Java scientific ecosystem through optional adapters. Public signatures, errors, diagnostics, resource ownership and configuration remain Aljabr-owned.
+
+### 16.1 Multiple idiomatic Java styles, one semantic core
+
+The same capability should be usable through:
+- Traditional object-oriented Java with explicit types and control flow.
+- Fluent builders and compositional APIs for configuration, tensors, models and pipelines.
+- Declarative and annotation-assisted APIs for metadata, discovery, validation and generated adapters.
+- Functional composition for typed transformations and reusable operators.
+
+These are ergonomic entry points over the same contracts. No style is mandatory; annotations must not be required for ordinary use; generated metadata is preferred to reflection in hot paths; and convenience APIs must retain explicit low-level escape hatches.
+
+### 16.2 Memory and data movement are public semantics
+
+Specify ownership, borrowing, aliasing, mutation, view/copy behavior, lifetime, thread access, cancellation and cleanup for heap, off-heap, mapped, native and device memory. Make copies, materialization and host/device transfers inspectable and profileable. Provide safe defaults and advanced scoped allocation, pooling, pinned memory, memory mapping and asynchronous transfer facilities where supported. Zero-copy must be described as a capability with explicit conditions, never as an unconditional guarantee.
+
+### 16.3 Model and algorithm extension experience
+
+External developers should be able to add model families, operators, algorithms, format adapters, dataset sources and compute providers without forking core or depending on product runtimes. Contracts need stable identifiers, compatibility metadata, lifecycle semantics, capability descriptors, actionable diagnostics and conformance test kits.
+
+A library-level model runner may compose model loading, input/output contracts, preprocessing/postprocessing, execution configuration, inspection and resource lifecycle. It must remain distinct from AQLI's serving runtime: no request admission, server endpoints, tenant policy, production scheduling or service lifecycle in Aljabr.
+
+### 16.4 Multimodal and generative models, including diffusion
+
+Model composition must accommodate text, image, audio, video, spatial/3D and cross-modal architectures. Reusable primitives include modality encoders, projection, fusion, cross-attention, temporal/spatial representations and preprocessing contracts.
+
+Diffusion is a first-class generative model family alongside autoregressive, embedding, classification and other model families. Its reusable computational building blocks may include noise schedules, timestep/conditioning contracts, samplers/solvers and latent tensor workflows. Do not make diffusion-specific behavior part of the generic tensor contract or assume diffusion is a token-serving concern. Model-family and sampler modules remain opt-in and capability-validated.
+
+### 16.5 Dataset, mathematical and scientific computing breadth
+
+Aljabr's scope includes mathematical foundations, numerical methods, linear algebra, probability, statistics, optimization, scientific algorithms, dataset/source/transform abstractions, structured/tabular data extensions, classical ML, autograd and neural/generative models. Keep DataFrame and external data-engine integrations independently selectable. Aljabr provides reusable dataset contracts and transformations where they are computationally general; Tafkir owns training-specific dataset pipelines, experiment orchestration and adaptation workflows.
+
+### 16.6 Developer tooling and diagnostics
+
+First-class tools should include model/algorithm inspection, parameter and state summaries, graph/shape inspection, numerical assertions, gradient checking, NaN/Inf detection, backend-selection explanations, memory/copy/transfer tracing, operation profiling and JFR integration. Errors should identify the operation, relevant shapes/dtypes/layouts, violated constraints and remediation.
+
+### 16.7 One API across Java development environments
+
+Ordinary Java, Gradle/Maven, JShell, JBang and Jupyter through established Java kernels must use the same published APIs and lifecycle contracts. Provide tested examples and a path from notebook/script exploration to a maintained Java application. Notebook support is an integration/documentation concern, not a separate execution runtime.
+
+## 17. Profiles, artifacts and distribution
+
+Feature artifacts are the primary modularity mechanism. A BOM aligns versions of selected artifacts; it does not add/remove capabilities. Optional starter bundles and documented consumer profiles may curate combinations such as numerics, scientific, statistics/data, tensor, ML, multimodal, training-primitives, CPU, accelerator, research and embedded/minimal. Profiles must not silently pull unrelated domains, native SDKs, model catalogues or serving infrastructure.
+
+First minimize the resolved dependency graph. JPMS/jlink, GraalVM Native Image and shrinking are subsequent packaging optimizations subject to tests for reflection, ServiceLoader, FFM, resources and provider discovery. Publish clean external Gradle/Maven consumer fixtures for supported profiles and inspect generated POM/module metadata. AQLI and Tafkir remain downstream consumers, never Aljabr dependencies.
+
+## 18. Updated competitive principle
+
+Aljabr's differentiation is not a claim that Java universally replaces Python. It is a coherent Java-native computational platform: one set of Aljabr-owned semantics across scientific and AI workloads, strong static typing and IDE support, explicit resource ownership, optional high-performance providers, integrated diagnostics, modular distribution and interoperability with the JVM ecosystem. Evaluate this through comparable developer tasks, correctness, performance, memory behavior, portability and deployment complexity.

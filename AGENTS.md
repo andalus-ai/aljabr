@@ -261,3 +261,60 @@ The product-level direction for the Java AI/ML ecosystem is described in the [Tr
 - Aim for practical capability coverage of workflows commonly served by PyTorch, Hugging Face Transformers, and scikit-learn, but do not claim blanket or drop-in parity. Track each capability as implemented, partial, experimental, planned, or unsupported, with tests, examples, provider/format constraints, and known limitations.
 - Framework-generic numerical/statistical/ML algorithms belong in Aljabr only when they are reusable framework capabilities. Training workflow orchestration belongs in Tafkir; inference-serving and production policy belong in AQLI.
 - Prefer portable, documented public contracts and artifacts so work developed with Aljabr/Tafkir can be consumed by AQLI without duplicate compute stacks or format-specific ownership confusion.
+
+## 16. Unified Java-native scientific and AI development experience
+
+Aljabr is not only an ML/AI engine. It is a general-purpose Java computational framework spanning mathematics, numerical computing, statistics, scientific computing, data abstractions and machine learning. AI/ML tensors are a first-class capability and must receive deep investment, but they must not force unrelated scientific consumers to depend on neural-network, model, accelerator or serving modules.
+
+The target is one coherent Aljabr-owned programming model across these capabilities, with independently selectable artifacts and optional providers. Do not reproduce Python package fragmentation as a set of unrelated Java APIs. Integrate useful existing Java/scientific libraries through replaceable adapters while retaining Aljabr-owned public types, semantics, diagnostics and lifecycle rules.
+
+### Programming styles
+
+Support several idiomatic Java entry styles over the same underlying contracts; these are complementary facades, not separate frameworks:
+
+- **Traditional/object-oriented:** explicit types, constructors, interfaces and ordinary Java control flow for maximum transparency and debuggability.
+- **Fluent/compositional:** builders and method chaining for readable pipelines, tensor expressions, model composition and configuration.
+- **Declarative/annotation-assisted:** annotations and generated metadata for model discovery, parameter/configuration metadata, validation and documentation. Annotation processing or generated code is preferred over reflection-heavy hot paths.
+- **Functional/composable:** typed functions and transformations for datasets, preprocessing, operators and scientific workflows.
+
+Never require annotations, builders or a DSL to use the framework. Every convenience style must preserve an escape hatch to the explicit API and must not create hidden execution semantics.
+
+### Memory, ownership and zero-copy
+
+Treat resource safety as part of the public programming model, not an implementation detail. Document and test ownership, borrowing, aliasing, mutation, close/lifetime, thread access, cancellation and cleanup for heap, off-heap, mapped, native and device storage. Make view-versus-copy behavior observable. Provide safe defaults plus explicit advanced control through scoped arenas/allocators, memory pools, mapped storage, pinned memory and asynchronous transfers where supported. Zero-copy is a capability with precise preconditions, not a blanket promise; expose when conversion, materialization or device transfer occurs.
+
+### Model, algorithm and runner extensibility
+
+Make it straightforward for external projects to add a model family, scientific algorithm, operator, format adapter, dataset source or execution provider using small versioned Aljabr-owned contracts. Provide extension templates/examples, capability descriptors, registration/discovery, lifecycle rules, diagnostics and conformance test kits. Keep model architecture/weight-format compatibility separate from execution-provider support.
+
+A reusable Aljabr model runner is a library-level composition/execution facility, not a serving control plane. It may provide model construction, input/output contracts, preprocessing/postprocessing composition, execution options, inspection and resource lifecycle. AQLI continues to own production inference serving, request scheduling, streaming and deployment operations. Tafkir owns higher-level training loops/workflows, dataset orchestration and adaptation policy; Aljabr owns reusable tensor, autograd, loss, optimizer and training-computation primitives.
+
+### Multimodal and generative capability
+
+Multimodal is a foundational model-composition concern, not a text-only special case. Architecture capabilities should cover text, image, audio, video, spatial/3D and combinations, including modality encoders, projections, fusion, cross-attention, temporal/spatial representations and modality-aware preprocessing.
+
+Diffusion and other iterative generative families are first-class model/algorithm capabilities alongside autoregressive models, embedding models, classifiers and discriminative models. Provide reusable noise schedules, samplers/solvers, timestep/conditioning abstractions, latent/tensor workflows and scheduler-independent model contracts where justified. Do not put diffusion-specific semantics into the generic Tensor API or assume every generative model belongs to AQLI's token-generation loop. Keep model-family implementations optional and independently consumable.
+
+### Developer workflows and ecosystem compatibility
+
+The same published Java APIs must work in ordinary applications, Gradle/Maven projects, JShell, JBang and Jupyter through established Java kernels (for example IJava). These are different entry points to one API, not separate runtimes. Provide tested examples, dependency snippets, expected output, lifecycle guidance and promotion paths from an experiment to a production project. Do not make a custom notebook kernel a prerequisite.
+
+Interop with Java libraries and data formats is encouraged through explicit adapters and conversion boundaries. Document dtype, null/missing-value, shape, layout, ownership, aliasing and copy semantics. Third-party types, exceptions and lifecycle assumptions must not leak into stable Aljabr public APIs.
+
+### Packaging, profiles and tree-shaking
+
+Prefer dependency-graph minimization over claims of automatic tree-shaking. Publish cohesive feature artifacts; a BOM aligns versions only; optional starter bundles provide curated combinations. Define documented consumer profiles (for example numerics, scientific, statistics/data, tensor, ML, multimodal, training-primitives, CPU, accelerator, research and embedded/minimal) as dependency recipes or tested distribution bundles, not mandatory runtime modes. Keep providers, model catalogues, dataset connectors, native runtimes and training-only features opt-in.
+
+JPMS/jlink, GraalVM Native Image and bytecode/resource shrinking may improve packaging after module metadata, reflection, ServiceLoader, FFM, resources and provider discovery are tested. Do not promise that a BOM removes dependencies or that class-level tree-shaking can compensate for a monolithic artifact. Test clean external Gradle and Maven consumers for each supported profile, including dependency reports, published metadata, startup/runtime behavior and optional-provider absence.
+
+### Developer tooling and diagnostics
+
+Treat tooling as a product capability: model/algorithm inspectors, graph and shape inspection, parameter/state summaries, numerical assertions and gradient checks, NaN/Inf diagnostics, backend/provider explainability, memory/copy/transfer visibility, per-operation profiling and JFR integration. Diagnostics must identify the operation, input shapes/dtypes/layouts, violated constraint, selected provider and actionable remediation without leaking provider-specific exceptions as the public contract.
+
+### Scientific capability breadth
+
+The framework scope includes numerical foundations, math, linear algebra, probability, statistics, optimization, scientific algorithms, structured/tabular data, dataset access/transforms, classical ML, tensors, autograd, neural networks, multimodal and generative models. Keep these capabilities cohesive and independently selectable. Dataset abstractions in Aljabr should cover reusable in-memory/streaming source and transformation contracts needed by computational workflows; Tafkir owns higher-level training dataset pipelines and experiment orchestration. DataFrame semantics remain an optional tabular extension, not part of the minimal tensor core.
+
+### Acceptance gates
+
+A new public capability or convenience layer must demonstrate: (1) Aljabr-owned semantics and API; (2) a useful independent dependency boundary; (3) explicit memory/lifecycle and error behavior; (4) reference correctness and conformance tests; (5) tested examples in the relevant Java workflows; (6) compatibility with supported profiles and published artifacts; and (7) no inversion of AQLI/Tafkir/product ownership. Mark target, planned, implemented, validated, stable and optimized status separately.
