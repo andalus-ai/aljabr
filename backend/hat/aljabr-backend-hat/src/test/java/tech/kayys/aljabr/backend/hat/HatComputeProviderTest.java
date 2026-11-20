@@ -331,8 +331,37 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.attention", Map.of()).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.attention.masked", Map.of()).support());
-            assertEquals(OperationSupport.UNSUPPORTED,
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.rope", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.rope", Map.of("dtype", "F32", "rank", "4")).support());
+            Map<String, String> validRope = Map.of(
+                    "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                    "sequence", "16", "head_dim", "64", "position", "0", "theta", "10000");
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.rope", validRope).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.rope", validRope).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F16", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "0", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "3", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "0", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "63", "position", "0", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "-1", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "0", "theta", "1")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.unknown", Map.of()).support());
         } finally {
