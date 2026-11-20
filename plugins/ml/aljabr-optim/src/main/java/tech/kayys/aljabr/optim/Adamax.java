@@ -183,26 +183,34 @@ public final class Adamax implements Optimizer, AutoCloseable {
 
     /** Computes element-wise max(a,b) using existing tensor arithmetic. */
     private static Tensor elementwiseMaximum(Tensor a, Tensor b) {
-        Tensor sum = null;
+        Tensor halfA = null;
+        Tensor halfB = null;
         Tensor difference = null;
         Tensor absoluteDifference = null;
-        Tensor combined = null;
+        Tensor halfDifference = null;
+        Tensor partial = null;
         Tensor result = null;
         try {
-            sum = a.add(b);
+            // The inputs are non-negative norms. Halving before addition avoids
+            // overflow when both values are close to Float.MAX_VALUE.
+            halfA = a.mul(0.5f);
+            halfB = b.mul(0.5f);
             difference = a.sub(b);
             absoluteDifference = difference.abs();
-            combined = sum.add(absoluteDifference);
-            result = combined.mul(0.5f);
+            halfDifference = absoluteDifference.mul(0.5f);
+            partial = halfA.add(halfB);
+            result = partial.add(halfDifference);
             return result;
         } catch (RuntimeException | Error failure) {
             if (result != null) result.release();
             throw failure;
         } finally {
-            if (sum != null) sum.release();
+            if (halfA != null) halfA.release();
+            if (halfB != null) halfB.release();
             if (difference != null) difference.release();
             if (absoluteDifference != null) absoluteDifference.release();
-            if (combined != null) combined.release();
+            if (halfDifference != null) halfDifference.release();
+            if (partial != null) partial.release();
         }
     }
 
