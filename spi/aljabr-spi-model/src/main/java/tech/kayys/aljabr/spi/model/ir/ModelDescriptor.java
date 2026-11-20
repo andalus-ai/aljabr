@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -17,15 +18,17 @@ import java.util.Set;
  * through optional {@link PayloadReference} values on tensor descriptors.
  *
  * <p>Architecture identifiers and source-format identifiers are opaque strings
- * so AMIR can preserve models from formats and architecture families that the
- * current Aljabr release does not yet understand.
+ * so AMIR can preserve models from format and architecture families that the
+ * current Aljabr release does not yet understand. When known, richer typed
+ * architecture information is available through {@link #architectureDescriptor()}.
  *
  * @param identity stable model identity
- * @param architecture architecture identifier
+ * @param architecture stable architecture identifier
  * @param sourceFormat identifier of the source serialization format
  * @param metadata standardized or source-provided metadata
  * @param extensions opaque namespaced metadata not interpreted by this version
  * @param tensors tensor descriptors, with unique names
+ * @param architectureDescriptor optional typed architecture details
  */
 public record ModelDescriptor(
         ModelIdentity identity,
@@ -33,7 +36,22 @@ public record ModelDescriptor(
         String sourceFormat,
         Map<String, String> metadata,
         Map<String, String> extensions,
-        List<TensorDescriptor> tensors) {
+        List<TensorDescriptor> tensors,
+        Optional<ArchitectureDescriptor> architectureDescriptor) {
+
+    /**
+     * Compatibility constructor for descriptors created before typed
+     * architecture information was introduced.
+     */
+    public ModelDescriptor(
+            ModelIdentity identity,
+            String architecture,
+            String sourceFormat,
+            Map<String, String> metadata,
+            Map<String, String> extensions,
+            List<TensorDescriptor> tensors) {
+        this(identity, architecture, sourceFormat, metadata, extensions, tensors, Optional.empty());
+    }
 
     public ModelDescriptor {
         Objects.requireNonNull(identity, "identity must not be null");
@@ -42,6 +60,14 @@ public record ModelDescriptor(
         metadata = immutableMap(metadata, "metadata");
         extensions = immutableMap(extensions, "extensions");
         tensors = List.copyOf(Objects.requireNonNull(tensors, "tensors must not be null"));
+        architectureDescriptor = Objects.requireNonNull(
+                architectureDescriptor, "architectureDescriptor must not be null");
+
+        if (architectureDescriptor.isPresent()
+                && !architecture.equals(architectureDescriptor.orElseThrow().id())) {
+            throw new IllegalArgumentException(
+                    "architecture identifier must match architecture descriptor id");
+        }
 
         Set<String> names = new HashSet<>();
         for (TensorDescriptor tensor : tensors) {
@@ -55,7 +81,16 @@ public record ModelDescriptor(
     /** Returns a descriptor with the same content and a different identity. */
     public ModelDescriptor withIdentity(ModelIdentity replacement) {
         return new ModelDescriptor(
-                replacement, architecture, sourceFormat, metadata, extensions, tensors);
+                replacement, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor);
+    }
+
+    /** Returns a descriptor enriched with typed architecture information. */
+    public ModelDescriptor withArchitectureDescriptor(ArchitectureDescriptor replacement) {
+        Objects.requireNonNull(replacement, "replacement must not be null");
+        return new ModelDescriptor(
+                identity, replacement.id(), sourceFormat, metadata, extensions, tensors,
+                Optional.of(replacement));
     }
 
     private static String requireText(String value, String name) {
