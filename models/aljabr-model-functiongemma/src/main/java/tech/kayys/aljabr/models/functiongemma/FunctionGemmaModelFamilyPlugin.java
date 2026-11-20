@@ -74,7 +74,16 @@ public class FunctionGemmaModelFamilyPlugin implements ModelFamilyPlugin {
                 return false;
             }
             String tokenizerConfig = Files.readString(tokenizerConfigPath);
-            return REQUIRED_PROTOCOL_TOKENS.stream().allMatch(tokenizerConfig::contains);
+            if (REQUIRED_PROTOCOL_TOKENS.stream().allMatch(tokenizerConfig::contains)) {
+                return true;
+            }
+            Path tokenizerJsonPath = modelDirectory.resolve("tokenizer.json");
+            if (!Files.isRegularFile(tokenizerJsonPath)) {
+                return false;
+            }
+            String tokenizerJson = Files.readString(tokenizerJsonPath);
+            return REQUIRED_PROTOCOL_TOKENS.stream()
+                    .allMatch(token -> tokenizerConfig.contains(token) || tokenizerJson.contains(token));
         } catch (IOException | RuntimeException ignored) {
             return false;
         }
