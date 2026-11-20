@@ -22,7 +22,6 @@ class DiagnosticFormatterTest {
         assertEquals(
                 "2026-01-02T03:04:05Z ERROR tensor.shape.mismatch [tensor]: "
                         + "Expected [2, 3]\\nbut received [3, 2] "
-                        .trim()
                         + "{operation=matmul, shape=[3, 2]}",
                 DiagnosticFormatter.format(diagnostic));
     }
