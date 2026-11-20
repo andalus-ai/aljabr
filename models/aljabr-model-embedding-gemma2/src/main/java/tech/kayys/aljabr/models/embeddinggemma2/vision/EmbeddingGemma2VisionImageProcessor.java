@@ -237,6 +237,10 @@ public final class EmbeddingGemma2VisionImageProcessor {
         private final float[] samples;
 
         private RgbImage(int width, int height, float[] samples) {
+            this(width, height, samples, true);
+        }
+
+        private RgbImage(int width, int height, float[] samples, boolean requireInputRange) {
             if (width <= 0 || height <= 0) throw new IllegalArgumentException("image dimensions must be positive");
             if (samples == null || samples.length != Math.multiplyExact(Math.multiplyExact(width, height), 3)) {
                 throw new IllegalArgumentException("RGB sample count must equal width * height * 3");
@@ -245,8 +249,10 @@ public final class EmbeddingGemma2VisionImageProcessor {
             this.height = height;
             this.samples = samples.clone();
             for (float sample : this.samples) {
-                if (!Float.isFinite(sample) || sample < 0f || sample > 255f) {
-                    throw new IllegalArgumentException("RGB samples must be finite values in [0,255]");
+                if (!Float.isFinite(sample) || (requireInputRange && (sample < 0f || sample > 255f))) {
+                    throw new IllegalArgumentException(requireInputRange
+                            ? "RGB input samples must be finite values in [0,255]"
+                            : "resized RGB samples must be finite");
                 }
             }
         }
@@ -307,9 +313,13 @@ public final class EmbeddingGemma2VisionImageProcessor {
             return fromRgb8(width, height, rgb);
         }
 
-        /** Creates an image from interleaved RGB float samples in [0,255]. */
+        /** Creates an image from interleaved RGB float input samples in [0,255]. */
         public static RgbImage fromFloatSamples(int width, int height, float[] rgb) {
             return new RgbImage(width, height, rgb);
+        }
+
+        private static RgbImage fromResizedFloatSamples(int width, int height, float[] rgb) {
+            return new RgbImage(width, height, rgb, false);
         }
 
         public int width() { return width; }
