@@ -99,7 +99,6 @@ class GraphExecutorTest {
         IllegalStateException replacementFailure = new IllegalStateException("previous gradient release failed");
         AtomicReference<Tensor> leafOwnedGradient = new AtomicReference<>();
 
-        AtomicInteger leafGradientReleases = new AtomicInteger();
         Tensor leaf = (Tensor) Proxy.newProxyInstance(
                 Tensor.class.getClassLoader(),
                 new Class<?>[] { Tensor.class },
