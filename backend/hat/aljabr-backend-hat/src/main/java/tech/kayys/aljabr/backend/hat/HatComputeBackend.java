@@ -257,6 +257,11 @@ public class HatComputeBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor sign(Tensor a) {
+        return cpuFallback.sign(a);
+    }
+
+    @Override
     public Tensor abs(Tensor a) {
         return cpuFallback.abs(a);
     }
