@@ -341,4 +341,65 @@ class TensorOpsTest {
             b.release();
         }
     }
+
+    @Test
+    void sharedBroadcastValidationBuildsTrailingAxisOutputShape() {
+        TensorOperationValidator.BroadcastPlan plan =
+                TensorOperationValidator.validateBroadcast(new Shape(2, 1, 3), new Shape(1, 4, 1));
+        assertThat(plan.outputDimensions()).containsExactly(2, 4, 3);
+        assertThat(plan.outputElements()).isEqualTo(24);
+    }
+
+    @Test
+    void sharedBroadcastValidationSupportsScalarsAndZeroDimensions() {
+        TensorOperationValidator.BroadcastPlan scalar =
+                TensorOperationValidator.validateBroadcast(new Shape(), new Shape(2, 3));
+        assertThat(scalar.outputDimensions()).containsExactly(2, 3);
+        assertThat(scalar.outputElements()).isEqualTo(6);
+
+        TensorOperationValidator.BroadcastPlan empty =
+                TensorOperationValidator.validateBroadcast(new Shape(0, 3), new Shape(1, 3));
+        assertThat(empty.outputDimensions()).containsExactly(0, 3);
+        assertThat(empty.outputElements()).isZero();
+    }
+
+    @Test
+    void sharedBroadcastValidationRejectsIncompatibleDimensionsAndOverflow() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateBroadcast(
+                new Shape(2, 3), new Shape(4, 3)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not broadcast-compatible");
+        assertThatThrownBy(() -> TensorOperationValidator.validateBroadcast(
+                new Shape(Long.MAX_VALUE, 1), new Shape(1, 2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("overflows");
+    }
+
+    @Test
+    void cpuElementwiseOperationsUseSharedBroadcastPlan() {
+        Tensor matrix = tensor(new float[] {1, 2, 3, 4, 5, 6}, 2, 3);
+        Tensor row = tensor(new float[] {10, 20, 30}, 1, 3);
+        try {
+            Tensor sum = backend.add(matrix, row);
+            Tensor difference = backend.sub(matrix, row);
+            Tensor product = backend.mul(matrix, row);
+            Tensor quotient = backend.div(matrix, row);
+            try {
+                assertThat(sum.shape().dims()).containsExactly(2, 3);
+                assertThat(sum.toFloatArray()).containsExactly(11, 22, 33, 14, 25, 36);
+                assertThat(difference.toFloatArray()).containsExactly(-9, -18, -27, -6, -15, -24);
+                assertThat(product.toFloatArray()).containsExactly(10, 40, 90, 40, 100, 180);
+                assertThat(quotient.toFloatArray()).containsExactly(0.1f, 0.1f, 0.1f, 0.4f, 0.25f, 0.2f);
+            } finally {
+                sum.release();
+                difference.release();
+                product.release();
+                quotient.release();
+            }
+        } finally {
+            matrix.release();
+            row.release();
+        }
+    }
+
 }
