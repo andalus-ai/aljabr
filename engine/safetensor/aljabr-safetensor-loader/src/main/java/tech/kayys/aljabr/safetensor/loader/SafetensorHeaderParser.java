@@ -302,24 +302,29 @@ public final class SafetensorHeaderParser {
                         "Missing or non-string 'dtype' for tensor '" + name + "'", path, -1L, null);
             }
 
-            List<Number> shapeList = (List<Number>) raw.get("shape");
-            if (shapeList != null && shapeList.size() > limits.maxTensorRank()) {
+            Object rawShape = raw.get("shape");
+            if (!(rawShape instanceof List<?> shapeList)) {
+                throw new SafetensorException.HeaderParseException(
+                        "Missing or non-array 'shape' for tensor '" + name + "'", path, -1L, null);
+            }
+            if (shapeList.size() > limits.maxTensorRank()) {
                 throw new SafetensorException.ValidationException(
                         "Tensor '" + name + "' rank " + shapeList.size() + " exceeds configured limit "
                                 + limits.maxTensorRank(), path, name);
             }
-            long[] shape = shapeList == null
-                    ? new long[0]
-                    : shapeList.stream().mapToLong(Number::longValue).toArray();
+            long[] shape = new long[shapeList.size()];
+            for (int i = 0; i < shapeList.size(); i++) {
+                shape[i] = exactLong(shapeList.get(i), "shape[" + i + "]", name, path);
+            }
 
-            List<Number> offsetList = (List<Number>) raw.get("data_offsets");
-            if (offsetList == null || offsetList.size() != 2) {
+            Object rawOffsets = raw.get("data_offsets");
+            if (!(rawOffsets instanceof List<?> offsetList) || offsetList.size() != 2) {
                 throw new SafetensorException.HeaderParseException(
                         "data_offsets must be a 2-element array for tensor '" + name + "'",
                         path, -1L, null);
             }
-            long begin = offsetList.get(0).longValue();
-            long end = offsetList.get(1).longValue();
+            long begin = exactLong(offsetList.get(0), "data_offsets[0]", name, path);
+            long end = exactLong(offsetList.get(1), "data_offsets[1]", name, path);
 
             return new SafetensorTensorInfo(name, dtype, shape, new long[] { begin, end });
 
@@ -328,6 +333,30 @@ public final class SafetensorHeaderParser {
         } catch (IllegalArgumentException e) {
             throw new SafetensorException.HeaderParseException(
                     "Invalid tensor definition for '" + name + "': " + e.getMessage(),
+                    path, -1L, e);
+        }
+    }
+
+    /**
+     * Read an integral JSON number without truncation or overflow. Number.longValue()
+     * silently truncates fractional values and wraps oversized BigInteger values,
+     * which is not acceptable for dimensions or byte offsets from an untrusted file.
+     */
+    private static long exactLong(Object value, String field, String tensorName, Path path) {
+        if (!(value instanceof Number number)
+                || number instanceof Float
+                || number instanceof Double
+                || (number instanceof java.math.BigDecimal decimal && decimal.scale() > 0)) {
+            throw new SafetensorException.HeaderParseException(
+                    "'" + field + "' must be an integer for tensor '" + tensorName + "'",
+                    path, -1L, null);
+        }
+        try {
+            return new java.math.BigDecimal(number.toString()).longValueExact();
+        } catch (NumberFormatException | ArithmeticException e) {
+            throw new SafetensorException.HeaderParseException(
+                    "'" + field + "' is not an exactly representable 64-bit integer for tensor '"
+                            + tensorName + "': " + number,
                     path, -1L, e);
         }
     }
@@ -352,17 +381,22 @@ public final class SafetensorHeaderParser {
 
         long prevEnd = 0L;
 
-        for (SafetensorTensorInfo info : sorted) {
-            long absBegin = dataBlobOffset + info.dataBegin();
-            long absEnd = dataBlobOffset + info.dataEnd();
+        long dataBlobSize = fileSize - dataBlobOffset;
 
-            if (absEnd > fileSize) {
+        for (SafetensorTensorInfo info : sorted) {
+            // Validate relative offsets before adding the absolute data-blob offset.
+            // Adding an attacker-controlled offset first can overflow long and turn
+            // an out-of-bounds range into a negative value that passes the old check.
+            if (info.dataEnd() > dataBlobSize) {
                 throw new SafetensorException.ValidationException(
-                        "AccelTensor '" + info.name() + "' data_offsets [" + info.dataBegin()
-                                + "," + info.dataEnd() + ") extend beyond file size " + fileSize
-                                + " (absolute range [" + absBegin + "," + absEnd + "))",
+                        "Tensor '" + info.name() + "' data_offsets [" + info.dataBegin()
+                                + "," + info.dataEnd() + ") extend beyond data section size "
+                                + dataBlobSize,
                         path, info.name());
             }
+
+            long absBegin = dataBlobOffset + info.dataBegin();
+            long absEnd = dataBlobOffset + info.dataEnd();
 
             // Allow zero-length tensors at the same position (degenerate but valid)
             if (info.byteLength() > 0 && info.dataBegin() < prevEnd) {
