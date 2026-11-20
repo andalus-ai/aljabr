@@ -845,4 +845,32 @@ class SafetensorFFMLoaderTest {
                 .hasMessageContaining("maxMetadataEntries");
     }
 
+
+    @Test
+    void loadResult_concurrentTensorLookupReturnsSingleCachedView() throws Exception {
+        String json = """
+                {"w": {"dtype":"F32","shape":[2],"data_offsets":[0,8]}}
+                """;
+        byte[] payload = buildSafetensors(json, new byte[8]);
+        Arena arena = Arena.ofShared();
+        MemorySegment segment = toSegment(payload, arena);
+        SafetensorHeader header = PARSER.parse(segment, Path.of("concurrent.safetensors"));
+
+        try (SafetensorLoadResult result = new SafetensorLoadResult(
+                Path.of("concurrent.safetensors"), header, segment, arena,
+                SafetensorLoadResult.LoadMode.COPY);
+                var executor = Executors.newFixedThreadPool(8)) {
+            List<Callable<SafetensorTensor>> lookups = new ArrayList<>();
+            for (int i = 0; i < 64; i++) {
+                lookups.add(() -> result.tensor("w"));
+            }
+
+            var futures = executor.invokeAll(lookups);
+            SafetensorTensor first = futures.get(0).get();
+            for (var future : futures) {
+                assertThat(future.get()).isSameAs(first);
+            }
+        }
+    }
+
 }
