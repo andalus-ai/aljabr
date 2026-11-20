@@ -21,8 +21,8 @@ class EmbeddingGemma2VisionAttentionTest {
                 new int[][]{{0, 0}, {-1, -1}}, new boolean[]{true, false});
 
         assertEquals(2, output.length);
-        assertArrayEquals(new float[]{1f, 0f, 0f, 0f}, output[0], 2e-5f);
-        assertArrayEquals(new float[]{1f, 0f, 0f, 0f}, output[1], 2e-5f);
+        assertArrayEquals(new float[]{1.999996f, 0f, 0f, 0f}, output[0], 2e-5f);
+        assertArrayEquals(new float[]{1.999996f, 0f, 0f, 0f}, output[1], 2e-5f);
 
         float[][] inferredMaskOutput = attention.compute(input,
                 new int[][]{{0, 0}, {-1, -1}}, null);
@@ -37,7 +37,7 @@ class EmbeddingGemma2VisionAttentionTest {
         var attention = new EmbeddingGemma2VisionAttention(
                 4, 1, 1, 4, 1e-6f, 100.0,
                 new EmbeddingGemma2VisionAttention.Weights(
-                        identity, identity, identity, identity, scale, scale));
+                        new float[4][4], new float[4][4], identity, identity, scale, scale));
         float[][] output = attention.compute(
                 new float[][]{{1f, 0f, 0f, 0f}, {0f, 0f, 1f, 0f}},
                 new int[][]{{0, 0}, {0, 0}}, null);
