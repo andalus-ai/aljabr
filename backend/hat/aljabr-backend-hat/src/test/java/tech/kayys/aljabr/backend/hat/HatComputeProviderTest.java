@@ -327,8 +327,28 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.cat", Map.of()).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.upsample_nearest2d", Map.of()).support());
-            assertEquals(OperationSupport.UNSUPPORTED,
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.attention", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "2", "key_rank", "2", "value_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F16", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "2", "value_rank", "4")).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.attention.masked", Map.of()).support());
             assertEquals(OperationSupport.UNSUPPORTED,
@@ -339,6 +359,26 @@ class HatComputeProviderTest {
             provider.close();
         }
         assertThrows(IllegalStateException.class, session::computeBackends);
+    }
+
+    @Test
+    void unmaskedAttentionStagesHatOwnedHostTensorsIntoCpuFallback() {
+        CpuBackend cpu = new CpuBackend();
+        HatComputeBackend hat = new HatComputeBackend(cpu);
+        try (var query = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 0f}, hat, 1, 2);
+                var key = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 0f}, hat, 1, 2);
+                var value = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {3f, 4f}, hat, 1, 2);
+                var output = hat.attention(query, key, value)) {
+            assertEquals(cpu, output.backend());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new float[] {3f, 4f}, output.toFloatArray(), 1.0e-5f);
+        } finally {
+            hat.close();
+            cpu.close();
+        }
     }
 
     @Test
