@@ -355,6 +355,31 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.attention.masked", Map.of(
                             "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
                             "rank", "4", "key_rank", "4", "value_rank", "4")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.upsample_nearest2d", Map.of()).support());
+            Map<String, String> validUpsample = Map.of(
+                    "dtype", "F32", "rank", "4",
+                    "input_height", "2", "input_width", "2",
+                    "output_height", "4", "output_width", "4");
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.upsample_nearest2d", validUpsample).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.upsample_nearest2d", validUpsample).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.upsample_nearest2d", Map.of(
+                            "dtype", "F16", "rank", "4",
+                            "input_height", "2", "input_width", "2",
+                            "output_height", "4", "output_width", "4")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.upsample_nearest2d", Map.of(
+                            "dtype", "F32", "rank", "3",
+                            "input_height", "2", "input_width", "2",
+                            "output_height", "4", "output_width", "4")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.upsample_nearest2d", Map.of(
+                            "dtype", "F32", "rank", "4",
+                            "input_height", "0", "input_width", "2",
+                            "output_height", "4", "output_width", "4")).support());
             Map<String, String> validGqa = Map.of(
                     "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
                     "rank", "4", "key_rank", "4", "value_rank", "4",
@@ -518,6 +543,27 @@ class HatComputeProviderTest {
             assertEquals(cpu, output.backend());
             org.junit.jupiter.api.Assertions.assertArrayEquals(
                     new float[] {3f, 4f, 3f, 4f}, output.toFloatArray(), 1.0e-5f);
+        } finally {
+            hat.close();
+            cpu.close();
+        }
+    }
+
+    @Test
+    void nearestNeighborUpsamplingStagesHatOwnedInputIntoCpuFallback() {
+        CpuBackend cpu = new CpuBackend();
+        HatComputeBackend hat = new HatComputeBackend(cpu);
+        try (var input = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 2f, 3f, 4f}, hat, 1, 1, 2, 2);
+                var output = hat.upsampleNearest2d(input, 4, 4)) {
+            assertEquals(cpu, output.backend());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new float[] {
+                        1f, 1f, 2f, 2f,
+                        1f, 1f, 2f, 2f,
+                        3f, 3f, 4f, 4f,
+                        3f, 3f, 4f, 4f
+                    }, output.toFloatArray(), 1.0e-5f);
         } finally {
             hat.close();
             cpu.close();

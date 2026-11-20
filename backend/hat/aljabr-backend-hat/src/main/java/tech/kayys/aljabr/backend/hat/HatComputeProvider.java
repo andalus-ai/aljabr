@@ -54,8 +54,7 @@ public final class HatComputeProvider implements ComputeProvider {
             "tensor.dropout", "tensor.cross_entropy", "tensor.binary_cross_entropy",
             "tensor.zeros_like");
 
-    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
-            "tensor.cat", "tensor.upsample_nearest2d");
+    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of("tensor.cat");
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
@@ -175,6 +174,9 @@ public final class HatComputeProvider implements ComputeProvider {
             }
             if ("tensor.attention.gqa".equals(operationId)) {
                 return gqaSupport(operationId, constraints);
+            }
+            if ("tensor.upsample_nearest2d".equals(operationId)) {
+                return upsampleNearest2dSupport(operationId, constraints);
             }
 
             if ("tensor.matmul".equals(operationId)) {
@@ -401,6 +403,42 @@ public final class HatComputeProvider implements ComputeProvider {
                     }
                 }
             } else if (maskDtype != null || maskRankValue != null || causal) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * CpuBackend nearest-neighbor upsampling accepts NCHW F32 input with
+         * positive input and output spatial dimensions.
+         */
+        private OperationSupportDescriptor upsampleNearest2dSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            String inputHeightValue = constraints.get("input_height");
+            String inputWidthValue = constraints.get("input_width");
+            String outputHeightValue = constraints.get("output_height");
+            String outputWidthValue = constraints.get("output_width");
+            if (dtype == null || rankValue == null || inputHeightValue == null
+                    || inputWidthValue == null || outputHeightValue == null || outputWidthValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            Integer inputHeight = parseInteger(inputHeightValue);
+            Integer inputWidth = parseInteger(inputWidthValue);
+            Integer outputHeight = parseInteger(outputHeightValue);
+            Integer outputWidth = parseInteger(outputWidthValue);
+            if (rank == null || inputHeight == null || inputWidth == null
+                    || outputHeight == null || outputWidth == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (rank != 4 || inputHeight <= 0 || inputWidth <= 0
+                    || outputHeight <= 0 || outputWidth <= 0) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(
