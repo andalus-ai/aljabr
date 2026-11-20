@@ -168,6 +168,10 @@ public final class HatComputeProvider implements ComputeProvider {
             Objects.requireNonNull(constraints, "constraints");
             if (closed) throw new IllegalStateException("HAT provider session is closed");
 
+            if ("tensor.attention".equals(operationId)) {
+                return attentionSupport(operationId, constraints);
+            }
+
             if ("tensor.matmul".equals(operationId)) {
                 String dtype = constraints.get("dtype");
                 String rank = constraints.get("rank");
