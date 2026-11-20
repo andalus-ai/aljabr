@@ -281,35 +281,18 @@ public final class CpuBackend implements ComputeBackend {
             throw new UnsupportedOperationException("CPU matmul currently supports F32 tensors only");
         }
 
+        TensorOperationValidator.MatmulPlan plan =
+                TensorOperationValidator.validateMatmul(a.shape(), b.shape());
         int batchRankA = shapeA.length - 2;
         int batchRankB = shapeB.length - 2;
-        int batchRank = Math.max(batchRankA, batchRankB);
+        int batchRank = plan.batchDimensions().length;
         int outputRank = batchRank + 2;
-        int m = Math.toIntExact(shapeA[shapeA.length - 2]);
-        int k = Math.toIntExact(shapeA[shapeA.length - 1]);
-        int k2 = Math.toIntExact(shapeB[shapeB.length - 2]);
-        int n = Math.toIntExact(shapeB[shapeB.length - 1]);
-        if (k != k2) {
-            throw new IllegalArgumentException("Dimension mismatch: " + k + " != " + k2);
-        }
+        int m = Math.toIntExact(plan.rows());
+        int k = Math.toIntExact(plan.inner());
+        int n = Math.toIntExact(plan.columns());
+        long[] outputBatchDims = plan.batchDimensions();
+        long[] outDims = plan.outputDimensions();
 
-        long[] outputBatchDims = new long[batchRank];
-        for (int axis = 0; axis < batchRank; axis++) {
-            int axisA = axis - (batchRank - batchRankA);
-            int axisB = axis - (batchRank - batchRankB);
-            long dimA = axisA < 0 ? 1 : shapeA[axisA];
-            long dimB = axisB < 0 ? 1 : shapeB[axisB];
-            if (dimA != dimB && dimA != 1 && dimB != 1) {
-                throw new IllegalArgumentException(
-                        "matmul batch dimensions are not broadcast-compatible at aligned axis "
-                                + axis + ": " + dimA + " != " + dimB);
-            }
-            outputBatchDims[axis] = Math.max(dimA, dimB);
-        }
-
-        long[] outDims = java.util.Arrays.copyOf(outputBatchDims, outputRank);
-        outDims[outputRank - 2] = m;
-        outDims[outputRank - 1] = n;
         Shape outShape = new Shape(outDims);
         HostAccessibleStorage outBuf = allocateOutput(
                 Math.multiplyExact(outShape.numel(), (long) Float.BYTES));
