@@ -465,6 +465,8 @@ public class HatComputeBackend implements ComputeBackend {
 
     @Override
     public Tensor applyRoPE(Tensor input, int position, float theta, boolean isNeox) {
-        return cpuFallback.applyRoPE(input, position, theta, isNeox);
+        try (Tensor cpuInput = stageForCpu(input, "input")) {
+            return cpuFallback.applyRoPE(cpuInput, position, theta, isNeox);
+        }
     }
 }
