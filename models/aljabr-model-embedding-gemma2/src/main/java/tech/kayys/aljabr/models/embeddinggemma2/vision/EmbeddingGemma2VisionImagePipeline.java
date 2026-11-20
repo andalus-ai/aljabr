@@ -23,20 +23,12 @@ public final class EmbeddingGemma2VisionImagePipeline {
     public EmbeddingGemma2VisionImagePipeline(
             EmbeddingGemma2VisionImageProcessor imageProcessor,
             EmbeddingGemma2VisionTower visionTower) {
-        this(imageProcessor, visionTower, -1);
-    }
-
-    private EmbeddingGemma2VisionImagePipeline(
-            EmbeddingGemma2VisionImageProcessor imageProcessor,
-            EmbeddingGemma2VisionTower visionTower,
-            int configuredTextHiddenSize) {
         this.imageProcessor = Objects.requireNonNull(imageProcessor, "imageProcessor must not be null");
         this.visionTower = Objects.requireNonNull(visionTower, "visionTower must not be null");
         if (imageProcessor.patchSize() <= 0
                 || imageProcessor.poolingKernelSize() != visionTower.poolingKernelSize()) {
             throw new IllegalArgumentException("image processor and vision tower geometry must agree");
         }
-        this.configuredTextHiddenSize = configuredTextHiddenSize;
     }
     }
 
@@ -72,7 +64,7 @@ public final class EmbeddingGemma2VisionImagePipeline {
                 visionSpec, visionWeights, bridge, visionEpsilon, ropeTheta, poolingKernelSize);
         EmbeddingGemma2VisionImageProcessor processor = new EmbeddingGemma2VisionImageProcessor(
                 visionSpec.patchSize(), maxSoftTokens, poolingKernelSize);
-        return new EmbeddingGemma2VisionImagePipeline(processor, tower, textHiddenSize);
+        return new EmbeddingGemma2VisionImagePipeline(processor, tower);
     }
 
     /** Converts one decoded RGB image into projected text-space image tokens. */
@@ -100,9 +92,4 @@ public final class EmbeddingGemma2VisionImagePipeline {
         return imageProcessor;
     }
 
-    public int textHiddenSize() {
-        return configuredTextHiddenSize;
-    }
-
-    private final int configuredTextHiddenSize;
 }
