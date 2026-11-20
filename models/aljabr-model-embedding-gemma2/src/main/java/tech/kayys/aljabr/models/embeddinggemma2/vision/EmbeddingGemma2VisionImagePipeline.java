@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import tech.kayys.aljabr.models.embeddinggemma2.EmbeddingGemma2CheckpointMapper.CheckpointTensor;
+import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig;
 
 /**
  * Checkpoint-backed image-to-text-soft-token pipeline for EmbeddingGemma 2.
@@ -65,6 +66,27 @@ public final class EmbeddingGemma2VisionImagePipeline {
         EmbeddingGemma2VisionImageProcessor processor = new EmbeddingGemma2VisionImageProcessor(
                 visionSpec.patchSize(), maxSoftTokens, poolingKernelSize);
         return new EmbeddingGemma2VisionImagePipeline(processor, tower);
+    }
+
+    /**
+     * Builds the complete image path from parsed model and preprocessor
+     * configuration, reducing the risk of mismatched patch and pooling sizes.
+     */
+    public static EmbeddingGemma2VisionImagePipeline fromCheckpoint(
+            EmbeddingGemma2VisionConfig config,
+            Map<String, CheckpointTensor> tensors,
+            int textHiddenSize,
+            float bridgeEpsilon) {
+        Objects.requireNonNull(config, "config must not be null");
+        return fromCheckpoint(
+                config.toVisionSpec(),
+                tensors,
+                textHiddenSize,
+                (float) config.rmsNormEps(),
+                bridgeEpsilon,
+                config.ropeTheta(),
+                config.maxSoftTokens(),
+                config.poolingKernelSize());
     }
 
     /** Converts one decoded RGB image into projected text-space image tokens. */
