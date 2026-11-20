@@ -58,8 +58,23 @@ public final class EmbeddingGemma2TextBackbone {
      * @return learned per-token projected states [sequence][embeddingDim]
      */
     public float[][] encode(int[] inputIds, boolean[] validTokens, int[] positionIds) {
-        validateInputs(inputIds, validTokens, positionIds);
-        float[][] embeddings = embed(inputIds);
+        return encodeEmbeddings(embedInputTokens(inputIds), validTokens, positionIds);
+    }
+
+    /**
+     * Executes already assembled text-space input embeddings through the text
+     * tower. This is the multimodal entry point: image soft tokens replace
+     * image placeholder embeddings before PLE projection and text layers run.
+     *
+     * @param inputEmbeddings input embeddings [sequence][hiddenSize]
+     * @param validTokens optional true=non-padding mask; null means all valid
+     * @param positionIds explicit position IDs [sequence]
+     * @return learned per-token projected states [sequence][embeddingDim]
+     */
+    public float[][] encodeEmbeddings(
+            float[][] inputEmbeddings, boolean[] validTokens, int[] positionIds) {
+        validateEmbeddingInputs(inputEmbeddings, validTokens, positionIds);
+        float[][] embeddings = copy(inputEmbeddings);
         float[][][] perLayerInputs = EmbeddingGemma2PerLayerEmbeddingProjector.project(
                 embeddings, weights.pleProjection(), weights.pleNormScale(),
                 config.numHiddenLayers(), config.hiddenSizePerLayerInput(),
@@ -67,8 +82,8 @@ public final class EmbeddingGemma2TextBackbone {
 
         float[][] hidden = copy(embeddings);
         for (int layer = 0; layer < layers.size(); layer++) {
-            float[][] layerPle = new float[inputIds.length][config.hiddenSizePerLayerInput()];
-            for (int token = 0; token < inputIds.length; token++) {
+            float[][] layerPle = new float[embeddings.length][config.hiddenSizePerLayerInput()];
+            for (int token = 0; token < embeddings.length; token++) {
                 System.arraycopy(perLayerInputs[token][layer], 0, layerPle[token], 0,
                         config.hiddenSizePerLayerInput());
             }
@@ -79,6 +94,23 @@ public final class EmbeddingGemma2TextBackbone {
                 hidden, weights.finalNormScale(), (float) config.rmsNormEps());
         return EmbeddingGemma2LinearProjection.apply(
                 normalized, weights.embeddingProjection(), null);
+    }
+
+    /**
+     * Looks up text token embeddings and applies the model's sqrt(hiddenSize)
+     * input scale. Multimodal callers can replace image placeholder rows in
+     * this returned matrix before invoking {@link #encodeEmbeddings}.
+     */
+    public float[][] embedInputTokens(int[] inputIds) {
+        Objects.requireNonNull(inputIds, "inputIds must not be null");
+        if (inputIds.length == 0) {
+            throw new IllegalArgumentException("inputIds must be non-empty");
+        }
+        if (inputIds.length > config.maxInputTokens()) {
+            throw new IllegalArgumentException(
+                    "input sequence exceeds max_input_tokens: " + config.maxInputTokens());
+        }
+        return embed(inputIds);
     }
 
     /** Convenience path for one unpadded sequence with positions 0..N-1. */
@@ -121,20 +153,31 @@ public final class EmbeddingGemma2TextBackbone {
         return result;
     }
 
-    private void validateInputs(int[] inputIds, boolean[] validTokens, int[] positionIds) {
-        if (inputIds == null || inputIds.length == 0) {
-            throw new IllegalArgumentException("inputIds must be non-empty");
+    private void validateEmbeddingInputs(
+            float[][] inputEmbeddings, boolean[] validTokens, int[] positionIds) {
+        if (inputEmbeddings == null || inputEmbeddings.length == 0) {
+            throw new IllegalArgumentException("inputEmbeddings must be non-empty");
         }
-        if (inputIds.length > config.maxInputTokens()) {
+        if (inputEmbeddings.length > config.maxInputTokens()) {
             throw new IllegalArgumentException("input sequence exceeds max_input_tokens: " + config.maxInputTokens());
         }
-        if (validTokens != null && validTokens.length != inputIds.length) {
+        if (validTokens != null && validTokens.length != inputEmbeddings.length) {
             throw new IllegalArgumentException("validTokens length must equal input sequence length");
         }
-        if (positionIds == null || positionIds.length != inputIds.length) {
+        if (positionIds == null || positionIds.length != inputEmbeddings.length) {
             throw new IllegalArgumentException("positionIds length must equal input sequence length");
         }
-        for (int index = 0; index < positionIds.length; index++) {
+        for (int index = 0; index < inputEmbeddings.length; index++) {
+            float[] row = inputEmbeddings[index];
+            if (row == null || row.length != config.hiddenSize()) {
+                throw new IllegalArgumentException(
+                        "inputEmbeddings must have shape [sequence][" + config.hiddenSize() + "]");
+            }
+            for (float value : row) {
+                if (!Float.isFinite(value)) {
+                    throw new IllegalArgumentException("inputEmbeddings must contain only finite values");
+                }
+            }
             if (positionIds[index] < 0 || positionIds[index] >= config.maxPositionEmbeddings()) {
                 throw new IllegalArgumentException("position ID out of range at index " + index);
             }
