@@ -185,6 +185,10 @@ public final class HatComputeProvider implements ComputeProvider {
                         operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
 
+            if ("tensor.embedding".equals(operationId)) {
+                return embeddingSupport(operationId, constraints);
+            }
+
             if ("tensor.pow".equals(operationId)) {
                 String dtype = constraints.get("dtype");
                 if (dtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
@@ -319,6 +323,36 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+        }
+
+        /**
+         * CpuBackend.embedding reads F32 embedding rows and accepts integral
+         * I32 or I8 token indices. The input rank is unrestricted; the output
+         * appends the embedding dimension to the input shape.
+         */
+        private OperationSupportDescriptor embeddingSupport(
+                String operationId, Map<String, String> constraints) {
+            String inputDtype = constraints.get("dtype");
+            String weightDtype = constraints.get("weight_dtype");
+            String weightRankValue = constraints.get("weight_rank");
+            if (inputDtype == null || weightDtype == null || weightRankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!"I32".equalsIgnoreCase(inputDtype) && !"I8".equalsIgnoreCase(inputDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (!isF32(weightDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            try {
+                if (Integer.parseInt(weightRankValue) != 2) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+            } catch (NumberFormatException invalidRank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
         private OperationSupportDescriptor sliceSupport(
