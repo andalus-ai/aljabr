@@ -104,7 +104,15 @@ public final class EmbeddingGemma2VisionTower {
      * @param outputLength desired spatial soft-token count before padding removal
      */
     public VisionOutput encode(float[][] patchPixels, int[][] pixelPositionIds, int outputLength) {
+        Objects.requireNonNull(patchPixels, "patchPixels must not be null");
         Objects.requireNonNull(pixelPositionIds, "pixelPositionIds must not be null");
+        if (patchPixels.length != pixelPositionIds.length || patchPixels.length == 0) {
+            throw new IllegalArgumentException("patch pixels and position IDs must have the same non-zero length");
+        }
+        int poolingArea = Math.multiplyExact(poolingKernelSize, poolingKernelSize);
+        if (Math.multiplyExact(outputLength, poolingArea) != patchPixels.length) {
+            throw new IllegalArgumentException("patch count must equal outputLength * poolingKernelSize^2");
+        }
         boolean[] validPatches = validMask(pixelPositionIds);
         float[][] encoded = encoder.encodePatches(patchPixels, pixelPositionIds, validPatches);
         EmbeddingGemma2VisionPooler.Result pooled =
