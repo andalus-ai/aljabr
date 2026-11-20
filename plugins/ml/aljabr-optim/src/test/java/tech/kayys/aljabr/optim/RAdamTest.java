@@ -33,17 +33,17 @@ class RAdamTest {
         try (CpuBackend backend = new CpuBackend()) {
             Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
             Tensor firstGradient = TensorFactory.of(new float[] { 0.5f }, backend, 1, 1);
-            Tensor secondGradient = TensorFactory.of(new float[] { -0.25f }, backend, 1, 1);
+            Tensor secondGradient = TensorFactory.of(new float[] { 0.25f }, backend, 1, 1);
             try (Linear layer = new Linear(initial, null);
                  RAdam optimizer = new RAdam(0.1f, 0.5f, 0.5f, 1.0e-8f)) {
                 Parameter parameter = layer.namedParameterObjects().get("weight");
                 try {
                     optimizer.step(Map.of("weight", parameter), Map.of("weight", firstGradient));
-                    assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.9f, offset(1.0e-6f));
+                    assertThat(parameter.tensor().toFloatArray()[0]).isCloseTo(0.95f, offset(1.0e-6f));
 
                     optimizer.step(Map.of("weight", parameter), Map.of("weight", secondGradient));
                     assertThat(parameter.tensor().toFloatArray()[0])
-                            .isCloseTo(0.9f - (1.0f / 30.0f), offset(1.0e-6f));
+                            .isCloseTo(0.95f - (1.0f / 30.0f), offset(1.0e-6f));
                     assertThat(optimizer.learningRate()).isEqualTo(0.1f);
                     assertThat(optimizer.beta1()).isEqualTo(0.5f);
                     assertThat(optimizer.beta2()).isEqualTo(0.5f);
@@ -122,7 +122,7 @@ class RAdamTest {
                     parameter.updateTensor(replacement);
                     optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
                     assertThat(parameter.tensor().toFloatArray()[0])
-                            .isCloseTo(1.9f, offset(1.0e-6f));
+                            .isCloseTo(1.95f, offset(1.0e-6f));
                 } finally {
                     gradient.release();
                 }
