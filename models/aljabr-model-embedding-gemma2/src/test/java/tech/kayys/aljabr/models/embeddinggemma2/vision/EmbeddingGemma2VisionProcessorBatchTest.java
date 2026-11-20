@@ -76,7 +76,7 @@ class EmbeddingGemma2VisionProcessorBatchTest {
     }
 
     @Test
-    void rejectsProcessorBatchWithInvalidPaddingOrPixelRange() {
+    void rejectsProcessorBatchWithInvalidPaddingOrNonFinitePixels() {
         assertThrows(IllegalArgumentException.class, () ->
                 new EmbeddingGemma2VisionProcessorOutput(
                         new float[][][]{{{0.5f, 0.5f, 0.5f}}},
@@ -84,7 +84,7 @@ class EmbeddingGemma2VisionProcessorBatchTest {
                         new int[]{1}));
         assertThrows(IllegalArgumentException.class, () ->
                 new EmbeddingGemma2VisionProcessorOutput(
-                        new float[][][]{{{1.1f, 0.5f, 0.5f}}},
+                        new float[][][]{{{Float.NaN, 0.5f, 0.5f}}},
                         new int[][][]{{{0, 0}}},
                         new int[]{1}));
     }
