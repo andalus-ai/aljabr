@@ -670,10 +670,45 @@ public final class DefaultTensor implements Tensor {
         if (released.compareAndSet(false, true)) {
             Tensor ownedGradient = grad;
             grad = null;
+
+            RuntimeException runtimeFailure = null;
+            Error errorFailure = null;
             if (ownedGradient != null && ownedGradient != this) {
-                ownedGradient.release();
+                try {
+                    ownedGradient.release();
+                } catch (RuntimeException failure) {
+                    runtimeFailure = failure;
+                } catch (Error failure) {
+                    errorFailure = failure;
+                }
             }
-            storage.release();
+
+            try {
+                storage.release();
+            } catch (RuntimeException failure) {
+                if (runtimeFailure != null) {
+                    runtimeFailure.addSuppressed(failure);
+                } else if (errorFailure != null) {
+                    errorFailure.addSuppressed(failure);
+                } else {
+                    runtimeFailure = failure;
+                }
+            } catch (Error failure) {
+                if (runtimeFailure != null) {
+                    runtimeFailure.addSuppressed(failure);
+                } else if (errorFailure != null) {
+                    errorFailure.addSuppressed(failure);
+                } else {
+                    errorFailure = failure;
+                }
+            }
+
+            if (runtimeFailure != null) {
+                throw runtimeFailure;
+            }
+            if (errorFailure != null) {
+                throw errorFailure;
+            }
         }
     }
 

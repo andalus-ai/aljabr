@@ -293,6 +293,37 @@ class DefaultTensorTest {
     }
 
     @Test
+    void releasesOwnedStorageWhenGradientCleanupFails() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor owner = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, storage, unusedBackend());
+        IllegalStateException cleanupFailure = new IllegalStateException("gradient cleanup failed");
+        Tensor failingGradient = (Tensor) Proxy.newProxyInstance(
+                Tensor.class.getClassLoader(),
+                new Class<?>[] { Tensor.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("release")) {
+                        throw cleanupFailure;
+                    }
+                    if (method.getName().equals("toString")) {
+                        return "FailingGradient";
+                    }
+                    throw new UnsupportedOperationException("Unexpected gradient method: " + method.getName());
+                });
+
+        owner.setGrad(failingGradient);
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, owner::release);
+
+        assertSame(cleanupFailure, thrown);
+        assertEquals(0, storage.references(),
+                "The tensor's storage must be released even when gradient cleanup fails");
+        assertNull(owner.grad(), "The owned gradient reference must be cleared during release");
+        assertDoesNotThrow(owner::release, "A repeated release must remain idempotent");
+        assertEquals(0, storage.references());
+    }
+
+    @Test
     void rejectsStorageSmallerThanTensorWithoutTakingOwnership() {
         DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES - 1L);
         assertThrows(IllegalArgumentException.class,
