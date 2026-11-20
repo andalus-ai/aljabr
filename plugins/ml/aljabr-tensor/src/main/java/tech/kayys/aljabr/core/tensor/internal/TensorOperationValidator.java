@@ -10,7 +10,7 @@ import tech.kayys.aljabr.diagnostics.Diagnostic;
 import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 
-/** Shared structural validation for concatenation at tensor and backend boundaries. */
+/** Shared structural validation for tensor operations at tensor and backend boundaries. */
 public final class TensorOperationValidator {
     private TensorOperationValidator() { }
 
@@ -73,6 +73,12 @@ public final class TensorOperationValidator {
      * capability checks deliberately remain backend responsibilities.
      */
     public static MatmulPlan validateMatmul(Shape left, Shape right) {
+        return validateMatmul(left, right, DiagnosticSink.noop());
+    }
+
+    /** Reports matrix-dimension and batch-broadcast contract failures to the supplied sink. */
+    public static MatmulPlan validateMatmul(Shape left, Shape right, DiagnosticSink sink) {
+        Objects.requireNonNull(sink, "diagnosticSink must not be null");
         Objects.requireNonNull(left, "left shape must not be null");
         Objects.requireNonNull(right, "right shape must not be null");
         long[] a = left.dims();
@@ -85,7 +91,11 @@ public final class TensorOperationValidator {
         long k2 = b[b.length - 2];
         long n = b[b.length - 1];
         if (k != k2) {
-            throw new IllegalArgumentException("Dimension mismatch: " + k + " != " + k2);
+            throw failure(sink, "tensor.operation.dimension-mismatch",
+                    "Dimension mismatch: " + k + " != " + k2,
+                    Map.of("operation", "matmul", "axis", "contracted",
+                            "expectedDimension", Long.toString(k),
+                            "actualDimension", Long.toString(k2)));
         }
 
         int batchRankA = a.length - 2;
@@ -98,9 +108,12 @@ public final class TensorOperationValidator {
             long dimA = axisA < 0 ? 1 : a[axisA];
             long dimB = axisB < 0 ? 1 : b[axisB];
             if (dimA != dimB && dimA != 1 && dimB != 1) {
-                throw new IllegalArgumentException(
+                throw failure(sink, "tensor.operation.broadcast-mismatch",
                         "matmul batch dimensions are not broadcast-compatible at aligned axis "
-                                + axis + ": " + dimA + " != " + dimB);
+                                + axis + ": " + dimA + " != " + dimB,
+                        Map.of("operation", "matmul", "axis", Integer.toString(axis),
+                                "leftDimension", Long.toString(dimA),
+                                "rightDimension", Long.toString(dimB)));
             }
             batchDims[axis] = Math.max(dimA, dimB);
         }
@@ -115,6 +128,12 @@ public final class TensorOperationValidator {
      * operations. Kernel and dtype support remain backend responsibilities.
      */
     public static BroadcastPlan validateBroadcast(Shape left, Shape right) {
+        return validateBroadcast(left, right, DiagnosticSink.noop());
+    }
+
+    /** Reports incompatible dimensions to the supplied sink. */
+    public static BroadcastPlan validateBroadcast(Shape left, Shape right, DiagnosticSink sink) {
+        Objects.requireNonNull(sink, "diagnosticSink must not be null");
         Objects.requireNonNull(left, "left shape must not be null");
         Objects.requireNonNull(right, "right shape must not be null");
         long[] a = left.dims();
@@ -128,8 +147,11 @@ public final class TensorOperationValidator {
             long dimA = aIndex < 0 ? 1 : a[aIndex];
             long dimB = bIndex < 0 ? 1 : b[bIndex];
             if (dimA != dimB && dimA != 1 && dimB != 1) {
-                throw new IllegalArgumentException(
-                        "shapes are not broadcast-compatible at axis " + axis + ": " + dimA + " != " + dimB);
+                throw failure(sink, "tensor.operation.broadcast-mismatch",
+                        "shapes are not broadcast-compatible at axis " + axis + ": " + dimA + " != " + dimB,
+                        Map.of("operation", "broadcast", "axis", Integer.toString(axis),
+                                "leftDimension", Long.toString(dimA),
+                                "rightDimension", Long.toString(dimB)));
             }
             // A singleton expands to the other dimension, including zero.
             output[axis] = dimA == 1 ? dimB : dimA;
