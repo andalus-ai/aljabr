@@ -197,8 +197,8 @@ public final class EmbeddingGemma2VisionImageProcessor {
         double scale = (double) inputSize / outputSize;
         double filterScale = Math.max(1d, scale);
         double center = (outputIndex + 0.5d) * scale;
-        int first = Math.max(0, (int) Math.floor(center - 2d * filterScale - 0.5d));
-        int last = Math.min(inputSize - 1, (int) Math.ceil(center + 2d * filterScale - 0.5d));
+        int first = (int) Math.floor(center - 2d * filterScale - 0.5d);
+        int last = (int) Math.ceil(center + 2d * filterScale - 0.5d);
         int length = last - first + 1;
         int[] indices = new int[length];
         double[] weights = new double[length];
@@ -207,7 +207,8 @@ public final class EmbeddingGemma2VisionImageProcessor {
             int sample = first + i;
             double distance = (sample + 0.5d - center) / filterScale;
             double weight = cubic(distance);
-            indices[i] = sample;
+            // Match edge extension: samples beyond the image use the nearest edge pixel.
+            indices[i] = Math.max(0, Math.min(inputSize - 1, sample));
             weights[i] = weight;
             sum += weight;
         }
