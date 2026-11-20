@@ -46,6 +46,7 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   complete vision-to-text soft-token path without a separately injected
   projection at call time. A separate splitter restores per-image boundaries
   from padded patch-position metadata and the configured pooling kernel.
+- `EmbeddingGemma2VisionProcessorOutput` is an immutable adapter for Gemma4-compatible processor tensors (`pixel_values`, `image_position_ids`, and `num_soft_tokens_per_image`). `EmbeddingGemma2VisionTower.encodeAndProject(processorOutput)` executes each padded image sequence, checks the actual valid pooled-token count against processor metadata, applies the checkpoint-backed bridge, and returns one text-space soft-token sequence per image without flattening away image boundaries.
 - Text-only is the first intended execution milestone.
 
 The attention, encoder-layer, and assembled text-backbone operations are
@@ -113,8 +114,7 @@ attention, projection-only PLE, mask-aware mean pooling, learned projection,
 Matryoshka truncation/renormalization, and L2 normalization. The reference
 operations and encoder-layer composition are not a registered model runner.
 
-Image preprocessing/patchification and end-to-end image execution remain
-deferred. Current vision components
+Image decoding, RGB conversion, aspect-ratio-preserving resizing, and end-to-end registered runner execution remain deferred. The processor-output contract and per-image execution bridge are implemented; callers still supply processor-produced patches and metadata. Current vision components
 cover patch projection and learned 2D position lookup, the encoder tower and
 spatial pooler, optional post-pool standardization, post-tower modality
 projection, and reference per-image soft-token splitting.
