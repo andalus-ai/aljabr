@@ -54,7 +54,7 @@ public final class HatComputeProvider implements ComputeProvider {
             "tensor.dropout", "tensor.cross_entropy", "tensor.binary_cross_entropy",
             "tensor.zeros_like");
 
-    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of("tensor.cat");
+    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of();
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
@@ -177,6 +177,9 @@ public final class HatComputeProvider implements ComputeProvider {
             }
             if ("tensor.upsample_nearest2d".equals(operationId)) {
                 return upsampleNearest2dSupport(operationId, constraints);
+            }
+            if ("tensor.cat".equals(operationId)) {
+                return catSupport(operationId, constraints);
             }
 
             if ("tensor.matmul".equals(operationId)) {
@@ -440,6 +443,59 @@ public final class HatComputeProvider implements ComputeProvider {
             if (rank != 4 || inputHeight <= 0 || inputWidth <= 0
                     || outputHeight <= 0 || outputWidth <= 0) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * Cat metadata describes every input: comma-separated dtypes and
+         * semicolon-separated shapes whose dimensions are comma-delimited.
+         * Example: input_dtypes=F32,F32; input_shapes=2,3;2,4.
+         */
+        private OperationSupportDescriptor catSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtypesValue = constraints.get("input_dtypes");
+            String shapesValue = constraints.get("input_shapes");
+            String axisValue = constraints.get("axis");
+            if (dtypesValue == null || shapesValue == null || axisValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            String[] dtypes = dtypesValue.split(",", -1);
+            String[] shapes = shapesValue.split(";", -1);
+            Integer axis = parseInteger(axisValue);
+            if (axis == null || dtypes.length == 0 || dtypes.length != shapes.length) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            int[][] dimensions = new int[shapes.length][];
+            for (int i = 0; i < shapes.length; i++) {
+                if (!isF32(dtypes[i])) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                String[] values = shapes[i].split(",", -1);
+                dimensions[i] = new int[values.length];
+                for (int d = 0; d < values.length; d++) {
+                    Integer size = parseInteger(values[d]);
+                    if (size == null) return new OperationSupportDescriptor(
+                            operationId, OperationSupport.UNKNOWN, null);
+                    if (size < 0) return new OperationSupportDescriptor(
+                            operationId, OperationSupport.UNSUPPORTED, null);
+                    dimensions[i][d] = size;
+                }
+            }
+            int rank = dimensions[0].length;
+            if (rank == 0 || axis < 0 || axis >= rank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            for (int i = 1; i < dimensions.length; i++) {
+                if (dimensions[i].length != rank) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                for (int d = 0; d < rank; d++) {
+                    if (d != axis && dimensions[i][d] != dimensions[0][d]) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                }
             }
             return new OperationSupportDescriptor(
                     operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
