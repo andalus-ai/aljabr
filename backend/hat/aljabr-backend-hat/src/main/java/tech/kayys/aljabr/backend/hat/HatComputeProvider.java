@@ -47,7 +47,7 @@ public final class HatComputeProvider implements ComputeProvider {
             "tensor.reshape", "tensor.slice", "tensor.split",
             "tensor.flatten", "tensor.unsqueeze", "tensor.squeeze", "tensor.transpose",
             "tensor.softmax", "tensor.log_softmax", "tensor.mean", "tensor.sum",
-            "tensor.max", "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
+            "tensor.max", "tensor.sign", "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
             "tensor.sigmoid", "tensor.tanh", "tensor.sqrt", "tensor.exp", "tensor.log",
             "tensor.pow", "tensor.layer_norm", "tensor.rms_norm", "tensor.batch_norm",
             "tensor.conv2d", "tensor.max_pool2d", "tensor.adaptive_avg_pool2d",
