@@ -241,7 +241,7 @@ class DefaultTensorTest {
             view.release();
         }
 
-        assertThrows(IllegalStateException.class, parentBuffer::segment);
+        assertFalse(parentBuffer.segment().scope().isAlive());
     }
 
     @Test
