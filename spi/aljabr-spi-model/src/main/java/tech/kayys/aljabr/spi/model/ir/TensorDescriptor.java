@@ -54,7 +54,8 @@ public record TensorDescriptor(
         extensions = java.util.Collections.unmodifiableMap(
                 new java.util.LinkedHashMap<>(Objects.requireNonNull(extensions, "extensions must not be null")));
         tensorType = Objects.requireNonNull(tensorType, "tensorType must not be null");
-        tensorType.ifPresent(type -> {
+        if (tensorType.isPresent()) {
+            TensorType type = tensorType.orElseThrow();
             if (!dataType.equals(type.dataType().id()))
                 throw new IllegalArgumentException("legacy dataType must match typed tensor data type");
             if (type.shape().isStatic() && !shape.equals(type.shape().staticDimensions()))
@@ -64,7 +65,7 @@ public record TensorDescriptor(
             if (quantization != null && type.quantization().isPresent()
                     && !quantization.equals(type.quantization().orElseThrow().scheme()))
                 throw new IllegalArgumentException("legacy quantization must match typed quantization scheme");
-        });
+        }
     }
 
     /** Creates a descriptor whose canonical type is represented by the typed IR. */
