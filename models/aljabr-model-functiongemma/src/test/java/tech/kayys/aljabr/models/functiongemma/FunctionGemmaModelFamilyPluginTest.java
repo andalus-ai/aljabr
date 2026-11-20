@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.spi.Message;
 import tech.kayys.aljabr.spi.model.ModelFamilyContractValidator;
 import tech.kayys.aljabr.spi.model.ModelFamilyContractViolation;
+import tech.kayys.aljabr.spi.model.ModelTokenizerKind;
 
 import java.util.List;
 
@@ -21,7 +22,7 @@ class FunctionGemmaModelFamilyPluginTest {
     }
 
     @Test
-    void registersGemma3DecoderUnderFunctionGemmaIdentity() {
+    void registersGemma3DecoderAndHuggingFaceBpeTokenizer() {
         FunctionGemmaModelFamilyPlugin plugin = new FunctionGemmaModelFamilyPlugin();
 
         assertEquals("functiongemma", plugin.descriptor().id());
@@ -31,6 +32,8 @@ class FunctionGemmaModelFamilyPluginTest {
                 plugin.descriptor().metadata().get("default_checkpoint"));
         assertEquals(List.of("functiongemma-gemma-bpe"), plugin.tokenizerDescriptors().stream()
                 .map(d -> d.id()).toList());
+        assertEquals(ModelTokenizerKind.HUGGING_FACE_BPE,
+                plugin.tokenizerDescriptors().getFirst().kind());
         assertEquals("functiongemma", plugin.architectureAdapters().getFirst().id());
         assertTrue(plugin.architectureAdapters().getFirst() instanceof FunctionGemmaArchitecture);
     }
