@@ -2,7 +2,6 @@ package tech.kayys.aljabr.gguf;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
-import tech.kayys.aljabr.safetensor.loader.SafetensorDType;
 import tech.kayys.aljabr.safetensor.loader.SafetensorFFMLoader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorHeader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorLoadResult;
@@ -83,7 +82,7 @@ public final class SafetensorCheckpointCopier {
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        Path temp = Files.createTempFile(parent, target.getFileName().toString(), ".partial");
+        Path temp = Files.createTempFile(parent, "aljabr-" + target.getFileName(), ".partial");
         boolean completed = false;
         try (ShardAccess access = sourcePlan.access()) {
             StreamingSafetensorWriter.write(temp, specs, sourcePlan.fileMetadata());
