@@ -256,6 +256,54 @@ public final class EmbeddingGemma2VisionImageProcessor {
             return new RgbImage(width, height, values);
         }
 
+        /** Creates RGB by dropping alpha from interleaved RGBA8 samples, as PIL RGB conversion does. */
+        public static RgbImage fromRgba8(int width, int height, byte[] rgba) {
+            Objects.requireNonNull(rgba, "rgba must not be null");
+            int pixels = Math.multiplyExact(width, height);
+            if (rgba.length != Math.multiplyExact(pixels, 4)) {
+                throw new IllegalArgumentException("RGBA sample count must equal width * height * 4");
+            }
+            byte[] rgb = new byte[Math.multiplyExact(pixels, 3)];
+            for (int pixel = 0; pixel < pixels; pixel++) {
+                rgb[pixel * 3] = rgba[pixel * 4];
+                rgb[pixel * 3 + 1] = rgba[pixel * 4 + 1];
+                rgb[pixel * 3 + 2] = rgba[pixel * 4 + 2];
+            }
+            return fromRgb8(width, height, rgb);
+        }
+
+        /** Creates RGB by replicating each unsigned grayscale sample into R, G, and B. */
+        public static RgbImage fromGrayscale8(int width, int height, byte[] grayscale) {
+            Objects.requireNonNull(grayscale, "grayscale must not be null");
+            int pixels = Math.multiplyExact(width, height);
+            if (grayscale.length != pixels) {
+                throw new IllegalArgumentException("grayscale sample count must equal width * height");
+            }
+            byte[] rgb = new byte[Math.multiplyExact(pixels, 3)];
+            for (int pixel = 0; pixel < pixels; pixel++) {
+                rgb[pixel * 3] = grayscale[pixel];
+                rgb[pixel * 3 + 1] = grayscale[pixel];
+                rgb[pixel * 3 + 2] = grayscale[pixel];
+            }
+            return fromRgb8(width, height, rgb);
+        }
+
+        /** Creates RGB by reordering interleaved BGR8 samples. */
+        public static RgbImage fromBgr8(int width, int height, byte[] bgr) {
+            Objects.requireNonNull(bgr, "bgr must not be null");
+            int pixels = Math.multiplyExact(width, height);
+            if (bgr.length != Math.multiplyExact(pixels, 3)) {
+                throw new IllegalArgumentException("BGR sample count must equal width * height * 3");
+            }
+            byte[] rgb = new byte[bgr.length];
+            for (int pixel = 0; pixel < pixels; pixel++) {
+                rgb[pixel * 3] = bgr[pixel * 3 + 2];
+                rgb[pixel * 3 + 1] = bgr[pixel * 3 + 1];
+                rgb[pixel * 3 + 2] = bgr[pixel * 3];
+            }
+            return fromRgb8(width, height, rgb);
+        }
+
         /** Creates an image from interleaved RGB float samples in [0,255]. */
         public static RgbImage fromFloatSamples(int width, int height, float[] rgb) {
             return new RgbImage(width, height, rgb);
