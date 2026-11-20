@@ -59,7 +59,7 @@ class FunctionGemmaModelFamilyPluginTest {
     @Test
     void doesNotClaimOrdinaryGemma3TextCheckpointWithoutFunctionTokens() throws Exception {
         Path fixture = Path.of(Objects.requireNonNull(
-                getClass().getResource("/model-family-fixtures/gemma3_text")).toURI());
+                getClass().getResource("/model-family-fixtures/ordinary-gemma3_text")).toURI());
         assertFalse(new FunctionGemmaModelFamilyPlugin().matchesCheckpoint(fixture));
     }
 
