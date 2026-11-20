@@ -31,7 +31,6 @@ public final class EmbeddingGemma2VisionImagePipeline {
             throw new IllegalArgumentException("image processor and vision tower geometry must agree");
         }
     }
-    }
 
     /**
      * Builds the complete image path from named checkpoint tensors.
