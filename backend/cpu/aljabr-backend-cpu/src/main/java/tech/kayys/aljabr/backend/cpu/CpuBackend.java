@@ -191,25 +191,15 @@ public final class CpuBackend implements ComputeBackend {
 
     private Tensor broadcastOp(Tensor a, Tensor b, int op) {
         // Simple naive broadcasting for CPU fallback
+        TensorOperationValidator.BroadcastPlan plan =
+                TensorOperationValidator.validateBroadcast(a.shape(), b.shape());
         long[] shapeA = a.shape().dims();
         long[] shapeB = b.shape().dims();
-        int maxRank = Math.max(shapeA.length, shapeB.length);
-        long[] outDims = new long[maxRank];
+        long[] outDims = plan.outputDimensions();
+        int maxRank = outDims.length;
         long[] stridesA = new long[maxRank];
         long[] stridesB = new long[maxRank];
-
-        long numel = 1;
-        for (int i = 0; i < maxRank; i++) {
-            int aIdx = shapeA.length - 1 - i;
-            int bIdx = shapeB.length - 1 - i;
-            long dimA = aIdx >= 0 ? shapeA[aIdx] : 1;
-            long dimB = bIdx >= 0 ? shapeB[bIdx] : 1;
-            if (dimA != dimB && dimA != 1 && dimB != 1) {
-                throw new UnsupportedOperationException("Shapes not broadcastable: " + a.shape() + " and " + b.shape());
-            }
-            outDims[maxRank - 1 - i] = Math.max(dimA, dimB);
-            numel *= outDims[maxRank - 1 - i];
-        }
+        long numel = plan.outputElements();
 
         long sa = 1, sb = 1;
         for (int i = 0; i < maxRank; i++) {
