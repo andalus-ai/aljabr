@@ -227,6 +227,7 @@ public final class HatComputeProvider implements ComputeProvider {
 
             if ("tensor.rope".equals(operationId)) {
                 return ropeSupport(operationId, constraints);
+            }
             if ("tensor.embedding".equals(operationId)) {
                 return embeddingSupport(operationId, constraints);
             }
