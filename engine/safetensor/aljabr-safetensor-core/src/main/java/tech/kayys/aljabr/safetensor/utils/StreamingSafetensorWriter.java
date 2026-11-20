@@ -33,7 +33,6 @@ import java.util.Set;
 public final class StreamingSafetensorWriter {
 
     private static final Gson GSON = new GsonBuilder().create();
-    private static final int COPY_BUFFER_SIZE = 1024 * 1024;
 
     private StreamingSafetensorWriter() {
     }
