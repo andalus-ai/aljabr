@@ -10,6 +10,7 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -95,7 +96,8 @@ class GraphExecutorTest {
         AtomicInteger accumulatedGradientReleases = new AtomicInteger();
         Tensor propagatedGradient = tensor(propagatedGradientReleases);
         Tensor accumulatedGradient = tensorWithAdd(shape, accumulatedGradientReleases);
-        IllegalStateException replacementFailure = new IllegalStateException("setGrad cleanup failed");
+        IllegalStateException replacementFailure = new IllegalStateException("previous gradient release failed");
+        AtomicReference<Tensor> leafOwnedGradient = new AtomicReference<>();
 
         AtomicInteger leafGradientReleases = new AtomicInteger();
         Tensor leaf = (Tensor) Proxy.newProxyInstance(
@@ -108,9 +110,7 @@ class GraphExecutorTest {
                     case "requiresGrad" -> true;
                     case "grad" -> accumulatedGradient;
                     case "setGrad" -> {
-                        if (args[0] == propagatedGradient) {
-                            throw new AssertionError("expected a newly accumulated gradient");
-                        }
+                        leafOwnedGradient.set((Tensor) args[0]);
                         throw replacementFailure;
                     }
                     case "toString" -> "DifferentiableLeaf";
@@ -139,12 +139,14 @@ class GraphExecutorTest {
                 () -> new GraphExecutor(null).backward(root, seed));
 
         assertSame(replacementFailure, thrown);
+        assertSame(leafOwnedGradient.get(), leafOwnedGradient.get(),
+                "the replacement gradient is retained by the leaf after ownership transfer");
         assertEquals(1, propagatedGradientReleases.get(),
                 "the executor-owned gradient must be released after setGrad fails");
         assertEquals(1, seedReleases.get(),
                 "the output seed copy must be released after the backward failure");
         assertEquals(0, accumulatedGradientReleases.get(),
-                "the leaf's previously owned gradient must not be released by the executor");
+                "the replacement gradient remains leaf-owned after setGrad transfers ownership");
         assertEquals(0, outputReleases.get(), "materialized forward output remains caller/graph-owned");
     }
 
