@@ -115,7 +115,6 @@ class FunctionGemmaSafetensorCheckpointLoaderTest {
         Class<?> metricsType = Class.forName(
                 "tech.kayys.aljabr.safetensor.loader.SafetensorMetrics");
         Object metrics = metricsType.getConstructor().newInstance();
-        Class<?> registryType = Class.forName("io.micrometer.core.instrument.MeterRegistry");
         Object registry = Class.forName(
                 "io.micrometer.core.instrument.simple.SimpleMeterRegistry")
                 .getConstructor().newInstance();
