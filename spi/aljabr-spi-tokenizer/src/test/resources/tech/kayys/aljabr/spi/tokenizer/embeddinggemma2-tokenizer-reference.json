@@ -1,7 +1,6 @@
 {
   "source": "QuixiAI/embeddinggemma.c testdata/gemma2-goldens.json",
   "reference_commit": "7481354a174714a3447ea0f8723c1dd1b3cbf8e2",
-  "hf_revision": "bfcd298762cc34d0357ece5ebdd31791a3a374d8",
   "tokenizer_options": {
     "add_bos": true,
     "add_eos": true
@@ -282,5 +281,7 @@
         1
       ]
     }
-  ]
+  ],
+  "gguf_revision": "bfcd298762cc34d0357ece5ebdd31791a3a374d8",
+  "source_model_revision": "914f7f89142e33e77833254d9c9b90c3cef7303b"
 }
