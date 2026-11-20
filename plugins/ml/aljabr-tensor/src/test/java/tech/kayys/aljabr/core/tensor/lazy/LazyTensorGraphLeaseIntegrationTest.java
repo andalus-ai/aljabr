@@ -60,6 +60,21 @@ class LazyTensorGraphLeaseIntegrationTest {
         assertEquals(1, releases.get());
     }
 
+    @Test
+    void rebuiltOptimizerNodeDoesNotInheritSourceMaterialization() {
+        GraphNode leaf = GraphNode.constant(tensor(new AtomicInteger()));
+        GraphNode removable = operation(OpType.ADD_SCALAR, List.of(leaf), new Object[] { 0.0f });
+        GraphNode root = operation(OpType.RELU, List.of(removable));
+        root.setMaterializedData(tensor(new AtomicInteger()));
+
+        GraphNode optimized = GraphOptimizer.optimize(root);
+
+        assertFalse(optimized == root);
+        assertFalse(optimized.isEvaluated(), "rewritten nodes must not borrow source cache ownership");
+        assertTrue(root.isEvaluated(), "the original graph retains its own cached output");
+        assertSame(leaf, optimized.getInputs().get(0));
+    }
+
     private static GraphNode operation(OpType op, List<GraphNode> inputs) {
         return operation(op, inputs, new Object[0]);
     }
