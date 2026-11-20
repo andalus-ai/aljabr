@@ -62,14 +62,18 @@ public final class GgufModelDocumentAdapter {
         try (Arena arena = Arena.ofShared();
              GGUFReader reader = new GGUFReader(source, arena)) {
             GGUFModel model = parser.parse(reader.segment(), arena);
-            return toDocument(source, model);
+            return toDocument(source, Files.size(source), model);
         } catch (IllegalArgumentException | IllegalStateException exception) {
             throw new IOException("Unable to inspect GGUF model " + source + ": "
                     + exception.getMessage(), exception);
         }
     }
 
-    private ModelDocument toDocument(Path source, GGUFModel model) throws IOException {
+    private ModelDocument toDocument(Path source, long fileSize, GGUFModel model) throws IOException {
+        if (model.dataStart() < 0 || model.dataStart() > fileSize) {
+            throw new IOException("GGUF tensor data section starts outside the file: " + model.dataStart());
+        }
+
         Map<String, Object> rawMetadata = model.metadata();
         Map<String, String> metadata = new LinkedHashMap<>();
         Map<String, String> extensions = new LinkedHashMap<>();
@@ -97,11 +101,19 @@ public final class GgufModelDocumentAdapter {
 
             List<Long> shape = java.util.Arrays.stream(info.shape()).boxed().toList();
             long absoluteOffset;
+            long payloadEnd;
             try {
                 absoluteOffset = Math.addExact(model.dataStart(), info.offset());
+                payloadEnd = Math.addExact(absoluteOffset, info.sizeInBytes());
             } catch (ArithmeticException exception) {
-                throw new IOException("GGUF tensor offset overflows for " + info.name(), exception);
+                throw new IOException("GGUF tensor payload range overflows for " + info.name(), exception);
             }
+            if (info.offset() < 0 || info.sizeInBytes() < 0 || payloadEnd > fileSize) {
+                throw new IOException("GGUF tensor payload is outside the file: " + info.name()
+                        + " (offset=" + absoluteOffset + ", length=" + info.sizeInBytes()
+                        + ", fileSize=" + fileSize + ")");
+            }
+
             PayloadReference payload = new PayloadReference(
                     source.toUri(),
                     source.getFileName().toString(),
