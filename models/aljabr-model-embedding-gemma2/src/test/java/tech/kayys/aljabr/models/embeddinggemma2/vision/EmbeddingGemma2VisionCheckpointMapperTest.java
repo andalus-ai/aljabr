@@ -14,6 +14,47 @@ class EmbeddingGemma2VisionCheckpointMapperTest {
     private static final String PREFIX = "vision_tower.";
 
     @Test
+    void loadsAndAssemblesExecutableVisionTowerFromCheckpointTensors() {
+        var config = new tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig(
+                tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.MODEL_TYPE,
+                4, 6, 1, 2, 2, 2, 1, 3, 1, 70, false,
+                1.0e-6, 100.0,
+                tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.DEFAULT_HIDDEN_ACTIVATION,
+                false);
+
+        var model = EmbeddingGemma2VisionCheckpointMapper.load(config, tensors(false));
+
+        assertNotNull(model.patchEmbedder());
+        assertNotNull(model.encoder());
+        assertNotNull(model.pooler());
+        assertNull(model.standardizer());
+        assertEquals(1, model.encoder().layerCount());
+
+        float[][] encoded = model.encoder().encodePatches(
+                new float[][]{{0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                        {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}},
+                new int[][]{{0, 0}, {1, 0}, {0, 1}, {1, 1}},
+                new boolean[]{true, true, true, true});
+        assertEquals(4, encoded.length);
+        assertEquals(4, encoded[0].length);
+    }
+
+    @Test
+    void assemblesOptionalStandardizerOnlyWhenConfigured() {
+        var config = new tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig(
+                tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.MODEL_TYPE,
+                4, 6, 1, 2, 2, 2, 1, 3, 1, 70, true,
+                1.0e-6, 100.0,
+                tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.DEFAULT_HIDDEN_ACTIVATION,
+                false);
+
+        var model = EmbeddingGemma2VisionCheckpointMapper.load(config, tensors(true));
+
+        assertNotNull(model.standardizer());
+        assertEquals(4, model.standardizer().hiddenSize());
+    }
+
+    @Test
     void mapsHuggingFaceVisionTowerWeightsIntoTypedBundle() {
         var mapped = EmbeddingGemma2VisionCheckpointMapper.map(spec(true), tensors(true));
 
