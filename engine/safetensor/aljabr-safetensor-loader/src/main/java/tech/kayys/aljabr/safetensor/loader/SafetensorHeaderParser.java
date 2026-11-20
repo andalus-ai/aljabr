@@ -352,17 +352,22 @@ public final class SafetensorHeaderParser {
 
         long prevEnd = 0L;
 
-        for (SafetensorTensorInfo info : sorted) {
-            long absBegin = dataBlobOffset + info.dataBegin();
-            long absEnd = dataBlobOffset + info.dataEnd();
+        long dataBlobSize = fileSize - dataBlobOffset;
 
-            if (absEnd > fileSize) {
+        for (SafetensorTensorInfo info : sorted) {
+            // Validate relative offsets before adding the absolute data-blob offset.
+            // Adding an attacker-controlled offset first can overflow long and turn
+            // an out-of-bounds range into a negative value that passes the old check.
+            if (info.dataEnd() > dataBlobSize) {
                 throw new SafetensorException.ValidationException(
-                        "AccelTensor '" + info.name() + "' data_offsets [" + info.dataBegin()
-                                + "," + info.dataEnd() + ") extend beyond file size " + fileSize
-                                + " (absolute range [" + absBegin + "," + absEnd + "))",
+                        "Tensor '" + info.name() + "' data_offsets [" + info.dataBegin()
+                                + "," + info.dataEnd() + ") extend beyond data section size "
+                                + dataBlobSize,
                         path, info.name());
             }
+
+            long absBegin = dataBlobOffset + info.dataBegin();
+            long absEnd = dataBlobOffset + info.dataEnd();
 
             // Allow zero-length tensors at the same position (degenerate but valid)
             if (info.byteLength() > 0 && info.dataBegin() < prevEnd) {
