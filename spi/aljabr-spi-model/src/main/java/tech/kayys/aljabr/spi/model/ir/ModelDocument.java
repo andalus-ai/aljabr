@@ -1,57 +1,79 @@
 package tech.kayys.aljabr.spi.model.ir;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /**
- * Format-neutral, metadata-first representation of a model checkpoint.
- *
- * <p>Tensor payloads are deliberately not materialized here. A document can
- * describe a checkpoint using metadata and optional payload references, so
- * converters can inspect and plan a conversion without loading model weights
- * into the Java heap. Unknown source metadata belongs in {@code extensions}
- * and must be preserved by converters unless a target explicitly cannot
- * represent it.
+ * @deprecated Use {@link ModelDescriptor}. This compatibility facade preserves
+ * the original metadata-first constructor and accessors while AMIR adopts the
+ * canonical model descriptor API.
  */
-public record ModelDocument(
-        String id,
-        String architecture,
-        String sourceFormat,
-        Map<String, String> metadata,
-        Map<String, String> extensions,
-        List<TensorDescriptor> tensors) {
+@Deprecated(forRemoval = false)
+public final class ModelDocument {
 
-    public ModelDocument {
-        id = requireText(id, "id");
-        architecture = requireText(architecture, "architecture");
-        sourceFormat = requireText(sourceFormat, "sourceFormat");
-        metadata = immutableMap(metadata, "metadata");
-        extensions = immutableMap(extensions, "extensions");
-        tensors = List.copyOf(Objects.requireNonNull(tensors, "tensors must not be null"));
+    private final ModelDescriptor descriptor;
 
-        Set<String> names = new HashSet<>();
-        for (TensorDescriptor tensor : tensors) {
-            Objects.requireNonNull(tensor, "tensor descriptor must not be null");
-            if (!names.add(tensor.name())) {
-                throw new IllegalArgumentException("Duplicate tensor name: " + tensor.name());
-            }
-        }
+    public ModelDocument(
+            String id,
+            String architecture,
+            String sourceFormat,
+            Map<String, String> metadata,
+            Map<String, String> extensions,
+            List<TensorDescriptor> tensors) {
+        this(new ModelDescriptor(
+                ModelIdentity.of(id), architecture, sourceFormat, metadata, extensions, tensors));
     }
 
-    private static String requireText(String value, String name) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
-        return value;
+    public ModelDocument(ModelDescriptor descriptor) {
+        this.descriptor = Objects.requireNonNull(descriptor, "descriptor must not be null");
     }
 
-    private static Map<String, String> immutableMap(Map<String, String> values, String name) {
-        Objects.requireNonNull(values, name + " must not be null");
-        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
+    public String id() {
+        return descriptor.identity().id();
+    }
+
+    public String architecture() {
+        return descriptor.architecture();
+    }
+
+    public String sourceFormat() {
+        return descriptor.sourceFormat();
+    }
+
+    public Map<String, String> metadata() {
+        return descriptor.metadata();
+    }
+
+    public Map<String, String> extensions() {
+        return descriptor.extensions();
+    }
+
+    public List<TensorDescriptor> tensors() {
+        return descriptor.tensors();
+    }
+
+    public ModelIdentity identity() {
+        return descriptor.identity();
+    }
+
+    public ModelDescriptor toDescriptor() {
+        return descriptor;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        return this == other || other instanceof ModelDocument that
+                && descriptor.equals(that.descriptor);
+    }
+
+    @Override
+    public int hashCode() {
+        return descriptor.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "ModelDocument[descriptor=" + descriptor + "]";
     }
 }
