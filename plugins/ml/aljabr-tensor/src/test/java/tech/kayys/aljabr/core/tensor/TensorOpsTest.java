@@ -370,7 +370,7 @@ class TensorOpsTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not broadcast-compatible");
         assertThatThrownBy(() -> TensorOperationValidator.validateBroadcast(
-                new Shape(Long.MAX_VALUE, 2), new Shape(1, 2)))
+                new Shape(Long.MAX_VALUE, 1), new Shape(1, 2)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("overflows");
     }
