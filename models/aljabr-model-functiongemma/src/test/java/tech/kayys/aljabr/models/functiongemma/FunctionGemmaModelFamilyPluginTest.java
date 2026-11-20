@@ -57,6 +57,13 @@ class FunctionGemmaModelFamilyPluginTest {
     }
 
     @Test
+    void recognizesFunctionGemmaWhenProtocolTokensAreStoredInTokenizerJsonOnly() throws Exception {
+        Path fixture = Path.of(Objects.requireNonNull(
+                getClass().getResource("/model-family-fixtures/functiongemma-tokenizer-json-only")).toURI());
+        assertTrue(new FunctionGemmaModelFamilyPlugin().matchesCheckpoint(fixture));
+    }
+
+    @Test
     void doesNotClaimOrdinaryGemma3TextCheckpointWithoutFunctionTokens() throws Exception {
         Path fixture = Path.of(Objects.requireNonNull(
                 getClass().getResource("/model-family-fixtures/ordinary-gemma3_text")).toURI());

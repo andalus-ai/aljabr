@@ -18,9 +18,10 @@ import java.util.regex.Pattern;
 /**
  * BPE tokenizer for the serialized Gemma tokenizer pipeline.
  *
- * <p>This implementation uses the Gemma whitespace marker ({@code ▁}) and
- * Hugging Face byte-fallback tokens ({@code <0xHH>}). It deliberately does
- * not use GPT-2 byte remapping or GPT-2 pre-tokenization.</p>
+ * <p>Gemma replaces ASCII spaces with {@code ▁}, applies BPE to the complete
+ * normalized string, and only applies UTF-8 byte fallback to final symbols
+ * that are absent from the vocabulary. It does not use GPT-2 byte remapping
+ * or GPT-2 pre-tokenization.</p>
  */
 public final class GemmaBpeTokenizer implements Tokenizer {
     private static final Pattern BYTE_TOKEN = Pattern.compile("<0x([0-9A-Fa-f]{2})>");
@@ -79,26 +80,19 @@ public final class GemmaBpeTokenizer implements Tokenizer {
         List<String> symbols = new ArrayList<>();
         for (int offset = 0; offset < normalized.length();) {
             int cp = normalized.codePointAt(offset);
-            String symbol = new String(Character.toChars(cp));
-            if (vocab.containsKey(symbol)) {
-                symbols.add(symbol);
-            } else {
-                byte[] bytes = symbol.getBytes(StandardCharsets.UTF_8);
-                for (byte value : bytes) {
-                    String byteToken = String.format("<0x%02X>", value & 0xff);
-                    if (vocab.containsKey(byteToken)) symbols.add(byteToken);
-                    else symbols.add(symbol);
-                }
-            }
+            symbols.add(new String(Character.toChars(cp)));
             offset += Character.charCount(cp);
         }
+
+        // Gemma's normalizer removes ASCII spaces before its Split pre-tokenizer
+        // runs, so BPE is intentionally applied across the complete string.
         while (symbols.size() > 1) {
-            int best = Integer.MAX_VALUE;
+            int bestRank = Integer.MAX_VALUE;
             int bestIndex = -1;
             for (int i = 0; i < symbols.size() - 1; i++) {
                 Integer rank = merges.get(symbols.get(i) + " " + symbols.get(i + 1));
-                if (rank != null && rank < best) {
-                    best = rank;
+                if (rank != null && rank < bestRank) {
+                    bestRank = rank;
                     bestIndex = i;
                 }
             }
@@ -106,12 +100,51 @@ public final class GemmaBpeTokenizer implements Tokenizer {
             symbols.set(bestIndex, symbols.get(bestIndex) + symbols.get(bestIndex + 1));
             symbols.remove(bestIndex + 1);
         }
+
+        boolean pendingUnknown = false;
         for (String symbol : symbols) {
             Integer id = vocab.get(symbol);
-            if (id != null) output.add(id.longValue());
-            else if (unkId >= 0) output.add((long) unkId);
-            else throw new IllegalArgumentException("Gemma tokenizer has no token or byte fallback for: " + symbol);
+            if (id != null) {
+                if (pendingUnknown) {
+                    output.add((long) unkId);
+                    pendingUnknown = false;
+                }
+                output.add(id.longValue());
+                continue;
+            }
+
+            List<Integer> byteIds = byteFallbackIds(symbol);
+            if (byteIds != null) {
+                if (pendingUnknown) {
+                    output.add((long) unkId);
+                    pendingUnknown = false;
+                }
+                for (int byteId : byteIds) output.add((long) byteId);
+            } else if (unkId >= 0) {
+                // fuse_unk=true: adjacent unknown symbols become one <unk>.
+                pendingUnknown = true;
+            }
+            // With no unknown token, an unrepresentable symbol is dropped,
+            // matching the tokenizer backend's byte-fallback/unknown policy.
         }
+        if (pendingUnknown) output.add((long) unkId);
+    }
+
+    /**
+     * Returns byte-token IDs only when every UTF-8 byte has a byte token.
+     * Partial byte fallback is not valid: a code point is either represented
+     * by its complete UTF-8 byte sequence or by one fused unknown token.
+     */
+    private List<Integer> byteFallbackIds(String symbol) {
+        byte[] bytes = symbol.getBytes(StandardCharsets.UTF_8);
+        List<Integer> ids = new ArrayList<>(bytes.length);
+        for (byte value : bytes) {
+            String byteToken = String.format("<0x%02X>", value & 0xff);
+            Integer id = vocab.get(byteToken);
+            if (id == null) return null;
+            ids.add(id);
+        }
+        return ids;
     }
 
     @Override
@@ -124,16 +157,20 @@ public final class GemmaBpeTokenizer implements Tokenizer {
             String token = inverse.get((int) tokenId);
             if (token == null) continue;
             if (opts.skipSpecialTokens && specials.containsKey(token)) continue;
+
             Matcher byteMatcher = BYTE_TOKEN.matcher(token);
             if (byteMatcher.matches()) {
                 bytes.write(Integer.parseInt(byteMatcher.group(1), 16));
                 continue;
             }
+
             flushBytes(bytes, result);
-            result.append(token);
+            // The serialized decoder applies Replace("▁", " ") before
+            // ByteFallback. Therefore byte-decoded U+2581 must remain literal.
+            result.append(token.replace('▁', ' '));
         }
         flushBytes(bytes, result);
-        return result.toString().replace('▁', ' ');
+        return result.toString();
     }
 
     private static void flushBytes(ByteArrayOutputStream bytes, StringBuilder target) {
