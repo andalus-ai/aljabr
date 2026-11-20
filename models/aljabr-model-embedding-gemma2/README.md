@@ -25,6 +25,11 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   sqrt(hidden_size) embedding scaling, projection-only PLE, construction and
   execution of every encoder layer, final RMSNorm, token-wise embedding
   projection, and optional mask-aware mean pooling.
+- An end-to-end `EmbeddingGemma2MultimodalEncoder` that composes decoded RGB
+  image batches, the checkpoint-backed vision image pipeline, ordered image
+  placeholder assembly, and the complete text backbone into token-level or
+  mean-pooled multimodal embeddings. The caller supplies an already-expanded
+  prompt with one image placeholder per projected image soft token.
 - A multimodal text entry point that accepts preassembled input embeddings, plus
   `EmbeddingGemma2MultimodalInputAssembler` to replace image placeholder rows
   with per-image projected soft tokens in prompt order. The assembler masks
