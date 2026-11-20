@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 import tech.kayys.aljabr.diagnostics.Diagnostic;
 
 import org.junit.jupiter.api.Test;
@@ -321,5 +322,23 @@ class TensorOpsTest {
                 new Shape(2, 3, 4), new Shape(5, 4, 6)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("batch dimensions are not broadcast-compatible");
+    }
+
+    @Test
+    void cpuMatmulUsesSharedBroadcastShapeAndPreservesBatchedResults() {
+        Tensor a = tensor(new float[] {1, 0, 0, 1, 2, 0, 0, 2}, 2, 1, 2, 2);
+        Tensor b = tensor(new float[] {1, 2, 3, 4, 5, 6}, 1, 3, 2, 1);
+        try {
+            Tensor result = backend.matmul(a, b);
+            try {
+                assertThat(result.shape().dims()).containsExactly(2, 3, 2, 1);
+                assertThat(result.toFloatArray()).containsExactly(1, 2, 3, 4, 5, 6, 2, 4, 6, 8, 10, 12);
+            } finally {
+                result.release();
+            }
+        } finally {
+            a.release();
+            b.release();
+        }
     }
 }
