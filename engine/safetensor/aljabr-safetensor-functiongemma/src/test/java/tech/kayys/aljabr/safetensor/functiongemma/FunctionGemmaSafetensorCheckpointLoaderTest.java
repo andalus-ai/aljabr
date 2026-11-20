@@ -40,6 +40,12 @@ class FunctionGemmaSafetensorCheckpointLoaderTest {
             tensors.add(architecture.layerKeyWeight(layer));
             tensors.add(architecture.layerValueWeight(layer));
             tensors.add(architecture.layerOutputWeight(layer));
+            tensors.add(architecture.layerAttentionNormWeight(layer));
+            tensors.add(architecture.layerPostAttnNormWeight(layer));
+            tensors.add(architecture.layerPreFfnNormWeight(layer));
+            tensors.add(architecture.layerPostFfnNormWeight(layer));
+            tensors.add(architecture.layerQueryNormWeight(layer));
+            tensors.add(architecture.layerKeyNormWeight(layer));
             tensors.add(architecture.layerFfnGateWeight(layer));
             tensors.add(architecture.layerFfnUpWeight(layer));
             tensors.add(architecture.layerFfnDownWeight(layer));
@@ -63,7 +69,7 @@ class FunctionGemmaSafetensorCheckpointLoaderTest {
                 IllegalArgumentException.class,
                 () -> FunctionGemmaSafetensorCheckpointLoader.validateTensorLayout(
                         Set.of(), config, new FunctionGemmaArchitecture()));
-        assertTrue(failure.getMessage().contains("missing 9 required tensors"));
+        assertTrue(failure.getMessage().contains("missing 15 required tensors"));
     }
 
     @Test
