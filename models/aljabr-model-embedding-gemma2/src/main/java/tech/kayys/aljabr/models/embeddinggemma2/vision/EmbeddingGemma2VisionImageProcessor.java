@@ -1,6 +1,5 @@
 package tech.kayys.aljabr.models.embeddinggemma2.vision;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -15,7 +14,7 @@ import java.util.Objects;
  * samples through {@link RgbImage}.</p>
  *
  * <p>Input samples are unsigned 8-bit RGB values (or equivalent floats in
- * [0,255]). Resized samples are clamped to [0,255], rescaled by 1/255, and
+ * [0,255]). Resized samples are rescaled by 1/255 without clipping bicubic overshoot, and
  * patchified in row-major order. Within each patch, values are ordered
  * y, x, channel (RGB), matching the processor's NCHW-to-patch permutation.</p>
  */
@@ -230,7 +229,7 @@ public final class EmbeddingGemma2VisionImageProcessor {
 
     private record Contributions(int[] indices, double[] weights) {}
 
-    /** Immutable packed RGB image; samples are stored as interleaved RGB floats in [0,255]. */
+    /** Immutable packed RGB image; decoded input samples are interleaved RGB floats in [0,255]. */
     public static final class RgbImage {
         private final int width;
         private final int height;
@@ -325,7 +324,7 @@ public final class EmbeddingGemma2VisionImageProcessor {
         public int width() { return width; }
         public int height() { return height; }
 
-        /** Returns a defensive RGB triplet in [0,255] at the requested pixel. */
+        /** Returns a defensive RGB triplet at the requested pixel; resized images may contain bicubic overshoot. */
         public float[] rgbAt(int x, int y) {
             if (x < 0 || x >= width || y < 0 || y >= height) {
                 throw new IndexOutOfBoundsException("pixel coordinate is outside the image");
