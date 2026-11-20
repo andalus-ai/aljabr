@@ -19,8 +19,8 @@ repositories {
 
 dependencies {
     api(project(":spi:aljabr-spi-model"))
+    api(project(":models:aljabr-model-gemma3"))
     implementation(project(":spi:aljabr-spi-tokenizer"))
-    implementation(project(":models:aljabr-model-gemma3"))
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api")
     implementation("jakarta.inject:jakarta.inject-api")
 
