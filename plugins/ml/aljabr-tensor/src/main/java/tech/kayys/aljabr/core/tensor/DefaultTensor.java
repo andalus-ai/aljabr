@@ -18,7 +18,6 @@ import tech.kayys.aljabr.diagnostics.Diagnostic;
 import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 
-
 /**
  * Default eager tensor backed by backend-neutral {@link TensorStorage}.
  *
