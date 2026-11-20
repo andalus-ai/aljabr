@@ -11,6 +11,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig;
 import tech.kayys.aljabr.models.embeddinggemma2.vision.EmbeddingGemma2VisionImagePipeline;
+import tech.kayys.aljabr.models.embeddinggemma2.vision.EmbeddingGemma2VisionImageProcessor;
 import tech.kayys.aljabr.safetensor.embeddinggemma2.EmbeddingGemma2VisionSafetensorLoader;
 
 /** Exercises the vision adapter against a real Safetensors session and detached checkpoint tensors. */
@@ -60,7 +61,7 @@ class EmbeddingGemma2VisionSafetensorPipelineTest {
 
         byte[] pixels = new byte[4 * 4 * 3];
         java.util.Arrays.fill(pixels, (byte) 128);
-        var image = EmbeddingGemma2VisionImagePipeline.RgbImage.fromRgb8(4, 4, pixels);
+        var image = EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(4, 4, pixels);
         float[][] features = pipeline.encode(image);
 
         assertEquals(64, features.length);
