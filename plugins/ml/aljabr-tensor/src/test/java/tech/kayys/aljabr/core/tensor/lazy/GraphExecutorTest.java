@@ -64,6 +64,56 @@ class GraphExecutorTest {
         assertEquals(0, rightReleases.get(), "caller-owned right leaf must not be released");
     }
 
+    @Test
+    void releaseAllAttemptsEveryTensorAndSuppressesLaterFailures() {
+        AtomicInteger firstAttempts = new AtomicInteger();
+        AtomicInteger secondAttempts = new AtomicInteger();
+        AtomicInteger thirdAttempts = new AtomicInteger();
+        IllegalStateException firstFailure = new IllegalStateException("first cleanup failure");
+        IllegalArgumentException secondFailure = new IllegalArgumentException("second cleanup failure");
+
+        Tensor first = releaseFailingTensor(firstAttempts, firstFailure);
+        Tensor second = releaseFailingTensor(secondAttempts, secondFailure);
+        Tensor third = releaseFailingTensor(thirdAttempts, null);
+
+        IllegalStateException thrown = assertThrows(
+                IllegalStateException.class,
+                () -> GraphExecutor.releaseAll(first, second, third));
+
+        assertSame(firstFailure, thrown);
+        assertEquals(1, thrown.getSuppressed().length);
+        assertSame(secondFailure, thrown.getSuppressed()[0]);
+        assertEquals(1, firstAttempts.get());
+        assertEquals(1, secondAttempts.get());
+        assertEquals(1, thirdAttempts.get());
+    }
+
+    private static Tensor releaseFailingTensor(
+            AtomicInteger attempts, RuntimeException failure) {
+        return (Tensor) Proxy.newProxyInstance(
+                Tensor.class.getClassLoader(),
+                new Class<?>[] { Tensor.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("release")) {
+                        attempts.incrementAndGet();
+                        if (failure != null) {
+                            throw failure;
+                        }
+                        return null;
+                    }
+                    if (method.getName().equals("toString")) {
+                        return "ReleaseFailingTensor";
+                    }
+                    if (method.getName().equals("hashCode")) {
+                        return System.identityHashCode(proxy);
+                    }
+                    if (method.getName().equals("equals")) {
+                        return proxy == args[0];
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
     private static Tensor tensor(AtomicInteger releases) {
         Shape shape = new Shape(2, 2);
         return (Tensor) Proxy.newProxyInstance(
