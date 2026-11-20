@@ -110,6 +110,45 @@ public final class TensorOperationValidator {
         return new MatmulPlan(batchDims, outputDims, m, k, n);
     }
 
+    /**
+     * Validates NumPy-style trailing-axis broadcasting for elementwise binary
+     * operations. Kernel and dtype support remain backend responsibilities.
+     */
+    public static BroadcastPlan validateBroadcast(Shape left, Shape right) {
+        Objects.requireNonNull(left, "left shape must not be null");
+        Objects.requireNonNull(right, "right shape must not be null");
+        long[] a = left.dims();
+        long[] b = right.dims();
+        int rank = Math.max(a.length, b.length);
+        long[] output = new long[rank];
+        long elements = 1;
+        for (int axis = 0; axis < rank; axis++) {
+            int aIndex = axis - (rank - a.length);
+            int bIndex = axis - (rank - b.length);
+            long dimA = aIndex < 0 ? 1 : a[aIndex];
+            long dimB = bIndex < 0 ? 1 : b[bIndex];
+            if (dimA != dimB && dimA != 1 && dimB != 1) {
+                throw new IllegalArgumentException(
+                        "shapes are not broadcast-compatible at axis " + axis + ": " + dimA + " != " + dimB);
+            }
+            // A singleton expands to the other dimension, including zero.
+            output[axis] = dimA == 1 ? dimB : dimA;
+            try {
+                elements = Math.multiplyExact(elements, output[axis]);
+            } catch (ArithmeticException overflow) {
+                throw new IllegalArgumentException("broadcast output element count overflows long", overflow);
+            }
+        }
+        return new BroadcastPlan(output, elements);
+    }
+
+    public record BroadcastPlan(long[] outputDimensions, long outputElements) {
+        public BroadcastPlan {
+            outputDimensions = outputDimensions.clone();
+        }
+        @Override public long[] outputDimensions() { return outputDimensions.clone(); }
+    }
+
     public record MatmulPlan(long[] batchDimensions, long[] outputDimensions, long rows, long inner, long columns) {
         public MatmulPlan {
             batchDimensions = batchDimensions.clone();
