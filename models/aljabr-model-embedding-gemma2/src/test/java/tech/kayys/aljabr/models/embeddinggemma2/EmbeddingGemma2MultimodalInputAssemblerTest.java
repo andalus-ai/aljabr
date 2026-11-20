@@ -37,7 +37,7 @@ class EmbeddingGemma2MultimodalInputAssemblerTest {
                         new float[][]{{1f, 1f}, {2f, 2f}},
                         new int[]{99, 10},
                         99,
-                        List.of(new float[][]{{3f, 4f}, {5f, 6f}})));
+                        java.util.Collections.singletonList(new float[][]{{3f, 4f}, {5f, 6f}})));
     }
 
     @Test
@@ -47,13 +47,13 @@ class EmbeddingGemma2MultimodalInputAssemblerTest {
                         new float[][]{{1f, 1f}},
                         new int[]{99},
                         99,
-                        List.of(new float[][]{{2f}})));
+                        java.util.Collections.singletonList(new float[][]{{2f}})));
         assertThrows(IllegalArgumentException.class, () ->
                 EmbeddingGemma2MultimodalInputAssembler.replaceImagePlaceholders(
                         new float[][]{{1f, 1f}},
                         new int[]{99},
                         99,
-                        List.of(new float[][]{{Float.NaN, 2f}})));
+                        java.util.Collections.singletonList(new float[][]{{Float.NaN, 2f}})));
     }
 
     @Test
