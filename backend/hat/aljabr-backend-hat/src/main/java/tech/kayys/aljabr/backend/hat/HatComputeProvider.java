@@ -56,7 +56,7 @@ public final class HatComputeProvider implements ComputeProvider {
 
     private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
             "tensor.cat", "tensor.upsample_nearest2d", "tensor.attention",
-            "tensor.attention.masked", "tensor.rope");
+            "tensor.attention.masked");
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
@@ -183,6 +183,10 @@ public final class HatComputeProvider implements ComputeProvider {
             if (CPU_DTYPE_PRESERVING_OPERATIONS.contains(operationId)) {
                 return new OperationSupportDescriptor(
                         operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+
+            if ("tensor.rope".equals(operationId)) {
+                return ropeSupport(operationId, constraints);
             }
 
             if ("tensor.pow".equals(operationId)) {
@@ -319,6 +323,57 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+        }
+
+        /**
+         * The HAT backend exposes CpuBackend's simple RoPE overload:
+         * [batch, heads, sequence, headDim], F32, even headDim, non-negative
+         * position offset, and finite theta > 1. This does not advertise the
+         * separate CPU overload that accepts explicit position IDs.
+         */
+        private OperationSupportDescriptor ropeSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            String headDimValue = constraints.get("head_dim");
+            String batchValue = constraints.get("batch");
+            String headsValue = constraints.get("heads");
+            String sequenceValue = constraints.get("sequence");
+            String positionValue = constraints.get("position");
+            String thetaValue = constraints.get("theta");
+            if (dtype == null || rankValue == null || headDimValue == null
+                    || batchValue == null || headsValue == null || sequenceValue == null
+                    || positionValue == null || thetaValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            Integer headDim = parseInteger(headDimValue);
+            Integer batch = parseInteger(batchValue);
+            Integer heads = parseInteger(headsValue);
+            Integer sequence = parseInteger(sequenceValue);
+            Integer position = parseInteger(positionValue);
+            if (rank == null || headDim == null || batch == null || heads == null
+                    || sequence == null || position == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (rank != 4 || headDim <= 0 || (headDim & 1) != 0
+                    || batch <= 0 || heads <= 0 || sequence <= 0 || position < 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            float theta;
+            try {
+                theta = Float.parseFloat(thetaValue);
+            } catch (NumberFormatException invalidTheta) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!Float.isFinite(theta) || theta <= 1.0f) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
         private OperationSupportDescriptor sliceSupport(
