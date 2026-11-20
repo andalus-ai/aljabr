@@ -237,4 +237,18 @@ public class HatComputeBackendTest {
         assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
     }
 
+    @Test
+    public void testRoPECpuFallbackStagesHatOwnedInput() {
+        Tensor input = TensorFactory.of(
+                new float[] { 1.0f, 0.0f }, backend, 1, 1, 1, 2);
+
+        Tensor result = backend.applyRoPE(input, 1, 10_000.0f, false);
+
+        assertEquals(CpuBackend.class, result.backend().getClass(),
+                "CPU RoPE fallback must return a CPU-owned result");
+        assertArrayEquals(
+                new float[] { (float) Math.cos(1.0), (float) Math.sin(1.0) },
+                result.toFloatArray(), 1e-5f);
+    }
+
 }
