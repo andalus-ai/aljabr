@@ -125,12 +125,20 @@ final class GgufDecodeStep {
         this.outputNorm = tensorResolver.dequantizeVector(tensorResolver.requireTensor("output_norm.weight"), dim);
         this.outputWeight = tensorResolver.findTensor("output.weight").orElse(tokenEmbed); // tied embeddings
 
-        // Per-layer token embedding tensors
-        this.perLayerTokEmbd = tensorResolver.findTensor("per_layer_token_embd.weight").orElse(null);
-        this.perLayerModelProj = tensorResolver.findTensor("per_layer_model_proj.weight").orElse(null);
-        this.perLayerProjNorm = tensorResolver.findTensor("per_layer_proj_norm.weight")
-                .map(t -> tensorResolver.dequantizeVector(t, nEmbdPerLayer > 0 ? nEmbdPerLayer : 1))
-                .orElse(null);
+        // Per-layer token embedding tensors (Gemma-family PLE path)
+        GGUFTensorInfo perLayerTokenEmbedding =
+                tensorResolver.findTensor("per_layer_token_embd.weight").orElse(null);
+        GGUFTensorInfo perLayerModelProjection =
+                tensorResolver.findTensor("per_layer_model_proj.weight").orElse(null);
+        GGUFTensorInfo perLayerProjectionNorm =
+                tensorResolver.findTensor("per_layer_proj_norm.weight").orElse(null);
+        GgufPerLayerEmbeddingLayout.validate(
+                perLayerTokenEmbedding, perLayerModelProjection, perLayerProjectionNorm,
+                dim, cfg.vocabSize(), layers, nEmbdPerLayer);
+        this.perLayerTokEmbd = perLayerTokenEmbedding;
+        this.perLayerModelProj = perLayerModelProjection;
+        this.perLayerProjNorm = perLayerProjectionNorm == null
+                ? null : tensorResolver.dequantizeVector(perLayerProjectionNorm, nEmbdPerLayer);
 
         this.layerWeights = GgufLayerWeightResolver.resolve(
                 tensorResolver, cfg, dim, nEmbdPerLayer, perLayerTokEmbd);
