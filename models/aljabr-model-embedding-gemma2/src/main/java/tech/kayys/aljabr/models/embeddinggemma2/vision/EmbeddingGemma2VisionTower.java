@@ -157,6 +157,44 @@ public final class EmbeddingGemma2VisionTower {
         return projector.project(encode(patchPixels, pixelPositionIds, outputLength).hiddenStates());
     }
 
+    /**
+     * Executes every image in a Gemma4-compatible processor batch and returns
+     * one projected soft-token sequence per image. The batch uses a common
+     * padded patch axis, while {@code numSoftTokensPerImage} is checked against
+     * the actual valid pooled-token count produced by the tower.
+     *
+     * <p>Images are intentionally executed independently here: this preserves
+     * each image's 2D position coordinate system and token boundary. A future
+     * backend may batch the encoder kernels without changing this API.</p>
+     */
+    public List<float[][]> encodeAndProject(EmbeddingGemma2VisionProcessorOutput processorOutput) {
+        Objects.requireNonNull(processorOutput, "processorOutput must not be null");
+        if (multimodalEmbedder == null) {
+            throw new IllegalStateException("no checkpoint-backed multimodal-to-text embedder was configured");
+        }
+        int poolingArea = Math.multiplyExact(poolingKernelSize, poolingKernelSize);
+        int paddedPatchCount = processorOutput.paddedPatchCount();
+        if (paddedPatchCount % poolingArea != 0) {
+            throw new IllegalArgumentException("processor padded patch count must be divisible by pooling kernel area");
+        }
+        int outputLength = paddedPatchCount / poolingArea;
+        float[][][] pixels = processorOutput.pixelValues();
+        int[][][] positions = processorOutput.imagePositionIds();
+        int[] expectedSoftTokens = processorOutput.numSoftTokensPerImage();
+        List<float[][]> imageFeatures = new ArrayList<>(processorOutput.imageCount());
+        for (int image = 0; image < processorOutput.imageCount(); image++) {
+            VisionOutput visionOutput = encode(pixels[image], positions[image], outputLength);
+            float[][] visionTokens = visionOutput.hiddenStates();
+            if (visionTokens.length != expectedSoftTokens[image]) {
+                throw new IllegalArgumentException("processor metadata for image " + image + " declares "
+                        + expectedSoftTokens[image] + " soft tokens but vision tower produced "
+                        + visionTokens.length);
+            }
+            imageFeatures.add(multimodalEmbedder.project(visionTokens));
+        }
+        return List.copyOf(imageFeatures);
+    }
+
     public int poolingKernelSize() {
         return poolingKernelSize;
     }
