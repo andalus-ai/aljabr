@@ -14,7 +14,7 @@ class EmbeddingGemma2MultimodalInputAssemblerTest {
                 {1f, 1f}, {2f, 2f}, {3f, 3f}, {4f, 4f}, {5f, 5f}, {6f, 6f}
         };
         int[] ids = {10, 99, 99, 11, 99, 12};
-        List<float[][]> images = List.of(
+        List<float[][]> images = List.<float[][]>of(
                 new float[][]{{20f, 21f}, {22f, 23f}},
                 new float[][]{{30f, 31f}});
 
