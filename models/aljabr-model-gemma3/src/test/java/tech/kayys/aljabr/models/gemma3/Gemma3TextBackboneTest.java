@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.models.gemma3;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,21 +23,21 @@ class Gemma3TextBackboneTest {
         ModelConfig config = config();
         Gemma3TextFamily architecture = new Gemma3TextFamily();
         Map<String, Gemma3TextCheckpointMapper.CheckpointTensor> tensors = new LinkedHashMap<>();
-        putMatrix(tensors, architecture.embedTokensWeight(), 5, 4, 0.25f);
+        putPatternMatrix(tensors, architecture.embedTokensWeight(), 5, 4);
         putVector(tensors, architecture.finalNormWeight(), 4, 0.0f);
-        putMatrix(tensors, architecture.layerQueryWeight(0), 4, 4, 0.0f);
-        putMatrix(tensors, architecture.layerKeyWeight(0), 2, 4, 0.0f);
-        putMatrix(tensors, architecture.layerValueWeight(0), 2, 4, 0.0f);
-        putMatrix(tensors, architecture.layerOutputWeight(0), 4, 4, 0.0f);
+        putMatrix(tensors, architecture.layerQueryWeight(0), 4, 4, 0.02f);
+        putMatrix(tensors, architecture.layerKeyWeight(0), 2, 4, 0.015f);
+        putMatrix(tensors, architecture.layerValueWeight(0), 2, 4, 0.03f);
+        putMatrix(tensors, architecture.layerOutputWeight(0), 4, 4, 0.025f);
         putVector(tensors, architecture.layerAttentionNormWeight(0), 4, 0.0f);
         putVector(tensors, architecture.layerPostAttnNormWeight(0), 4, 0.0f);
         putVector(tensors, architecture.layerPreFfnNormWeight(0), 4, 0.0f);
         putVector(tensors, architecture.layerPostFfnNormWeight(0), 4, 0.0f);
         putVector(tensors, architecture.layerQueryNormWeight(0), 2, 0.0f);
         putVector(tensors, architecture.layerKeyNormWeight(0), 2, 0.0f);
-        putMatrix(tensors, architecture.layerFfnGateWeight(0), 6, 4, 0.0f);
-        putMatrix(tensors, architecture.layerFfnUpWeight(0), 6, 4, 0.0f);
-        putMatrix(tensors, architecture.layerFfnDownWeight(0), 4, 6, 0.0f);
+        putMatrix(tensors, architecture.layerFfnGateWeight(0), 6, 4, 0.01f);
+        putMatrix(tensors, architecture.layerFfnUpWeight(0), 6, 4, 0.012f);
+        putMatrix(tensors, architecture.layerFfnDownWeight(0), 4, 6, 0.008f);
 
         Gemma3TextCheckpointMapper.Weights mapped =
                 Gemma3TextCheckpointMapper.map(config, architecture, tensors);
@@ -51,6 +52,8 @@ class Gemma3TextBackboneTest {
         for (float[] tokenLogits : logits) {
             for (float logit : tokenLogits) assertTrue(Float.isFinite(logit));
         }
+        // Appending future tokens must not change logits at earlier causal positions.
+        assertArrayEquals(backbone.forward(new int[] { 0 })[0], logits[0], 1.0e-6f);
     }
 
     @Test
@@ -108,6 +111,17 @@ class Gemma3TextBackboneTest {
             String name, int rows, int columns, float value) {
         tensors.put(name, new Gemma3TextCheckpointMapper.CheckpointTensor(
                 new int[] { rows, columns }, filled(rows * columns, value)));
+    }
+
+    private static void putPatternMatrix(
+            Map<String, Gemma3TextCheckpointMapper.CheckpointTensor> tensors,
+            String name, int rows, int columns) {
+        float[] values = new float[rows * columns];
+        for (int index = 0; index < values.length; index++) {
+            values[index] = (index + 1) * 0.025f;
+        }
+        tensors.put(name, new Gemma3TextCheckpointMapper.CheckpointTensor(
+                new int[] { rows, columns }, values));
     }
 
     private static void putVector(
