@@ -17,12 +17,15 @@ class EmbeddingGemma2VisionCheckpointMapperTest {
     void loadsAndAssemblesExecutableVisionTowerFromCheckpointTensors() {
         var config = new tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig(
                 tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.MODEL_TYPE,
-                4, 6, 1, 2, 2, 2, 1, 3, 1, 70, false,
+                4, 6, 1, 1, 1, 4, 1, 3, 1, 70, false,
                 1.0e-6, 100.0,
                 tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.DEFAULT_HIDDEN_ACTIVATION,
                 false);
 
-        var model = EmbeddingGemma2VisionCheckpointMapper.load(config, tensors(false));
+        Map<String, CheckpointTensor> checkpoint = tensors(false);
+        checkpoint.put(PREFIX + "encoder.layers.0.self_attn.q_norm.weight", tensor(new int[]{4}, 4));
+        checkpoint.put(PREFIX + "encoder.layers.0.self_attn.k_norm.weight", tensor(new int[]{4}, 4));
+        var model = EmbeddingGemma2VisionCheckpointMapper.load(config, checkpoint);
 
         assertNotNull(model.patchEmbedder());
         assertNotNull(model.encoder());
@@ -43,12 +46,15 @@ class EmbeddingGemma2VisionCheckpointMapperTest {
     void assemblesOptionalStandardizerOnlyWhenConfigured() {
         var config = new tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig(
                 tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.MODEL_TYPE,
-                4, 6, 1, 2, 2, 2, 1, 3, 1, 70, true,
+                4, 6, 1, 1, 1, 4, 1, 3, 1, 70, true,
                 1.0e-6, 100.0,
                 tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig.DEFAULT_HIDDEN_ACTIVATION,
                 false);
 
-        var model = EmbeddingGemma2VisionCheckpointMapper.load(config, tensors(true));
+        Map<String, CheckpointTensor> checkpoint = tensors(true);
+        checkpoint.put(PREFIX + "encoder.layers.0.self_attn.q_norm.weight", tensor(new int[]{4}, 4));
+        checkpoint.put(PREFIX + "encoder.layers.0.self_attn.k_norm.weight", tensor(new int[]{4}, 4));
+        var model = EmbeddingGemma2VisionCheckpointMapper.load(config, checkpoint);
 
         assertNotNull(model.standardizer());
         assertEquals(4, model.standardizer().hiddenSize());
