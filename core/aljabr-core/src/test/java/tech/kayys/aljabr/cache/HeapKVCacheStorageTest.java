@@ -84,20 +84,23 @@ class HeapKVCacheStorageTest {
 
     @Test
     void bulkRangeAccessPreservesOffsetsAndHybridLayerStride() {
+        // Layer 0: 1 head × 2 dim = stride 2
+        // Layer 1: 2 heads × 2 dim = stride 4
+        // writeRange on layer 1 with tokenCount=2 needs 2×4 = 8 floats
         KVCacheLayout layout = new KVCacheLayout(
                 5, new int[] {1, 2}, new int[] {2, 2});
         try (KVCacheStorage storage = new HeapKVCacheStorage(layout)) {
-            float[] keys = {-1, 1, 2, 3, 4, 5, 6, -1};
-            float[] values = {-1, 11, 12, 13, 14, 15, 16, -1};
+            float[] keys = {-1, 1, 2, 3, 4, 5, 6, 7, 8, -1};
+            float[] values = {-1, 11, 12, 13, 14, 15, 16, 17, 18, -1};
             storage.writeRange(1, 2, 2, keys, 1, values, 1);
 
-            float[] actualKeys = new float[10];
-            float[] actualValues = new float[10];
+            float[] actualKeys = new float[12];
+            float[] actualValues = new float[12];
             storage.readKeyRange(1, 2, 2, actualKeys, 3);
             storage.readValueRange(1, 2, 2, actualValues, 3);
 
-            assertArrayEquals(new float[] {0, 0, 0, 1, 2, 3, 4, 5, 6, 0}, actualKeys);
-            assertArrayEquals(new float[] {0, 0, 0, 11, 12, 13, 14, 15, 16, 0}, actualValues);
+            assertArrayEquals(new float[] {0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0}, actualKeys);
+            assertArrayEquals(new float[] {0, 0, 0, 11, 12, 13, 14, 15, 16, 17, 18, 0}, actualValues);
         }
     }
 
