@@ -4,9 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.diagnostics.Diagnostic;
 
 import org.junit.jupiter.api.Test;
 
@@ -200,4 +203,73 @@ class TensorOpsTest {
             wrongShape.release();
         }
     }
+
+    @Test
+    void catReportsShapeMismatchWithStructuredContext() {
+        Tensor a = tensor(new float[] {1, 2}, 1, 2);
+        Tensor b = tensor(new float[] {3, 4, 5}, 1, 3);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        try {
+            assertThatThrownBy(() -> TensorOps.cat(List.of(a, b), 0, diagnostics::add))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("shape mismatch");
+            assertThat(diagnostics).hasSize(1);
+            Diagnostic diagnostic = diagnostics.getFirst();
+            assertThat(diagnostic.code()).isEqualTo("tensor.operation.shape-mismatch");
+            assertThat(diagnostic.category()).isEqualTo("tensor.operation.validation");
+            assertThat(diagnostic.context())
+                    .containsEntry("operation", "cat")
+                    .containsEntry("operandIndex", "1")
+                    .containsEntry("axis", "1")
+                    .containsEntry("expectedDimension", "2")
+                    .containsEntry("actualDimension", "3");
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+    @Test
+    void einsumReportsDimensionMismatchWithStructuredContext() {
+        Tensor a = tensor(new float[] {1, 2, 3, 4}, 2, 2);
+        Tensor b = tensor(new float[] {5, 6, 7}, 3);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        try {
+            assertThatThrownBy(() -> TensorOps.einsum("ij,j->i", diagnostics::add, a, b))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("dimension mismatch");
+            assertThat(diagnostics).hasSize(1);
+            Diagnostic diagnostic = diagnostics.getFirst();
+            assertThat(diagnostic.code()).isEqualTo("tensor.operation.dimension-mismatch");
+            assertThat(diagnostic.context())
+                    .containsEntry("operation", "einsum")
+                    .containsEntry("operandIndex", "1")
+                    .containsEntry("axis", "0")
+                    .containsEntry("label", "j")
+                    .containsEntry("expectedDimension", "2")
+                    .containsEntry("actualDimension", "3");
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+    @Test
+    void successfulOperationsDoNotInvokeDiagnosticSink() {
+        Tensor a = tensor(new float[] {1, 2}, 1, 2);
+        Tensor b = tensor(new float[] {3, 4}, 1, 2);
+        AtomicInteger calls = new AtomicInteger();
+        try {
+            Tensor result = TensorOps.cat(List.of(a, b), 0, diagnostic -> calls.incrementAndGet());
+            try {
+                assertThat(calls).hasValue(0);
+            } finally {
+                result.release();
+            }
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
 }
