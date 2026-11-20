@@ -3,6 +3,11 @@ package tech.kayys.aljabr.core.tensor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Map;
+
+import tech.kayys.aljabr.diagnostics.Diagnostic;
+import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
+import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 
 /**
  * Tensor operations that are not tied to a single tensor instance.
@@ -34,6 +39,12 @@ public final class TensorOps {
      * @return a new tensor with the dimensions named by the output labels
      */
     public static Tensor einsum(String equation, Tensor... tensors) {
+        return einsum(equation, DiagnosticSink.noop(), tensors);
+    }
+
+    /** Reports operand contract failures to the supplied sink. */
+    public static Tensor einsum(String equation, DiagnosticSink diagnosticSink, Tensor... tensors) {
+        Objects.requireNonNull(diagnosticSink, "diagnosticSink must not be null");
         Objects.requireNonNull(equation, "equation must not be null");
         Objects.requireNonNull(tensors, "tensors must not be null");
         if (equation.isBlank()) {
@@ -48,7 +59,9 @@ public final class TensorOps {
                 throw new UnsupportedOperationException("einsum currently supports F32 CPU tensors only");
             }
             if (i > 0 && tensors[i].backend() != tensors[0].backend()) {
-                throw new IllegalArgumentException("all einsum operands must use the same compute backend instance");
+                throw contractFailure(diagnosticSink, "tensor.operation.backend-mismatch",
+                        "all einsum operands must use the same compute backend instance",
+                        Map.of("operation", "einsum", "operandIndex", Integer.toString(i)));
             }
         }
 
@@ -70,9 +83,12 @@ public final class TensorOps {
         for (int operand = 0; operand < tensors.length; operand++) {
             String labels = inputLabels[operand];
             if (labels.length() != tensors[operand].shape().rank()) {
-                throw new IllegalArgumentException("operand " + operand + " has rank "
-                        + tensors[operand].shape().rank() + " but equation labels '" + labels
-                        + "' have length " + labels.length());
+                throw contractFailure(diagnosticSink, "tensor.operation.rank-mismatch",
+                        "operand " + operand + " has rank " + tensors[operand].shape().rank()
+                                + " but equation labels '" + labels + "' have length " + labels.length(),
+                        Map.of("operation", "einsum", "operandIndex", Integer.toString(operand),
+                                "actualRank", Integer.toString(tensors[operand].shape().rank()),
+                                "labelCount", Integer.toString(labels.length())));
             }
             boolean[] localSeen = new boolean[LABEL_COUNT];
             for (int axis = 0; axis < labels.length(); axis++) {
@@ -84,8 +100,13 @@ public final class TensorOps {
                 localSeen[slot] = true;
                 int dimension = Math.toIntExact(tensors[operand].shape().dim(axis));
                 if (labelSeen[slot] && labelDimensions[slot] != dimension) {
-                    throw new IllegalArgumentException("dimension mismatch for label '" + labels.charAt(axis)
-                            + "': expected " + labelDimensions[slot] + " but got " + dimension);
+                    throw contractFailure(diagnosticSink, "tensor.operation.dimension-mismatch",
+                            "dimension mismatch for label '" + labels.charAt(axis)
+                                    + "': expected " + labelDimensions[slot] + " but got " + dimension,
+                            Map.of("operation", "einsum", "operandIndex", Integer.toString(operand),
+                                    "axis", Integer.toString(axis), "label", Character.toString(labels.charAt(axis)),
+                                    "expectedDimension", Integer.toString(labelDimensions[slot]),
+                                    "actualDimension", Integer.toString(dimension)));
                 }
                 if (!labelSeen[slot]) {
                     labelSeen[slot] = true;
@@ -166,6 +187,17 @@ public final class TensorOps {
         return TensorFactory.of(output, tensors[0].backend(), outputDims);
     }
 
+
+    private static IllegalArgumentException contractFailure(
+            DiagnosticSink diagnosticSink,
+            String code,
+            String message,
+            Map<String, String> context) {
+        diagnosticSink.accept(new Diagnostic(
+                code, DiagnosticSeverity.ERROR, "tensor.operation.validation", message, context));
+        return new IllegalArgumentException(message);
+    }
+
     private static int labelSlot(char label) {
         if (label >= 'a' && label <= 'z') {
             return label - 'a';
@@ -189,6 +221,12 @@ public final class TensorOps {
      * @return a new concatenated tensor
      */
     public static Tensor cat(List<Tensor> tensors, int dim) {
+        return cat(tensors, dim, DiagnosticSink.noop());
+    }
+
+    /** Reports operand contract failures to the supplied sink. */
+    public static Tensor cat(List<Tensor> tensors, int dim, DiagnosticSink diagnosticSink) {
+        Objects.requireNonNull(diagnosticSink, "diagnosticSink must not be null");
         Objects.requireNonNull(tensors, "tensors must not be null");
         if (tensors.isEmpty()) {
             throw new IllegalArgumentException("cat requires at least one tensor");
@@ -212,19 +250,35 @@ public final class TensorOps {
         for (int i = 0; i < tensors.size(); i++) {
             Tensor tensor = Objects.requireNonNull(tensors.get(i), "tensor at index " + i + " must not be null");
             if (tensor.shape().rank() != rank) {
-                throw new IllegalArgumentException("rank mismatch at tensor " + i + ": expected " + rank
-                        + " but got " + tensor.shape().rank());
+                throw contractFailure(diagnosticSink, "tensor.operation.rank-mismatch",
+                        "rank mismatch at tensor " + i + ": expected " + rank
+                                + " but got " + tensor.shape().rank(),
+                        Map.of("operation", "cat", "operandIndex", Integer.toString(i),
+                                "expectedRank", Integer.toString(rank),
+                                "actualRank", Integer.toString(tensor.shape().rank())));
             }
             if (tensor.dtype() != first.dtype() || tensor.device() != first.device()) {
-                throw new IllegalArgumentException("dtype/device mismatch at tensor " + i);
+                throw contractFailure(diagnosticSink, "tensor.operation.dtype-device-mismatch",
+                        "dtype/device mismatch at tensor " + i,
+                        Map.of("operation", "cat", "operandIndex", Integer.toString(i),
+                                "expectedDType", first.dtype().name(), "actualDType", tensor.dtype().name(),
+                                "expectedDevice", first.device().name(), "actualDevice", tensor.device().name()));
             }
             if (tensor.backend() != first.backend()) {
-                throw new IllegalArgumentException("compute backend mismatch at tensor " + i);
+                throw contractFailure(diagnosticSink, "tensor.operation.backend-mismatch",
+                        "compute backend mismatch at tensor " + i,
+                        Map.of("operation", "cat", "operandIndex", Integer.toString(i),
+                                "backendType", tensor.backend().getClass().getName()));
             }
             for (int d = 0; d < rank; d++) {
                 if (d != axis && tensor.shape().dim(d) != first.shape().dim(d)) {
-                    throw new IllegalArgumentException("shape mismatch at tensor " + i + " dimension " + d
-                            + ": expected " + first.shape().dim(d) + " but got " + tensor.shape().dim(d));
+                    throw contractFailure(diagnosticSink, "tensor.operation.shape-mismatch",
+                            "shape mismatch at tensor " + i + " dimension " + d
+                                    + ": expected " + first.shape().dim(d) + " but got " + tensor.shape().dim(d),
+                            Map.of("operation", "cat", "operandIndex", Integer.toString(i),
+                                    "axis", Integer.toString(d),
+                                    "expectedDimension", Long.toString(first.shape().dim(d)),
+                                    "actualDimension", Long.toString(tensor.shape().dim(d))));
                 }
             }
             try {
