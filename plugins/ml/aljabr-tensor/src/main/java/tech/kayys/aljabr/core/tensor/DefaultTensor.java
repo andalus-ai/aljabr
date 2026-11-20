@@ -203,6 +203,11 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
+    public Tensor sign() {
+        return record(OpType.SIGN, new Tensor[] { this }, new Object[0], backend.sign(this));
+    }
+
+    @Override
     public Tensor abs() {
         return record(OpType.ABS, new Tensor[] { this }, new Object[0], backend.abs(this));
     }
