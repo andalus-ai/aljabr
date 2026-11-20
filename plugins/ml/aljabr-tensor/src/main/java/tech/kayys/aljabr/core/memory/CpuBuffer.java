@@ -146,8 +146,15 @@ public final class CpuBuffer implements Buffer {
     }
 
     @Override
-    public MemorySegment segment() {
+    public synchronized MemorySegment segment() {
+        ensureLive();
         return segment;
+    }
+
+    private void ensureLive() {
+        if (refCount <= 0) {
+            throw new IllegalStateException("Cannot access a released buffer");
+        }
     }
 
     @Override

@@ -40,8 +40,9 @@ class CpuBufferTest {
         parent.release();
         assertTrue(view.segment().scope().isAlive());
 
+        MemorySegment viewSegment = view.segment();
         view.release();
-        assertTrue(!view.segment().scope().isAlive());
+        assertTrue(!viewSegment.scope().isAlive());
     }
 
     @Test
@@ -109,6 +110,42 @@ class CpuBufferTest {
         }
 
         assertTrue(!inner.segment().scope().isAlive());
+    }
+
+    @Test
+    void pooledAllocationIsNotReusedUntilTheLastViewIsReleased() {
+        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
+            MemorySegment firstLease = pool.acquire(64);
+            CpuBuffer parent = new CpuBuffer(firstLease, pool.arena(), pool);
+            long firstAddress = firstLease.address();
+            CpuBuffer view = CpuBuffer.view(parent, 0, 32);
+
+            parent.release();
+            MemorySegment secondLease = pool.acquire(64);
+            assertTrue(secondLease.address() != firstAddress);
+
+            pool.release(secondLease);
+            view.release();
+
+            MemorySegment reusedLease = pool.acquire(64);
+            assertEquals(firstAddress, reusedLease.address());
+            pool.release(reusedLease);
+        }
+    }
+
+    @Test
+    void releasedBufferRejectsSegmentAccessAfterItsPoolLeaseIsReused() {
+        try (OffHeapBufferPool pool = new OffHeapBufferPool()) {
+            MemorySegment lease = pool.acquire(64);
+            CpuBuffer buffer = new CpuBuffer(lease, pool.arena(), pool);
+            long address = lease.address();
+
+            buffer.release();
+            MemorySegment reused = pool.acquire(64);
+            assertEquals(address, reused.address());
+            assertThrows(IllegalStateException.class, buffer::segment);
+            pool.release(reused);
+        }
     }
 
     @Test
