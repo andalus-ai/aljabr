@@ -26,6 +26,91 @@ public final class EmbeddingGemma2VisionCheckpointMapper {
     private EmbeddingGemma2VisionCheckpointMapper() {
     }
 
+    /**
+     * Maps and assembles a complete executable vision tower from one decoded
+     * Hugging Face checkpoint tensor map.
+     */
+    public static MappedVisionModel load(
+            tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig config,
+            Map<String, EmbeddingGemma2CheckpointMapper.CheckpointTensor> tensors) {
+        Objects.requireNonNull(config, "config must not be null");
+        return assemble(config, map(config.toVisionSpec(), tensors));
+    }
+
+    /**
+     * Constructs the patch embedder, all checkpoint-ordered encoder layers,
+     * pooler, and optional standardizer from validated mapped weights.
+     */
+    public static MappedVisionModel assemble(
+            tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig config,
+            Weights weights) {
+        Objects.requireNonNull(config, "config must not be null");
+        Objects.requireNonNull(weights, "weights must not be null");
+        if (weights.layers().size() != config.numHiddenLayers()) {
+            throw new IllegalArgumentException("expected " + config.numHiddenLayers()
+                    + " mapped vision layers but received " + weights.layers().size());
+        }
+        var patchEmbedder = new EmbeddingGemma2VisionPatchEmbedder(
+                config.patchSize(), config.hiddenSize(), config.positionEmbeddingSize(),
+                weights.patchEmbedder());
+        var layers = new ArrayList<EmbeddingGemma2VisionEncoderLayer>(config.numHiddenLayers());
+        for (int index = 0; index < weights.layers().size(); index++) {
+            LayerWeights layer = weights.layers().get(index);
+            var attentionWeights = layer.attention();
+            var attention = new EmbeddingGemma2VisionAttention(
+                    config.hiddenSize(), config.numAttentionHeads(), config.numKeyValueHeads(),
+                    config.headDim(), (float) config.rmsNormEps(), config.ropeTheta(),
+                    attentionWeights);
+            layers.add(new EmbeddingGemma2VisionEncoderLayer(
+                    config.hiddenSize(), config.intermediateSize(), (float) config.rmsNormEps(),
+                    attention::compute, layer.mlp(), layer.norms()));
+        }
+        var encoder = new EmbeddingGemma2VisionEncoder(
+                patchEmbedder, layers, config.numHiddenLayers());
+        var pooler = new EmbeddingGemma2VisionPooler(config.hiddenSize());
+        EmbeddingGemma2VisionStandardizer standardizer = null;
+        if (config.standardize()) {
+            if (weights.standardizationBias() == null || weights.standardizationScale() == null) {
+                throw new IllegalArgumentException(
+                        "standardization weights are required when vision_config.standardize is true");
+            }
+            standardizer = new EmbeddingGemma2VisionStandardizer(
+                    config.hiddenSize(),
+                    new EmbeddingGemma2VisionStandardizer.Weights(
+                            weights.standardizationBias(), weights.standardizationScale()));
+        } else if (weights.standardizationBias() != null || weights.standardizationScale() != null) {
+            throw new IllegalArgumentException(
+                    "standardization weights are present while vision_config.standardize is false");
+        }
+        return new MappedVisionModel(config, patchEmbedder, encoder, pooler, standardizer,
+                weights.legacyPoolerScale());
+    }
+
+    /** Fully assembled model components ready for per-image execution. */
+    public record MappedVisionModel(
+            tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2VisionConfig config,
+            EmbeddingGemma2VisionPatchEmbedder patchEmbedder,
+            EmbeddingGemma2VisionEncoder encoder,
+            EmbeddingGemma2VisionPooler pooler,
+            EmbeddingGemma2VisionStandardizer standardizer,
+            float[] legacyPoolerScale) {
+        public MappedVisionModel {
+            Objects.requireNonNull(config, "config must not be null");
+            Objects.requireNonNull(patchEmbedder, "patchEmbedder must not be null");
+            Objects.requireNonNull(encoder, "encoder must not be null");
+            Objects.requireNonNull(pooler, "pooler must not be null");
+            if (config.standardize() != (standardizer != null)) {
+                throw new IllegalArgumentException("standardizer presence must match vision_config.standardize");
+            }
+            legacyPoolerScale = legacyPoolerScale == null ? null : legacyPoolerScale.clone();
+        }
+
+        @Override
+        public float[] legacyPoolerScale() {
+            return legacyPoolerScale == null ? null : legacyPoolerScale.clone();
+        }
+    }
+
     public static Weights map(
             VisionSpec spec,
             Map<String, EmbeddingGemma2CheckpointMapper.CheckpointTensor> tensors) {
