@@ -55,8 +55,7 @@ public final class HatComputeProvider implements ComputeProvider {
             "tensor.zeros_like");
 
     private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
-            "tensor.cat", "tensor.upsample_nearest2d", "tensor.attention",
-            "tensor.attention.masked");
+            "tensor.cat", "tensor.upsample_nearest2d");
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
@@ -169,7 +168,10 @@ public final class HatComputeProvider implements ComputeProvider {
             if (closed) throw new IllegalStateException("HAT provider session is closed");
 
             if ("tensor.attention".equals(operationId)) {
-                return attentionSupport(operationId, constraints);
+                return attentionSupport(operationId, constraints, false);
+            }
+            if ("tensor.attention.masked".equals(operationId)) {
+                return attentionSupport(operationId, constraints, true);
             }
 
             if ("tensor.matmul".equals(operationId)) {
@@ -340,15 +342,19 @@ public final class HatComputeProvider implements ComputeProvider {
          * every dimension.
          */
         private OperationSupportDescriptor attentionSupport(
-                String operationId, Map<String, String> constraints) {
+                String operationId, Map<String, String> constraints, boolean maskedOperation) {
             String queryDtype = constraints.get("dtype");
             String keyDtype = constraints.get("key_dtype");
             String valueDtype = constraints.get("value_dtype");
             String queryRankValue = constraints.get("rank");
             String keyRankValue = constraints.get("key_rank");
             String valueRankValue = constraints.get("value_rank");
+            String maskDtype = constraints.get("mask_dtype");
+            String maskRankValue = constraints.get("mask_rank");
+            String causalValue = constraints.get("causal");
             if (queryDtype == null || keyDtype == null || valueDtype == null
-                    || queryRankValue == null || keyRankValue == null || valueRankValue == null) {
+                    || queryRankValue == null || keyRankValue == null || valueRankValue == null
+                    || (maskedOperation && causalValue == null)) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
             }
             if (!isF32(queryDtype) || !isF32(keyDtype) || !isF32(valueDtype)) {
@@ -362,6 +368,36 @@ public final class HatComputeProvider implements ComputeProvider {
             }
             if (!queryRank.equals(keyRank) || !queryRank.equals(valueRank)
                     || (queryRank != 2 && queryRank != 4)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            boolean causal;
+            if (causalValue == null) {
+                causal = false;
+            } else if ("true".equalsIgnoreCase(causalValue) || "false".equalsIgnoreCase(causalValue)) {
+                causal = Boolean.parseBoolean(causalValue);
+            } else {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (maskedOperation && queryRank != 4) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (maskedOperation) {
+                if ((maskDtype == null) != (maskRankValue == null)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (maskDtype != null) {
+                    if (!isF32(maskDtype)) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                    Integer maskRank = parseInteger(maskRankValue);
+                    if (maskRank == null) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                    }
+                    if (maskRank != 2) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                }
+            } else if (maskDtype != null || maskRankValue != null || causal) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(
