@@ -210,6 +210,7 @@ subprojects {
             // Core runtime and shared infrastructure.
             safeSubstitute("tech.kayys.aljabr:aljabr-core", ":core:aljabr-core")
             safeSubstitute("tech.kayys.aljabr:aljabr-error-code", ":core:aljabr-error-code")
+            safeSubstitute("tech.kayys.aljabr:aljabr-diagnostics", ":core:aljabr-diagnostics")
             safeSubstitute("tech.kayys.aljabr:aljabr-tokenizer-core", ":core:aljabr-tokenizer-core")
 
             // Independently installable ML extensions.
