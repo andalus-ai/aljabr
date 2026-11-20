@@ -18,7 +18,7 @@ class TensorSignTest {
             Tensor output = null;
             try {
                 output = input.sign();
-                assertThat(output.shape().dims()).containsExactly(1, 7);
+                assertThat(output.shape().dims()).containsExactly(1L, 7L);
                 float[] values = output.toFloatArray();
                 assertThat(values[0]).isEqualTo(-1.0f);
                 assertThat(Float.floatToRawIntBits(values[1]))
