@@ -47,7 +47,7 @@ class Gemma3TextCheckpointMapperTest {
         assertEquals(4, weights.layers().getFirst().query().length);
         assertEquals(4, weights.layers().getFirst().query()[0].length);
         assertEquals(6, weights.layers().getFirst().feedForwardGate().length);
-        assertEquals(4, weights.layers().getFirst().feedForwardDown()[0].length);
+        assertEquals(6, weights.layers().getFirst().feedForwardDown()[0].length);
         assertEquals(1.0f, weights.tokenEmbeddings()[0][0]);
         assertEquals(13.0f, weights.layers().getFirst().feedForwardGate()[0][0]);
         assertEquals(weights.tokenEmbeddings(), weights.languageModelHead());
