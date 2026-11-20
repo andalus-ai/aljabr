@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 import org.junit.jupiter.api.Test;
 
@@ -66,6 +67,48 @@ class CpuBufferTest {
         } finally {
             parent.release();
         }
+    }
+
+
+    @Test
+    void siblingViewsObserveSharedWritesAndOwnIndependentParentReferences() {
+        CpuBuffer parent = new CpuBuffer(32);
+        CpuBuffer first = CpuBuffer.view(parent, 8, 8);
+        CpuBuffer second = CpuBuffer.view(parent, 8, 8);
+
+        try {
+            first.segment().set(ValueLayout.JAVA_INT, 0, 0x12345678);
+            assertEquals(0x12345678, second.segment().get(ValueLayout.JAVA_INT, 0));
+
+            parent.release();
+            first.release();
+            assertTrue(second.segment().scope().isAlive());
+            assertEquals(0x12345678, second.segment().get(ValueLayout.JAVA_INT, 0));
+        } finally {
+            second.release();
+        }
+
+        assertTrue(!second.segment().scope().isAlive());
+    }
+
+    @Test
+    void nestedViewKeepsOriginalAllocationAliveAfterIntermediateViewsRelease() {
+        CpuBuffer parent = new CpuBuffer(64);
+        CpuBuffer outer = CpuBuffer.view(parent, 16, 32);
+        CpuBuffer inner = CpuBuffer.view(outer, 8, 8);
+
+        parent.release();
+        outer.release();
+
+        try {
+            assertTrue(inner.segment().scope().isAlive());
+            inner.segment().set(ValueLayout.JAVA_LONG, 0, 42L);
+            assertEquals(42L, inner.segment().get(ValueLayout.JAVA_LONG, 0));
+        } finally {
+            inner.release();
+        }
+
+        assertTrue(!inner.segment().scope().isAlive());
     }
 
     @Test
