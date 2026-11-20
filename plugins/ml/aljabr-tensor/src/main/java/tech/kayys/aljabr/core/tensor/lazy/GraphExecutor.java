@@ -92,8 +92,9 @@ public class GraphExecutor {
         java.util.IdentityHashMap<GraphNode, Tensor> gradients = new java.util.IdentityHashMap<>();
 
         try (AutogradContext.Scope ignored = AutogradContext.pauseRecording()) {
-            gradients.put(root, outputGradient.add(0.0f));
+            Throwable backwardFailure = null;
             try {
+                gradients.put(root, outputGradient.add(0.0f));
                 for (int index = topoOrder.size() - 1; index >= 0; index--) {
                     GraphNode node = topoOrder.get(index);
                     Tensor gradient = gradients.remove(node);
@@ -144,6 +145,7 @@ public class GraphExecutor {
                         releaseAfterFailure(failure, gradient);
                         throw failure;
                     }
+                    Throwable nodeFailure = null;
                     try {
                         if (inputGradients == null || inputGradients.length != node.getInputs().size()) {
                             throw new IllegalStateException("Backward rule for " + node.getOp()
@@ -177,14 +179,29 @@ public class GraphExecutor {
                                 contribution.release();
                             }
                         }
+                    } catch (RuntimeException | Error failure) {
+                        nodeFailure = failure;
+                        throw failure;
                     } finally {
-                        // Also release contributions not yet consumed if accumulation fails.
-                        releaseAll(inputGradients, gradient);
+                        // Preserve the validation/accumulation failure if cleanup also fails.
+                        if (nodeFailure == null) {
+                            releaseAll(inputGradients, gradient);
+                        } else {
+                            releaseAfterFailure(nodeFailure, inputGradients, gradient);
+                        }
                     }
                 }
+            } catch (RuntimeException | Error failure) {
+                backwardFailure = failure;
+                throw failure;
             } finally {
                 try {
-                    releaseAll(gradients.values().toArray(Tensor[]::new));
+                    Tensor[] remainingGradients = gradients.values().toArray(Tensor[]::new);
+                    if (backwardFailure == null) {
+                        releaseAll(remainingGradients);
+                    } else {
+                        releaseAfterFailure(backwardFailure, remainingGradients);
+                    }
                 } finally {
                     gradients.clear();
                 }
@@ -219,8 +236,22 @@ public class GraphExecutor {
     }
 
     private static void releaseAfterFailure(Throwable failure, Tensor tensor) {
+        releaseAfterFailure(failure, new Tensor[] { tensor });
+    }
+
+    private static void releaseAfterFailure(Throwable failure, Tensor[] tensors, Tensor additional) {
+        Tensor[] all = tensors == null
+                ? new Tensor[] { additional }
+                : java.util.Arrays.copyOf(tensors, tensors.length + 1);
+        if (tensors != null) {
+            all[tensors.length] = additional;
+        }
+        releaseAfterFailure(failure, all);
+    }
+
+    private static void releaseAfterFailure(Throwable failure, Tensor... tensors) {
         try {
-            releaseAll(tensor);
+            releaseAll(tensors);
         } catch (RuntimeException | Error cleanupFailure) {
             failure.addSuppressed(cleanupFailure);
         }
