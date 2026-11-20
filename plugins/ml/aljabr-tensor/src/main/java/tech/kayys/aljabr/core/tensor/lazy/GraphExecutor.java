@@ -163,13 +163,14 @@ public class GraphExecutor {
                                 continue;
                             }
                             GraphNode input = node.getInputs().get(i);
+                            // Transfer responsibility before cleanup can throw; the
+                            // accumulation path guarantees it consumes the contribution.
+                            inputGradients[i] = null;
                             if (input.requiresGrad()) {
                                 accumulate(gradients, input, contribution);
                             } else {
                                 contribution.release();
                             }
-                            // Ownership was transferred to the map or released locally.
-                            inputGradients[i] = null;
                         }
                     } finally {
                         // Also release contributions not yet consumed if accumulation fails.
@@ -195,7 +196,17 @@ public class GraphExecutor {
             gradients.put(node, contribution);
             return;
         }
-        Tensor accumulated = previous.add(contribution);
+        Tensor accumulated;
+        try {
+            accumulated = previous.add(contribution);
+        } catch (RuntimeException | Error computationFailure) {
+            try {
+                contribution.release();
+            } catch (RuntimeException | Error cleanupFailure) {
+                computationFailure.addSuppressed(cleanupFailure);
+            }
+            throw computationFailure;
+        }
         // Publish the replacement before cleanup: if either release fails,
         // the map still owns the accumulated gradient and can clean it up.
         gradients.put(node, accumulated);
