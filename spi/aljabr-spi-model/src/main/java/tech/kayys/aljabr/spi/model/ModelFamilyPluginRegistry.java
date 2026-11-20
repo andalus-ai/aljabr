@@ -40,6 +40,35 @@ public class ModelFamilyPluginRegistry {
         return Optional.ofNullable(plugins.get(shortId));
     }
 
+    /**
+     * Returns all model-family plugins that recognize a concrete checkpoint.
+     * Checkpoint-aware matching is useful when multiple families share the same
+     * Hugging Face model_type and architecture class.
+     */
+    public synchronized List<ModelFamilyPlugin> pluginsForCheckpoint(Path modelDirectory) {
+        if (modelDirectory == null) {
+            return List.of();
+        }
+        return plugins.values().stream()
+                .filter(plugin -> {
+                    try {
+                        return plugin.matchesCheckpoint(modelDirectory);
+                    } catch (RuntimeException ignored) {
+                        return false;
+                    }
+                })
+                .toList();
+    }
+
+    /**
+     * Resolves a checkpoint only when exactly one plugin recognizes it.
+     * Ambiguous or unrecognized directories are deliberately not guessed.
+     */
+    public synchronized Optional<ModelFamilyPlugin> pluginForCheckpoint(Path modelDirectory) {
+        List<ModelFamilyPlugin> matches = pluginsForCheckpoint(modelDirectory);
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
     public synchronized List<ModelFamilyPlugin> pluginsForModelType(String modelType) {
         return plugins.values().stream()
                 .filter(p -> {
