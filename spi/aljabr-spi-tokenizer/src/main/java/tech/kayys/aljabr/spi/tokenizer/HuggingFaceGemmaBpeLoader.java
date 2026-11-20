@@ -62,9 +62,17 @@ public final class HuggingFaceGemmaBpeLoader {
             JsonNode added = root.path("added_tokens");
             if (added.isArray()) {
                 for (JsonNode item : added) {
-                    if (item.path("special").asBoolean(false)) {
-                        specials.put(item.path("content").asText(), item.path("id").asInt());
+                    String content = item.path("content").asText("");
+                    if (content.isEmpty()) {
+                        throw new IllegalArgumentException("Added token content must not be empty");
                     }
+                    int id = item.path("id").asInt(-1);
+                    if (id < 0) throw new IllegalArgumentException("Added token has invalid ID: " + content);
+                    Integer existing = vocab.putIfAbsent(content, id);
+                    if (existing != null && existing != id) {
+                        throw new IllegalArgumentException("Added token ID conflicts with model vocabulary: " + content);
+                    }
+                    if (item.path("special").asBoolean(false)) specials.put(content, id);
                 }
             }
             for (String token : List.of("<bos>", "<eos>", "<pad>", "<unk>")) {
@@ -82,8 +90,9 @@ public final class HuggingFaceGemmaBpeLoader {
                     }
                 }
             }
+            String unknownToken = model.path("unk_token").asText("<unk>");
             return new GemmaBpeTokenizer(vocab, merges, specials,
-                    vocab.getOrDefault("<unk>", -1), vocab.getOrDefault("<bos>", -1),
+                    vocab.getOrDefault(unknownToken, -1), vocab.getOrDefault("<bos>", -1),
                     vocab.getOrDefault("<eos>", -1), vocab.getOrDefault("<pad>", -1));
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load Gemma tokenizer: " + path, e);
@@ -97,8 +106,8 @@ public final class HuggingFaceGemmaBpeLoader {
         if (!containsSplit(preTokenizer)) {
             throw new IllegalArgumentException("Unsupported Gemma pre-tokenizer: expected Split(' ', MergedWithPrevious)");
         }
-        if (!containsDecoderStages(decoder)) {
-            throw new IllegalArgumentException("Unsupported Gemma decoder: expected Replace('▁' -> ' '), ByteFallback, Fuse");
+        if (!hasGemmaDecoderOrder(decoder)) {
+            throw new IllegalArgumentException("Unsupported Gemma decoder: expected ordered Replace('▁' -> ' '), ByteFallback, Fuse");
         }
     }
 
@@ -120,18 +129,18 @@ public final class HuggingFaceGemmaBpeLoader {
         return false;
     }
 
-    private static boolean containsDecoderStages(JsonNode node) {
-        if (node == null || node.isMissingNode()) return false;
-        boolean replace = containsReplace(node, "▁", " ");
-        boolean fallback = containsType(node, "ByteFallback");
-        boolean fuse = containsType(node, "Fuse");
-        return replace && fallback && fuse;
+    private static boolean hasGemmaDecoderOrder(JsonNode decoder) {
+        if (!"Sequence".equals(decoder.path("type").asText())) return false;
+        JsonNode stages = decoder.path("decoders");
+        if (!stages.isArray() || stages.size() != 3) return false;
+        JsonNode replace = stages.get(0);
+        JsonNode fallback = stages.get(1);
+        JsonNode fuse = stages.get(2);
+        return "Replace".equals(replace.path("type").asText())
+                && "▁".equals(replace.path("pattern").path("String").asText())
+                && " ".equals(replace.path("content").asText())
+                && "ByteFallback".equals(fallback.path("type").asText())
+                && "Fuse".equals(fuse.path("type").asText());
     }
 
-    private static boolean containsType(JsonNode node, String type) {
-        if (node == null || node.isMissingNode()) return false;
-        if (type.equals(node.path("type").asText())) return true;
-        for (JsonNode child : node) if (containsType(child, type)) return true;
-        return false;
-    }
 }
