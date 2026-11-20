@@ -146,9 +146,15 @@ class FunctionGemmaSafetensorCheckpointLoaderTest {
                 case "maxHeaderBytes" -> 1_048_576L;
                 case "ttlSeconds" -> 300L;
                 case "toString" -> "SyntheticSafetensorLoaderConfig";
-                default -> method.getReturnType().isPrimitive()
-                        ? (method.getReturnType() == boolean.class ? false : 0)
-                        : null;
+                default -> {
+                    Class<?> returnType = method.getReturnType();
+                    if (!returnType.isPrimitive()) yield null;
+                    if (returnType == boolean.class) yield false;
+                    if (returnType == long.class) yield 0L;
+                    if (returnType == double.class) yield 0.0d;
+                    if (returnType == float.class) yield 0.0f;
+                    yield 0;
+                }
             };
         };
         return Proxy.newProxyInstance(
