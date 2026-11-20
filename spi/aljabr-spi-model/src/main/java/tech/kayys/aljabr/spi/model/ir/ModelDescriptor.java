@@ -63,12 +63,11 @@ public record ModelDescriptor(
         architectureDescriptor = Objects.requireNonNull(
                 architectureDescriptor, "architectureDescriptor must not be null");
 
-        architectureDescriptor.ifPresent(descriptor -> {
-            if (!architecture.equals(descriptor.id())) {
-                throw new IllegalArgumentException(
-                        "architecture identifier must match architecture descriptor id");
-            }
-        });
+        if (architectureDescriptor.isPresent()
+                && !architecture.equals(architectureDescriptor.orElseThrow().id())) {
+            throw new IllegalArgumentException(
+                    "architecture identifier must match architecture descriptor id");
+        }
 
         Set<String> names = new HashSet<>();
         for (TensorDescriptor tensor : tensors) {
