@@ -25,6 +25,12 @@ not an alias for the causal `gemma2` or `gemma4` modules.
   sqrt(hidden_size) embedding scaling, projection-only PLE, construction and
   execution of every encoder layer, final RMSNorm, token-wise embedding
   projection, and optional mask-aware mean pooling.
+- A multimodal text entry point that accepts preassembled input embeddings, plus
+  `EmbeddingGemma2MultimodalInputAssembler` to replace image placeholder rows
+  with per-image projected soft tokens in prompt order. The assembler masks
+  potentially out-of-vocabulary image IDs with the configured text pad ID before
+  vocabulary lookup, validates exact placeholder/feature counts and hidden
+  dimensions, and preserves image boundaries until ordered scattering.
 - Projection-only Per-Layer Embeddings (PLE) reference operations: input
   projection, per-layer reshape/RMSNorm, and gated residual injection.
 - Matryoshka truncation and final L2 normalization for already-projected
