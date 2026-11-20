@@ -1032,6 +1032,18 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor sign(Tensor a) {
+        Shape s = a.shape();
+        long n = s.numel();
+        HostAccessibleStorage o = allocateOutput(n * Float.BYTES);
+        MemorySegment src = seg(a), dst = o.segment();
+        for (long i = 0; i < n; i++) {
+            CpuOps.setF(dst, i, Math.signum(CpuOps.getF(src, i)));
+        }
+        return out(s, o);
+    }
+
+    @Override
     public Tensor abs(Tensor a) {
         Shape s = a.shape();
         long n = s.numel();

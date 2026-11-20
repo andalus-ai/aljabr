@@ -83,6 +83,16 @@ class HatComputeProviderTest {
                         session.operationSupport(operation,
                                 Map.of("dtype", "Q4_0", "rhs_dtype", "Q4_0")).support());
             }
+            for (String operation : Set.of("tensor.add_scalar", "tensor.mul_scalar", "tensor.div_scalar")) {
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of()).support());
+                assertEquals(OperationSupport.DELEGATED,
+                        session.operationSupport(operation, Map.of("dtype", "F32")).support());
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "F16")).support());
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "Q4_0")).support());
+            }
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(HatComputeProvider.CPU_FALLBACK_BACKEND_ID));
             assertEquals(OperationSupport.DELEGATED,
@@ -317,18 +327,87 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.cat", Map.of()).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.upsample_nearest2d", Map.of()).support());
-            assertEquals(OperationSupport.UNSUPPORTED,
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.attention", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "2", "key_rank", "2", "value_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F16", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "4", "value_rank", "4")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.attention", Map.of(
+                            "dtype", "F32", "key_dtype", "F32", "value_dtype", "F32",
+                            "rank", "4", "key_rank", "2", "value_rank", "4")).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.attention.masked", Map.of()).support());
-            assertEquals(OperationSupport.UNSUPPORTED,
+            assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.rope", Map.of()).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.rope", Map.of("dtype", "F32", "rank", "4")).support());
+            Map<String, String> validRope = Map.of(
+                    "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                    "sequence", "16", "head_dim", "64", "position", "0", "theta", "10000");
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.rope", validRope).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.rope", validRope).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F16", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "0", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "3", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "0", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "63", "position", "0", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "-1", "theta", "10000")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.rope", Map.of(
+                            "dtype", "F32", "rank", "4", "batch", "1", "heads", "8",
+                            "sequence", "16", "head_dim", "64", "position", "0", "theta", "1")).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.unknown", Map.of()).support());
         } finally {
             provider.close();
         }
         assertThrows(IllegalStateException.class, session::computeBackends);
+    }
+
+    @Test
+    void unmaskedAttentionStagesHatOwnedHostTensorsIntoCpuFallback() {
+        CpuBackend cpu = new CpuBackend();
+        HatComputeBackend hat = new HatComputeBackend(cpu);
+        try (var query = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 0f}, hat, 1, 2);
+                var key = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {1f, 0f}, hat, 1, 2);
+                var value = tech.kayys.aljabr.core.tensor.TensorFactory.of(
+                    new float[] {3f, 4f}, hat, 1, 2);
+                var output = hat.attention(query, key, value)) {
+            assertEquals(cpu, output.backend());
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    new float[] {3f, 4f}, output.toFloatArray(), 1.0e-5f);
+        } finally {
+            hat.close();
+            cpu.close();
+        }
     }
 
     @Test
@@ -355,6 +434,151 @@ class HatComputeProviderTest {
             assertEquals(2, session.computeBackends().size());
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(HatComputeProvider.CPU_FALLBACK_BACKEND_ID));
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void embeddingRequiresIntegralIndicesAndF32RankTwoWeights() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.embedding", Map.of("dtype", "I32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F32", "weight_rank", "2")).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I8", "weight_dtype", "F32", "weight_rank", "2")).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "F32", "weight_dtype", "F32", "weight_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F16", "weight_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F32", "weight_rank", "1")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.embedding", Map.of(
+                            "dtype", "I32", "weight_dtype", "F32", "weight_rank", "unknown")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void powerRequiresF32ForCpuFallback() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.pow", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.pow", Map.of("dtype", "F32")).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.pow", Map.of("dtype", "F32")).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.pow", Map.of("dtype", "F16")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void sliceRequiresF32AndRankMatchedOffsetsAndSizes() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.slice", Map.of("dtype", "F32", "rank", "2")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F32", "rank", "2", "offsets_rank", "2", "sizes_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F32", "rank", "2", "offsets_rank", "1", "sizes_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F16", "rank", "2", "offsets_rank", "2", "sizes_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F32", "rank", "0", "offsets_rank", "0", "sizes_rank", "0")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void transposeValidatesDtypeRankAndExplicitDimensions() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "F32", "rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "F32", "rank", "1")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.transpose", Map.of(
+                            "dtype", "F32", "rank", "3", "dim0", "0", "dim1", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.transpose", Map.of(
+                            "dtype", "F32", "rank", "3", "dim0", "0", "dim1", "3")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.transpose", Map.of(
+                            "dtype", "F32", "rank", "3", "dim0", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "Q4_0", "rank", "2")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void splitValidatesAxisAndRequiresEvenPositivePartitioning() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.split", Map.of("dtype", "F32", "rank", "2")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "1", "parts", "2", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "2", "parts", "2", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "1", "parts", "3", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "1", "parts", "0", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F16", "rank", "2", "axis", "1", "parts", "2", "axis_size", "8")).support());
+    void unaryElementwiseOperationsRequireF32ForCpuFallback() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            for (String operation : Set.of(
+                    "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
+                    "tensor.sigmoid", "tensor.tanh", "tensor.sqrt", "tensor.exp", "tensor.log")) {
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of()).support(), operation);
+                assertEquals(OperationSupport.DELEGATED,
+                        session.operationSupport(operation, Map.of("dtype", "F32")).support(), operation);
+                assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                        session.operationSupport(operation, Map.of("dtype", "F32")).effectiveBackendId(),
+                        operation);
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "F16")).support(), operation);
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("dtype", "Q4_0")).support(), operation);
+            }
         } finally {
             provider.close();
         }

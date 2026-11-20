@@ -56,7 +56,7 @@ public final class HatComputeProvider implements ComputeProvider {
 
     private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
             "tensor.cat", "tensor.upsample_nearest2d", "tensor.attention",
-            "tensor.attention.masked", "tensor.rope");
+            "tensor.attention.masked");
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
@@ -168,6 +168,10 @@ public final class HatComputeProvider implements ComputeProvider {
             Objects.requireNonNull(constraints, "constraints");
             if (closed) throw new IllegalStateException("HAT provider session is closed");
 
+            if ("tensor.attention".equals(operationId)) {
+                return attentionSupport(operationId, constraints);
+            }
+
             if ("tensor.matmul".equals(operationId)) {
                 String dtype = constraints.get("dtype");
                 String rank = constraints.get("rank");
@@ -184,6 +188,23 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(
                         operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
+
+            if ("tensor.rope".equals(operationId)) {
+                return ropeSupport(operationId, constraints);
+            }
+            if ("tensor.embedding".equals(operationId)) {
+                return embeddingSupport(operationId, constraints);
+            }
+
+            if ("tensor.pow".equals(operationId)) {
+                String dtype = constraints.get("dtype");
+                if (dtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                if (!isF32(dtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+            if ("tensor.slice".equals(operationId)) return sliceSupport(operationId, constraints);
+            if ("tensor.transpose".equals(operationId)) return transposeSupport(operationId, constraints);
+            if ("tensor.split".equals(operationId)) return splitSupport(operationId, constraints);
 
             if ("tensor.layer_norm".equals(operationId)) {
                 return normalizationSupport(operationId, constraints, false, false, true);
@@ -309,6 +330,213 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+        }
+
+        /**
+         * CpuBackend attention fallback supports matching F32 Q/K/V ranks:
+         * rank-2 for unmasked, non-causal attention and rank-4 for the
+         * batched/head-aware path. Shape compatibility is validated by the
+         * CPU execution method because the provider metadata does not carry
+         * every dimension.
+         */
+        private OperationSupportDescriptor attentionSupport(
+                String operationId, Map<String, String> constraints) {
+            String queryDtype = constraints.get("dtype");
+            String keyDtype = constraints.get("key_dtype");
+            String valueDtype = constraints.get("value_dtype");
+            String queryRankValue = constraints.get("rank");
+            String keyRankValue = constraints.get("key_rank");
+            String valueRankValue = constraints.get("value_rank");
+            if (queryDtype == null || keyDtype == null || valueDtype == null
+                    || queryRankValue == null || keyRankValue == null || valueRankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(queryDtype) || !isF32(keyDtype) || !isF32(valueDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer queryRank = parseInteger(queryRankValue);
+            Integer keyRank = parseInteger(keyRankValue);
+            Integer valueRank = parseInteger(valueRankValue);
+            if (queryRank == null || keyRank == null || valueRank == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!queryRank.equals(keyRank) || !queryRank.equals(valueRank)
+                    || (queryRank != 2 && queryRank != 4)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * The HAT backend exposes CpuBackend's simple RoPE overload:
+         * [batch, heads, sequence, headDim], F32, even headDim, non-negative
+         * position offset, and finite theta > 1. This does not advertise the
+         * separate CPU overload that accepts explicit position IDs.
+         */
+        private OperationSupportDescriptor ropeSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            String headDimValue = constraints.get("head_dim");
+            String batchValue = constraints.get("batch");
+            String headsValue = constraints.get("heads");
+            String sequenceValue = constraints.get("sequence");
+            String positionValue = constraints.get("position");
+            String thetaValue = constraints.get("theta");
+            if (dtype == null || rankValue == null || headDimValue == null
+                    || batchValue == null || headsValue == null || sequenceValue == null
+                    || positionValue == null || thetaValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            Integer headDim = parseInteger(headDimValue);
+            Integer batch = parseInteger(batchValue);
+            Integer heads = parseInteger(headsValue);
+            Integer sequence = parseInteger(sequenceValue);
+            Integer position = parseInteger(positionValue);
+            if (rank == null || headDim == null || batch == null || heads == null
+                    || sequence == null || position == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (rank != 4 || headDim <= 0 || (headDim & 1) != 0
+                    || batch <= 0 || heads <= 0 || sequence <= 0 || position < 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            float theta;
+            try {
+                theta = Float.parseFloat(thetaValue);
+            } catch (NumberFormatException invalidTheta) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!Float.isFinite(theta) || theta <= 1.0f) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * CpuBackend.embedding reads F32 embedding rows and accepts integral
+         * I32 or I8 token indices. The input rank is unrestricted; the output
+         * appends the embedding dimension to the input shape.
+         */
+        private OperationSupportDescriptor embeddingSupport(
+                String operationId, Map<String, String> constraints) {
+            String inputDtype = constraints.get("dtype");
+            String weightDtype = constraints.get("weight_dtype");
+            String weightRankValue = constraints.get("weight_rank");
+            if (inputDtype == null || weightDtype == null || weightRankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!"I32".equalsIgnoreCase(inputDtype) && !"I8".equalsIgnoreCase(inputDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (!isF32(weightDtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            try {
+                if (Integer.parseInt(weightRankValue) != 2) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+            } catch (NumberFormatException invalidRank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupportDescriptor sliceSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            if (dtype == null || rankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            if (rank == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            if (rank <= 0) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            Integer offsetsRank = parseInteger(constraints.get("offsets_rank"));
+            Integer sizesRank = parseInteger(constraints.get("sizes_rank"));
+            if (offsetsRank == null || sizesRank == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!offsetsRank.equals(rank) || !sizesRank.equals(rank)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupportDescriptor transposeSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            if (dtype == null || rankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            if (rank == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            if (rank <= 0) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            String dim0Value = constraints.get("dim0");
+            String dim1Value = constraints.get("dim1");
+            if (dim0Value == null && dim1Value == null) {
+                return new OperationSupportDescriptor(operationId,
+                        rank >= 2 ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED,
+                        rank >= 2 ? CPU_FALLBACK_BACKEND_ID : null);
+            }
+            if (dim0Value == null || dim1Value == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            Integer dim0 = parseInteger(dim0Value), dim1 = parseInteger(dim1Value);
+            if (dim0 == null || dim1 == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (dim0 < 0 || dim1 < 0 || dim0 >= rank || dim1 >= rank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupportDescriptor splitSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            if (dtype == null || rankValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            Integer axis = parseInteger(constraints.get("axis"));
+            Integer parts = parseInteger(constraints.get("parts"));
+            Integer axisSize = parseInteger(constraints.get("axis_size"));
+            if (rank == null || axis == null || parts == null || axisSize == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (rank <= 0 || axis < 0 || axis >= rank || parts <= 0
+                    || axisSize <= 0 || parts > axisSize || axisSize % parts != 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private Integer parseInteger(String value) {
+            if (value == null) return null;
+            try {
+                return Integer.valueOf(value);
+            } catch (NumberFormatException invalid) {
+                return null;
+            }
         }
 
         /**
