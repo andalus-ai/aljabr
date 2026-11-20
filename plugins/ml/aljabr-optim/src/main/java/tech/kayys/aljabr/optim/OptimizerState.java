@@ -8,6 +8,7 @@ import tech.kayys.aljabr.core.tensor.Tensor;
 final class OptimizerState {
     final Map<String, Tensor> firstMoment = new HashMap<>();
     final Map<String, Tensor> secondMoment = new HashMap<>();
+    final Map<String, Tensor> maximumSecondMoment = new HashMap<>();
     final Map<String, Tensor> parameterSnapshots = new HashMap<>();
     final Map<String, Long> parameterSteps = new HashMap<>();
 
@@ -20,6 +21,10 @@ final class OptimizerState {
         if (second != null) {
             second.release();
         }
+        Tensor maximum = maximumSecondMoment.remove(name);
+        if (maximum != null) {
+            maximum.release();
+        }
         parameterSnapshots.remove(name);
         parameterSteps.remove(name);
     }
@@ -27,6 +32,7 @@ final class OptimizerState {
     void clear() {
         firstMoment.keySet().stream().toList().forEach(this::resetParameter);
         secondMoment.keySet().stream().toList().forEach(this::resetParameter);
+        maximumSecondMoment.keySet().stream().toList().forEach(this::resetParameter);
         parameterSnapshots.keySet().stream().toList().forEach(this::resetParameter);
         parameterSteps.clear();
     }

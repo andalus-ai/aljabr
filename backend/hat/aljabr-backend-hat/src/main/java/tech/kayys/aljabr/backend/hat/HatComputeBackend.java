@@ -352,9 +352,28 @@ public class HatComputeBackend implements ComputeBackend {
         return cpuFallback.binaryCrossEntropy(pred, target);
     }
 
+    /**
+     * Materializes a tensor into storage owned by the CPU fallback. HAT tensors
+     * currently use host-accessible storage, but the explicit copy also
+     * satisfies CpuBackend's backend-instance ownership check. Opaque storage
+     * must provide a future transfer implementation rather than being read
+     * through an unsafe cast.
+     */
+    private Tensor stageForCpu(Tensor input, String name) {
+        java.util.Objects.requireNonNull(input, name + " must not be null");
+        if (input.dtype() != tech.kayys.aljabr.core.tensor.DType.F32) {
+            throw new UnsupportedOperationException("CPU attention requires F32 " + name);
+        }
+        return TensorFactory.of(input.toFloatArray(), cpuFallback, input.shape().dims());
+    }
+
     @Override
     public Tensor attention(Tensor Q, Tensor K, Tensor V) {
-        return cpuFallback.attention(Q, K, V);
+        try (Tensor cpuQ = stageForCpu(Q, "Q");
+                Tensor cpuK = stageForCpu(K, "K");
+                Tensor cpuV = stageForCpu(V, "V")) {
+            return cpuFallback.attention(cpuQ, cpuK, cpuV);
+        }
     }
 
     @Override

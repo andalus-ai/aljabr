@@ -41,6 +41,7 @@ public final class OperationBackwardFunctions {
             case EXP -> OperationBackwardFunctions::exp;
             case LOG -> OperationBackwardFunctions::log;
             case POW -> OperationBackwardFunctions::pow;
+            case SIGN -> OperationBackwardFunctions::sign;
             case SQRT -> OperationBackwardFunctions::sqrt;
             default -> null;
         };
@@ -411,6 +412,11 @@ public final class OperationBackwardFunctions {
 
     private static Tensor[] log(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
         return new Tensor[] { gradient.div(inputs.get(0)) };
+    }
+
+    /** The sign function has zero derivative almost everywhere; use zero as its VJP. */
+    private static Tensor[] sign(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        return new Tensor[] { gradient.zerosLike() };
     }
 
     private static Tensor[] pow(Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
