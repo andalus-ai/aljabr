@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -45,10 +46,27 @@ public final class StreamingSafetensorWriter {
      * @throws IOException if a source or the destination fails
      */
     public static void write(Path path, List<TensorSpec> tensors) throws IOException {
+        write(path, tensors, Map.of());
+    }
+
+    /** Write a Safetensors file while preserving file-level string metadata. */
+    public static void write(Path path, List<TensorSpec> tensors, Map<String, String> fileMetadata)
+            throws IOException {
         Objects.requireNonNull(path, "path must not be null");
         Objects.requireNonNull(tensors, "tensors must not be null");
+        Objects.requireNonNull(fileMetadata, "fileMetadata must not be null");
 
         JsonObject header = new JsonObject();
+        if (!fileMetadata.isEmpty()) {
+            JsonObject metadata = new JsonObject();
+            fileMetadata.forEach((key, value) -> {
+                if (key == null || key.isBlank() || value == null) {
+                    throw new IllegalArgumentException("Safetensors file metadata keys and values must be non-null");
+                }
+                metadata.addProperty(key, value);
+            });
+            header.add("__metadata__", metadata);
+        }
         Set<String> names = new HashSet<>();
         long offset = 0L;
         for (TensorSpec tensor : tensors) {
