@@ -369,10 +369,20 @@ public class HatComputeBackend implements ComputeBackend {
 
     @Override
     public Tensor attention(Tensor Q, Tensor K, Tensor V) {
+        return attention(Q, K, V, null, false);
+    }
+
+    @Override
+    public Tensor attention(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
         try (Tensor cpuQ = stageForCpu(Q, "Q");
                 Tensor cpuK = stageForCpu(K, "K");
                 Tensor cpuV = stageForCpu(V, "V")) {
-            return cpuFallback.attention(cpuQ, cpuK, cpuV);
+            if (additiveMask == null) {
+                return cpuFallback.attention(cpuQ, cpuK, cpuV, null, causal);
+            }
+            try (Tensor cpuMask = stageForCpu(additiveMask, "additiveMask")) {
+                return cpuFallback.attention(cpuQ, cpuK, cpuV, cpuMask, causal);
+            }
         }
     }
 
