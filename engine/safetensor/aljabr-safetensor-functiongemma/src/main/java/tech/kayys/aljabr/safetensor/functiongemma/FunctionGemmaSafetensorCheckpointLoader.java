@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -74,7 +73,7 @@ public final class FunctionGemmaSafetensorCheckpointLoader {
         SafetensorShardSession session = shardLoader.open(directory);
         boolean success = false;
         try {
-            validateTensorLayout(session, config, architecture);
+            validateTensorLayout(session.tensorNames(), config, architecture);
             LoadedCheckpoint loaded = new LoadedCheckpoint(directory, config, architecture, tokenizer, session);
             success = true;
             return loaded;
@@ -94,11 +93,10 @@ public final class FunctionGemmaSafetensorCheckpointLoader {
         return architecture;
     }
 
-    private static void validateTensorLayout(
-            SafetensorShardSession session,
+    static void validateTensorLayout(
+            Set<String> available,
             ModelConfig config,
             FunctionGemmaArchitecture architecture) {
-        Set<String> available = session.tensorNames();
         List<String> missing = new ArrayList<>();
         requireOne(available, missing, "token embeddings", architecture.embedTokensWeightCandidates());
         requireOne(available, missing, "final norm", architecture.finalNormWeightCandidates());
@@ -158,7 +156,7 @@ public final class FunctionGemmaSafetensorCheckpointLoader {
         }
 
         public Set<String> tensorNames() {
-            return Set.copyOf(new LinkedHashSet<>(tensors.tensorNames()));
+            return Set.copyOf(tensors.tensorNames());
         }
 
         @Override
