@@ -70,26 +70,26 @@ class CpuBufferTest {
         }
     }
 
-
     @Test
     void siblingViewsObserveSharedWritesAndOwnIndependentParentReferences() {
         CpuBuffer parent = new CpuBuffer(32);
         CpuBuffer first = CpuBuffer.view(parent, 8, 8);
         CpuBuffer second = CpuBuffer.view(parent, 8, 8);
+        MemorySegment secondSegment = second.segment();
 
         try {
             first.segment().set(ValueLayout.JAVA_INT, 0, 0x12345678);
-            assertEquals(0x12345678, second.segment().get(ValueLayout.JAVA_INT, 0));
+            assertEquals(0x12345678, secondSegment.get(ValueLayout.JAVA_INT, 0));
 
             parent.release();
             first.release();
-            assertTrue(second.segment().scope().isAlive());
-            assertEquals(0x12345678, second.segment().get(ValueLayout.JAVA_INT, 0));
+            assertTrue(secondSegment.scope().isAlive());
+            assertEquals(0x12345678, secondSegment.get(ValueLayout.JAVA_INT, 0));
         } finally {
             second.release();
         }
 
-        assertTrue(!second.segment().scope().isAlive());
+        assertTrue(!secondSegment.scope().isAlive());
     }
 
     @Test
@@ -97,19 +97,20 @@ class CpuBufferTest {
         CpuBuffer parent = new CpuBuffer(64);
         CpuBuffer outer = CpuBuffer.view(parent, 16, 32);
         CpuBuffer inner = CpuBuffer.view(outer, 8, 8);
+        MemorySegment innerSegment = inner.segment();
 
         parent.release();
         outer.release();
 
         try {
-            assertTrue(inner.segment().scope().isAlive());
-            inner.segment().set(ValueLayout.JAVA_LONG, 0, 42L);
-            assertEquals(42L, inner.segment().get(ValueLayout.JAVA_LONG, 0));
+            assertTrue(innerSegment.scope().isAlive());
+            innerSegment.set(ValueLayout.JAVA_LONG, 0, 42L);
+            assertEquals(42L, innerSegment.get(ValueLayout.JAVA_LONG, 0));
         } finally {
             inner.release();
         }
 
-        assertTrue(!inner.segment().scope().isAlive());
+        assertTrue(!innerSegment.scope().isAlive());
     }
 
     @Test
