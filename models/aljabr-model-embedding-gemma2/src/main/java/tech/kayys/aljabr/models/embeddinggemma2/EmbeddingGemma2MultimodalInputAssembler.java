@@ -24,6 +24,7 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
      * @param textBackbone text embedding owner
      * @param inputIds token IDs [sequence]
      * @param imageTokenId configured image placeholder token ID
+     * @param padTokenId in-vocabulary token used for placeholder lookup before replacement
      * @param imageFeatures one projected text-hidden sequence per image, in prompt order
      * @return merged embeddings [sequence][textHiddenSize]
      */
@@ -31,10 +32,15 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
             EmbeddingGemma2TextBackbone textBackbone,
             int[] inputIds,
             int imageTokenId,
+            int padTokenId,
             List<float[][]> imageFeatures) {
         Objects.requireNonNull(textBackbone, "textBackbone must not be null");
         Objects.requireNonNull(inputIds, "inputIds must not be null");
-        float[][] textEmbeddings = textBackbone.embedInputTokens(inputIds);
+        int[] lookupIds = inputIds.clone();
+        for (int index = 0; index < lookupIds.length; index++) {
+            if (lookupIds[index] == imageTokenId) lookupIds[index] = padTokenId;
+        }
+        float[][] textEmbeddings = textBackbone.embedInputTokens(lookupIds);
         return replaceImagePlaceholders(textEmbeddings, inputIds, imageTokenId, imageFeatures);
     }
 
