@@ -6,10 +6,15 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 import java.util.Set;
+
+import tech.kayys.aljabr.diagnostics.Diagnostic;
+import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
+import tech.kayys.aljabr.diagnostics.DiagnosticSink;
 
 /**
  * Performs an isolated ServiceLoader discovery pass using an explicit classloader.
@@ -35,7 +40,21 @@ public final class ProviderDiscovery {
      * implementation with that id is excluded from the result.
      */
     public static ProviderDiscoveryResult discover(ClassLoader classLoader) {
+        return discover(classLoader, DiagnosticSink.noop());
+    }
+
+    /**
+     * Discovers providers and emits one structured warning for each excluded
+     * provider or malformed service configuration.
+     *
+     * <p>The sink is invoked synchronously after discovery completes. Sink
+     * failures propagate to the caller; discovery does not silently discard
+     * observability failures.</p>
+     */
+    public static ProviderDiscoveryResult discover(
+            ClassLoader classLoader, DiagnosticSink diagnosticSink) {
         Objects.requireNonNull(classLoader, "classLoader");
+        Objects.requireNonNull(diagnosticSink, "diagnosticSink");
 
         List<ProviderDiscoveryFailure> failures = new ArrayList<>();
         Map<String, AljabrProvider> providersById = new LinkedHashMap<>();
@@ -88,7 +107,27 @@ public final class ProviderDiscovery {
             }
         }
 
-        return new ProviderDiscoveryResult(new ArrayList<>(providersById.values()), failures);
+        ProviderDiscoveryResult result =
+                new ProviderDiscoveryResult(new ArrayList<>(providersById.values()), failures);
+        result.failures().forEach(failure -> diagnosticSink.accept(toDiagnostic(failure)));
+        return result;
+    }
+
+    private static Diagnostic toDiagnostic(ProviderDiscoveryFailure failure) {
+        Map<String, String> context = new TreeMap<>();
+        context.put("providerType", failure.providerType());
+        if (failure.cause() != null) {
+            context.put("causeType", failure.cause().getClass().getName());
+        }
+        String code = failure.message().startsWith("Duplicate provider id")
+                ? "provider.discovery.duplicate-id"
+                : "provider.discovery.failed";
+        return new Diagnostic(
+                code,
+                DiagnosticSeverity.WARNING,
+                "provider.discovery",
+                failure.message(),
+                context);
     }
 
     private static ProviderDiscoveryFailure failure(
