@@ -21,8 +21,10 @@ class GraphExecutorTest {
 
     @Test
     void failedEvaluationReleasesOnlyOutputsCreatedByThatAttempt() {
-        Tensor left = tensor(new AtomicInteger());
-        Tensor right = tensor(new AtomicInteger());
+        AtomicInteger leftReleases = new AtomicInteger();
+        AtomicInteger rightReleases = new AtomicInteger();
+        Tensor left = tensor(leftReleases);
+        Tensor right = tensor(rightReleases);
         AtomicInteger intermediateReleases = new AtomicInteger();
         Tensor intermediate = tensor(intermediateReleases);
         AtomicInteger cachedReleases = new AtomicInteger();
@@ -58,8 +60,8 @@ class GraphExecutorTest {
         assertTrue(previouslyMaterialized.isEvaluated(), "pre-existing cached output must be preserved");
         assertSame(cached, previouslyMaterialized.getMaterializedData());
         assertEquals(0, cachedReleases.get(), "pre-existing cached output must not be released");
-        assertEquals(0, ((AtomicInteger) releaseCounter(left)).get());
-        assertEquals(0, ((AtomicInteger) releaseCounter(right)).get());
+        assertEquals(0, leftReleases.get(), "caller-owned left leaf must not be released");
+        assertEquals(0, rightReleases.get(), "caller-owned right leaf must not be released");
     }
 
     private static Tensor tensor(AtomicInteger releases) {
@@ -83,9 +85,4 @@ class GraphExecutorTest {
                 });
     }
 
-    private static Object releaseCounter(Tensor tensor) {
-        // The proxy handler is intentionally opaque; this helper is unused for
-        // state inspection and keeps caller-owned leaf assertions separate.
-        return new AtomicInteger();
-    }
 }
