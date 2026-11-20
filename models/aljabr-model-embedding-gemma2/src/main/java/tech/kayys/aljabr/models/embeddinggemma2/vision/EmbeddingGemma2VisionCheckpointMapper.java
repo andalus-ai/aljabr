@@ -108,9 +108,8 @@ public final class EmbeddingGemma2VisionCheckpointMapper {
             if (numAttentionHeads % numKeyValueHeads != 0) {
                 throw new IllegalArgumentException("numAttentionHeads must be divisible by numKeyValueHeads");
             }
-            if (Math.multiplyExact(numAttentionHeads, headDim) != hiddenSize
-                    || Math.multiplyExact(numKeyValueHeads, headDim) != hiddenSize) {
-                throw new IllegalArgumentException("Gemma4 vision Q/K/V projections must match hiddenSize");
+            if (Math.multiplyExact(numAttentionHeads, headDim) != hiddenSize) {
+                throw new IllegalArgumentException("query head width must equal hiddenSize");
             }
         }
     }
