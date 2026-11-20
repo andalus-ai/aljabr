@@ -96,6 +96,61 @@ class HuggingFaceGemmaBpeLoaderTest {
         assertArrayEquals(new long[]{4, 5, 6, 4}, tokenizer.encode("hi h", EncodeOptions.defaultOptions()));
     }
 
+
+    @Test
+    void appliesBpeMergesBeforeFallingBackUnknownCharacters() throws Exception {
+        Tokenizer tokenizer = load("""
+                {
+                  "normalizer":{"type":"Replace","pattern":{"String":" "},"content":"▁"},
+                  "pre_tokenizer":{"type":"Split","pattern":{"String":" "},"behavior":"MergedWithPrevious"},
+                  "decoder":{"type":"Sequence","decoders":[
+                    {"type":"Replace","pattern":{"String":"▁"},"content":" "},
+                    {"type":"ByteFallback"},{"type":"Fuse"}]},
+                  "model":{"type":"BPE","byte_fallback":true,"fuse_unk":true,
+                    "vocab":{"<unk>":0,"<bos>":1,"<eos>":2,"<pad>":3,"ab":4},
+                    "merges":["a b"]}
+                }
+                """);
+
+        assertArrayEquals(new long[]{4}, tokenizer.encode("ab", EncodeOptions.defaultOptions()));
+    }
+
+    @Test
+    void fusesUnknownSymbolsWhenByteFallbackIsIncomplete() throws Exception {
+        Tokenizer tokenizer = load("""
+                {
+                  "normalizer":{"type":"Replace","pattern":{"String":" "},"content":"▁"},
+                  "pre_tokenizer":{"type":"Split","pattern":{"String":" "},"behavior":"MergedWithPrevious"},
+                  "decoder":{"type":"Sequence","decoders":[
+                    {"type":"Replace","pattern":{"String":"▁"},"content":" "},
+                    {"type":"ByteFallback"},{"type":"Fuse"}]},
+                  "model":{"type":"BPE","byte_fallback":true,"fuse_unk":true,
+                    "vocab":{"<unk>":0,"<bos>":1,"<eos>":2,"<pad>":3,"<0xE2>":4}}
+                }
+                """);
+
+        assertArrayEquals(new long[]{0}, tokenizer.encode("☃☃", EncodeOptions.defaultOptions()));
+    }
+
+    @Test
+    void decoderDoesNotReplaceMetaspaceProducedByByteFallback() throws Exception {
+        Tokenizer tokenizer = load("""
+                {
+                  "normalizer":{"type":"Replace","pattern":{"String":" "},"content":"▁"},
+                  "pre_tokenizer":{"type":"Split","pattern":{"String":" "},"behavior":"MergedWithPrevious"},
+                  "decoder":{"type":"Sequence","decoders":[
+                    {"type":"Replace","pattern":{"String":"▁"},"content":" "},
+                    {"type":"ByteFallback"},{"type":"Fuse"}]},
+                  "model":{"type":"BPE","byte_fallback":true,"fuse_unk":true,
+                    "vocab":{"<unk>":0,"<bos>":1,"<eos>":2,"<pad>":3,
+                      "▁":4,"<0xE2>":5,"<0x96>":6,"<0x81>":7}}
+                }
+                """);
+
+        assertEquals(" ", tokenizer.decode(new long[]{4}, DecodeOptions.defaultOptions()));
+        assertEquals("▁", tokenizer.decode(new long[]{5, 6, 7}, DecodeOptions.defaultOptions()));
+    }
+
     private Tokenizer load(String json) throws Exception {
         Path file = tempDir.resolve("tokenizer-" + System.nanoTime() + ".json");
         Files.writeString(file, json);

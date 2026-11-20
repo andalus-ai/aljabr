@@ -1,0 +1,32 @@
+{
+  "added_tokens_decoder": {
+    "1000": {
+      "content": "<start_function_declaration>",
+      "special": true
+    },
+    "1001": {
+      "content": "<end_function_declaration>",
+      "special": true
+    },
+    "1002": {
+      "content": "<start_function_call>",
+      "special": true
+    },
+    "1003": {
+      "content": "<end_function_call>",
+      "special": true
+    },
+    "1004": {
+      "content": "<start_function_response>",
+      "special": true
+    },
+    "1005": {
+      "content": "<end_function_response>",
+      "special": true
+    },
+    "1006": {
+      "content": "<escape>",
+      "special": true
+    }
+  }
+}

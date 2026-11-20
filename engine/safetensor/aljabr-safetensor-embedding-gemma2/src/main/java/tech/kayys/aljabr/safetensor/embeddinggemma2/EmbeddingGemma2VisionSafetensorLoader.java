@@ -99,8 +99,8 @@ public final class EmbeddingGemma2VisionSafetensorLoader {
 
     private static void requireSupportedDtype(SafetensorDType dtype) {
         Objects.requireNonNull(dtype, "checkpointDtype must not be null");
-        if (dtype != SafetensorDType.BF16 && dtype != SafetensorDType.F32) {
-            throw new IllegalArgumentException("EmbeddingGemma 2 vision supports BF16/F32 checkpoint tensors, not "
+        if (dtype != SafetensorDType.BF16 && dtype != SafetensorDType.F16 && dtype != SafetensorDType.F32) {
+            throw new IllegalArgumentException("EmbeddingGemma 2 vision supports BF16/F16/F32 checkpoint tensors, not "
                     + dtype.jsonName());
         }
     }

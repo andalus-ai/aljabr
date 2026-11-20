@@ -28,6 +28,39 @@ class EmbeddingGemma2CheckpointMapperTest {
     }
 
     @Test
+    void acceptsPreassembledInputEmbeddingsForMultimodalExecution() throws Exception {
+        EmbeddingGemma2Config config = config();
+        var backbone = new EmbeddingGemma2TextBackbone(
+                config, EmbeddingGemma2CheckpointMapper.map(config, tensors()));
+
+        float[][] embedded = backbone.embedInputTokens(new int[]{1, 2});
+        float[][] output = backbone.encodeEmbeddings(
+                embedded, new boolean[]{true, true}, new int[]{0, 1});
+
+        assertEquals(2, embedded.length);
+        assertEquals(config.hiddenSize(), embedded[0].length);
+        assertEquals(2, output.length);
+        assertEquals(config.embeddingDim(), output[0].length);
+    }
+
+    @Test
+    void replacesOutOfVocabularyImagePlaceholderBeforeTextEmbeddingLookup() throws Exception {
+        EmbeddingGemma2Config config = config();
+        var backbone = new EmbeddingGemma2TextBackbone(
+                config, EmbeddingGemma2CheckpointMapper.map(config, tensors()));
+
+        float[][] merged = EmbeddingGemma2MultimodalInputAssembler.assemble(
+                backbone,
+                new int[]{1, 99, 2},
+                99,
+                0,
+                java.util.Collections.singletonList(new float[][]{{7f, 8f}}));
+
+        assertEquals(3, merged.length);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(new float[]{7f, 8f}, merged[1], 0f);
+    }
+
+    @Test
     void rejectsMissingRequiredTensor() throws Exception {
         Map<String, EmbeddingGemma2CheckpointMapper.CheckpointTensor> tensors = tensors();
         tensors.remove("language_model.norm.weight");

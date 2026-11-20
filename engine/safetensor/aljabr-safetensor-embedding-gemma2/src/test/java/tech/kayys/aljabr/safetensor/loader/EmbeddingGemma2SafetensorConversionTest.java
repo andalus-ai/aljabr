@@ -36,10 +36,16 @@ class EmbeddingGemma2SafetensorConversionTest {
     }
 
     @Test
-    void rejectsUnsupportedFloat16CheckpointWeights() {
-        SafetensorTensor tensor = tensor("weight", SafetensorDType.F16, new long[]{1}, new byte[]{0, 0});
-        assertThrows(IllegalArgumentException.class,
-                () -> EmbeddingGemma2SafetensorLoader.toCheckpointTensor(tensor));
+    void expandsLittleEndianFloat16IntoDetachedFloat32Values() {
+        // IEEE-754 binary16 encodings for 1.0 and -2.0.
+        byte[] bytes = {0x00, 0x3c, 0x00, (byte) 0xc0};
+        SafetensorTensor tensor = tensor("weight", SafetensorDType.F16, new long[]{2}, bytes);
+
+        var converted = EmbeddingGemma2SafetensorLoader.toCheckpointTensor(tensor);
+        tensor.close();
+
+        assertArrayEquals(new int[]{2}, converted.shape());
+        assertArrayEquals(new float[]{1.0f, -2.0f}, converted.values());
     }
 
     private static SafetensorTensor tensor(
