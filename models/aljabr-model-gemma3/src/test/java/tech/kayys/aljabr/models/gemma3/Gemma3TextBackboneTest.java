@@ -91,6 +91,19 @@ class Gemma3TextBackboneTest {
             assertEquals(3, session.position());
         }
 
+        int[] longerPrompt = new int[20];
+        for (int index = 0; index < longerPrompt.length; index++) {
+            longerPrompt[index] = index % config.vocabSize();
+        }
+        float[][] longExpected = backbone.forward(longerPrompt);
+        try (Gemma3TextBackbone.DecodeSession growing = backbone.newDecodeSession()) {
+            float[][] actual = growing.prefill(longerPrompt);
+            assertEquals(longerPrompt.length, growing.position());
+            for (int index = 0; index < longExpected.length; index++) {
+                assertArrayEquals(longExpected[index], actual[index], 1.0e-5f);
+            }
+        }
+
         try (Gemma3TextBackbone.DecodeSession first = backbone.newDecodeSession();
                 Gemma3TextBackbone.DecodeSession second = backbone.newDecodeSession()) {
             first.decode(0);
@@ -142,7 +155,7 @@ class Gemma3TextBackboneTest {
                   "head_dim": 2,
                   "intermediate_size": 6,
                   "vocab_size": 5,
-                  "max_position_embeddings": 16,
+                  "max_position_embeddings": 32,
                   "tie_word_embeddings": true,
                   "layer_types": ["full_attention"]
                 }
