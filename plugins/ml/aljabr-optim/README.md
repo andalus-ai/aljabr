@@ -20,6 +20,7 @@ autograd and training orchestration.
 - `RMSProp`: adaptive learning rates from an exponentially decaying average of squared gradients.
 - `Adagrad`: adaptive learning rates from a cumulative sum of squared gradients.
 - `AdamW`: adaptive moments with decoupled weight decay.
+- `AMSGrad`: Adam with a non-decreasing element-wise maximum of second moments.
 - `Nadam`: Adam-style adaptive moments with Dozat-formulation Nesterov lookahead.
 - `Adadelta`: adaptive updates using accumulated squared gradients and parameter updates.
 - `Lion`: sign-based momentum with configurable beta coefficients and decoupled weight decay.
