@@ -18,8 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -101,6 +101,7 @@ public final class FunctionGemmaSafetensorCheckpointLoader {
             Gemma3TextCheckpointMapper.Weights weights =
                     Gemma3TextCheckpointMapper.map(
                             checkpoint.config(), checkpoint.architecture(), tensors);
+            tensors.clear();
             Gemma3TextBackbone backbone =
                     new Gemma3TextBackbone(checkpoint.config(), weights);
             return new FunctionGemmaModel(checkpoint.config(), checkpoint.tokenizer(), backbone);
