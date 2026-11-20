@@ -311,6 +311,16 @@ public final class EmbeddingGemma2VisionImageProcessor {
 
         public int width() { return width; }
         public int height() { return height; }
+
+        /** Returns a defensive RGB triplet in [0,255] at the requested pixel. */
+        public float[] rgbAt(int x, int y) {
+            if (x < 0 || x >= width || y < 0 || y >= height) {
+                throw new IndexOutOfBoundsException("pixel coordinate is outside the image");
+            }
+            int offset = (y * width + x) * 3;
+            return new float[]{samples[offset], samples[offset + 1], samples[offset + 2]};
+        }
+
         private float channel(int index) { return samples[index]; }
     }
 }
