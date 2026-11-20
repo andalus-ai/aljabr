@@ -253,6 +253,19 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
             }
 
+            if (Set.of("tensor.add", "tensor.sub", "tensor.mul", "tensor.div").contains(operationId)) {
+                String leftDtype = constraints.get("dtype");
+                String rightDtype = constraints.get("rhs_dtype");
+                if (leftDtype == null || rightDtype == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (!isF32(leftDtype) || !isF32(rightDtype)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                return new OperationSupportDescriptor(
+                        operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+            }
+
             if ("tensor.cross_entropy".equals(operationId)) {
                 String predictionDtype = constraints.get("dtype");
                 String targetDtype = constraints.get("target_dtype");
