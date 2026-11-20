@@ -122,8 +122,13 @@ final class GgufDecodeStep {
             maxKVH = cfg.nKVHeads();
         }
         this.tokenEmbed = tensorResolver.requireTensor("token_embd.weight");
-        this.outputNorm = tensorResolver.dequantizeVector(tensorResolver.requireTensor("output_norm.weight"), dim);
-        this.outputWeight = tensorResolver.findTensor("output.weight").orElse(tokenEmbed); // tied embeddings
+        GGUFTensorInfo outputNormTensor = tensorResolver.requireTensor("output_norm.weight");
+        GGUFTensorInfo configuredOutputWeight = tensorResolver.findTensor("output.weight").orElse(null);
+        GgufOutputTensorLayout.validate(
+                tokenEmbed, outputNormTensor, configuredOutputWeight,
+                dim, cfg.vocabSize());
+        this.outputNorm = tensorResolver.dequantizeVector(outputNormTensor, dim);
+        this.outputWeight = configuredOutputWeight == null ? tokenEmbed : configuredOutputWeight; // tied embeddings
 
         // Per-layer token embedding tensors
         this.perLayerTokEmbd = tensorResolver.findTensor("per_layer_token_embd.weight").orElse(null);
