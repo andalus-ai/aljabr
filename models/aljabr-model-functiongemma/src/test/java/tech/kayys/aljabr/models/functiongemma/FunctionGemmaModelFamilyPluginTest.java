@@ -57,6 +57,13 @@ class FunctionGemmaModelFamilyPluginTest {
     }
 
     @Test
+    void doesNotClaimOrdinaryGemma3TextCheckpointWithoutFunctionTokens() throws Exception {
+        Path fixture = Path.of(Objects.requireNonNull(
+                getClass().getResource("/model-family-fixtures/gemma3_text")).toURI());
+        assertFalse(new FunctionGemmaModelFamilyPlugin().matchesCheckpoint(fixture));
+    }
+
+    @Test
     void functionGemmaArchitectureReusesGemma3TextWeightLayoutAndRuntimeTraits() {
         FunctionGemmaArchitecture architecture = new FunctionGemmaArchitecture();
 
@@ -69,7 +76,7 @@ class FunctionGemmaModelFamilyPluginTest {
         assertEquals("model.layers.17.mlp.up_proj.weight", architecture.layerFfnUpWeight(17));
         assertEquals("model.layers.17.mlp.down_proj.weight", architecture.layerFfnDownWeight(17));
         assertTrue(architecture.hasTiedEmbeddings());
-        assertEquals(640.0f, architecture.embeddingScaleFactor(640) * architecture.embeddingScaleFactor(640));
+        assertEquals((float) Math.sqrt(640), architecture.embeddingScaleFactor(640), 0.0001f);
         ModelRuntimeTraits traits = architecture.runtimeTraits(null);
         assertTrue(traits.gemma3Text());
         assertTrue(traits.attention().splitHalfRope());
