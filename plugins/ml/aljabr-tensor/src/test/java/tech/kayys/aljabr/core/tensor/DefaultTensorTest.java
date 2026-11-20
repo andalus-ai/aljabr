@@ -103,6 +103,64 @@ class DefaultTensorTest {
     }
 
     @Test
+    void existingConstructorsExposeCanonicalContiguousLayout() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(2L * 3L * Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(2, 3), DType.F32, DeviceType.METAL, storage, unusedBackend());
+        try {
+            assertEquals(TensorLayout.contiguous(new Shape(2, 3)), tensor.layout());
+            assertTrue(tensor.layout().isContiguous());
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void explicitStridedLayoutValidatesReachableStorageRange() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(8L * Float.BYTES);
+        TensorLayout layout = new TensorLayout(new Shape(2, 2), new long[] {4, 1}, 3);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.METAL, storage, unusedBackend(), layout);
+        try {
+            assertSame(layout, tensor.layout());
+            assertEquals(8L * Float.BYTES, storage.sizeBytes());
+        } finally {
+            tensor.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void explicitLayoutRejectsInsufficientCapacityWithoutTakingOwnership() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(7L * Float.BYTES);
+        TensorLayout layout = new TensorLayout(new Shape(2, 2), new long[] {4, 1}, 3);
+        assertThrows(IllegalArgumentException.class, () -> new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.METAL, storage, unusedBackend(), layout));
+        assertEquals(1, storage.references());
+        storage.release();
+    }
+
+    @Test
+    void explicitLayoutMustMatchTensorShape() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(6L * Float.BYTES);
+        TensorLayout layout = TensorLayout.contiguous(new Shape(2, 3));
+        assertThrows(IllegalArgumentException.class, () -> new DefaultTensor(
+                new Shape(3, 2), DType.F32, DeviceType.METAL, storage, unusedBackend(), layout));
+        assertEquals(1, storage.references());
+        storage.release();
+    }
+
+    @Test
+    void quantizedTensorRejectsNonContiguousOrOffsetLayout() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(18);
+        TensorLayout layout = new TensorLayout(new Shape(32), new long[] {2}, 0);
+        assertThrows(IllegalArgumentException.class, () -> new DefaultTensor(
+                new Shape(32), DType.Q4_0, DeviceType.METAL, storage, unusedBackend(), layout));
+        assertEquals(1, storage.references());
+        storage.release();
+    }
+
+    @Test
     void itemReturnsActualScalarValue() {
         CpuBuffer buffer = new CpuBuffer(Float.BYTES);
         buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 3.5f);
