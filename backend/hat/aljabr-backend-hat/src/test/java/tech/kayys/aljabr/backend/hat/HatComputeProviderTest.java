@@ -371,6 +371,96 @@ class HatComputeProviderTest {
     }
 
     @Test
+    void powerRequiresF32ForCpuFallback() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.pow", Map.of()).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.pow", Map.of("dtype", "F32")).support());
+            assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                    session.operationSupport("tensor.pow", Map.of("dtype", "F32")).effectiveBackendId());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.pow", Map.of("dtype", "F16")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void sliceRequiresF32AndRankMatchedOffsetsAndSizes() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.slice", Map.of("dtype", "F32", "rank", "2")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F32", "rank", "2", "offsets_rank", "2", "sizes_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F32", "rank", "2", "offsets_rank", "1", "sizes_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F16", "rank", "2", "offsets_rank", "2", "sizes_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.slice", Map.of(
+                            "dtype", "F32", "rank", "0", "offsets_rank", "0", "sizes_rank", "0")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void transposeValidatesDtypeRankAndExplicitDimensions() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "F32")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "F32", "rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "F32", "rank", "1")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.transpose", Map.of(
+                            "dtype", "F32", "rank", "3", "dim0", "0", "dim1", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.transpose", Map.of(
+                            "dtype", "F32", "rank", "3", "dim0", "0", "dim1", "3")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.transpose", Map.of(
+                            "dtype", "F32", "rank", "3", "dim0", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.transpose", Map.of("dtype", "Q4_0", "rank", "2")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
+    void splitValidatesAxisAndRequiresEvenPositivePartitioning() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.split", Map.of("dtype", "F32", "rank", "2")).support());
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "1", "parts", "2", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "2", "parts", "2", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "1", "parts", "3", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F32", "rank", "2", "axis", "1", "parts", "0", "axis_size", "8")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.split", Map.of(
+                            "dtype", "F16", "rank", "2", "axis", "1", "parts", "2", "axis_size", "8")).support());
     void unaryElementwiseOperationsRequireF32ForCpuFallback() throws Exception {
         HatComputeProvider provider = new HatComputeProvider();
         provider.initialize(new ProviderContext("test", Map.of()));
