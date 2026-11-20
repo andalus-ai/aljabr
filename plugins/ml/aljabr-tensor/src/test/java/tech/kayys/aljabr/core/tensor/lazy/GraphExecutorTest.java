@@ -139,8 +139,8 @@ class GraphExecutorTest {
                 () -> new GraphExecutor(null).backward(root, seed));
 
         assertSame(replacementFailure, thrown);
-        assertSame(leafOwnedGradient.get(), leafOwnedGradient.get(),
-                "the replacement gradient is retained by the leaf after ownership transfer");
+        assertTrue(leafOwnedGradient.get() != null,
+                "the replacement gradient remains leaf-owned after ownership transfer");
         assertEquals(1, propagatedGradientReleases.get(),
                 "the executor-owned gradient must be released after setGrad fails");
         assertEquals(1, seedReleases.get(),
