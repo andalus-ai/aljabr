@@ -75,6 +75,41 @@ class YogiTest {
         }
     }
 
+
+    @Test
+    void supportsZeroBetaCoefficientsAndZeroGradientWithoutChangingParameters() {
+        try (CpuBackend backend = new CpuBackend()) {
+            Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
+            float[] gradients = { 2.0f, -1.0f, 0.0f };
+            try (Linear layer = new Linear(initial, null);
+                 Yogi optimizer = new Yogi(0.1f, 0.0f, 0.0f, 1.0e-3f)) {
+                Parameter parameter = layer.namedParameterObjects().get("weight");
+                double expected = 1.0;
+                double secondMoment = 0.0;
+                for (int i = 0; i < gradients.length; i++) {
+                    float gradientValue = gradients[i];
+                    Tensor gradient = TensorFactory.of(
+                            new float[] { gradientValue }, backend, 1, 1);
+                    try {
+                        optimizer.step(Map.of("weight", parameter), Map.of("weight", gradient));
+                    } finally {
+                        gradient.release();
+                    }
+
+                    double squaredGradient = gradientValue * gradientValue;
+                    secondMoment -= squaredGradient
+                            * Math.signum(secondMoment - squaredGradient);
+                    double denominator = Math.sqrt(secondMoment) + 1.0e-3;
+                    expected -= 0.1 * gradientValue / denominator;
+                    assertThat(parameter.tensor().toFloatArray()[0])
+                            .as("step %s", i + 1)
+                            .isCloseTo((float) expected, offset(2.0e-6f));
+                }
+                assertThat(parameter.tensor().toFloatArray()[0]).isFinite();
+            }
+        }
+    }
+
     @Test
     void replacementRestartsMomentsAndStepCounter() {
         try (CpuBackend backend = new CpuBackend()) {
