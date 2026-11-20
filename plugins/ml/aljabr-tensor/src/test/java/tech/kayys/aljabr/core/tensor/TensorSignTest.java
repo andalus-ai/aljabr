@@ -21,8 +21,10 @@ class TensorSignTest {
                 assertThat(output.shape().dims()).containsExactly(1, 7);
                 float[] values = output.toFloatArray();
                 assertThat(values[0]).isEqualTo(-1.0f);
-                assertThat(values[1]).isEqualTo(-0.0f);
-                assertThat(values[2]).isEqualTo(0.0f);
+                assertThat(Float.floatToRawIntBits(values[1]))
+                        .isEqualTo(Float.floatToRawIntBits(-0.0f));
+                assertThat(Float.floatToRawIntBits(values[2]))
+                        .isEqualTo(Float.floatToRawIntBits(0.0f));
                 assertThat(values[3]).isEqualTo(1.0f);
                 assertThat(values[4]).isEqualTo(-1.0f);
                 assertThat(values[5]).isEqualTo(1.0f);
