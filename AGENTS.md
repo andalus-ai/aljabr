@@ -318,3 +318,7 @@ The framework scope includes numerical foundations, math, linear algebra, probab
 ### Acceptance gates
 
 A new public capability or convenience layer must demonstrate: (1) Aljabr-owned semantics and API; (2) a useful independent dependency boundary; (3) explicit memory/lifecycle and error behavior; (4) reference correctness and conformance tests; (5) tested examples in the relevant Java workflows; (6) compatibility with supported profiles and published artifacts; and (7) no inversion of AQLI/Tafkir/product ownership. Mark target, planned, implemented, validated, stable and optimized status separately.
+
+## 18. Tensor and memory contract execution gate
+
+Before changing Tensor, Shape, DType, storage, layout, backend or autograd ownership APIs, consult `docs/architecture/TENSOR_MEMORY_CONTRACT_AUDIT.md`. Preserve the backend-neutral storage boundary and FFM ownership model. Map implementations and downstream callers before changing public signatures. Owned, borrowed, retained and transferred references must be explicit; view/copy/transfer behavior must be tested. Fix concrete lifecycle correctness defects in isolated changes before undertaking API redesign.
