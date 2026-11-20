@@ -88,6 +88,99 @@ class GraphExecutorTest {
         assertEquals(1, thirdAttempts.get());
     }
 
+    @Test
+    void leafGradientIsReleasedWhenReplacingPreviousGradientFails() {
+        Shape shape = new Shape(2, 2);
+        AtomicInteger propagatedGradientReleases = new AtomicInteger();
+        AtomicInteger accumulatedGradientReleases = new AtomicInteger();
+        Tensor propagatedGradient = tensorWithAdd(shape, accumulatedGradientReleases);
+        Tensor accumulatedGradient = tensor(propagatedGradientReleases);
+        IllegalStateException replacementFailure = new IllegalStateException("setGrad cleanup failed");
+
+        AtomicInteger leafGradientReleases = new AtomicInteger();
+        Tensor leaf = (Tensor) Proxy.newProxyInstance(
+                Tensor.class.getClassLoader(),
+                new Class<?>[] { Tensor.class },
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "shape" -> shape;
+                    case "dtype" -> DType.F32;
+                    case "device" -> DeviceType.CPU;
+                    case "requiresGrad" -> true;
+                    case "grad" -> accumulatedGradient;
+                    case "setGrad" -> {
+                        if (args[0] == propagatedGradient) {
+                            throw new AssertionError("expected a newly accumulated gradient");
+                        }
+                        throw replacementFailure;
+                    }
+                    case "toString" -> "DifferentiableLeaf";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+
+        AtomicInteger seedReleases = new AtomicInteger();
+        Tensor seed = tensorWithScalarAdd(shape, seedReleases);
+        AtomicInteger outputReleases = new AtomicInteger();
+        Tensor output = tensor(outputReleases);
+        GraphNode leafNode = GraphNode.constant(leaf);
+        GraphNode root = new GraphNode(
+                OpType.RELU,
+                List.of(leafNode),
+                new Object[0],
+                shape,
+                DType.F32,
+                (forward, outputGradient, inputs, arguments) ->
+                        new Tensor[] { propagatedGradient });
+        root.setMaterializedData(output);
+
+        IllegalStateException thrown = assertThrows(
+                IllegalStateException.class,
+                () -> new GraphExecutor(null).backward(root, seed));
+
+        assertSame(replacementFailure, thrown);
+        assertEquals(1, propagatedGradientReleases.get(),
+                "the executor-owned gradient must be released after setGrad fails");
+        assertEquals(1, seedReleases.get(),
+                "the output seed copy must be released after the backward failure");
+        assertEquals(0, accumulatedGradientReleases.get(),
+                "the leaf's previously owned gradient must not be released by the executor");
+        assertEquals(0, outputReleases.get(), "materialized forward output remains caller/graph-owned");
+    }
+
+    private static Tensor tensorWithScalarAdd(Shape shape, AtomicInteger releases) {
+        return (Tensor) Proxy.newProxyInstance(
+                Tensor.class.getClassLoader(),
+                new Class<?>[] { Tensor.class },
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "shape" -> shape;
+                    case "add" -> tensor(releases);
+                    case "release" -> {
+                        releases.incrementAndGet();
+                        yield null;
+                    }
+                    case "toString" -> "SeedTensor";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    private static Tensor tensorWithAdd(Shape shape, AtomicInteger resultReleases) {
+        return (Tensor) Proxy.newProxyInstance(
+                Tensor.class.getClassLoader(),
+                new Class<?>[] { Tensor.class },
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "shape" -> shape;
+                    case "add" -> tensor(resultReleases);
+                    case "release" -> null;
+                    case "toString" -> "PreviousGradient";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
     private static Tensor releaseFailingTensor(
             AtomicInteger attempts, RuntimeException failure) {
         return (Tensor) Proxy.newProxyInstance(
