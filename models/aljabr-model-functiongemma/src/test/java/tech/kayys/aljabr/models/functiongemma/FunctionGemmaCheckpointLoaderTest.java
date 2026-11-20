@@ -3,9 +3,12 @@ package tech.kayys.aljabr.models.functiongemma;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.spi.model.ModelConfig;
+import tech.kayys.aljabr.spi.model.ModelFamilyPlugin;
+import tech.kayys.aljabr.spi.model.ModelFamilyPluginRegistry;
 
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.ServiceLoader;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -29,6 +32,17 @@ class FunctionGemmaCheckpointLoaderTest {
         assertTrue(required.contains("model.layers.17.mlp.up_proj.weight"));
         assertTrue(required.contains("model.layers.17.mlp.down_proj.weight"));
         assertFalse(required.contains("model.layers.18.self_attn.q_proj.weight"));
+    }
+
+    @Test
+    void resolvesTheCheckpointThroughTheServiceLoadedModelFamilyRegistry() throws Exception {
+        Path fixture = Path.of(Objects.requireNonNull(
+                getClass().getResource("/model-family-fixtures/functiongemma")).toURI());
+        ModelFamilyPluginRegistry registry = ModelFamilyPluginRegistry.create();
+        ServiceLoader.load(ModelFamilyPlugin.class).forEach(registry::register);
+
+        assertEquals("functiongemma",
+                registry.pluginForCheckpoint(fixture).orElseThrow().descriptor().id());
     }
 
     @Test
