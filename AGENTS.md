@@ -322,3 +322,7 @@ A new public capability or convenience layer must demonstrate: (1) Aljabr-owned 
 ## 17. SDK audit execution gate
 
 Before adding new public SDK abstractions or reorganizing modules, consult `docs/architecture/SDK_CAPABILITY_AUDIT.md`. Treat its findings as an initial repository inventory, not a certification of runtime support. Verify current source, implementations, dependency metadata, tests and external-consumer behavior before changing contracts. Use the audit's status vocabulary (present, implemented, tested, validated, supported, experimental, planned, legacy) consistently. Prefer small compatibility-preserving increments and keep the Tensor/memory API, model-extension path and publication graph evidence-driven.
+
+## 18. Developer tooling implementation gate
+
+Use `docs/architecture/DEVELOPER_TOOLING.md` as the source of truth for developer-facing diagnostics, inspection, profiling, memory tracing and numerical validation. Keep diagnostics contracts dependency-light and optional. Measurements must distinguish measured from estimated, host from device, and asynchronous launch from synchronized execution. Never expose tensor contents or sensitive inputs by default. Prefer JFR/JMH and optional ecosystem adapters over custom replacements. Do not introduce a monolithic tooling artifact or couple Aljabr core to AQLI, Tafkir, notebooks, dashboards or exporters.
