@@ -7,6 +7,7 @@ dependencies {
     implementation(project(":engine:gguf:aljabr-gguf-core"))
     implementation(project(":core:aljabr-core"))
     implementation(project(":engine:safetensor:aljabr-safetensor-loader"))
+    implementation(project(":engine:safetensor:aljabr-safetensor-core"))
     implementation("io.smallrye.reactive:mutiny:2.5.5")
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.fasterxml.jackson.core:jackson-annotations:2.16.1")
