@@ -64,10 +64,11 @@ class AdamaxTest {
         try (CpuBackend backend = new CpuBackend()) {
             Tensor initial = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
             Tensor replacement = TensorFactory.of(new float[] { 2.0f }, backend, 1, 1);
+            Tensor referenceInitial = TensorFactory.of(new float[] { 2.0f }, backend, 1, 1);
             Tensor firstGradient = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1);
             Tensor secondGradient = TensorFactory.of(new float[] { -0.5f }, backend, 1, 1);
             try (Linear layer = new Linear(initial, null);
-                 Linear referenceLayer = new Linear(replacement, null);
+                 Linear referenceLayer = new Linear(referenceInitial, null);
                  Adamax optimizer = new Adamax(0.1f, 0.5f, 0.5f, 1.0e-8f);
                  Adamax reference = new Adamax(0.1f, 0.5f, 0.5f, 1.0e-8f)) {
                 Parameter parameter = layer.namedParameterObjects().get("weight");
