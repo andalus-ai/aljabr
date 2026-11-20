@@ -24,11 +24,15 @@ public class LazyTensor implements Tensor {
     private final ComputeBackend executionBackend;
     private final GraphExecutor executor;
     private final AtomicBoolean released = new AtomicBoolean();
+    private final GraphMaterializationLease graphLease;
+    private volatile GraphNode executionNode;
+    private volatile GraphMaterializationLease executionLease;
 
     public LazyTensor(GraphNode node, ComputeBackend executionBackend) {
-        this.node = node;
+        this.node = java.util.Objects.requireNonNull(node, "node");
         this.executionBackend = executionBackend;
         this.executor = new GraphExecutor(executionBackend);
+        this.graphLease = GraphMaterializationLease.acquire(node);
     }
 
     /**
@@ -56,14 +60,35 @@ public class LazyTensor implements Tensor {
     @Override
     public Tensor eval() {
         ensureOpen();
-        if (!node.isEvaluated()) {
-            // Graph rewrites are not yet required to preserve VJP metadata.
-            // Keep differentiable graphs structurally intact until that contract exists.
-            GraphNode executable = node.requiresGrad() ? node : GraphOptimizer.optimize(node);
-            executor.evaluate(executable);
-            node.setMaterializedData(executable.getMaterializedData());
+        GraphNode evaluated = executionNode;
+        if (evaluated != null && evaluated.isEvaluated()) {
+            return evaluated.getMaterializedData();
         }
-        return node.getMaterializedData();
+
+        // Differentiable graphs retain their original VJP structure. For
+        // inference graphs, the rewritten graph has its own lease: optimizer
+        // nodes may alias original nodes, but must never share cached tensor
+        // ownership by copying materializedData.
+        GraphNode executable = node.requiresGrad() ? node : GraphOptimizer.optimize(node);
+        GraphMaterializationLease optimizedLease = executable == node
+                ? null
+                : GraphMaterializationLease.acquire(executable);
+        try {
+            executor.evaluate(executable);
+        } catch (RuntimeException | Error failure) {
+            if (optimizedLease != null) {
+                try {
+                    optimizedLease.close();
+                } catch (RuntimeException | Error cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw failure;
+        }
+
+        executionNode = executable;
+        executionLease = optimizedLease;
+        return executable.getMaterializedData();
     }
 
     /**
@@ -88,11 +113,30 @@ public class LazyTensor implements Tensor {
         if (!released.compareAndSet(false, true)) {
             return;
         }
-        if (node.getOp() != OpType.CONSTANT) {
-            Tensor materialized = node.getMaterializedData();
-            if (materialized != null && materialized != this && node.clearMaterializedData(materialized)) {
-                materialized.release();
+
+        Throwable failure = null;
+        GraphMaterializationLease optimizedLease = executionLease;
+        if (optimizedLease != null) {
+            try {
+                optimizedLease.close();
+            } catch (RuntimeException | Error cleanupFailure) {
+                failure = cleanupFailure;
             }
+        }
+        try {
+            graphLease.close();
+        } catch (RuntimeException | Error cleanupFailure) {
+            if (failure == null) {
+                failure = cleanupFailure;
+            } else {
+                failure.addSuppressed(cleanupFailure);
+            }
+        }
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error errorFailure) {
+            throw errorFailure;
         }
     }
 
@@ -119,6 +163,10 @@ public class LazyTensor implements Tensor {
 
     @Override
     public DeviceType device() {
+        GraphNode evaluated = executionNode;
+        if (evaluated != null && evaluated.isEvaluated()) {
+            return evaluated.getMaterializedData().device();
+        }
         if (node.isEvaluated()) {
             return node.getMaterializedData().device();
         }
