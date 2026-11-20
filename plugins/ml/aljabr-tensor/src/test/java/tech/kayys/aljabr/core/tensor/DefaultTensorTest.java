@@ -230,6 +230,7 @@ class DefaultTensorTest {
         parentBuffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, Float.BYTES, 9.0f);
 
         CpuBuffer viewBuffer = CpuBuffer.view(parentBuffer, 0L, Float.BYTES);
+        var parentSegment = parentBuffer.segment();
         DefaultTensor parent = new DefaultTensor(
                 new Shape(2), DType.F32, DeviceType.CPU, parentBuffer, unusedBackend());
         DefaultTensor view = new DefaultTensor(
@@ -243,7 +244,7 @@ class DefaultTensorTest {
             view.release();
         }
 
-        assertFalse(parentBuffer.segment().scope().isAlive());
+        assertFalse(parentSegment.scope().isAlive());
     }
 
     @Test
