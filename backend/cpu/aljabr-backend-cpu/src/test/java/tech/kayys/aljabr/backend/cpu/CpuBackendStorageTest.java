@@ -489,4 +489,44 @@ class CpuBackendStorageTest {
         assertEquals(0, storage.references());
     }
 
+
+    @Test
+    void softmaxReadsStridedTensorWithNonZeroStorageOffset() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        Tensor result = null;
+        try {
+            result = backend.softmax(input, -1);
+            float probabilityLow = (float) (1d / (1d + Math.exp(2d)));
+            float probabilityHigh = 1f - probabilityLow;
+            assertArrayEquals(
+                    new float[] { probabilityLow, probabilityHigh, probabilityLow, probabilityHigh },
+                    result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void logSoftmaxUsesStableLogSumExpForLargeLogits() {
+        HostStorage storage = new HostStorage(1000f, 1001f);
+        DefaultTensor input = tensor(storage, 2);
+        Tensor result = null;
+        try {
+            result = backend.logSoftmax(input, 0);
+            assertArrayEquals(
+                    new float[] { -1.3132617f, -0.3132617f },
+                    result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
 }

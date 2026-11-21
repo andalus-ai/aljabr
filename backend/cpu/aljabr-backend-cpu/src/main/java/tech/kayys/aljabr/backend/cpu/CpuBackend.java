@@ -632,35 +632,99 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor softmax(Tensor a) {
+        Objects.requireNonNull(a, "tensor must not be null");
         return softmax(a, a.shape().rank() - 1);
     }
 
     @Override
     public Tensor softmax(Tensor a, int dim) {
-        Shape shape = a.shape();
-        long n = shape.numel();
-        HostAccessibleStorage outBuf = allocateOutput(n * 4);
-        MemorySegment src = seg(a);
-
-        // Flatten to 2D: (batchRows, rowLen) where softmax is over rowLen
-        int rowLen = 1;
-        long[] dims = shape.dims();
-        for (int d = dim; d < dims.length; d++)
-            rowLen *= (int) dims[d];
-        long numRows = n / rowLen;
-
-        for (long r = 0; r < numRows; r++)
-            CpuOps.softmax(src, outBuf.segment(), r * rowLen, rowLen);
-
-        return out(shape, outBuf);
+        return normalizeAlongSuffix(a, dim, false);
     }
 
     @Override
     public Tensor logSoftmax(Tensor a, int dim) {
-        // log(softmax(x)) = x - log(sum(exp(x))) computed stably as:
-        // log_softmax(x) = x - max - log(sum(exp(x - max)))
-        Tensor sm = softmax(a, dim);
-        return log(sm);
+        return normalizeAlongSuffix(a, dim, true);
+    }
+
+    /**
+     * Computes softmax or log-softmax over the flattened suffix beginning at {@code dim}.
+     * This preserves the existing CPU backend axis convention while gathering inputs
+     * through their logical tensor layout.
+     */
+    private Tensor normalizeAlongSuffix(Tensor a, int dim, boolean logarithmic) {
+        Objects.requireNonNull(a, "tensor must not be null");
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long[] dimensions = shape.dims();
+        int rank = dimensions.length;
+        if (rank == 0) {
+            throw new IllegalArgumentException("Normalization axis requires a tensor with rank greater than zero");
+        }
+        int normalizedDim = dim < 0 ? rank + dim : dim;
+        if (normalizedDim < 0 || normalizedDim >= rank) {
+            throw new IllegalArgumentException(
+                    "Normalization axis " + dim + " is out of range for tensor rank " + rank);
+        }
+
+        long rowLength = 1;
+        for (int axis = normalizedDim; axis < rank; axis++) {
+            rowLength = Math.multiplyExact(rowLength, dimensions[axis]);
+        }
+        long rowCount = 1;
+        for (int axis = 0; axis < normalizedDim; axis++) {
+            rowCount = Math.multiplyExact(rowCount, dimensions[axis]);
+        }
+
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(
+                Math.multiplyExact(elements, (long) Float.BYTES));
+        if (elements == 0) {
+            return out(shape, output);
+        }
+
+        MemorySegment source = seg(a);
+        MemorySegment destination = output.segment();
+        TensorLayout layout = a.layout();
+        if (!logarithmic && layout.isContiguous() && layout.storageOffset() == 0
+                && rowLength <= Integer.MAX_VALUE) {
+            int contiguousRowLength = Math.toIntExact(rowLength);
+            for (long row = 0; row < rowCount; row++) {
+                CpuOps.softmax(source, destination, Math.multiplyExact(row, rowLength),
+                        contiguousRowLength);
+            }
+            return out(shape, output);
+        }
+
+        for (long row = 0; row < rowCount; row++) {
+            long rowStart = Math.multiplyExact(row, rowLength);
+            float max = Float.NEGATIVE_INFINITY;
+            for (long column = 0; column < rowLength; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                max = Math.max(max, CpuTensorLayoutAccess.readLogical(
+                        source, dimensions, layout, logicalIndex));
+            }
+
+            double exponentialSum = 0d;
+            for (long column = 0; column < rowLength; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                float value = CpuTensorLayoutAccess.readLogical(
+                        source, dimensions, layout, logicalIndex);
+                exponentialSum += Math.exp((double) value - max);
+            }
+            double logNormalizer = Math.log(exponentialSum);
+            float inverseSum = (float) (1d / exponentialSum);
+            for (long column = 0; column < rowLength; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                float value = CpuTensorLayoutAccess.readLogical(
+                        source, dimensions, layout, logicalIndex);
+                float result = logarithmic
+                        ? (float) ((double) value - max - logNormalizer)
+                        : (float) (Math.exp((double) value - max) * inverseSum);
+                destination.set(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(logicalIndex, Float.BYTES), result);
+            }
+        }
+        return out(shape, output);
     }
 
     @Override
