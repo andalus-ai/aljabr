@@ -106,12 +106,32 @@ class CpuBackendStorageTest {
     }
 
     @Test
-    void contiguousSliceIsZeroCopyAndRetainsNonBufferParent() {
+    void reshapePreservesNonZeroOffsetOfContiguousSlice() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 2, 2);
+        Tensor slice = null;
+        Tensor reshaped = null;
+        try {
+            slice = backend.slice(input, new long[] { 1, 0 }, new long[] { 1, 2 });
+            reshaped = backend.reshape(slice, 2);
+            assertSame(storage, reshaped.storage());
+            assertEquals(2, reshaped.layout().storageOffset());
+            assertArrayEquals(new float[] { 3f, 4f }, reshaped.toFloatArray(), 0f);
+        } finally {
+            if (reshaped != null) reshaped.release();
+            if (slice != null) slice.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void contiguousSliceSharesAndRetainsNonBufferParent() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
         DefaultTensor input = tensor(storage, 2, 2);
         Tensor slice = backend.slice(input, new long[] { 1, 0 }, new long[] { 1, 2 });
         try {
-            assertNotSame(storage, slice.storage());
+            assertSame(storage, slice.storage());
             assertInstanceOf(HostAccessibleStorage.class, slice.storage());
             assertEquals(2, storage.references());
 
