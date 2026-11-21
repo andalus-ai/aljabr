@@ -240,9 +240,17 @@ public class StableDiffusionPipeline extends NNModule {
     }
 
     private void validateComponentBackends() {
-        if (unet.computeBackend() != null && decoder.computeBackend() != null
-                && unet.computeBackend() != decoder.computeBackend()) {
-            throw new IllegalArgumentException("Denoiser and decoder must use the same compute backend");
+        var backend = unet.computeBackend();
+        if (backend == null) {
+            if (clip.computeBackend() != null || decoder.computeBackend() != null) {
+                throw new IllegalArgumentException(
+                        "Text encoder, denoiser, and decoder must share one compute backend");
+            }
+            return;
+        }
+        if (clip.computeBackend() != backend || decoder.computeBackend() != backend) {
+            throw new IllegalArgumentException(
+                    "Text encoder, denoiser, and decoder must share the same compute backend instance");
         }
     }
 
