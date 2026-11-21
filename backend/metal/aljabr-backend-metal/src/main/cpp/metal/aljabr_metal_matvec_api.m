@@ -2208,6 +2208,8 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     int nextN2) {
   if (!g_initialized)
     return -1;
+
+  @synchronized(matvec_scratch_lock()) {
   if (wO_K <= 0 || wO_N <= 0 || ffnDim <= 0)
     return -2;
 
@@ -2428,8 +2430,10 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     id<MTLBuffer> bufGate = wrap_weight_ptr_offset(gateW, gateBytes, &gateOff);
     id<MTLBuffer> bufUp = wrap_weight_ptr_offset(upW, upBytes, &upOff);
     id<MTLBuffer> bufDown = wrap_weight_ptr_offset(downW, downBytes, &downOff);
-    if (!bufWO || !bufGate || !bufUp || !bufDown)
+    if (!bufWO || !bufGate || !bufUp || !bufDown) {
+      g_woff_x_valid = NO;
       return -4;
+    }
 
     uint32_t kDim = (uint32_t)wO_K;
     uint32_t nDim = (uint32_t)wO_N;
@@ -2548,6 +2552,7 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
           (activationKind == 2) ? pipelines->gelu_ffn : pipelines->silu_ffn;
       if (actP == nil) {
         [enc endEncoding];
+        g_woff_x_valid = NO;
         return -3;
       }
       [enc setComputePipelineState:actP];
@@ -2658,6 +2663,7 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     }
     return 0;
   }
+  }
 }
 
 int aljabr_metal_wo_ffn_fused(float *x, const float *attn_full, const void *wO,
@@ -2676,7 +2682,9 @@ int aljabr_metal_wo_ffn_fused(float *x, const float *attn_full, const void *wO,
       NULL, NULL, NULL, NULL, 0, 0, 0, 0, 0, 0);
 }
 
-void aljabr_metal_wo_ffn_reset_x(void) { g_woff_x_valid = NO; }
+void aljabr_metal_wo_ffn_reset_x(void) {
+  @synchronized(matvec_scratch_lock()) { g_woff_x_valid = NO; }
+}
 
 static id<MTLBuffer> g_woff_logits = nil;
 static size_t g_woff_logits_cap = 0;
@@ -2713,6 +2721,8 @@ int aljabr_metal_wo_ffn_logits_fused(
     int outputN, float *logits, float cap) {
   if (!g_initialized)
     return -1;
+
+  @synchronized(matvec_scratch_lock()) {
   if (wO_K <= 0 || wO_N <= 0 || ffnDim <= 0 || outputK <= 0 || outputN <= 0)
     return -2;
   // The final RMSNorm operates on the hidden state produced by wO. Keep the
@@ -3135,6 +3145,7 @@ int aljabr_metal_wo_ffn_logits_fused(
     }
     g_woff_x_valid = NO;
     return 0;
+  }
   }
 }
 
