@@ -33,6 +33,31 @@ class EmbeddingGemma2VisionPoolerTest {
     }
 
     @Test
+    void poolsRectangularGridAcrossMultipleSpatialCells() {
+        var pooler = new EmbeddingGemma2VisionPooler(1);
+        float[][] states = {{1f}, {2f}, {3f}, {4f}, {5f}, {6f}, {7f}, {8f}};
+        int[][] positions = {
+                {0, 0}, {1, 0}, {2, 0}, {3, 0},
+                {0, 1}, {1, 1}, {2, 1}, {3, 1}
+        };
+
+        var result = pooler.pool(states, positions, new boolean[8], 2);
+
+        assertArrayEquals(new float[]{3.5f, 5.5f},
+                new float[]{result.hiddenStates()[0][0], result.hiddenStates()[1][0]}, 1e-6f);
+        assertArrayEquals(new boolean[]{false, false}, result.paddingMask());
+    }
+
+    @Test
+    void rejectsGridDimensionsThatCannotBePartitionedIntoPoolingWindows() {
+        var pooler = new EmbeddingGemma2VisionPooler(1);
+        assertThrows(IllegalArgumentException.class, () -> pooler.pool(
+                new float[][]{{1f}, {2f}, {3f}, {4f}},
+                new int[][]{{0, 0}, {1, 0}, {2, 0}, {3, 0}},
+                new boolean[4], 1));
+    }
+
+    @Test
     void preservesSequenceWhenNoSpatialPoolingIsRequestedAndZerosPadding() {
         var pooler = new EmbeddingGemma2VisionPooler(1);
         var result = pooler.pool(
