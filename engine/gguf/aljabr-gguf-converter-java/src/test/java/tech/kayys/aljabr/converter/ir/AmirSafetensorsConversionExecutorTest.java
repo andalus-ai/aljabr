@@ -7,6 +7,7 @@ import tech.kayys.aljabr.spi.model.ir.ConversionExecutionResult;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutor;
+import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
@@ -71,6 +72,13 @@ class AmirSafetensorsConversionExecutorTest {
         assertEquals(8L, result.payloadBytes());
         assertEquals(CompatibilityReport.ConversionFidelity.FULL, result.compatibility().fidelity());
         assertTrue(result.untransferredMetadataKeys().isEmpty());
+    }
+
+    @Test
+    void discoversSafetensorsExecutorThroughServiceLoader() {
+        var executor = ModelConversionExecutors.find("safetensors", "safetensors").orElseThrow();
+
+        assertInstanceOf(AmirSafetensorsConversionExecutor.class, executor);
     }
 
     @Test
