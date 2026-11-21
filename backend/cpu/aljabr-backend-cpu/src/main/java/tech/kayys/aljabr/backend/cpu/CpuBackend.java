@@ -465,7 +465,9 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor flatten(Tensor a) {
-        return reshape(a, a.numel());
+        Objects.requireNonNull(a, "input");
+        Shape outputShape = TensorOperationValidator.validateFlatten(a.shape());
+        return reshape(a, outputShape.dims());
     }
 
     @Override

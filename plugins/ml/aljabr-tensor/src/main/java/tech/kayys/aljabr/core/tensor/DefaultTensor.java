@@ -407,6 +407,8 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor flatten() {
+        ensureOpen();
+        TensorOperationValidator.validateFlatten(shape);
         return record(OpType.FLATTEN, new Tensor[] { this }, new Object[0], backend.flatten(this));
     }
 

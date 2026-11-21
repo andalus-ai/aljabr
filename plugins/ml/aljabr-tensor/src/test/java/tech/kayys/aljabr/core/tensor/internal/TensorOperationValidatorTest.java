@@ -40,6 +40,24 @@ class TensorOperationValidatorTest {
     }
 
     @Test
+    void flattenProducesOneDimensionalShapeForRegularScalarAndEmptyInputs() {
+        assertThat(TensorOperationValidator.validateFlatten(new Shape(2, 3, 4)).dims())
+                .containsExactly(24);
+        assertThat(TensorOperationValidator.validateFlatten(new Shape()).dims())
+                .containsExactly(1);
+        assertThat(TensorOperationValidator.validateFlatten(new Shape(2, 0, 3)).dims())
+                .containsExactly(0);
+        assertThat(TensorOperationValidator.validateFlatten(new Shape(0)).dims())
+                .containsExactly(0);
+    }
+
+    @Test
+    void flattenRejectsNullShape() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateFlatten(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("input shape must not be null");
+    }
+
     void transposeNormalizesNegativeAxesAndSwapsTheRequestedDimensions() {
         TensorOperationValidator.TransposePlan trailing =
                 TensorOperationValidator.validateTranspose(new Shape(2, 3, 4), -2, -1);

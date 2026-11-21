@@ -182,6 +182,15 @@ public final class TensorOperationValidator {
     }
 
     /**
+     * Validates flattening the complete logical tensor into a one-dimensional shape.
+     * Scalars become a length-one vector and empty tensors remain empty vectors.
+     */
+    public static Shape validateFlatten(Shape input) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        return new Shape(input.numel());
+    }
+
+    /**
      * Validates the default transpose operation, which swaps the final two axes.
      */
     public static TransposePlan validateTranspose(Shape input) {

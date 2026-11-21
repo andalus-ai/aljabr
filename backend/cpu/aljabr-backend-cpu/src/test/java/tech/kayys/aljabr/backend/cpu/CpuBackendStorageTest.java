@@ -72,6 +72,49 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void flattenPreservesLogicalValuesAndStorageOwnershipForRegularScalarAndEmptyTensors() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor input = tensor(storage, 2, 3);
+        Tensor flattened = null;
+        try {
+            flattened = backend.flatten(input);
+            assertArrayEquals(new long[] { 6 }, flattened.shape().dims());
+            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f, 5f, 6f }, flattened.toFloatArray(), 0f);
+            assertEquals(2, storage.references());
+        } finally {
+            if (flattened != null) flattened.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+
+        HostStorage scalarStorage = new HostStorage(7f);
+        DefaultTensor scalar = tensor(scalarStorage);
+        Tensor scalarFlat = null;
+        try {
+            scalarFlat = backend.flatten(scalar);
+            assertArrayEquals(new long[] { 1 }, scalarFlat.shape().dims());
+            assertArrayEquals(new float[] { 7f }, scalarFlat.toFloatArray(), 0f);
+        } finally {
+            if (scalarFlat != null) scalarFlat.release();
+            scalar.release();
+        }
+        assertEquals(0, scalarStorage.references());
+
+        HostStorage emptyStorage = new HostStorage();
+        DefaultTensor empty = tensor(emptyStorage, 2, 0, 3);
+        Tensor emptyFlat = null;
+        try {
+            emptyFlat = backend.flatten(empty);
+            assertArrayEquals(new long[] { 0 }, emptyFlat.shape().dims());
+            assertEquals(0, emptyFlat.numel());
+        } finally {
+            if (emptyFlat != null) emptyFlat.release();
+            empty.release();
+        }
+        assertEquals(0, emptyStorage.references());
+    }
+
+    @Test
     void cpuKernelsReadHostAccessibleStorageWithoutLegacyBuffer() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
         DefaultTensor input = tensor(storage, 2, 2);
