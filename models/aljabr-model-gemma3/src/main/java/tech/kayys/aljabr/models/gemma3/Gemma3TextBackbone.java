@@ -1,10 +1,12 @@
 package tech.kayys.aljabr.models.gemma3;
 
-import java.util.Objects;
 import java.util.Arrays;
+import java.util.Objects;
 import tech.kayys.aljabr.cache.GrowingHeapKVCacheStorage;
 import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.cache.KVCacheSession;
+import tech.kayys.aljabr.cache.KVCacheStorage;
+import tech.kayys.aljabr.cache.KVCacheStorageFactory;
 import tech.kayys.aljabr.spi.model.ModelConfig;
 
 /**
@@ -23,9 +25,19 @@ public final class Gemma3TextBackbone {
     private final int kvHeads;
     private final int headDim;
     private final double epsilon;
+    private final KVCacheStorageFactory cacheStorageFactory;
 
     public Gemma3TextBackbone(ModelConfig config, Gemma3TextCheckpointMapper.Weights weights) {
+        this(config, weights, GrowingHeapKVCacheStorage::new);
+    }
+
+    /** Creates a reference decoder with an explicitly selected KV-cache provider. */
+    public Gemma3TextBackbone(
+            ModelConfig config,
+            Gemma3TextCheckpointMapper.Weights weights,
+            KVCacheStorageFactory cacheStorageFactory) {
         this.config = Objects.requireNonNull(config, "config");
+        this.cacheStorageFactory = Objects.requireNonNull(cacheStorageFactory, "cacheStorageFactory");
         this.weights = Objects.requireNonNull(weights, "weights");
         this.hidden = config.hiddenSize();
         this.queryHeads = config.numAttentionHeads();
@@ -96,7 +108,7 @@ public final class Gemma3TextBackbone {
     public final class DecodeSession implements AutoCloseable {
         private final int cacheWidth = Math.multiplyExact(kvHeads, headDim);
         private final int maximumPositions = config.maxPositionEmbeddings();
-        private final GrowingHeapKVCacheStorage cacheStorage;
+        private final KVCacheStorage cacheStorage;
         private final KVCacheSession cacheSession;
         private boolean closed;
 
@@ -107,7 +119,13 @@ public final class Gemma3TextBackbone {
             Arrays.fill(dimensionsPerLayer, headDim);
             KVCacheLayout layout = new KVCacheLayout(
                     maximumPositions, headsPerLayer, dimensionsPerLayer);
-            cacheStorage = new GrowingHeapKVCacheStorage(layout);
+            cacheStorage = Objects.requireNonNull(
+                    cacheStorageFactory.create(layout), "cacheStorageFactory returned null");
+            if (!hasSameGeometry(cacheStorage.layout(), layout)) {
+                cacheStorage.close();
+                throw new IllegalArgumentException(
+                        "KV cache storage factory returned storage with incompatible geometry");
+            }
             cacheSession = new KVCacheSession(cacheStorage);
         }
 
@@ -267,6 +285,20 @@ public final class Gemma3TextBackbone {
             feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
             return add(afterAttention, feedForward);
         }
+    }
+
+    private static boolean hasSameGeometry(KVCacheLayout actual, KVCacheLayout expected) {
+        if (actual.maxSequenceLength() != expected.maxSequenceLength()
+                || actual.layerCount() != expected.layerCount()) {
+            return false;
+        }
+        for (int layer = 0; layer < expected.layerCount(); layer++) {
+            if (actual.kvHeads(layer) != expected.kvHeads(layer)
+                    || actual.headDimension(layer) != expected.headDimension(layer)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public int hiddenSize() { return hidden; }

@@ -2,6 +2,7 @@ package tech.kayys.aljabr.models.gemma3;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,8 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tech.kayys.aljabr.cache.GrowingHeapKVCacheStorage;
+import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.spi.model.ModelConfig;
 
 class Gemma3TextBackboneTest {
@@ -77,12 +81,21 @@ class Gemma3TextBackboneTest {
         putMatrix(tensors, architecture.layerFfnGateWeight(0), 6, 4, 0.01f);
         putMatrix(tensors, architecture.layerFfnUpWeight(0), 6, 4, 0.012f);
         putMatrix(tensors, architecture.layerFfnDownWeight(0), 4, 6, 0.008f);
+        AtomicReference<KVCacheLayout> requestedLayout = new AtomicReference<>();
         Gemma3TextBackbone backbone = new Gemma3TextBackbone(
-                config, Gemma3TextCheckpointMapper.map(config, architecture, tensors));
+                config,
+                Gemma3TextCheckpointMapper.map(config, architecture, tensors),
+                layout -> {
+                    requestedLayout.set(layout);
+                    return new GrowingHeapKVCacheStorage(layout);
+                });
 
         int[] prompt = {0, 1, 2};
         float[][] expected = backbone.forward(prompt);
         try (Gemma3TextBackbone.DecodeSession session = backbone.newDecodeSession()) {
+            assertNotNull(requestedLayout.get());
+            assertEquals(config.maxPositionEmbeddings(), requestedLayout.get().maxSequenceLength());
+            assertEquals(1, requestedLayout.get().layerCount());
             float[][] prefill = session.prefill(new int[] {0, 1});
             assertEquals(2, session.position());
             assertArrayEquals(expected[0], prefill[0], 1.0e-5f);
