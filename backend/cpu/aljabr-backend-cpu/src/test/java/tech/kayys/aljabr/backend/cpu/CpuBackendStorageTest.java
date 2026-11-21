@@ -589,4 +589,76 @@ class CpuBackendStorageTest {
     }
 
 
+    @Test
+    void layerNormReadsStridedInputWithStorageOffset() {
+        HostStorage inputStorage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        HostStorage biasStorage = new HostStorage(0f, 0f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) inputStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        DefaultTensor weight = tensor(weightStorage, 2);
+        DefaultTensor bias = tensor(biasStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.layerNorm(input, new long[] { 2 }, weight, bias, 1e-5f);
+            assertArrayEquals(new float[] { -1f, 1f, -1f, 1f }, result.toFloatArray(), 1e-5f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+            bias.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+        assertEquals(0, biasStorage.references());
+    }
+
+    @Test
+    void rmsNormReadsStridedInputWithStorageOffset() {
+        HostStorage inputStorage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) inputStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        DefaultTensor weight = tensor(weightStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.rmsNorm(input, weight, 0f);
+            assertArrayEquals(new float[] {
+                    (float) (1d / Math.sqrt(5d)), (float) (3d / Math.sqrt(5d)),
+                    (float) (2d / Math.sqrt(10d)), (float) (4d / Math.sqrt(10d))
+            }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+    }
+
+    @Test
+    void normalizationRejectsInvalidShapeAndEpsilon() {
+        HostStorage inputStorage = new HostStorage(1f, 2f, 3f, 4f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        DefaultTensor weight = tensor(weightStorage, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.layerNorm(input, new long[] { 3 }, weight, null, 1e-5f));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.layerNorm(input, new long[] { 2 }, weight, null, Float.NaN));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.rmsNorm(input, weight, -1f));
+        } finally {
+            input.release();
+            weight.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+    }
+
 }

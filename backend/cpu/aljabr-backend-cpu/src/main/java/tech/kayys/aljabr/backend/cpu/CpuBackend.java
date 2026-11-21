@@ -2,7 +2,6 @@ package tech.kayys.aljabr.backend.cpu;
 
 import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
 import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
-import tech.kayys.aljabr.backend.cpu.ops.NormOps;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
@@ -720,53 +719,127 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor layerNorm(Tensor input, long[] normalizedShape, Tensor weight, Tensor bias, float eps) {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(normalizedShape, "normalizedShape");
+        CpuTensorLayoutAccess.requireF32(input);
+        requireNormalizationEpsilon(eps);
         Shape shape = input.shape();
-        long n = shape.numel();
-        int hiddenDim = 1;
-        for (long d : normalizedShape)
-            hiddenDim *= (int) d;
-
-        HostAccessibleStorage outBuf = allocateOutput(n * 4);
-        MemorySegment si = seg(input);
-        MemorySegment so = outBuf.segment();
-        MemorySegment sw = weight != null ? seg(weight) : null;
-        MemorySegment sb = bias != null ? seg(bias) : null;
-
-        long numRows = n / hiddenDim;
-        for (long i = 0; i < numRows; i++) {
-            long rowOff = i * hiddenDim;
-            // Mean via SIMD reduceSum
-            float sum = CpuOps.reduceSum(si.asSlice(rowOff * 4L, hiddenDim * 4L), hiddenDim);
-            float mean = sum / hiddenDim;
-
-            float sumSq = 0f;
-            for (int j = 0; j < hiddenDim; j++) {
-                float diff = si.get(ValueLayout.JAVA_FLOAT, (rowOff + j) * 4L) - mean;
-                sumSq += diff * diff;
+        long[] dimensions = shape.dims();
+        if (normalizedShape.length == 0 || normalizedShape.length > dimensions.length) {
+            throw new IllegalArgumentException("normalizedShape must be a non-empty suffix of the input shape");
+        }
+        long hiddenDim = 1;
+        for (int i = 0; i < normalizedShape.length; i++) {
+            long expected = normalizedShape[i];
+            long actual = dimensions[dimensions.length - normalizedShape.length + i];
+            if (expected <= 0 || expected != actual) {
+                throw new IllegalArgumentException("normalizedShape must match the trailing input dimensions");
             }
-            float invStd = (float) (1.0 / Math.sqrt(sumSq / hiddenDim + eps));
+            hiddenDim = Math.multiplyExact(hiddenDim, expected);
+        }
+        validateNormParameter(weight, hiddenDim, "weight");
+        validateNormParameter(bias, hiddenDim, "bias");
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, (long) Float.BYTES));
+        if (elements == 0) return out(shape, output);
 
-            for (int j = 0; j < hiddenDim; j++) {
-                float val = si.get(ValueLayout.JAVA_FLOAT, (rowOff + j) * 4L);
-                float norm = (val - mean) * invStd;
-                if (sw != null)
-                    norm *= sw.get(ValueLayout.JAVA_FLOAT, j * 4L);
-                if (sb != null)
-                    norm += sb.get(ValueLayout.JAVA_FLOAT, j * 4L);
-                so.set(ValueLayout.JAVA_FLOAT, (rowOff + j) * 4L, norm);
+        MemorySegment source = seg(input), destination = output.segment();
+        MemorySegment scale = weight == null ? null : seg(weight);
+        MemorySegment shift = bias == null ? null : seg(bias);
+        TensorLayout layout = input.layout();
+        long rows = elements / hiddenDim;
+        for (long row = 0; row < rows; row++) {
+            long rowStart = Math.multiplyExact(row, hiddenDim);
+            double sum = 0d;
+            for (long column = 0; column < hiddenDim; column++) {
+                sum += CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
+                        Math.addExact(rowStart, column));
+            }
+            double mean = sum / hiddenDim;
+            double squaredDifferenceSum = 0d;
+            for (long column = 0; column < hiddenDim; column++) {
+                double difference = CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
+                        Math.addExact(rowStart, column)) - mean;
+                squaredDifferenceSum += difference * difference;
+            }
+            float inverseStd = (float) (1d / Math.sqrt(squaredDifferenceSum / hiddenDim + eps));
+            for (long column = 0; column < hiddenDim; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex);
+                float normalized = (value - (float) mean) * inverseStd;
+                if (scale != null) normalized *= scale.get(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(column, Float.BYTES));
+                if (shift != null) normalized += shift.get(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(column, Float.BYTES));
+                destination.set(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(logicalIndex, Float.BYTES), normalized);
             }
         }
-        return out(shape, outBuf);
+        return out(shape, output);
     }
 
     @Override
     public Tensor rmsNorm(Tensor input, Tensor weight, float eps) {
-        Shape shape = input.shape();
-        long n = shape.numel();
-        int hiddenDim = (int) weight.shape().dim(0);
-        HostAccessibleStorage outBuf = allocateOutput(n * 4);
-        NormOps.rmsNorm(seg(input), seg(weight), outBuf.segment(), n, hiddenDim, eps);
-        return out(shape, outBuf);
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(weight, "weight");
+        CpuTensorLayoutAccess.requireF32(input);
+        CpuTensorLayoutAccess.requireF32(weight);
+        requireNormalizationEpsilon(eps);
+        if (weight.shape().rank() != 1) {
+            throw new IllegalArgumentException("RMSNorm weight must be a rank-1 vector");
+        }
+        long hiddenDim = weight.shape().dim(0);
+        if (hiddenDim <= 0 || input.shape().rank() == 0
+                || input.shape().dim(input.shape().rank() - 1) != hiddenDim) {
+            throw new IllegalArgumentException("RMSNorm weight length must match the input's final dimension");
+        }
+        validateNormParameter(weight, hiddenDim, "weight");
+        long elements = input.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, (long) Float.BYTES));
+        if (elements == 0) return out(input.shape(), output);
+
+        MemorySegment source = seg(input), scale = seg(weight), destination = output.segment();
+        long[] dimensions = input.shape().dims();
+        TensorLayout layout = input.layout();
+        long rows = elements / hiddenDim;
+        for (long row = 0; row < rows; row++) {
+            long rowStart = Math.multiplyExact(row, hiddenDim);
+            double sumSquares = 0d;
+            for (long column = 0; column < hiddenDim; column++) {
+                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
+                        Math.addExact(rowStart, column));
+                sumSquares += (double) value * value;
+            }
+            float inverseRms = (float) (1d / Math.sqrt(sumSquares / hiddenDim + eps));
+            for (long column = 0; column < hiddenDim; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex);
+                float gamma = scale.get(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(column, Float.BYTES));
+                destination.set(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(logicalIndex, Float.BYTES), (value * inverseRms) * gamma);
+            }
+        }
+        return out(input.shape(), output);
+    }
+
+    private static void validateNormParameter(Tensor parameter, long expectedElements, String name) {
+        if (parameter == null) return;
+        CpuTensorLayoutAccess.requireF32(parameter);
+        if (parameter.numel() != expectedElements) {
+            throw new IllegalArgumentException(name + " must contain " + expectedElements
+                    + " elements; got " + parameter.numel());
+        }
+        TensorLayout layout = parameter.layout();
+        if (!layout.isContiguous() || layout.storageOffset() != 0) {
+            throw new IllegalArgumentException(name + " must use contiguous zero-offset storage");
+        }
+    }
+
+    private static void requireNormalizationEpsilon(float eps) {
+        if (!Float.isFinite(eps) || eps < 0f) {
+            throw new IllegalArgumentException("Normalization epsilon must be finite and non-negative");
+        }
     }
 
     @Override
