@@ -913,39 +913,124 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor batchNorm(Tensor input, Tensor weight, Tensor bias,
             Tensor runningMean, Tensor runningVar,
             boolean training, float momentum, float eps) {
-        // Inference mode: normalize using running stats
-        // input shape: [N, C, H, W] or [N, C]
-        Shape shape = input.shape();
-        long n = shape.numel();
-        int channels = (int) shape.dim(1);
-        long spatialSize = n / ((long) shape.dim(0) * channels);
+        Objects.requireNonNull(input, "input");
+        CpuTensorLayoutAccess.requireF32(input);
+        if (input.shape().rank() < 2) {
+            throw new IllegalArgumentException("BatchNorm input must have rank >= 2 ([N, C, ...])");
+        }
+        if (!Float.isFinite(momentum) || momentum < 0f || momentum > 1f) {
+            throw new IllegalArgumentException("BatchNorm momentum must be finite and in [0, 1]");
+        }
+        if (!Float.isFinite(eps) || eps < 0f) {
+            throw new IllegalArgumentException("BatchNorm epsilon must be finite and non-negative");
+        }
 
-        HostAccessibleStorage outBuf = allocateOutput(n * 4);
-        MemorySegment si = seg(input);
-        MemorySegment so = outBuf.segment();
-        MemorySegment smean = seg(runningMean);
-        MemorySegment svar = seg(runningVar);
-        MemorySegment sw = weight != null ? seg(weight) : null;
-        MemorySegment sb = bias != null ? seg(bias) : null;
+        long[] dimensions = input.shape().dims();
+        long batches = dimensions[0];
+        long channels = dimensions[1];
+        if (channels <= 0) {
+            throw new IllegalArgumentException("BatchNorm channel dimension must be positive");
+        }
+        long spatialSize = 1;
+        for (int i = 2; i < dimensions.length; i++) {
+            spatialSize = Math.multiplyExact(spatialSize, dimensions[i]);
+        }
+        long samplesPerChannel = Math.multiplyExact(batches, spatialSize);
+        validateBatchNormVector(weight, channels, "weight");
+        validateBatchNormVector(bias, channels, "bias");
+        if ((runningMean == null) != (runningVar == null)) {
+            throw new IllegalArgumentException("runningMean and runningVar must either both be present or both be null");
+        }
+        validateBatchNormVector(runningMean, channels, "runningMean");
+        validateBatchNormVector(runningVar, channels, "runningVar");
+        if (samplesPerChannel == 0 && (training || runningMean == null)) {
+            if (input.numel() == 0) {
+                return out(input.shape(), allocateOutput(0));
+            }
+        }
 
-        long numBatches = shape.dim(0);
-        for (long b = 0; b < numBatches; b++) {
-            for (int c = 0; c < channels; c++) {
-                float mean = smean.get(ValueLayout.JAVA_FLOAT, c * 4L);
-                float var = svar.get(ValueLayout.JAVA_FLOAT, c * 4L);
-                float invStd = (float) (1.0 / Math.sqrt(var + eps));
-                float gamma = sw != null ? sw.get(ValueLayout.JAVA_FLOAT, c * 4L) : 1f;
-                float beta = sb != null ? sb.get(ValueLayout.JAVA_FLOAT, c * 4L) : 0f;
+        long elements = input.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, (long) Float.BYTES));
+        if (elements == 0) return out(input.shape(), output);
 
-                long baseOff = (b * channels + c) * spatialSize;
-                for (long s = 0; s < spatialSize; s++) {
-                    long idx = (baseOff + s) * 4L;
-                    float x = si.get(ValueLayout.JAVA_FLOAT, idx);
-                    so.set(ValueLayout.JAVA_FLOAT, idx, gamma * (x - mean) * invStd + beta);
+        MemorySegment source = seg(input);
+        MemorySegment destination = output.segment();
+        MemorySegment scale = weight == null ? null : seg(weight);
+        MemorySegment shift = bias == null ? null : seg(bias);
+        MemorySegment means = runningMean == null ? null : seg(runningMean);
+        MemorySegment variances = runningVar == null ? null : seg(runningVar);
+        TensorLayout layout = input.layout();
+
+        for (long channel = 0; channel < channels; channel++) {
+            double mean;
+            double variance;
+            if (training || means == null) {
+                double sum = 0d;
+                double sumSquares = 0d;
+                for (long batch = 0; batch < batches; batch++) {
+                    long base = Math.multiplyExact(
+                            Math.addExact(Math.multiplyExact(batch, channels), channel), spatialSize);
+                    for (long spatial = 0; spatial < spatialSize; spatial++) {
+                        float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
+                                Math.addExact(base, spatial));
+                        sum += value;
+                        sumSquares += (double) value * value;
+                    }
+                }
+                mean = sum / samplesPerChannel;
+                variance = Math.max(0d, sumSquares / samplesPerChannel - mean * mean);
+
+                if (training && means != null) {
+                    double runningVariance = samplesPerChannel > 1
+                            ? variance * samplesPerChannel / (samplesPerChannel - 1d)
+                            : variance;
+                    long parameterOffset = Math.multiplyExact(channel, Float.BYTES);
+                    float oldMean = means.get(ValueLayout.JAVA_FLOAT, parameterOffset);
+                    float oldVariance = variances.get(ValueLayout.JAVA_FLOAT, parameterOffset);
+                    means.set(ValueLayout.JAVA_FLOAT, parameterOffset,
+                            (float) ((1d - momentum) * oldMean + momentum * mean));
+                    variances.set(ValueLayout.JAVA_FLOAT, parameterOffset,
+                            (float) ((1d - momentum) * oldVariance + momentum * runningVariance));
+                }
+            } else {
+                long parameterOffset = Math.multiplyExact(channel, Float.BYTES);
+                mean = means.get(ValueLayout.JAVA_FLOAT, parameterOffset);
+                variance = variances.get(ValueLayout.JAVA_FLOAT, parameterOffset);
+                if (!Double.isFinite(mean) || !Double.isFinite(variance) || variance < 0d) {
+                    throw new IllegalArgumentException("BatchNorm running statistics must be finite and variance non-negative");
+                }
+            }
+
+            float inverseStd = (float) (1d / Math.sqrt(variance + eps));
+            float gamma = scale == null ? 1f
+                    : scale.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(channel, Float.BYTES));
+            float beta = shift == null ? 0f
+                    : shift.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(channel, Float.BYTES));
+            for (long batch = 0; batch < batches; batch++) {
+                long base = Math.multiplyExact(
+                        Math.addExact(Math.multiplyExact(batch, channels), channel), spatialSize);
+                for (long spatial = 0; spatial < spatialSize; spatial++) {
+                    long logicalIndex = Math.addExact(base, spatial);
+                    float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex);
+                    float normalized = (float) ((value - mean) * inverseStd) * gamma + beta;
+                    destination.set(ValueLayout.JAVA_FLOAT,
+                            Math.multiplyExact(logicalIndex, Float.BYTES), normalized);
                 }
             }
         }
-        return out(shape, outBuf);
+        return out(input.shape(), output);
+    }
+
+    private static void validateBatchNormVector(Tensor tensor, long channels, String name) {
+        if (tensor == null) return;
+        CpuTensorLayoutAccess.requireF32(tensor);
+        if (tensor.shape().rank() != 1 || tensor.shape().dim(0) != channels) {
+            throw new IllegalArgumentException(name + " must be a rank-1 vector of length " + channels);
+        }
+        TensorLayout layout = tensor.layout();
+        if (!layout.isContiguous() || layout.storageOffset() != 0) {
+            throw new IllegalArgumentException(name + " must use contiguous zero-offset storage");
+        }
     }
 
     // ── Reductions ────────────────────────────────────────────────────────────

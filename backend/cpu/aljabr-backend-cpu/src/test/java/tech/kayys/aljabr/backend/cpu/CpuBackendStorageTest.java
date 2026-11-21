@@ -588,5 +588,102 @@ class CpuBackendStorageTest {
         assertEquals(0, storage.references());
     }
 
+    @Test
+    void batchNormInferenceReadsStridedInputWithStorageOffset() {
+        HostStorage inputStorage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        HostStorage biasStorage = new HostStorage(0f, 0f);
+        HostStorage meanStorage = new HostStorage(2f, 3f);
+        HostStorage varianceStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(1, 2, 2), DType.F32, DeviceType.CPU, (TensorStorage) inputStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 2, 2), new long[] { 4, 1, 2 }, 1));
+        DefaultTensor weight = tensor(weightStorage, 2);
+        DefaultTensor bias = tensor(biasStorage, 2);
+        DefaultTensor runningMean = tensor(meanStorage, 2);
+        DefaultTensor runningVar = tensor(varianceStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.batchNorm(input, weight, bias, runningMean, runningVar,
+                    false, 0.1f, 0f);
+            assertArrayEquals(new float[] { -1f, 1f, -1f, 1f }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+            bias.release();
+            runningMean.release();
+            runningVar.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+        assertEquals(0, biasStorage.references());
+        assertEquals(0, meanStorage.references());
+        assertEquals(0, varianceStorage.references());
+    }
+
+    @Test
+    void batchNormTrainingUsesBatchStatisticsAndUpdatesRunningStatistics() {
+        HostStorage inputStorage = new HostStorage(1f, 10f, 3f, 14f);
+        HostStorage meanStorage = new HostStorage(0f, 0f);
+        HostStorage varianceStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        DefaultTensor runningMean = tensor(meanStorage, 2);
+        DefaultTensor runningVar = tensor(varianceStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.batchNorm(input, null, null, runningMean, runningVar,
+                    true, 0.1f, 0f);
+            assertArrayEquals(new float[] { -1f, -1f, 1f, 1f }, result.toFloatArray(), 1e-6f);
+            assertArrayEquals(new float[] { 0.2f, 1.2f }, runningMean.toFloatArray(), 1e-6f);
+            assertArrayEquals(new float[] { 1.1f, 1.7f }, runningVar.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            runningMean.release();
+            runningVar.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, meanStorage.references());
+        assertEquals(0, varianceStorage.references());
+    }
+
+    @Test
+    void batchNormWithoutRunningStatisticsUsesBatchStatisticsInEvaluation() {
+        HostStorage inputStorage = new HostStorage(1f, 10f, 3f, 14f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        Tensor result = null;
+        try {
+            result = backend.batchNorm(input, null, null, null, null,
+                    false, 0.1f, 0f);
+            assertArrayEquals(new float[] { -1f, -1f, 1f, 1f }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, inputStorage.references());
+    }
+
+    @Test
+    void batchNormRejectsInvalidMomentumAndChannelParameters() {
+        HostStorage inputStorage = new HostStorage(1f, 2f, 3f, 4f);
+        HostStorage parameterStorage = new HostStorage(1f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        DefaultTensor parameter = tensor(parameterStorage, 1);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.batchNorm(input, parameter, null, null, null,
+                            false, 0.1f, 1e-5f));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.batchNorm(input, null, null, null, null,
+                            true, 1.1f, 1e-5f));
+        } finally {
+            input.release();
+            parameter.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, parameterStorage.references());
+    }
 
 }
