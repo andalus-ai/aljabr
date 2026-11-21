@@ -861,8 +861,21 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor sum(Tensor a) {
-        float total = CpuOps.reduceSum(seg(a), a.numel());
-        HostAccessibleStorage o = allocateOutput(4);
+        Objects.requireNonNull(a, "tensor must not be null");
+        CpuTensorLayoutAccess.requireF32(a);
+        MemorySegment source = seg(a);
+        TensorLayout layout = a.layout();
+        float total;
+        if (layout.isContiguous() && layout.storageOffset() == 0) {
+            total = CpuOps.reduceSum(source, a.numel());
+        } else {
+            total = 0f;
+            long[] dimensions = a.shape().dims();
+            for (long i = 0; i < a.numel(); i++) {
+                total += CpuTensorLayoutAccess.readLogical(source, dimensions, layout, i);
+            }
+        }
+        HostAccessibleStorage o = allocateOutput(Float.BYTES);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, total);
         return out(new Shape(1), o);
     }
@@ -878,8 +891,20 @@ public final class CpuBackend implements ComputeBackend {
         if (a.numel() == 0) {
             throw new IllegalArgumentException("Mean is undefined for an empty tensor");
         }
-        float total = CpuOps.reduceSum(seg(a), a.numel());
-        HostAccessibleStorage o = allocateOutput(4);
+        CpuTensorLayoutAccess.requireF32(a);
+        MemorySegment source = seg(a);
+        TensorLayout layout = a.layout();
+        float total;
+        if (layout.isContiguous() && layout.storageOffset() == 0) {
+            total = CpuOps.reduceSum(source, a.numel());
+        } else {
+            total = 0f;
+            long[] dimensions = a.shape().dims();
+            for (long i = 0; i < a.numel(); i++) {
+                total += CpuTensorLayoutAccess.readLogical(source, dimensions, layout, i);
+            }
+        }
+        HostAccessibleStorage o = allocateOutput(Float.BYTES);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, total / a.numel());
         return out(new Shape(1), o);
     }
@@ -891,8 +916,22 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor max(Tensor a) {
-        float best = CpuOps.reduceMax(seg(a), a.numel());
-        HostAccessibleStorage o = allocateOutput(4);
+        Objects.requireNonNull(a, "tensor must not be null");
+        CpuTensorLayoutAccess.requireF32(a);
+        MemorySegment source = seg(a);
+        TensorLayout layout = a.layout();
+        float best;
+        if (layout.isContiguous() && layout.storageOffset() == 0) {
+            best = CpuOps.reduceMax(source, a.numel());
+        } else {
+            best = Float.NEGATIVE_INFINITY;
+            long[] dimensions = a.shape().dims();
+            for (long i = 0; i < a.numel(); i++) {
+                best = Math.max(best,
+                        CpuTensorLayoutAccess.readLogical(source, dimensions, layout, i));
+            }
+        }
+        HostAccessibleStorage o = allocateOutput(Float.BYTES);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, best);
         return out(new Shape(1), o);
     }
@@ -900,6 +939,7 @@ public final class CpuBackend implements ComputeBackend {
     /** Shared reduce-along-dim logic for sum and mean. */
     private Tensor reduceAlongDim(Tensor a, int dim, boolean keepDim, boolean isSum) {
         Objects.requireNonNull(a, "tensor must not be null");
+        CpuTensorLayoutAccess.requireF32(a);
         long[] inDims = a.shape().dims();
         int rank = inDims.length;
         if (rank == 0) {
@@ -919,37 +959,44 @@ public final class CpuBackend implements ComputeBackend {
         long[] outDims = new long[keepDim ? rank : rank - 1];
         int outIdx = 0;
         for (int d = 0; d < rank; d++) {
-            if (d == dim && !keepDim)
+            if (d == dim && !keepDim) {
                 continue;
+            }
             outDims[outIdx++] = (d == dim) ? 1 : inDims[d];
         }
         Shape outShape = new Shape(outDims);
-        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
-        MemorySegment src = seg(a);
-        MemorySegment dst = outBuf.segment();
+        HostAccessibleStorage outBuf = allocateOutput(
+                Math.multiplyExact(outShape.numel(), (long) Float.BYTES));
+        MemorySegment source = seg(a);
+        MemorySegment destination = outBuf.segment();
+        TensorLayout layout = a.layout();
 
-        // Compute input strides
-        long[] strides = new long[rank];
-        strides[rank - 1] = 1;
-        for (int d = rank - 2; d >= 0; d--)
-            strides[d] = strides[d + 1] * inDims[d + 1];
+        long outerSize = 1;
+        long innerSize = 1;
+        for (int d = 0; d < dim; d++) {
+            outerSize = Math.multiplyExact(outerSize, inDims[d]);
+        }
+        for (int d = dim + 1; d < rank; d++) {
+            innerSize = Math.multiplyExact(innerSize, inDims[d]);
+        }
 
-        long outerSize = 1, innerSize = 1;
-        for (int d = 0; d < dim; d++)
-            outerSize *= inDims[d];
-        for (int d = dim + 1; d < rank; d++)
-            innerSize *= inDims[d];
-
-        for (long o = 0; o < outerSize; o++) {
-            for (long i = 0; i < innerSize; i++) {
-                float acc = 0f;
-                for (long k = 0; k < dimLen; k++) {
-                    long inOff = (o * dimLen + k) * innerSize + i;
-                    acc += src.get(ValueLayout.JAVA_FLOAT, inOff * 4L);
+        for (long outer = 0; outer < outerSize; outer++) {
+            for (long inner = 0; inner < innerSize; inner++) {
+                float accumulator = 0f;
+                for (long reduced = 0; reduced < dimLen; reduced++) {
+                    long logicalInputIndex = Math.addExact(
+                            Math.multiplyExact(Math.addExact(
+                                    Math.multiplyExact(outer, dimLen), reduced), innerSize), inner);
+                    accumulator += CpuTensorLayoutAccess.readLogical(
+                            source, inDims, layout, logicalInputIndex);
                 }
-                if (!isSum)
-                    acc /= dimLen;
-                dst.set(ValueLayout.JAVA_FLOAT, (o * innerSize + i) * 4L, acc);
+                if (!isSum) {
+                    accumulator /= dimLen;
+                }
+                long outputIndex = Math.addExact(
+                        Math.multiplyExact(outer, innerSize), inner);
+                destination.set(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(outputIndex, Float.BYTES), accumulator);
             }
         }
         return out(outShape, outBuf);
