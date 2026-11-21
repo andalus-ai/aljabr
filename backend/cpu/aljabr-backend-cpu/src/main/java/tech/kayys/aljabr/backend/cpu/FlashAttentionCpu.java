@@ -31,9 +31,9 @@ public final class FlashAttentionCpu {
         boolean transferred = false;
         try {
             compute(
-                    CpuTensorStorageAccess.segment(Q),
-                    CpuTensorStorageAccess.segment(K),
-                    CpuTensorStorageAccess.segment(V),
+                    CpuTensorLayoutAccess.contiguousF32(Q),
+                    CpuTensorLayoutAccess.contiguousF32(K),
+                    CpuTensorLayoutAccess.contiguousF32(V),
                     out.segment(),
                     seqLen,
                     dim,
