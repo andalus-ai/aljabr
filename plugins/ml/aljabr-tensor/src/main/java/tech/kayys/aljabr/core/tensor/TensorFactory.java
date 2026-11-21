@@ -127,6 +127,42 @@ public final class TensorFactory {
         return of(data, backend, backend::allocateStorage, shape);
     }
 
+    /** Creates an I32 tensor backed by the supplied compute backend. */
+    public static Tensor of(int[] data, ComputeBackend backend, long... shape) {
+        Objects.requireNonNull(backend, "backend must not be null");
+        return of(data, backend, backend::allocateStorage, shape);
+    }
+
+    /**
+     * Creates an I32 tensor using an allocation policy independent of the compute
+     * backend. The allocator transfers one storage ownership reference to the
+     * returned tensor.
+     */
+    public static Tensor of(
+            int[] data,
+            ComputeBackend backend,
+            TensorAllocator allocator,
+            long... shape) {
+        Objects.requireNonNull(data, "data must not be null");
+        Objects.requireNonNull(backend, "backend must not be null");
+        Objects.requireNonNull(allocator, "allocator must not be null");
+        long n = numel(shape);
+        if (data.length != n) {
+            throw new IllegalArgumentException("data length != shape numel");
+        }
+
+        long bytes = Math.multiplyExact(n, (long) Integer.BYTES);
+        TensorStorage storage = allocateStorage(allocator, bytes);
+        try {
+            java.lang.foreign.MemorySegment source = java.lang.foreign.MemorySegment.ofArray(data);
+            backend.copyFromHost(storage, source, bytes);
+            return new DefaultTensor(new Shape(shape), DType.I32, backend.deviceType(), storage, backend);
+        } catch (RuntimeException | Error failure) {
+            storage.release();
+            throw failure;
+        }
+    }
+
     /**
      * Creates a tensor using an allocation policy independent of the compute
      * backend. The allocator transfers one storage ownership reference to the

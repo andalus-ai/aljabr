@@ -257,6 +257,11 @@ public interface Tensor extends AutoCloseable {
         return TensorFactory.of(data, backend, shape);
     }
 
+    /** Creates an I32 tensor from typed integer data using an explicit backend. */
+    static Tensor of(int[] data, ComputeBackend backend, long... shape) {
+        return TensorFactory.of(data, backend, shape);
+    }
+
     // Common operations
     Tensor relu();
 
@@ -365,5 +370,10 @@ public interface Tensor extends AutoCloseable {
 
     default float[] toFloatArray() {
         throw new UnsupportedOperationException("Float-array export is not supported by " + getClass().getSimpleName());
+    }
+
+    /** Exports logical I32 values from host-accessible storage in row-major order. */
+    default int[] toIntArray() {
+        throw new UnsupportedOperationException("Integer-array export is not supported by " + getClass().getSimpleName());
     }
 }
