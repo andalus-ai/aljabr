@@ -656,6 +656,35 @@ public final class DefaultTensor implements Tensor {
         return values;
     }
 
+    @Override
+    public int[] toIntArray() {
+        ensureOpen();
+        if (dtype != DType.I32) {
+            throw new UnsupportedOperationException(
+                    "toIntArray currently requires I32 tensors; actual dtype is " + dtype);
+        }
+        int length = Math.toIntExact(numel());
+        int[] values = new int[length];
+        if (length == 0) {
+            return values;
+        }
+
+        MemorySegment segment = requireHostSegment("toIntArray");
+        long[] strides = layout.strides();
+        if (layout.isContiguous()) {
+            long byteOffset = Math.multiplyExact(layout.storageOffset(), Integer.BYTES);
+            return segment.asSlice(byteOffset, Math.multiplyExact((long) length, Integer.BYTES))
+                    .toArray(java.lang.foreign.ValueLayout.JAVA_INT);
+        }
+
+        for (int linearIndex = 0; linearIndex < length; linearIndex++) {
+            long elementOffset = elementOffsetForLinearIndex(linearIndex, strides);
+            long byteOffset = Math.multiplyExact(elementOffset, Integer.BYTES);
+            values[linearIndex] = segment.get(java.lang.foreign.ValueLayout.JAVA_INT, byteOffset);
+        }
+        return values;
+    }
+
     /**
      * Maps a row-major logical element index to its backing-storage element
      * offset. The caller must supply a live tensor and a valid logical index.
