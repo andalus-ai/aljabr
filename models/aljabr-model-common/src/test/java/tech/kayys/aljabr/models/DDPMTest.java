@@ -97,7 +97,7 @@ class DDPMTest {
              Tensor input = TensorFactory.of(new float[8], backend, 2, 4);
              Tensor loss = model.trainingLoss(input)) {
             assertEquals(backend, loss.backend());
-            assertEquals(0, loss.shape().numel() == 1 ? 0 : 1);
+            assertEquals(1L, loss.shape().numel());
         }
     }
 }
