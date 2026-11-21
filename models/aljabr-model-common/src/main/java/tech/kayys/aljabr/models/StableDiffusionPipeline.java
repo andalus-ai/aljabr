@@ -11,6 +11,14 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
+import java.util.function.Function;
+
+import tech.kayys.aljabr.core.nn.NNModule;
+import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.models.diffusion.DDIMScheduler;
+import tech.kayys.aljabr.models.diffusion.DiffusionSchedule;
+import tech.kayys.aljabr.models.diffusion.DiffusionScheduler;
+import tech.kayys.aljabr.models.diffusion.SchedulerStepParameters;
 
 /**
  * Text-to-image pipeline coordinating text encoding, denoising, and decoding.
@@ -32,6 +40,7 @@ public class StableDiffusionPipeline extends NNModule {
     private final VAE vae;
     private final DiffusionScheduler scheduler;
 
+    /** Retains the original vector-VAE constructor for existing callers. */
     public StableDiffusionPipeline(CLIP clip, UNet2DConditional unet, VAE vae) {
         this(clip, unet, vae, new DDIMScheduler(TRAINING_TIMESTEPS));
     }

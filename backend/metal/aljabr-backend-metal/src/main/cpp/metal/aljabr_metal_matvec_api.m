@@ -2715,6 +2715,11 @@ int aljabr_metal_wo_ffn_logits_fused(
     return -1;
   if (wO_K <= 0 || wO_N <= 0 || ffnDim <= 0 || outputK <= 0 || outputN <= 0)
     return -2;
+  // The final RMSNorm operates on the hidden state produced by wO. Keep the
+  // projection input width identical so the norm-weight copy and kernel width
+  // cannot read beyond the supplied outputNormW buffer.
+  if (outputK != wO_N)
+    return -2;
 
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
   if (pipelines->rmsnorm == nil && pipelines->rmsnorm_float4 == nil)
