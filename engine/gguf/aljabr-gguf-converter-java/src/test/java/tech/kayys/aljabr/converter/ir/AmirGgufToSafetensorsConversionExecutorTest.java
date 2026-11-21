@@ -114,6 +114,19 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void refusesToTreatLossyDequantizationAsFullFidelity() throws Exception {
+        byte[] block = new byte[18];
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q4_0", List.of(32L), source, 8L, block.length);
+        var model = model("q4", "llama", List.of(tensor));
+        assertThrows(java.io.IOException.class, () ->
+                new AmirGgufToSafetensorsConversionExecutor().execute(
+                        model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
+                        new ConversionRequest(temporaryDirectory.resolve("incorrect-full.safetensors").toUri(),
+                                true, Map.of())));
+    }
+
+    @Test
     void rejectsUnsupportedQuantizationWithoutCreatingOutput() throws Exception {
         byte[] payload = new byte[84];
         Path source = writeContainer(payload);
