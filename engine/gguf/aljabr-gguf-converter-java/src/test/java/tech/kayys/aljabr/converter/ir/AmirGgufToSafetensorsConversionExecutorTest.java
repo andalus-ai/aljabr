@@ -81,6 +81,27 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void reversesGgufDimensionsByDefaultWithoutReorderingPayload() throws Exception {
+        byte[] values = ByteBuffer.allocate(24).order(ByteOrder.LITTLE_ENDIAN)
+                .putFloat(1).putFloat(2).putFloat(3).putFloat(4).putFloat(5).putFloat(6).array();
+        Path source = writeContainer(values);
+        var tensor = tensor("weight", "F32", List.of(2L, 3L), source, 8L, values.length);
+        var model = model("default-order", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("default-order.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
+                ConversionRequest.to(output.toUri()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals(List.of(3, 2), tensorHeader.getAsJsonArray("shape").asList().stream()
+                .map(value -> value.getAsInt()).toList());
+        assertArrayEquals(values, java.util.Arrays.copyOfRange(
+                file, dataStart(file), dataStart(file) + values.length));
+    }
+
+    @Test
     void dequantizesQ4ZeroBlocksToF32InGgmlElementOrder() throws Exception {
         byte[] block = new byte[18];
         block[0] = 0;
