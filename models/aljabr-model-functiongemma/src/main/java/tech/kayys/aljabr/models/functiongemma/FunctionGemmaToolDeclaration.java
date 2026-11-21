@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.models.functiongemma;
 
+import tech.kayys.aljabr.core.tool.ToolDeclaration;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,7 +17,7 @@ import java.util.regex.Pattern;
  * <p>The declaration renders the native FunctionGemma developer-turn syntax.
  * It describes a tool only: it does not register, authorize, or execute it.</p>
  */
-public final class FunctionGemmaToolDeclaration {
+public final class FunctionGemmaToolDeclaration implements ToolDeclaration {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
     private static final String ESCAPE = FunctionGemmaTokenizer.ESCAPE;
 
