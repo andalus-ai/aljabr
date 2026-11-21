@@ -331,6 +331,67 @@ class TensorFactoryTest {
         }
     }
 
+    @Test
+    void createsI32TensorWithTypedStorageAndRoundTripsValues() {
+        ComputeBackend backend = cpuBackend();
+        int[] source = {Integer.MIN_VALUE, -7, 0, 42, Integer.MAX_VALUE, 11};
+        Tensor tensor = TensorFactory.of(source, backend, 2, 3);
+        try {
+            assertEquals(DType.I32, tensor.dtype());
+            assertEquals(2L * 3L * Integer.BYTES, tensor.storage().sizeBytes());
+            assertArrayEquals(source, tensor.toIntArray());
+            assertThrows(UnsupportedOperationException.class, tensor::toFloatArray);
+        } finally {
+            tensor.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void i32FactoryRejectsMismatchedLengthAndNullInputs() {
+        ComputeBackend backend = cpuBackend();
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> TensorFactory.of(new int[] {1, 2}, backend, 3));
+            assertThrows(NullPointerException.class,
+                    () -> TensorFactory.of((int[]) null, backend, 0));
+            assertThrows(NullPointerException.class,
+                    () -> TensorFactory.of(new int[] {1}, null, 1));
+        } finally {
+            backend.close();
+        }
+    }
+
+    @Test
+    void i32FactoryReleasesAllocatedStorageWhenHostCopyFails() {
+        ComputeBackend delegate = cpuBackend();
+        AtomicLong released = new AtomicLong();
+        TensorStorage storage = new TensorStorage() {
+            @Override public long sizeBytes() { return Integer.BYTES; }
+            @Override public void retain() { }
+            @Override public void release() { released.incrementAndGet(); }
+        };
+        ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("allocateStorage")) return storage;
+                    if (method.getName().equals("copyFromHost")) throw new IllegalStateException("copy failed");
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                });
+        try {
+            assertThrows(IllegalStateException.class,
+                    () -> TensorFactory.of(new int[] {9}, backend, 1));
+            assertEquals(1L, released.get());
+        } finally {
+            delegate.close();
+        }
+    }
+
     private static ComputeBackend cpuBackend() {
         try {
             return (ComputeBackend) Class.forName("tech.kayys.aljabr.backend.cpu.CpuBackend")
