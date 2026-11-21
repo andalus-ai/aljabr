@@ -141,8 +141,11 @@ public final class DDPM extends NNModule {
         for (int t = timesteps - 1; t >= 0; t--) {
             int[] timestepValues = new int[batchSize];
             java.util.Arrays.fill(timestepValues, t);
-            Tensor modelInput = appendTimestep(sample, timestepValues, batchSize);
-            float[] predictedNoise = denoiser.forward(modelInput).toFloatArray();
+            float[] predictedNoise;
+            try (Tensor modelInput = appendTimestep(sample, timestepValues, batchSize);
+                 Tensor prediction = denoiser.forward(modelInput)) {
+                predictedNoise = prediction.toFloatArray();
+            }
 
             float alpha = alphas[t];
             float beta = betas[t];
