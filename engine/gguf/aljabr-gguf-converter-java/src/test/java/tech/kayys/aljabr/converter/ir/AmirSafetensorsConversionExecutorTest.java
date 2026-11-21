@@ -3,7 +3,11 @@ package tech.kayys.aljabr.converter.ir;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
+import tech.kayys.aljabr.spi.model.ir.ConversionExecutionResult;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
+import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
+import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutor;
+import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
@@ -48,6 +52,49 @@ class AmirSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void executesThroughFormatNeutralExecutorContract() throws Exception {
+        Path source = writeSource("spi-source.safetensors");
+        ModelDescriptor model = model(source, Map.of(), Map.of());
+        ConversionPlan plan = plan(model, CompatibilityReport.ConversionFidelity.FULL);
+        ModelConversionExecutor executor = new AmirSafetensorsConversionExecutor();
+        Path output = temporaryDirectory.resolve("spi-output.safetensors");
+
+        assertTrue(executor.supports("SAFETENSORS", "safetensors"));
+        assertFalse(executor.supports("gguf", "safetensors"));
+
+        ConversionExecutionResult result = executor.execute(
+                model, plan, ConversionRequest.to(output.toUri()));
+
+        assertEquals("safetensors", result.sourceFormat());
+        assertEquals("safetensors", result.targetFormat());
+        assertEquals(output.toAbsolutePath().normalize().toUri(), result.output());
+        assertEquals(1, result.tensorCount());
+        assertEquals(8L, result.payloadBytes());
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL, result.compatibility().fidelity());
+        assertTrue(result.untransferredMetadataKeys().isEmpty());
+    }
+
+    @Test
+    void discoversSafetensorsExecutorThroughServiceLoader() {
+        var executor = ModelConversionExecutors.find("safetensors", "safetensors").orElseThrow();
+
+        assertInstanceOf(AmirSafetensorsConversionExecutor.class, executor);
+    }
+
+    @Test
+    void rejectsOptionsThatThisTargetExecutorDoesNotUnderstand() throws Exception {
+        Path source = writeSource("options-source.safetensors");
+        ModelDescriptor model = model(source, Map.of(), Map.of());
+        ConversionPlan plan = plan(model, CompatibilityReport.ConversionFidelity.FULL);
+        ConversionRequest request = new ConversionRequest(
+                temporaryDirectory.resolve("options-output.safetensors").toUri(),
+                false, Map.of("safetensors.unknown", "true"));
+
+        assertThrows(java.io.IOException.class,
+                () -> new AmirSafetensorsConversionExecutor().execute(model, plan, request));
+    }
+
+    @Test
     void partialPlanRequiresAcknowledgementAndReportsUntransferredExtensions() throws Exception {
         Path source = writeSource("partial.safetensors");
         ModelDescriptor model = model(source, Map.of(), Map.of("vendor.config", "{\"x\":1}"));
@@ -61,8 +108,31 @@ class AmirSafetensorsConversionExecutorTest {
         assertFalse(Files.exists(output));
 
         var result = executor.execute(model, plan, output, true);
-        assertEquals(List.of("vendor.config"), result.untransferredExtensionKeys());
+        assertEquals(List.of("model:vendor.config"), result.untransferredExtensionKeys());
         assertTrue(Files.exists(output));
+    }
+
+    @Test
+    void tensorExtensionsAlsoRequirePartialFidelityAndAreReported() throws Exception {
+        Path source = writeSource("tensor-extension.safetensors");
+        var payload = new PayloadReference(
+                source.toUri(), source.getFileName().toString(), 0L, 8L,
+                PayloadReference.OffsetBasis.DATA_SECTION);
+        var tensor = new TensorDescriptor(
+                "weight", "F32", List.of(2L), "unknown", null, payload,
+                Map.of("vendor.layout_hint", "blocked"));
+        var model = new ModelDescriptor(
+                ModelIdentity.of("tensor-extension"), "test-architecture", "safetensors",
+                Map.of(), Map.of(), List.of(tensor));
+        var executor = new AmirSafetensorsConversionExecutor();
+        var output = temporaryDirectory.resolve("tensor-extension-output.safetensors");
+
+        assertThrows(java.io.IOException.class, () -> executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false));
+
+        var result = executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL), output, true);
+        assertEquals(List.of("tensor:weight:vendor.layout_hint"), result.untransferredExtensionKeys());
     }
 
     private ModelDescriptor model(Path source, Map<String, String> metadata, Map<String, String> extensions) {
