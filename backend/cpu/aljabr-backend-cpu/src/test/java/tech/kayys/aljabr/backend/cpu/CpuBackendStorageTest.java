@@ -973,7 +973,7 @@ class CpuBackendStorageTest {
             assertThrows(IllegalArgumentException.class,
                     () -> backend.conv2d(input, weight, null, 0, 0, 1, 1));
             assertThrows(IllegalArgumentException.class,
-                    () -> backend.conv2d(input, weight, null, 1, 0, 1, 1));
+                    () -> backend.conv2d(input, weight, null, 1, 0, 2, 1));
         } finally {
             input.release();
             weight.release();
