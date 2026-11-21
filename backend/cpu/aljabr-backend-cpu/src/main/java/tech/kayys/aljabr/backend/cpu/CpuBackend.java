@@ -493,59 +493,74 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor transpose(Tensor a) {
-        long[] dims = a.shape().dims();
-        int rank = dims.length;
+        Objects.requireNonNull(a, "input");
+        int rank = a.shape().rank();
+        if (rank < 2) {
+            throw new IllegalArgumentException(
+                    "transpose requires a tensor with rank >= 2; got " + rank);
+        }
         return transpose(a, rank - 2, rank - 1);
     }
 
     @Override
     public Tensor transpose(Tensor a, int d0, int d1) {
+        Objects.requireNonNull(a, "input");
+        int rank = a.shape().rank();
+        if (d0 < 0 || d0 >= rank || d1 < 0 || d1 >= rank) {
+            throw new IllegalArgumentException(
+                    "transpose dimensions must be in [0, " + rank + "); got d0="
+                            + d0 + ", d1=" + d1);
+        }
+        if (a.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU transpose currently supports F32 tensors only; actual dtype is " + a.dtype());
+        }
+
         long[] inDims = a.shape().dims();
-        int rank = inDims.length;
         long[] outDims = inDims.clone();
         outDims[d0] = inDims[d1];
         outDims[d1] = inDims[d0];
-
         Shape outShape = new Shape(outDims);
-        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
-
-        // Compute strides for both input and output (row-major)
-        long[] inStrides = new long[rank];
-        long[] outStrides = new long[rank];
-        inStrides[rank - 1] = outStrides[rank - 1] = 1;
-        for (int i = rank - 2; i >= 0; i--) {
-            inStrides[i] = inStrides[i + 1] * inDims[i + 1];
-            outStrides[i] = outStrides[i + 1] * outDims[i + 1];
-        }
-
-        MemorySegment src = seg(a);
-        MemorySegment dst = outBuf.segment();
         long total = outShape.numel();
-        long[] cursor = new long[rank];
-        for (long elem = 0; elem < total; elem++) {
-            long inIdx = 0, outIdx = 0;
-            for (int d = 0; d < rank; d++) {
-                int inD = (d == d0) ? d1 : (d == d1) ? d0 : d;
-                inIdx += cursor[d] * inStrides[inD];
-                outIdx += cursor[d] * outStrides[d];
+        long outputBytes = Math.multiplyExact(total, Float.BYTES);
+        HostAccessibleStorage outBuf = allocateOutput(outputBytes);
+        try {
+            TensorLayout inputLayout = a.layout();
+            long[] inputStrides = inputLayout.strides();
+            long storageOffset = inputLayout.storageOffset();
+            long[] outputStrides = TensorLayout.contiguous(outShape).strides();
+            MemorySegment src = seg(a);
+            MemorySegment dst = outBuf.segment();
+            long[] cursor = new long[rank];
+
+            for (long element = 0; element < total; element++) {
+                long inputIndex = storageOffset;
+                long outputIndex = 0;
+                for (int dimension = 0; dimension < rank; dimension++) {
+                    int inputDimension = dimension == d0 ? d1
+                            : dimension == d1 ? d0 : dimension;
+                    inputIndex = Math.addExact(inputIndex,
+                            Math.multiplyExact(cursor[dimension], inputStrides[inputDimension]));
+                    outputIndex = Math.addExact(outputIndex,
+                            Math.multiplyExact(cursor[dimension], outputStrides[dimension]));
+                }
+                long inputByteOffset = Math.multiplyExact(inputIndex, Float.BYTES);
+                long outputByteOffset = Math.multiplyExact(outputIndex, Float.BYTES);
+                dst.set(ValueLayout.JAVA_FLOAT, outputByteOffset,
+                        src.get(ValueLayout.JAVA_FLOAT, inputByteOffset));
+
+                for (int dimension = rank - 1; dimension >= 0; dimension--) {
+                    if (++cursor[dimension] < outDims[dimension]) {
+                        break;
+                    }
+                    cursor[dimension] = 0;
+                }
             }
-            long memOffset = inIdx * 4L;
-            if (memOffset >= src.byteSize()) {
-                System.err.println("OOB Access! inDims=" + java.util.Arrays.toString(inDims) + ", d0=" + d0 + ", d1="
-                        + d1 + ", outDims=" + java.util.Arrays.toString(outDims) + ", inStrides="
-                        + java.util.Arrays.toString(inStrides) + ", outStrides=" + java.util.Arrays.toString(outStrides)
-                        + ", cursor=" + java.util.Arrays.toString(cursor) + ", inIdx=" + inIdx + ", memOffset="
-                        + memOffset + ", byteSize=" + src.byteSize());
-            }
-            dst.set(ValueLayout.JAVA_FLOAT, outIdx * 4L,
-                    src.get(ValueLayout.JAVA_FLOAT, memOffset));
-            for (int d = rank - 1; d >= 0; d--) {
-                if (++cursor[d] < outDims[d])
-                    break;
-                cursor[d] = 0;
-            }
+            return out(outShape, outBuf);
+        } catch (RuntimeException | Error failure) {
+            outBuf.release();
+            throw failure;
         }
-        return out(outShape, outBuf);
     }
 
     // ── Activations ───────────────────────────────────────────────────────────
