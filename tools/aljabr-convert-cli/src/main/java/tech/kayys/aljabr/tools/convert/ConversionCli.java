@@ -1,6 +1,5 @@
 package tech.kayys.aljabr.tools.convert;
 
-import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport.Diagnostic;
 import tech.kayys.aljabr.spi.model.ir.ConversionExecutionResult;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
@@ -26,6 +25,10 @@ public final class ConversionCli {
     }
 
     public static void main(String[] args) {
+        if (args.length == 1 && isHelp(args[0])) {
+            usage(System.out);
+            return;
+        }
         int status = run(args, System.out, System.err, ModelConversionFacade.discover());
         if (status != 0) {
             System.exit(status);
