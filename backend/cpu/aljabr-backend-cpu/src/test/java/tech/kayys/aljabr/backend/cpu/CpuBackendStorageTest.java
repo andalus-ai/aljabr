@@ -181,6 +181,60 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void catReadsStridedAndOffsetInputsInLogicalOrderAndReleasesStorage() {
+        HostStorage firstStorage = new HostStorage(99f, 1f, 2f, 99f, 3f, 4f);
+        HostStorage secondStorage = new HostStorage(5f, 7f, 6f, 8f);
+        DefaultTensor first = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) firstStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {3, 1}, 1));
+        DefaultTensor second = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) secondStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 0));
+        Tensor concatenated = null;
+        try {
+            concatenated = backend.cat(java.util.List.of(first, second), 0);
+            assertArrayEquals(new long[] {4, 2}, concatenated.shape().dims());
+            assertArrayEquals(
+                    new float[] {1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f},
+                    concatenated.toFloatArray(), 0f);
+        } finally {
+            if (concatenated != null) concatenated.release();
+            second.release();
+            first.release();
+        }
+        assertEquals(0, firstStorage.references());
+        assertEquals(0, secondStorage.references());
+    }
+
+    @Test
+    void catReadsStridedInputsWhenConcatenatingAlongInnerAxis() {
+        HostStorage firstStorage = new HostStorage(99f, 1f, 99f, 2f);
+        HostStorage secondStorage = new HostStorage(3f, 99f, 4f);
+        DefaultTensor first = new DefaultTensor(
+                new Shape(2, 1), DType.F32, DeviceType.CPU, (TensorStorage) firstStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 1), new long[] {2, 1}, 1));
+        DefaultTensor second = new DefaultTensor(
+                new Shape(2, 1), DType.F32, DeviceType.CPU, (TensorStorage) secondStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 1), new long[] {2, 1}, 0));
+        Tensor concatenated = null;
+        try {
+            concatenated = backend.cat(java.util.List.of(first, second), 1);
+            assertArrayEquals(new long[] {2, 2}, concatenated.shape().dims());
+            assertArrayEquals(new float[] {1f, 3f, 2f, 4f}, concatenated.toFloatArray(), 0f);
+        } finally {
+            if (concatenated != null) concatenated.release();
+            second.release();
+            first.release();
+        }
+        assertEquals(0, firstStorage.references());
+        assertEquals(0, secondStorage.references());
+    }
+
+    @Test
     void cpuKernelsReadHostAccessibleStorageWithoutLegacyBuffer() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
         DefaultTensor input = tensor(storage, 2, 2);

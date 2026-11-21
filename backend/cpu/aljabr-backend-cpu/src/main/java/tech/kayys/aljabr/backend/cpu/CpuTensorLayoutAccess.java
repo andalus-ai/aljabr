@@ -96,8 +96,22 @@ final class CpuTensorLayoutAccess {
 
     static float readLogical(
             MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
-        long[] strides = layout.strides();
+        long elementOffset = logicalElementOffset(dimensions, layout, logicalIndex);
+        return source.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(elementOffset, Float.BYTES));
+    }
+
+    static long logicalElementOffset(
+            long[] dimensions, TensorLayout layout, long logicalIndex) {
+        Objects.requireNonNull(dimensions, "dimensions");
+        Objects.requireNonNull(layout, "layout");
+        if (logicalIndex < 0) {
+            throw new IndexOutOfBoundsException("logical index must not be negative");
+        }
         long remaining = logicalIndex;
+        long[] strides = layout.strides();
+        if (strides.length != dimensions.length) {
+            throw new IllegalArgumentException("layout rank does not match tensor rank");
+        }
         long elementOffset = layout.storageOffset();
         for (int axis = dimensions.length - 1; axis >= 0; axis--) {
             long dimension = dimensions[axis];
@@ -112,12 +126,6 @@ final class CpuTensorLayoutAccess {
             throw new IndexOutOfBoundsException("logical index exceeds tensor element count");
         }
         return elementOffset;
-    }
-
-    static float readLogical(
-            MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
-        long elementOffset = logicalElementOffset(dimensions, layout, logicalIndex);
-        return source.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(elementOffset, Float.BYTES));
     }
 
     static void requireF32(Tensor tensor) {

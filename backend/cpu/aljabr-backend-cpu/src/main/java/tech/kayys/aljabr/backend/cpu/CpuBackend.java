@@ -2093,21 +2093,26 @@ public final class CpuBackend implements ComputeBackend {
         long outer = 1, inner = 1;
         for (int d = 0; d < normalizedAxis; d++) outer = Math.multiplyExact(outer, first.shape().dim(d));
         for (int d = normalizedAxis + 1; d < rank; d++) inner = Math.multiplyExact(inner, first.shape().dim(d));
-        float[][] sources = new float[tensors.size()][];
-        for (int i = 0; i < tensors.size(); i++) sources[i] = tensors.get(i).toFloatArray();
         long outputElements = new Shape(outputDims).numel();
         if (outputElements > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("cat result is too large for a Java float[]: " + outputElements);
         }
         float[] output = new float[Math.toIntExact(outputElements)];
         int destination = 0;
+        for (Tensor tensor : tensors) {
+            CpuTensorLayoutAccess.requireF32(tensor);
+        }
         for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
-            for (int i = 0; i < tensors.size(); i++) {
-                long blockElements = Math.multiplyExact(tensors.get(i).shape().dim(normalizedAxis), inner);
-                int blockLength = Math.toIntExact(blockElements);
-                int sourceOffset = Math.toIntExact(Math.multiplyExact(outerIndex, blockElements));
-                System.arraycopy(sources[i], sourceOffset, output, destination, blockLength);
-                destination += blockLength;
+            for (Tensor tensor : tensors) {
+                long blockElements = Math.multiplyExact(tensor.shape().dim(normalizedAxis), inner);
+                long sourceBase = Math.multiplyExact(outerIndex, blockElements);
+                long[] dimensions = tensor.shape().dims();
+                TensorLayout layout = tensor.layout();
+                MemorySegment source = CpuTensorStorageAccess.segment(tensor);
+                for (long element = 0; element < blockElements; element++) {
+                    output[destination++] = CpuTensorLayoutAccess.readLogical(
+                            source, dimensions, layout, Math.addExact(sourceBase, element));
+                }
             }
         }
         return TensorFactory.of(output, this, outputDims);
