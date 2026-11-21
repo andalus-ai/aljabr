@@ -2,6 +2,7 @@ package tech.kayys.aljabr.models.embeddinggemma2.vision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -108,6 +109,44 @@ class EmbeddingGemma2VisionImageProcessorTest {
         }
         // Bicubic filtering legitimately overshoots below zero; the adapter must preserve it.
         org.junit.jupiter.api.Assertions.assertTrue(actual[0] < 0f);
+    }
+
+
+    @Test
+    void matchesHuggingFaceResizeGeometryAcrossSupportedSoftTokenBudgets() {
+        // Reference dimensions calculated with Gemma4ImageProcessor's
+        // get_aspect_ratio_preserving_size for a 512x512 image, patch_size=16,
+        // pooling_kernel_size=3, and each supported max_soft_tokens value.
+        int[] budgets = {70, 140, 280, 560, 1120};
+        int[] expectedSides = {384, 528, 768, 1104, 1584};
+
+        for (int index = 0; index < budgets.length; index++) {
+            var processor = new EmbeddingGemma2VisionImageProcessor(16, budgets[index], 3);
+            int[] size = processor.aspectRatioPreservingSize(512, 512);
+            assertEquals(expectedSides[index], size[0], "height for max_soft_tokens=" + budgets[index]);
+            assertEquals(expectedSides[index], size[1], "width for max_soft_tokens=" + budgets[index]);
+            assertEquals(0, size[0] % 48);
+            assertEquals(0, size[1] % 48);
+            int actualPatches = (size[0] / 16) * (size[1] / 16);
+            assertEquals(0, actualPatches % 9);
+            assertEquals(budgets[index] * 9, processor.maxPatches());
+            assertTrue(actualPatches <= processor.maxPatches());
+        }
+    }
+
+    @Test
+    void matchesHuggingFaceMinimumDimensionFallbackForExtremeAspectRatios() {
+        var processor = new EmbeddingGemma2VisionImageProcessor(16, 70, 3);
+
+        int[] landscape = processor.aspectRatioPreservingSize(1, 10_000);
+        int[] portrait = processor.aspectRatioPreservingSize(10_000, 1);
+
+        assertEquals(48, landscape[0]);
+        assertEquals(3360, landscape[1]);
+        assertEquals(3360, portrait[0]);
+        assertEquals(48, portrait[1]);
+        assertEquals(630, (landscape[0] / 16) * (landscape[1] / 16));
+        assertEquals(630, (portrait[0] / 16) * (portrait[1] / 16));
     }
 
     @Test
