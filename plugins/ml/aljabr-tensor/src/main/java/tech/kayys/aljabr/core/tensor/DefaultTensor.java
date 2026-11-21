@@ -440,6 +440,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor mean(int dim, boolean keepDim) {
+        ensureOpen();
         int axis = TensorOperationValidator.validateReduction(shape, dim, true).axis();
         return record(OpType.MEAN, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.mean(this, axis, keepDim));
     }
@@ -451,6 +452,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor sum(int dim, boolean keepDim) {
+        ensureOpen();
         int axis = TensorOperationValidator.validateReduction(shape, dim, false).axis();
         return record(OpType.SUM, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.sum(this, axis, keepDim));
     }
