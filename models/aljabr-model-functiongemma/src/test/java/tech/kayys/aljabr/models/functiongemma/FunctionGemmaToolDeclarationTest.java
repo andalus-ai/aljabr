@@ -29,6 +29,27 @@ class FunctionGemmaToolDeclarationTest {
     }
 
     @Test
+    void formatsTypedToolsInsideDeveloperContent() {
+        var tool = FunctionGemmaToolDeclaration.of("lookup", "Find a record",
+                FunctionGemmaToolDeclaration.Schema.object()
+                        .property("id", FunctionGemmaToolDeclaration.Schema.integer())
+                        .required("id"));
+        var content = new FunctionGemmaChatTemplate().formatDeveloperContent("Use tools.", tool);
+        assertTrue(content.startsWith("Use tools.\\n" + FunctionGemmaChatTemplate.START_FUNCTION_DECLARATION));
+        assertTrue(content.contains("declaration:lookup"));
+        assertTrue(content.endsWith(FunctionGemmaChatTemplate.END_FUNCTION_DECLARATION));
+    }
+
+    @Test
+    void snapshotsBuilderSoLaterMutationDoesNotChangeDeclaration() {
+        var builder = FunctionGemmaToolDeclaration.Schema.object()
+                .property("query", FunctionGemmaToolDeclaration.Schema.string());
+        var tool = FunctionGemmaToolDeclaration.of("search", "Search", builder);
+        builder.property("late", FunctionGemmaToolDeclaration.Schema.bool());
+        assertFalse(tool.parameterSchema().get("properties").toString().contains("late"));
+    }
+
+    @Test
     void supportsNestedObjectAndArraySchemasAndValidatorInterop() {
         var parameters = FunctionGemmaToolDeclaration.Schema.object()
                 .property("options", FunctionGemmaToolDeclaration.Schema.object()
