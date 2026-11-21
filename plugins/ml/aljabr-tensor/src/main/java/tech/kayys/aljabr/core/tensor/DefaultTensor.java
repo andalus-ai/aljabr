@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.core.tensor;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -13,6 +14,10 @@ import tech.kayys.aljabr.core.tensor.lazy.GraphExecutor;
 import tech.kayys.aljabr.core.tensor.lazy.GraphNode;
 import tech.kayys.aljabr.core.tensor.lazy.OpType;
 import tech.kayys.aljabr.core.tensor.lazy.OperationBackwardFunctions;
+import tech.kayys.aljabr.diagnostics.Diagnostic;
+import tech.kayys.aljabr.diagnostics.DiagnosticSeverity;
+import tech.kayys.aljabr.diagnostics.DiagnosticSink;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 
 /**
  * Default eager tensor backed by backend-neutral {@link TensorStorage}.
@@ -28,6 +33,7 @@ import tech.kayys.aljabr.core.tensor.lazy.OperationBackwardFunctions;
 public final class DefaultTensor implements Tensor {
 
     private final Shape shape;
+    private final TensorLayout layout;
     private final DType dtype;
     private final DeviceType device;
     private final TensorStorage storage;
@@ -49,26 +55,133 @@ public final class DefaultTensor implements Tensor {
     /**
      * Creates a tensor using backend-neutral storage.
      *
-     * <p>On successful construction this tensor owns the supplied storage
-     * reference and releases it from {@link #release()}.</p>
+     * <p>On successful construction this tensor takes ownership of the one
+     * existing storage reference supplied by the caller and releases that
+     * reference from {@link #release()}. The caller must not release that
+     * transferred reference afterward. If validation or construction fails,
+     * ownership remains with the caller. Call {@link TensorStorage#retain()}
+     * first when the caller also needs to keep an independent reference.</p>
      */
     public DefaultTensor(Shape shape, DType dtype, DeviceType device, TensorStorage storage, ComputeBackend backend) {
+        this(shape, dtype, device, storage, backend, DiagnosticSink.noop());
+    }
+
+    /**
+     * Creates a tensor and reports construction-time validation failures to an
+     * explicitly supplied diagnostic sink.
+     *
+     * <p>The sink is consulted only when validation fails. Successful tensor
+     * construction does not create diagnostics or invoke the sink. Existing
+     * constructors remain silent and source-compatible.</p>
+     *
+     * @param diagnosticSink receives structured validation failures
+     */
+    public DefaultTensor(
+            Shape shape,
+            DType dtype,
+            DeviceType device,
+            TensorStorage storage,
+            ComputeBackend backend,
+            DiagnosticSink diagnosticSink) {
+        this(shape, dtype, device, storage, backend, TensorLayout.contiguous(shape), diagnosticSink);
+    }
+
+    /**
+     * Creates a tensor with an explicit immutable layout.
+     *
+     * <p>The layout is metadata only: operations must still be implemented by
+     * a backend that understands the supplied strides. Existing constructors
+     * continue to create canonical contiguous tensors.</p>
+     *
+     * <p>On successful construction this tensor takes ownership of the one
+     * existing storage reference. If validation fails, ownership remains with
+     * the caller.</p>
+     */
+    public DefaultTensor(
+            Shape shape,
+            DType dtype,
+            DeviceType device,
+            TensorStorage storage,
+            ComputeBackend backend,
+            TensorLayout layout) {
+        this(shape, dtype, device, storage, backend, layout, DiagnosticSink.noop());
+    }
+
+    /**
+     * Creates a tensor with an explicit layout and diagnostic sink.
+     *
+     * <p>Block-quantized tensors currently require canonical contiguous
+     * layouts with zero storage offset because their storage addressing is
+     * block-based rather than element-strided.</p>
+     */
+    public DefaultTensor(
+            Shape shape,
+            DType dtype,
+            DeviceType device,
+            TensorStorage storage,
+            ComputeBackend backend,
+            TensorLayout layout,
+            DiagnosticSink diagnosticSink) {
         this.shape = Objects.requireNonNull(shape, "shape must not be null");
         this.dtype = Objects.requireNonNull(dtype, "dtype must not be null");
         this.device = Objects.requireNonNull(device, "device must not be null");
         this.storage = Objects.requireNonNull(storage, "storage must not be null");
         this.backend = Objects.requireNonNull(backend, "backend must not be null");
+        this.layout = Objects.requireNonNull(layout, "layout must not be null");
+        Objects.requireNonNull(diagnosticSink, "diagnosticSink must not be null");
 
-        // Larger allocations are valid for pooled storage and tensor views.
-        // A tensor must never expose less capacity than its logical shape needs.
-        final long requiredBytes = dtype.memoryFootprintBytes(shape.numel());
+        if (!shape.equals(layout.shape())) {
+            throw new IllegalArgumentException(
+                    "Tensor layout shape does not match tensor shape: shape=" + shape
+                            + ", layoutShape=" + layout.shape());
+        }
+
+        final long requiredBytes;
+        try {
+            if (dtype.isQuantized()) {
+                if (!layout.isContiguous() || layout.storageOffset() != 0) {
+                    throw new IllegalArgumentException(
+                            "Block-quantized tensors currently require a contiguous layout with zero storage offset");
+                }
+                requiredBytes = dtype.memoryFootprintBytes(shape.numel());
+            } else {
+                requiredBytes = dtype.memoryFootprintBytes(layout.requiredStorageElements());
+            }
+        } catch (IllegalArgumentException failure) {
+            diagnosticSink.accept(new Diagnostic(
+                    "tensor.dtype.element-count-invalid",
+                    DiagnosticSeverity.ERROR,
+                    "tensor.validation",
+                    failure.getMessage(),
+                    Map.of(
+                            "shape", shape.toString(),
+                            "layout", layout.toString(),
+                            "dtype", dtype.name(),
+                            "numel", Long.toString(shape.numel()),
+                            "causeType", failure.getClass().getName())));
+            throw failure;
+        }
+
         final long availableBytes = storage.sizeBytes();
         if (availableBytes < requiredBytes) {
-            throw new IllegalArgumentException(
-                    "Tensor storage is too small: shape=" + shape
-                            + ", dtype=" + dtype
-                            + ", requires=" + requiredBytes + " bytes"
-                            + ", available=" + availableBytes + " bytes");
+            String message = "Tensor storage is too small: shape=" + shape
+                    + ", layout=" + layout
+                    + ", dtype=" + dtype
+                    + ", requires=" + requiredBytes + " bytes"
+                    + ", available=" + availableBytes + " bytes";
+            diagnosticSink.accept(new Diagnostic(
+                    "tensor.storage.capacity-insufficient",
+                    DiagnosticSeverity.ERROR,
+                    "tensor.validation",
+                    message,
+                    Map.of(
+                            "shape", shape.toString(),
+                            "layout", layout.toString(),
+                            "dtype", dtype.name(),
+                            "device", device.name(),
+                            "requiredBytes", Long.toString(requiredBytes),
+                            "availableBytes", Long.toString(availableBytes))));
+            throw new IllegalArgumentException(message);
         }
     }
 
@@ -80,6 +193,12 @@ public final class DefaultTensor implements Tensor {
     @Override
     public Shape shape() {
         return shape;
+    }
+
+    /** Returns this tensor's immutable element-based storage layout. */
+    @Override
+    public TensorLayout layout() {
+        return layout;
     }
 
     @Override
@@ -97,7 +216,12 @@ public final class DefaultTensor implements Tensor {
         return backend;
     }
 
-    /** Returns the canonical backend-neutral storage contract. */
+    /**
+     * Returns the canonical backend-neutral storage contract as a borrowed
+     * reference. The tensor continues to own the storage; callers must not
+     * release this reference. Retain it explicitly if it must outlive this
+     * tensor.
+     */
     @Override
     public TensorStorage storage() {
         ensureOpen();
@@ -105,7 +229,9 @@ public final class DefaultTensor implements Tensor {
     }
 
     /**
-     * Returns the legacy FFM/Arena buffer view.
+     * Returns the legacy FFM/Arena buffer as a borrowed view. The returned
+     * buffer does not carry an independent ownership reference and must not be
+     * released by the caller.
      *
      * @throws UnsupportedOperationException when this tensor is backed by
      *         storage that does not implement the legacy Buffer contract
@@ -175,6 +301,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor reshape(long... newShape) {
+        TensorOperationValidator.validateReshape(shape, newShape);
         return record(OpType.RESHAPE, new Tensor[] { this }, new Object[] { newShape.clone() }, backend.reshape(this, newShape));
     }
 
@@ -185,6 +312,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor slice(long[] offsets, long[] sizes) {
+        TensorOperationValidator.validateSlice(shape, offsets, sizes);
         return record(OpType.SLICE, new Tensor[] { this }, new Object[] { offsets.clone(), sizes.clone() }, backend.slice(this, offsets, sizes));
     }
 
@@ -279,27 +407,41 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor flatten() {
+        ensureOpen();
+        TensorOperationValidator.validateFlatten(shape);
         return record(OpType.FLATTEN, new Tensor[] { this }, new Object[0], backend.flatten(this));
     }
 
     @Override
     public Tensor unsqueeze(int dim) {
-        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim }, backend.unsqueeze(this, dim));
+        ensureOpen();
+        TensorOperationValidator.UnsqueezePlan plan =
+                TensorOperationValidator.validateUnsqueeze(shape, dim);
+        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim },
+                backend.unsqueeze(this, plan.axis()));
     }
 
     @Override
     public Tensor squeeze() {
+        ensureOpen();
         return record(OpType.SQUEEZE, new Tensor[] { this }, new Object[0], backend.squeeze(this));
     }
 
     @Override
     public Tensor transpose() {
+        ensureOpen();
+        TensorOperationValidator.validateTranspose(shape);
         return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[0], backend.transpose(this));
     }
 
     @Override
     public Tensor transpose(int d0, int d1) {
-        return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[] { d0, d1 }, backend.transpose(this, d0, d1));
+        ensureOpen();
+        TensorOperationValidator.TransposePlan plan =
+                TensorOperationValidator.validateTranspose(shape, d0, d1);
+        return record(OpType.TRANSPOSE, new Tensor[] { this },
+                new Object[] { plan.axis0(), plan.axis1() },
+                backend.transpose(this, plan.axis0(), plan.axis1()));
     }
 
     @Override
@@ -314,10 +456,8 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor mean(int dim, boolean keepDim) {
-        int axis = validateReductionAxis(dim);
-        if (shape.dim(axis) == 0) {
-            throw new IllegalArgumentException("Mean is undefined for an empty reduction dimension");
-        }
+        ensureOpen();
+        int axis = TensorOperationValidator.validateReduction(shape, dim, true).axis();
         return record(OpType.MEAN, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.mean(this, axis, keepDim));
     }
 
@@ -328,74 +468,35 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor sum(int dim, boolean keepDim) {
-        int axis = validateReductionAxis(dim);
+        ensureOpen();
+        int axis = TensorOperationValidator.validateReduction(shape, dim, false).axis();
         return record(OpType.SUM, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.sum(this, axis, keepDim));
     }
-
-    private int validateReductionAxis(int dim) {
-        ensureOpen();
-        int rank = shape.rank();
-        int axis = dim < 0 ? rank + dim : dim;
-        if (rank == 0 || axis < 0 || axis >= rank) {
-            throw new IllegalArgumentException(
-                    "Reduction axis " + dim + " is out of range for tensor rank " + rank);
-        }
-        return axis;
-    }
-
 
     /**
      * Concatenates eager tensors and records a multi-input graph node when any
      * source participates in autograd.
      */
     public static Tensor cat(java.util.List<Tensor> tensors, int axis) {
-        Objects.requireNonNull(tensors, "tensors must not be null");
-        if (tensors.isEmpty()) {
-            throw new IllegalArgumentException("At least one tensor is required for concatenation");
-        }
-        Tensor first = Objects.requireNonNull(tensors.get(0), "tensor must not be null");
-        if (!(first instanceof DefaultTensor firstEager)) {
-            throw new UnsupportedOperationException("Concatenation currently requires eager DefaultTensor inputs");
-        }
-        firstEager.ensureOpen();
-        int rank = first.shape().rank();
-        int normalizedAxis = axis < 0 ? rank + axis : axis;
-        if (normalizedAxis < 0 || normalizedAxis >= rank) {
-            throw new IllegalArgumentException(
-                    "Concatenation axis " + axis + " is out of range for tensor rank " + rank);
-        }
+        return cat(tensors, axis, DiagnosticSink.noop());
+    }
 
-        boolean requiresGrad = false;
-        for (Tensor tensor : tensors) {
-            Objects.requireNonNull(tensor, "tensor must not be null");
+    /** Concatenates eager tensors and reports input contract failures to the supplied sink. */
+    public static Tensor cat(java.util.List<Tensor> tensors, int axis, DiagnosticSink diagnosticSink) {
+        Objects.requireNonNull(tensors, "tensors must not be null");
+        for (int i = 0; i < tensors.size(); i++) {
+            Tensor tensor = Objects.requireNonNull(tensors.get(i), "tensor at index " + i + " must not be null");
             if (!(tensor instanceof DefaultTensor eager)) {
                 throw new UnsupportedOperationException(
                         "Concatenation currently requires eager DefaultTensor inputs");
             }
             eager.ensureOpen();
-            if (tensor.backend() != first.backend()) {
-                throw new IllegalArgumentException("All concatenated tensors must use the same backend instance");
-            }
-            if (tensor.dtype() != first.dtype() || tensor.device() != first.device()) {
-                throw new IllegalArgumentException("All concatenated tensors must have the same dtype and device");
-            }
-            if (tensor.shape().rank() != rank) {
-                throw new IllegalArgumentException("All concatenated tensors must have the same rank");
-            }
-            for (int dimension = 0; dimension < rank; dimension++) {
-                if (dimension != normalizedAxis
-                        && tensor.shape().dim(dimension) != first.shape().dim(dimension)) {
-                    throw new IllegalArgumentException(
-                            "Concatenation dimensions must match outside axis " + normalizedAxis);
-                }
-            }
-            requiresGrad |= tensor.requiresGrad();
         }
-
-        Tensor result = first.backend().cat(tensors, normalizedAxis);
-        if (!AutogradContext.isRecordingEnabled() || !requiresGrad) {
-            return result;
-        }
+        TensorOperationValidator.CatPlan plan =
+                TensorOperationValidator.validateCat(tensors, axis, diagnosticSink);
+        boolean requiresGrad = tensors.stream().anyMatch(Tensor::requiresGrad);
+        Tensor result = plan.first().backend().cat(tensors, plan.axis());
+        if (!AutogradContext.isRecordingEnabled() || !requiresGrad) return result;
         if (!(result instanceof DefaultTensor eagerResult)) {
             result.release();
             throw new UnsupportedOperationException(
@@ -405,15 +506,9 @@ public final class DefaultTensor implements Tensor {
                 .map(tensor -> {
                     DefaultTensor eager = (DefaultTensor) tensor;
                     return eager.autogradNode != null ? eager.autogradNode : GraphNode.constant(tensor);
-                })
-                .toList();
-        GraphNode node = new GraphNode(
-                OpType.CAT,
-                inputNodes,
-                new Object[] { normalizedAxis },
-                eagerResult.shape(),
-                eagerResult.dtype(),
-                OperationBackwardFunctions.forOperation(OpType.CAT));
+                }).toList();
+        GraphNode node = new GraphNode(OpType.CAT, inputNodes, new Object[] { plan.axis() },
+                eagerResult.shape(), eagerResult.dtype(), OperationBackwardFunctions.forOperation(OpType.CAT));
         node.setMaterializedData(result);
         eagerResult.autogradNode = node;
         return result;
@@ -422,17 +517,9 @@ public final class DefaultTensor implements Tensor {
     @Override
     public java.util.List<Tensor> split(int axis, int parts) {
         ensureOpen();
-        int rank = shape.rank();
-        int normalizedAxis = axis < 0 ? rank + axis : axis;
-        if (normalizedAxis < 0 || normalizedAxis >= rank) {
-            throw new IllegalArgumentException(
-                    "Split axis " + axis + " is out of range for tensor rank " + rank);
-        }
-        if (parts <= 0 || shape.dim(normalizedAxis) % parts != 0) {
-            throw new IllegalArgumentException(
-                    "Split dimension " + shape.dim(normalizedAxis)
-                            + " must be evenly divisible by a positive part count; parts=" + parts);
-        }
+        TensorOperationValidator.SplitPlan plan =
+                TensorOperationValidator.validateSplit(shape, axis, parts);
+        int normalizedAxis = plan.axis();
 
         java.util.List<Tensor> outputs = backend.split(this, normalizedAxis, parts);
         if (!AutogradContext.isRecordingEnabled()
@@ -451,12 +538,12 @@ public final class DefaultTensor implements Tensor {
                     "Autograd recording requires eager DefaultTensor split outputs");
         }
 
-        long chunkSize = shape.dim(normalizedAxis) / parts;
+        long chunkSize = plan.chunkSize();
         try {
             for (int index = 0; index < outputs.size(); index++) {
                 Tensor output = outputs.get(index);
                 DefaultTensor eagerOutput = (DefaultTensor) output;
-                long[] offsets = new long[rank];
+                long[] offsets = new long[shape.rank()];
                 long[] sizes = shape.dims();
                 offsets[normalizedAxis] = Math.multiplyExact((long) index, chunkSize);
                 sizes[normalizedAxis] = chunkSize;
@@ -542,24 +629,60 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public float[] toFloatArray() {
+        ensureOpen();
         if (dtype != DType.F32) {
             throw new UnsupportedOperationException(
                     "toFloatArray currently requires F32 tensors; actual dtype is " + dtype);
         }
-        return requireHostSegment("toFloatArray")
-                .asSlice(0, Math.multiplyExact(numel(), Float.BYTES))
-                .toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
+        int length = Math.toIntExact(numel());
+        float[] values = new float[length];
+        if (length == 0) {
+            return values;
+        }
+
+        MemorySegment segment = requireHostSegment("toFloatArray");
+        long[] strides = layout.strides();
+        if (layout.isContiguous()) {
+            long byteOffset = Math.multiplyExact(layout.storageOffset(), Float.BYTES);
+            return segment.asSlice(byteOffset, Math.multiplyExact((long) length, Float.BYTES))
+                    .toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT);
+        }
+
+        for (int linearIndex = 0; linearIndex < length; linearIndex++) {
+            long elementOffset = elementOffsetForLinearIndex(linearIndex, strides);
+            long byteOffset = Math.multiplyExact(elementOffset, Float.BYTES);
+            values[linearIndex] = segment.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, byteOffset);
+        }
+        return values;
+    }
+
+    /**
+     * Maps a row-major logical element index to its backing-storage element
+     * offset. The caller must supply a live tensor and a valid logical index.
+     */
+    private long elementOffsetForLinearIndex(long linearIndex, long[] strides) {
+        long offset = layout.storageOffset();
+        for (int dimension = shape.rank() - 1; dimension >= 0; dimension--) {
+            long size = shape.dim(dimension);
+            long coordinate = linearIndex % size;
+            linearIndex /= size;
+            offset = Math.addExact(offset, Math.multiplyExact(coordinate, strides[dimension]));
+        }
+        return offset;
     }
 
     @Override
     public float item() {
+        ensureOpen();
         if (numel() != 1) {
             throw new IllegalStateException("item() requires exactly one element; tensor has " + numel());
         }
+        long byteOffset = Math.multiplyExact(layout.storageOffset(), dtype.blockByteSize());
+        MemorySegment segment = requireHostSegment("item()");
         return switch (dtype) {
-            case F32 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0);
-            case I32 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_INT, 0);
-            case I8, INT8 -> requireHostSegment("item()").get(java.lang.foreign.ValueLayout.JAVA_BYTE, 0);
+            case F32 -> segment.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, byteOffset);
+            case I32 -> segment.get(java.lang.foreign.ValueLayout.JAVA_INT, byteOffset);
+            case I8, INT8 -> segment.get(java.lang.foreign.ValueLayout.JAVA_BYTE, byteOffset);
             default -> throw new UnsupportedOperationException("item() is not supported for dtype " + dtype);
         };
     }
@@ -636,11 +759,19 @@ public final class DefaultTensor implements Tensor {
         return autogradNode;
     }
 
+    /**
+     * Returns the currently owned gradient as a borrowed reference.
+     * Callers must not release it.
+     */
     @Override
     public Tensor grad() {
         return grad;
     }
 
+    /**
+     * Transfers ownership of {@code g} to this tensor. Replacing the current
+     * gradient releases the previous gradient; passing {@code null} clears it.
+     */
     @Override
     public void setGrad(Tensor g) {
         ensureOpen();
@@ -670,6 +801,11 @@ public final class DefaultTensor implements Tensor {
         this.requiresGrad = r;
     }
 
+    /**
+     * Releases this tensor's storage reference and its owned gradient exactly
+     * once. Any borrowed storage, buffer, or gradient reference obtained from
+     * this tensor must no longer be used after release.
+     */
     @Override
     public void release() {
         if (released.compareAndSet(false, true)) {

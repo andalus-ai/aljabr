@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.models.functiongemma;
 
+import tech.kayys.aljabr.core.tool.ToolDeclaration;
 import tech.kayys.aljabr.spi.Message;
 import tech.kayys.aljabr.spi.tokenizer.ModelChatTemplate;
 
@@ -9,21 +10,56 @@ import java.util.Objects;
 /**
  * FunctionGemma conversation formatter.
  *
- * <p>Function declarations are supplied as developer-message content and
- * should contain the model's {@code <start_function_declaration>} and
- * {@code <end_function_declaration>} control tokens. Function-call payloads
- * are preserved verbatim so the tokenizer can resolve the dedicated tokens.</p>
+ * <p>Tool declarations belong in the developer turn. Function responses use
+ * their dedicated control-token block and are not model chat turns.</p>
  */
 public final class FunctionGemmaChatTemplate implements ModelChatTemplate {
 
     public static final String START_TURN = "<start_of_turn>";
     public static final String END_TURN = "<end_of_turn>";
-    public static final String START_FUNCTION_RESPONSE = "<start_function_response>";
-    public static final String END_FUNCTION_RESPONSE = "<end_function_response>";
+    public static final String START_FUNCTION_DECLARATION = FunctionGemmaTokenizer.START_FUNCTION_DECLARATION;
+    public static final String END_FUNCTION_DECLARATION = FunctionGemmaTokenizer.END_FUNCTION_DECLARATION;
+    public static final String START_FUNCTION_RESPONSE = FunctionGemmaTokenizer.START_FUNCTION_RESPONSE;
+    public static final String END_FUNCTION_RESPONSE = FunctionGemmaTokenizer.END_FUNCTION_RESPONSE;
 
     @Override
     public boolean supports(String modelType) {
         return modelType != null && modelType.equalsIgnoreCase("functiongemma");
+    }
+
+    /**
+     * Builds the developer-turn body expected by FunctionGemma. Each
+     * declaration is the schema payload (for example
+     * {@code get_weather{location:{type:<escape>STRING<escape>}}}); string
+     * values inside that payload must already use the {@code <escape>} token.
+     */
+    public String formatDeveloperContent(String instructions, List<String> declarations) {
+        StringBuilder content = new StringBuilder(Objects.requireNonNullElse(instructions, ""));
+        if (declarations != null) {
+            for (String declaration : declarations) {
+                if (declaration == null || declaration.isBlank()) {
+                    throw new IllegalArgumentException("Function declaration must not be blank");
+                }
+                if (!content.isEmpty()) {
+                    content.append('\n');
+                }
+                content.append(START_FUNCTION_DECLARATION)
+                        .append(declaration)
+                        .append(END_FUNCTION_DECLARATION);
+            }
+        }
+        return content.toString();
+    }
+
+    /** Formats typed declarations directly into the developer-turn body. */
+    public String formatDeveloperContent(String instructions, ToolDeclaration... tools) {
+        Objects.requireNonNull(tools, "tools");
+        FunctionGemmaToolDeclarationRenderer renderer = new FunctionGemmaToolDeclarationRenderer();
+        List<String> declarations = new java.util.ArrayList<>(tools.length);
+        for (ToolDeclaration tool : tools) {
+            declarations.add(renderer.render(Objects.requireNonNull(tool, "tool")));
+        }
+        return formatDeveloperContent(instructions, declarations);
     }
 
     @Override
@@ -39,8 +75,10 @@ public final class FunctionGemmaChatTemplate implements ModelChatTemplate {
                 case SYSTEM -> appendTurn(prompt, "developer", content);
                 case USER -> appendTurn(prompt, "user", content);
                 case ASSISTANT -> appendTurn(prompt, "model", content);
-                case FUNCTION, TOOL -> appendTurn(prompt, "model",
-                        START_FUNCTION_RESPONSE + content + END_FUNCTION_RESPONSE);
+                case FUNCTION, TOOL -> prompt.append(START_FUNCTION_RESPONSE)
+                        .append(content)
+                        .append(END_FUNCTION_RESPONSE)
+                        .append('\n');
             }
         }
         prompt.append(START_TURN).append("model\n");

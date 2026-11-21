@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
+import tech.kayys.aljabr.diagnostics.Diagnostic;
 
 import org.junit.jupiter.api.Test;
 
@@ -200,4 +204,202 @@ class TensorOpsTest {
             wrongShape.release();
         }
     }
+
+    @Test
+    void catReportsShapeMismatchWithStructuredContext() {
+        Tensor a = tensor(new float[] {1, 2}, 1, 2);
+        Tensor b = tensor(new float[] {3, 4, 5}, 1, 3);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        try {
+            assertThatThrownBy(() -> TensorOps.cat(List.of(a, b), 0, diagnostics::add))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("shape mismatch");
+            assertThat(diagnostics).hasSize(1);
+            Diagnostic diagnostic = diagnostics.getFirst();
+            assertThat(diagnostic.code()).isEqualTo("tensor.operation.shape-mismatch");
+            assertThat(diagnostic.category()).isEqualTo("tensor.operation.validation");
+            assertThat(diagnostic.context())
+                    .containsEntry("operation", "cat")
+                    .containsEntry("operandIndex", "1")
+                    .containsEntry("axis", "1")
+                    .containsEntry("expectedDimension", "2")
+                    .containsEntry("actualDimension", "3");
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+    @Test
+    void einsumReportsDimensionMismatchWithStructuredContext() {
+        Tensor a = tensor(new float[] {1, 2, 3, 4}, 2, 2);
+        Tensor b = tensor(new float[] {5, 6, 7}, 3);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        try {
+            assertThatThrownBy(() -> TensorOps.einsum("ij,j->i", diagnostics::add, a, b))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("dimension mismatch");
+            assertThat(diagnostics).hasSize(1);
+            Diagnostic diagnostic = diagnostics.getFirst();
+            assertThat(diagnostic.code()).isEqualTo("tensor.operation.dimension-mismatch");
+            assertThat(diagnostic.context())
+                    .containsEntry("operation", "einsum")
+                    .containsEntry("operandIndex", "1")
+                    .containsEntry("axis", "0")
+                    .containsEntry("label", "j")
+                    .containsEntry("expectedDimension", "2")
+                    .containsEntry("actualDimension", "3");
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+    @Test
+    void successfulOperationsDoNotInvokeDiagnosticSink() {
+        Tensor a = tensor(new float[] {1, 2}, 1, 2);
+        Tensor b = tensor(new float[] {3, 4}, 1, 2);
+        AtomicInteger calls = new AtomicInteger();
+        try {
+            Tensor result = TensorOps.cat(List.of(a, b), 0, diagnostic -> calls.incrementAndGet());
+            try {
+                assertThat(calls).hasValue(0);
+            } finally {
+                result.release();
+            }
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+
+    @Test
+    void defaultTensorCatUsesSharedValidationAndReportsContractFailure() {
+        Tensor a = tensor(new float[] {1, 2}, 1, 2);
+        Tensor b = tensor(new float[] {3, 4, 5}, 1, 3);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        try {
+            assertThatThrownBy(() -> DefaultTensor.cat(List.of(a, b), 0, diagnostics::add))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("shape mismatch");
+            assertThat(diagnostics).hasSize(1);
+            assertThat(diagnostics.getFirst().code()).isEqualTo("tensor.operation.shape-mismatch");
+            assertThat(diagnostics.getFirst().context())
+                    .containsEntry("operation", "cat")
+                    .containsEntry("operandIndex", "1")
+                    .containsEntry("axis", "1");
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+    @Test
+    void sharedMatmulShapeValidationBuildsBroadcastedBatchOutputShape() {
+        TensorOperationValidator.MatmulPlan plan =
+                TensorOperationValidator.validateMatmul(new Shape(2, 1, 3, 4), new Shape(1, 5, 4, 6));
+        assertThat(plan.batchDimensions()).containsExactly(2, 5);
+        assertThat(plan.outputDimensions()).containsExactly(2, 5, 3, 6);
+        assertThat(plan.rows()).isEqualTo(3);
+        assertThat(plan.inner()).isEqualTo(4);
+        assertThat(plan.columns()).isEqualTo(6);
+    }
+
+    @Test
+    void sharedMatmulShapeValidationRejectsRankAndContractionMismatches() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateMatmul(new Shape(4), new Shape(4, 2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least 2D");
+        assertThatThrownBy(() -> TensorOperationValidator.validateMatmul(new Shape(2, 3), new Shape(4, 5)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Dimension mismatch");
+    }
+
+    @Test
+    void sharedMatmulShapeValidationRejectsIncompatibleBatchDimensions() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateMatmul(
+                new Shape(2, 3, 4), new Shape(5, 4, 6)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("batch dimensions are not broadcast-compatible");
+    }
+
+    @Test
+    void cpuMatmulUsesSharedBroadcastShapeAndPreservesBatchedResults() {
+        Tensor a = tensor(new float[] {1, 0, 0, 1, 2, 0, 0, 2}, 2, 1, 2, 2);
+        Tensor b = tensor(new float[] {1, 2, 3, 4, 5, 6}, 1, 3, 2, 1);
+        try {
+            Tensor result = backend.matmul(a, b);
+            try {
+                assertThat(result.shape().dims()).containsExactly(2, 3, 2, 1);
+                assertThat(result.toFloatArray()).containsExactly(1, 2, 3, 4, 5, 6, 2, 4, 6, 8, 10, 12);
+            } finally {
+                result.release();
+            }
+        } finally {
+            a.release();
+            b.release();
+        }
+    }
+
+    @Test
+    void sharedBroadcastValidationBuildsTrailingAxisOutputShape() {
+        TensorOperationValidator.BroadcastPlan plan =
+                TensorOperationValidator.validateBroadcast(new Shape(2, 1, 3), new Shape(1, 4, 1));
+        assertThat(plan.outputDimensions()).containsExactly(2, 4, 3);
+        assertThat(plan.outputElements()).isEqualTo(24);
+    }
+
+    @Test
+    void sharedBroadcastValidationSupportsScalarsAndZeroDimensions() {
+        TensorOperationValidator.BroadcastPlan scalar =
+                TensorOperationValidator.validateBroadcast(new Shape(), new Shape(2, 3));
+        assertThat(scalar.outputDimensions()).containsExactly(2, 3);
+        assertThat(scalar.outputElements()).isEqualTo(6);
+
+        TensorOperationValidator.BroadcastPlan empty =
+                TensorOperationValidator.validateBroadcast(new Shape(0, 3), new Shape(1, 3));
+        assertThat(empty.outputDimensions()).containsExactly(0, 3);
+        assertThat(empty.outputElements()).isZero();
+    }
+
+    @Test
+    void sharedBroadcastValidationRejectsIncompatibleDimensionsAndOverflow() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateBroadcast(
+                new Shape(2, 3), new Shape(4, 3)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not broadcast-compatible");
+        assertThatThrownBy(() -> TensorOperationValidator.validateBroadcast(
+                new Shape(Long.MAX_VALUE, 1), new Shape(1, 2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("overflows");
+    }
+
+    @Test
+    void cpuElementwiseOperationsUseSharedBroadcastPlan() {
+        Tensor matrix = tensor(new float[] {1, 2, 3, 4, 5, 6}, 2, 3);
+        Tensor row = tensor(new float[] {10, 20, 30}, 1, 3);
+        try {
+            Tensor sum = backend.add(matrix, row);
+            Tensor difference = backend.sub(matrix, row);
+            Tensor product = backend.mul(matrix, row);
+            Tensor quotient = backend.div(matrix, row);
+            try {
+                assertThat(sum.shape().dims()).containsExactly(2, 3);
+                assertThat(sum.toFloatArray()).containsExactly(11, 22, 33, 14, 25, 36);
+                assertThat(difference.toFloatArray()).containsExactly(-9, -18, -27, -6, -15, -24);
+                assertThat(product.toFloatArray()).containsExactly(10, 40, 90, 40, 100, 180);
+                assertThat(quotient.toFloatArray()).containsExactly(0.1f, 0.1f, 0.1f, 0.4f, 0.25f, 0.2f);
+            } finally {
+                sum.release();
+                difference.release();
+                product.release();
+                quotient.release();
+            }
+        } finally {
+            matrix.release();
+            row.release();
+        }
+    }
+
 }

@@ -257,6 +257,11 @@ public class HatComputeBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor sign(Tensor a) {
+        return cpuFallback.sign(a);
+    }
+
+    @Override
     public Tensor abs(Tensor a) {
         return cpuFallback.abs(a);
     }
@@ -387,18 +392,70 @@ public class HatComputeBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor attentionGqa(
+            Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
+        try (Tensor cpuQ = stageForCpu(Q, "Q");
+                Tensor cpuK = stageForCpu(K, "K");
+                Tensor cpuV = stageForCpu(V, "V")) {
+            if (additiveMask == null) {
+                return cpuFallback.attentionGqa(cpuQ, cpuK, cpuV, null, causal);
+            }
+            try (Tensor cpuMask = stageForCpu(additiveMask, "additiveMask")) {
+                return cpuFallback.attentionGqa(cpuQ, cpuK, cpuV, cpuMask, causal);
+            }
+        }
+    }
+
+    @Override
+    public Tensor cat(List<Tensor> tensors, int axis) {
+        java.util.Objects.requireNonNull(tensors, "tensors must not be null");
+        List<Tensor> staged = new java.util.ArrayList<>(tensors.size());
+        try {
+            for (int i = 0; i < tensors.size(); i++) {
+                staged.add(stageForCpu(tensors.get(i), "tensors[" + i + "]"));
+            }
+            return cpuFallback.cat(staged, axis);
+        } finally {
+            for (Tensor tensor : staged) tensor.close();
+        }
+    }
+
+    @Override
+    public Tensor upsampleNearest2d(Tensor input, int outputH, int outputW) {
+        try (Tensor cpuInput = stageForCpu(input, "input")) {
+            return cpuFallback.upsampleNearest2d(cpuInput, outputH, outputW);
+        }
+    }
+
+    @Override
     public Tensor zerosLike(Tensor a) {
         return cpuFallback.zerosLike(a);
     }
 
     @Override
     public Tensor cast(Tensor a, tech.kayys.aljabr.core.tensor.DType dtype) {
-        return cpuFallback.cast(a, dtype);
+        java.util.Objects.requireNonNull(a, "tensor must not be null");
+        java.util.Objects.requireNonNull(dtype, "dtype must not be null");
+        if (a.dtype() == dtype) {
+            // A no-op cast preserves the original tensor and its HAT ownership.
+            return a;
+        }
+        throw new UnsupportedOperationException(
+                "HAT backend does not yet stage tensors for CPU dtype conversion: "
+                        + a.dtype() + " -> " + dtype);
     }
 
     @Override
     public Tensor to(Tensor a, tech.kayys.aljabr.core.tensor.DeviceType device) {
-        return cpuFallback.to(a, device);
+        java.util.Objects.requireNonNull(a, "tensor must not be null");
+        java.util.Objects.requireNonNull(device, "device must not be null");
+        if (a.device() == device) {
+            // A no-op device transfer must not change backend ownership.
+            return a;
+        }
+        throw new UnsupportedOperationException(
+                "HAT backend does not yet implement device transfer: "
+                        + a.device() + " -> " + device);
     }
 
     @Override
@@ -408,6 +465,8 @@ public class HatComputeBackend implements ComputeBackend {
 
     @Override
     public Tensor applyRoPE(Tensor input, int position, float theta, boolean isNeox) {
-        return cpuFallback.applyRoPE(input, position, theta, isNeox);
+        try (Tensor cpuInput = stageForCpu(input, "input")) {
+            return cpuFallback.applyRoPE(cpuInput, position, theta, isNeox);
+        }
     }
 }

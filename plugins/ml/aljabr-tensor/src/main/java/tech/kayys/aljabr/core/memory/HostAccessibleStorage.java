@@ -7,7 +7,8 @@ import java.lang.foreign.MemorySegment;
  *
  * <p>A host-accessible storage may be native, mapped, or backed by another
  * memory segment implementation. The returned segment is valid only while
- * the caller holds a live ownership reference to this storage.</p>
+ * the caller holds a live ownership reference to this storage. Obtaining a
+ * segment does not itself retain the storage or extend its lifetime.</p>
  *
  * <p>Device-local storage that cannot be represented as a host-accessible
  * {@link MemorySegment} should implement {@link TensorStorage} directly
@@ -15,6 +16,11 @@ import java.lang.foreign.MemorySegment;
  */
 public interface HostAccessibleStorage extends TensorStorage {
 
-    /** Returns a host-accessible view of this storage. */
+    /**
+     * Returns a host-accessible segment borrowed from this storage.
+     *
+     * <p>The caller must keep a live storage ownership reference for the entire
+     * period in which the segment is accessed.</p>
+     */
     MemorySegment segment();
 }

@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,7 @@ import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.memory.CpuBuffer;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.memory.TensorStorage;
+import tech.kayys.aljabr.diagnostics.Diagnostic;
 
 class DefaultTensorTest {
     private static ComputeBackend unusedBackend() {
@@ -95,6 +99,139 @@ class DefaultTensorTest {
 
         private synchronized int references() {
             return references;
+        }
+    }
+
+    @Test
+    void existingConstructorsExposeCanonicalContiguousLayout() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(2L * 3L * Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(2, 3), DType.F32, DeviceType.METAL, storage, unusedBackend());
+        try {
+            assertEquals(TensorLayout.contiguous(new Shape(2, 3)), tensor.layout());
+            assertTrue(tensor.layout().isContiguous());
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void explicitStridedLayoutValidatesReachableStorageRange() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(9L * Float.BYTES);
+        TensorLayout layout = new TensorLayout(new Shape(2, 2), new long[] {4, 1}, 3);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.METAL, storage, unusedBackend(), layout);
+        try {
+            assertSame(layout, tensor.layout());
+            assertEquals(9L * Float.BYTES, storage.sizeBytes());
+        } finally {
+            tensor.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void explicitLayoutRejectsInsufficientCapacityWithoutTakingOwnership() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(7L * Float.BYTES);
+        TensorLayout layout = new TensorLayout(new Shape(2, 2), new long[] {4, 1}, 3);
+        assertThrows(IllegalArgumentException.class, () -> new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.METAL, storage, unusedBackend(), layout));
+        assertEquals(1, storage.references());
+        storage.release();
+    }
+
+    @Test
+    void explicitLayoutMustMatchTensorShape() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(6L * Float.BYTES);
+        TensorLayout layout = TensorLayout.contiguous(new Shape(2, 3));
+        assertThrows(IllegalArgumentException.class, () -> new DefaultTensor(
+                new Shape(3, 2), DType.F32, DeviceType.METAL, storage, unusedBackend(), layout));
+        assertEquals(1, storage.references());
+        storage.release();
+    }
+
+    @Test
+    void quantizedTensorRejectsNonContiguousOrOffsetLayout() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(18);
+        TensorLayout layout = new TensorLayout(new Shape(32), new long[] {2}, 0);
+        assertThrows(IllegalArgumentException.class, () -> new DefaultTensor(
+                new Shape(32), DType.Q4_0, DeviceType.METAL, storage, unusedBackend(), layout));
+        assertEquals(1, storage.references());
+        storage.release();
+    }
+
+    @Test
+    void itemReadsScalarAtNonZeroStorageOffset() {
+        CpuBuffer buffer = new CpuBuffer(3L * Float.BYTES);
+        buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, -1f);
+        buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, Float.BYTES, 12.5f);
+        TensorLayout layout = new TensorLayout(new Shape(1), new long[] {1}, 1);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.CPU, buffer, unusedBackend(), layout);
+        try {
+            assertEquals(12.5f, tensor.item(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportReadsOffsetContiguousLayout() {
+        CpuBuffer buffer = new CpuBuffer(5L * Float.BYTES);
+        for (int i = 0; i < 5; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES, i + 10f);
+        }
+        TensorLayout layout = new TensorLayout(new Shape(3), new long[] {1}, 1);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(3), DType.F32, DeviceType.CPU, buffer, unusedBackend(), layout);
+        try {
+            assertArrayEquals(new float[] {11f, 12f, 13f}, tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportGathersTransposedStridedLayoutInLogicalOrder() {
+        CpuBuffer buffer = new CpuBuffer(6L * Float.BYTES);
+        for (int i = 0; i < 6; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES, i + 1f);
+        }
+        TensorLayout transposed = new TensorLayout(new Shape(3, 2), new long[] {1, 3}, 0);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(3, 2), DType.F32, DeviceType.CPU, buffer, unusedBackend(), transposed);
+        try {
+            assertArrayEquals(new float[] {1f, 4f, 2f, 5f, 3f, 6f}, tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportHandlesStridedSliceWithNonZeroOffset() {
+        CpuBuffer buffer = new CpuBuffer(8L * Float.BYTES);
+        for (int i = 0; i < 8; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES, i * 2f);
+        }
+        TensorLayout sliced = new TensorLayout(new Shape(2, 2), new long[] {4, 2}, 1);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, buffer, unusedBackend(), sliced);
+        try {
+            assertArrayEquals(new float[] {2f, 6f, 10f, 14f}, tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void floatArrayExportOfEmptyTensorDoesNotReadStorage() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(0);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(0, 3), DType.F32, DeviceType.CPU, storage, unusedBackend());
+        try {
+            assertArrayEquals(new float[0], tensor.toFloatArray(), 0f);
+        } finally {
+            tensor.release();
         }
     }
 
@@ -407,6 +544,67 @@ class DefaultTensorTest {
         assertDoesNotThrow(() -> CompletableFuture.allOf(releases).join());
         assertEquals(0, storage.references());
         assertThrows(IllegalStateException.class, tensor::storage);
+    }
+
+
+    @Test
+    void emitsStructuredDiagnosticWhenStorageCapacityIsInsufficient() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES - 1L);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+
+        IllegalArgumentException failure = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DefaultTensor(
+                        new Shape(1), DType.F32, DeviceType.METAL,
+                        storage, unusedBackend(), diagnostics::add));
+
+        assertTrue(failure.getMessage().contains("requires=4 bytes"));
+        assertEquals(1, storage.references(), "Failed construction must not take storage ownership");
+        assertEquals(1, diagnostics.size());
+        Diagnostic diagnostic = diagnostics.getFirst();
+        assertEquals("tensor.storage.capacity-insufficient", diagnostic.code());
+        assertEquals("tensor.validation", diagnostic.category());
+        assertEquals("ERROR", diagnostic.severity().name());
+        assertEquals("4", diagnostic.context().get("requiredBytes"));
+        assertEquals("3", diagnostic.context().get("availableBytes"));
+        assertEquals("[1]", diagnostic.context().get("shape"));
+        storage.release();
+    }
+
+    @Test
+    void emitsStructuredDiagnosticWhenShapeViolatesDTypeBlockSize() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(34);
+        List<Diagnostic> diagnostics = new ArrayList<>();
+
+        IllegalArgumentException failure = assertThrows(
+                IllegalArgumentException.class,
+                () -> new DefaultTensor(
+                        new Shape(31), DType.Q8_0, DeviceType.METAL,
+                        storage, unusedBackend(), diagnostics::add));
+
+        assertTrue(failure.getMessage().contains("not a multiple of block size"));
+        assertEquals(1, storage.references(), "Failed construction must not take storage ownership");
+        assertEquals(1, diagnostics.size());
+        Diagnostic diagnostic = diagnostics.getFirst();
+        assertEquals("tensor.dtype.element-count-invalid", diagnostic.code());
+        assertEquals("Q8_0", diagnostic.context().get("dtype"));
+        assertEquals("31", diagnostic.context().get("numel"));
+        storage.release();
+    }
+
+    @Test
+    void successfulConstructionDoesNotInvokeDiagnosticSink() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
+        AtomicInteger calls = new AtomicInteger();
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL,
+                storage, unusedBackend(), diagnostic -> calls.incrementAndGet());
+
+        try {
+            assertEquals(0, calls.get());
+        } finally {
+            tensor.release();
+        }
     }
 
 }

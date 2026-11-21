@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.cache;
 
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -19,10 +20,12 @@ import java.util.Objects;
 public final class KVCacheSession {
 
     private final KVCacheStorage storage;
+    private final boolean[] currentPositionWritten;
     private int committedLength;
 
     public KVCacheSession(KVCacheStorage storage) {
         this.storage = Objects.requireNonNull(storage, "storage");
+        this.currentPositionWritten = new boolean[storage.layout().layerCount()];
     }
 
     /** Returns the immutable logical cache geometry. */
@@ -40,6 +43,7 @@ public final class KVCacheSession {
             float[] key, int keyOffset, float[] value, int valueOffset) {
         checkWritablePosition(position);
         storage.write(layer, position, key, keyOffset, value, valueOffset);
+        markCurrentPositionWritten(layer, position);
     }
 
     /** Writes a contiguous layer range, commonly used by prefill. */
@@ -48,6 +52,10 @@ public final class KVCacheSession {
         checkWritableRange(firstPosition, tokenCount);
         storage.writeRange(layer, firstPosition, tokenCount,
                 keys, keysOffset, values, valuesOffset);
+        if (tokenCount > 0 && firstPosition <= committedLength
+                && committedLength < firstPosition + tokenCount) {
+            currentPositionWritten[checkedLayer(layer)] = true;
+        }
     }
 
     /** Reads one committed K position. */
@@ -77,6 +85,58 @@ public final class KVCacheSession {
     }
 
     /**
+     * Reads K data for the in-progress position of a layer.
+     *
+     * <p>The current position is visible only after this session has
+     * successfully written that position for the requested layer. This
+     * single-sequence decoder API must not expose partial writes to another
+     * layer, sequence, or thread.</p>
+     */
+    public void readKeyRangeForAttention(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        checkAttentionReadRange(layer, firstPosition, tokenCount);
+        storage.readKeyRange(layer, firstPosition, tokenCount, destination, destinationOffset);
+    }
+
+    /** See {@link #readKeyRangeForAttention(int, int, int, float[], int)}. */
+    public void readValueRangeForAttention(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        checkAttentionReadRange(layer, firstPosition, tokenCount);
+        storage.readValueRange(layer, firstPosition, tokenCount, destination, destinationOffset);
+    }
+
+    private void checkAttentionReadRange(int layer, int firstPosition, int tokenCount) {
+        int checkedLayer = checkedLayer(layer);
+        int visibleLimit = committedLength + 1;
+        if (firstPosition < 0 || tokenCount < 0
+                || firstPosition > visibleLimit
+                || tokenCount > visibleLimit - firstPosition) {
+            throw new IndexOutOfBoundsException(
+                    "Attention read exceeds committed prefix plus current decode position");
+        }
+        if (firstPosition + tokenCount > committedLength
+                && !currentPositionWritten[checkedLayer]) {
+            throw new IllegalStateException(
+                    "Current decode position has not been written for layer " + checkedLayer);
+        }
+    }
+
+    private void markCurrentPositionWritten(int layer, int position) {
+        if (position == committedLength) {
+            currentPositionWritten[checkedLayer(layer)] = true;
+        }
+    }
+
+    private int checkedLayer(int layer) {
+        storage.layout().layerStride(layer);
+        return layer;
+    }
+
+    private void clearCurrentPositionWrites() {
+        Arrays.fill(currentPositionWritten, false);
+    }
+
+    /**
      * Publishes positions up to {@code newCommittedLength}.
      *
      * <p>The caller is responsible for ensuring every layer has been written
@@ -89,6 +149,7 @@ public final class KVCacheSession {
                     "Committed length must be between current length and cache capacity");
         }
         committedLength = newCommittedLength;
+        clearCurrentPositionWrites();
     }
 
     /**
@@ -102,12 +163,14 @@ public final class KVCacheSession {
         }
         storage.truncate(newLength);
         committedLength = newLength;
+        clearCurrentPositionWrites();
     }
 
     /** Clears all storage and resets the visible sequence length. */
     public void reset() {
         storage.clear();
         committedLength = 0;
+        clearCurrentPositionWrites();
     }
 
     private void checkWritablePosition(int position) {

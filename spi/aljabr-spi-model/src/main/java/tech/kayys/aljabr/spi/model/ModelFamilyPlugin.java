@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.spi.model;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 /**
@@ -20,6 +21,16 @@ public interface ModelFamilyPlugin {
     }
 
     ModelFamilyDescriptor descriptor();
+
+    /**
+     * Returns whether this plugin recognizes the concrete checkpoint directory.
+     * Implementations should inspect identifying metadata and fail closed when
+     * required files are missing or malformed. The default keeps existing
+     * model-family plugins on config-type resolution.
+     */
+    default boolean matchesCheckpoint(Path modelDirectory) {
+        return false;
+    }
 
     default List<ModelArchitecture> architectureAdapters() {
         return List.of();

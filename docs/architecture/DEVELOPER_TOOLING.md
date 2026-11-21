@@ -1,0 +1,243 @@
+# Aljabr Developer Tooling Architecture
+
+> **Status:** Proposed architecture and implementation sequence  
+> **Scope:** Developer-facing inspection, diagnostics, profiling, numerical validation and interoperability  
+> **Boundary:** Tooling is an optional framework capability. It must not become a serving control plane or a mandatory dependency of tensor/model consumers.
+
+## 1. Product objective
+
+Developer tooling should make Aljabr understandable when code is correct, explainable when execution is slow, and actionable when computation fails. It should support the complete development lifecycle:
+
+1. Explore tensors, models, parameters and datasets.
+2. Understand shapes, dtypes, layouts, devices and execution plans.
+3. Diagnose numerical errors and unsupported operations.
+4. Measure performance without misleading results.
+5. Observe memory ownership, copies, materialization and host/device transfers.
+6. Export findings to ordinary Java diagnostics and established tools.
+
+Tooling is not a collection of unrelated print helpers. It is a small, composable observability and diagnostics foundation with optional adapters and front ends.
+
+## 2. Repository baseline and issues to address
+
+The current repository already contains useful but fragmented pieces:
+
+- `models/aljabr-model-common/.../ModelProfiler.java` profiles a whole model forward call, but estimates activation memory using a fixed depth heuristic and parameter memory as float32 regardless of actual dtype/storage. It does not synchronize asynchronous device work, expose warmup/measurement policy, or report percentiles/provider/kernel breakdown. Its sample uses Python-style named arguments that are not valid Java syntax.
+- `spi/aljabr-spi-inference/.../observability/AdapterMetricsRecorder.java` and `AdapterMetricSchema.java` define inference-adapter metrics, not a general tensor/model/scientific diagnostics contract.
+- `plugins/ml/autograd/.../MetricsTracker.java` stores scalar histories and exports CSV, while `TensorBoardWriter.java` implements a training-oriented event writer. The legacy autograd project is excluded from the default build, so these classes are not a universal tooling foundation.
+- JMH benchmarks exist in provider and algorithm modules, but benchmark harnesses are not the same as runtime profiling or explainability.
+- Model metadata and runtime profile records exist in multiple places. Their meaning should not be conflated with measured runtime observations.
+
+These findings are source-level observations, not a claim that the current tools never work. The immediate issue is that they do not yet present one consistent, general-purpose developer experience.
+
+## 3. Design principles
+
+### 3.1 Optional and layered
+
+- The core diagnostics contracts must have no dependency on a specific logging, metrics, tracing, visualization, notebook or serving product.
+- Tensor-only consumers should not need model modules; numerical consumers should not need tensors; model inspection should be an optional extension.
+- Provider-specific probes are optional implementations discovered through explicit registration/ServiceLoader where appropriate.
+- No mandatory background threads, global singleton, agent, network exporter or file output.
+- A no-op/disabled path must have negligible overhead and must not allocate per operation unnecessarily.
+
+### 3.2 One semantic model, several surfaces
+
+Expose the same information through:
+- Ordinary Java API for programmatic use.
+- Fluent scopes/builders for opt-in instrumentation.
+- Structured text/JSON/CSV exports where useful.
+- JFR events for low-overhead JVM-native analysis.
+- Optional adapters for Micrometer/OpenTelemetry and notebook visualization, without coupling core to those libraries.
+
+Do not build a custom notebook kernel or custom dashboard as a prerequisite. JBang, JShell and Jupyter should consume the same published APIs.
+
+### 3.3 Measurements must be honest
+
+Every metric must identify whether it is:
+- measured, estimated, sampled or unavailable;
+- host-side or device-side;
+- synchronous or asynchronous;
+- inclusive or exclusive;
+- cold-start, warmup or steady-state;
+- wall-clock, CPU time or device execution time.
+
+Never label an estimate as actual memory usage. Never compare asynchronous GPU launch latency with synchronized execution latency without clearly stating the difference.
+
+### 3.4 Diagnostics are structured data first
+
+Use typed diagnostic records with stable codes, severity, category, operation/context, relevant tensor metadata, provider context, explanation and remediation. Human-readable messages are a rendering of structured diagnostics, not the only source of truth.
+
+Do not include tensor contents, prompts, user data or model weights in diagnostics by default. Sensitive payload capture must be explicit and opt-in.
+
+## 4. Proposed capability model
+
+### 4.1 Inspection
+
+Inspection is a read-only snapshot of an object at a point in time.
+
+Initial inspectable subjects:
+- Tensor: shape, dtype, layout/strides, device, storage kind, contiguity, ownership/lifetime state and gradient metadata when available.
+- Model/module: architecture identity, module tree, parameter/buffer counts, parameter dtype/device distribution and declared capabilities.
+- Execution: selected provider, operation plan, fallback decisions and unsupported capability reasons.
+- Dataset/batch: schema, cardinality when known, shape/type summaries and sampling metadata.
+
+Inspection must not force expensive materialization or read tensor contents unless explicitly requested. Distinguish metadata-only inspection from value sampling.
+
+### 4.2 Diagnostics
+
+Initial diagnostic categories:
+- Shape/rank/broadcast/indexing mismatch.
+- Dtype conversion/promotion and unsupported dtype/operator combinations.
+- Device/provider capability mismatch and fallback.
+- Invalid layout/stride/alignment.
+- Closed/released storage, invalid lifetime and ownership violations.
+- Non-finite values (NaN/Inf), overflow/underflow and numerical instability.
+- Autograd graph disconnection, missing gradient and invalid gradient shape.
+- Resource exhaustion and allocation/transfer failures.
+
+Each diagnostic should have a stable code, severity, message, explanation, optional remediation, operation ID and structured context. Preserve original causes for debugging while keeping public error types stable.
+
+### 4.3 Profiling
+
+Provide separate layers; do not overload one profiler class:
+
+1. **Benchmarking:** repeatable comparative experiments with explicit warmup, iterations, forks, setup/teardown and environment metadata. Prefer JMH for JVM microbenchmarks.
+2. **Runtime profiling:** opt-in timing and counters around operations, modules and model execution.
+3. **Execution profiling:** provider/kernel timings, synchronization points, fallback and transfer costs when providers expose them.
+4. **Memory profiling:** allocation, retained storage, peak usage, pool hits/misses, copies, materializations and transfer bytes when measurable.
+5. **Numerical profiling:** optional min/max/mean/variance, norms and non-finite counts; sampling must be explicit because reductions can synchronize or copy device data.
+
+Reports should include sample count and distribution (at least min/median/mean/max; p95/p99 where sample count makes them meaningful), not just a single average. Include warmup and measurement policy, clock type, synchronization policy, provider/device and runtime/build identity. Keep measurement overhead visible.
+
+### 4.4 Memory and data-movement tracing
+
+Integrate with the memory/storage contracts rather than attempting to infer ownership externally. Events should represent allocation, retain, release, view creation, copy, materialization, host/device transfer, pool reuse and failure. Provide correlation IDs and byte counts where known.
+
+Tracing must be bounded and opt-in. Avoid retaining tensor contents or unbounded event histories. Distinguish logical tensor size from physical allocation size and estimated from measured values.
+
+### 4.5 Numerical validation
+
+Provide composable helpers for:
+- all-close / tolerance assertions with absolute and relative tolerance;
+- finite-value assertions and NaN/Inf location summaries;
+- shape/dtype/layout assertions;
+- gradient checking and finite-difference comparison;
+- backend parity comparisons using deterministic fixtures where supported;
+- reference-vs-optimized kernel validation.
+
+Diagnostics should report mismatch count, maximum absolute/relative error and first mismatch coordinates without dumping full tensor data by default.
+
+## 5. Module boundaries
+
+Do not create one monolithic `aljabr-tools` dependency.
+
+Proposed logical boundaries (names are provisional until checked against existing module conventions and publication metadata):
+
+| Capability | Dependency direction | Notes |
+|---|---|---|
+| Diagnostics API | standalone, JDK-only | stable codes, severity, context and sink interfaces |
+| Observability API | standalone or shared diagnostics artifact | scopes, events, counters, timers and no-op implementation |
+| Tensor inspection | depends on tensor API | optional tensor metadata inspector |
+| Model inspection | depends on model/module APIs | optional tree and parameter inspector |
+| Profiling core | depends only on observability contracts | generic timing/statistics and report model |
+| Provider profiling | provider -> profiling SPI | provider-specific device/kernel timing |
+| Memory tracing | depends on storage/memory contracts | allocation/copy/transfer lifecycle events |
+| Numerical validation | depends on tensor API | assertions, comparison and gradient-check helpers |
+| Exporters | optional adapters | JFR, JSON/CSV, Micrometer/OpenTelemetry, TensorBoard if appropriate |
+| CLI/notebook presentation | external integration/examples | no CLI or notebook dependency in core |
+
+Avoid a dependency cycle: tensor/model/provider implementations may publish events to a tiny optional sink contract; the inspector/profiler consumes snapshots/events and must not be required by compute implementations.
+
+Before adding artifacts, map existing core/SPI contracts and package conventions. Reuse a suitable existing diagnostics or observability artifact if it is semantically general and dependency-light.
+
+## 6. Java developer experience
+
+Support explicit and fluent styles over the same API.
+
+Illustrative target API (design sketch only; not implemented API):
+
+```java
+try (var session = Diagnostics.session()
+        .with(TensorInspector.metadata())
+        .with(ExecutionProfiler.summary())
+        .with(MemoryTrace.allocationsAndTransfers())
+        .to(DiagnosticSinks.console())) {
+    var result = model.forward(input);
+    session.report().print();
+}
+```
+
+Traditional usage must remain straightforward:
+
+```java
+var snapshot = TensorInspector.inspect(tensor);
+var report = Profiler.profile(operation, ProfileOptions.defaults());
+DiagnosticSinks.console().accept(diagnostic);
+```
+
+Annotation-assisted instrumentation may be considered later for module/model boundaries, but must be optional and must not add hidden instrumentation to hot paths. Prefer explicit scopes and generated metadata over reflection-heavy interception.
+
+All scopes must have deterministic close behavior. No global mutable configuration is required. Thread/context propagation must be explicit and safe for asynchronous execution.
+
+## 7. Interoperability
+
+- **JFR:** preferred first JVM-native export surface for structured runtime events.
+- **JMH:** preferred microbenchmark harness; do not recreate its benchmark lifecycle.
+- **SLF4J:** optional logging adapter, never a mandatory dependency of diagnostics contracts.
+- **Micrometer/OpenTelemetry:** optional metrics/tracing bridges, preserving Aljabr semantic attributes.
+- **TensorBoard:** optional training visualization adapter; keep training-specific event recording outside the minimal diagnostics core.
+- **JSON/CSV:** deterministic, versioned export formats for reports and offline analysis.
+- **JShell/JBang/Jupyter:** examples should show scoped sessions, inspection and report export using published artifacts.
+
+## 8. Phased implementation plan
+
+### Phase 0 — Inventory and contracts
+
+- Map existing diagnostic, metric, profiler, model-info and runtime-profile types.
+- Identify package/artifact ownership and legacy modules.
+- Specify stable diagnostic/event schema and measurement terminology.
+- Do not introduce public API until duplicate contracts and dependency direction are understood.
+
+### Phase 1 — Minimal diagnostics foundation
+
+- Add stable diagnostic code/category/severity and immutable context.
+- Add sink interface, no-op sink and console renderer.
+- Add tests for immutability, safe context handling and deterministic formatting.
+- Integrate only at a few high-value tensor validation/provider fallback boundaries.
+
+### Phase 2 — Inspectors and numerical assertions
+
+- Add tensor metadata inspector and numerical assertion helpers.
+- Add model/module inspector as a separate optional extension.
+- Ensure metadata inspection does not force materialization or device synchronization.
+- Add tests for closed resources, non-contiguous tensors, dtypes and optional gradients.
+
+### Phase 3 — Profiling and memory trace
+
+- Replace heuristic memory estimates in existing model profiling with explicit measured/estimated/unavailable fields.
+- Add correct warmup/measurement options and provider synchronization hooks.
+- Add operation/model scopes, distributions and environment metadata.
+- Add storage lifecycle and copy/transfer event hooks.
+
+### Phase 4 — Export and interactive workflows
+
+- Add JFR exporter and deterministic JSON/CSV report output.
+- Add optional metrics/tracing adapters only when there is a concrete consumer.
+- Publish tested JBang, JShell and Jupyter examples.
+- Add examples that can be run using published artifacts outside the repository checkout.
+
+## 9. Acceptance criteria
+
+A tooling capability is ready for stable use only when:
+- It is optional and has a tested dependency boundary.
+- Its measurement semantics and overhead are documented.
+- It does not expose tensor contents or sensitive model inputs by default.
+- It behaves correctly under exceptions, cancellation and resource closure.
+- Async/device timing states synchronization policy explicitly.
+- Memory numbers are labeled measured, estimated or unavailable.
+- Tests cover empty, invalid, closed, concurrent and failure cases as appropriate.
+- Examples run from published dependencies and close all resources.
+- It does not pull AQLI, Tafkir, a native provider, notebook runtime or visualization server into core consumers.
+
+## 10. First implementation recommendation
+
+Start with **Phase 0 followed by a minimal JDK-only diagnostics API**, but first inspect existing core error/diagnostic abstractions and dependency metadata. Do not immediately refactor `ModelProfiler` or move legacy metrics classes: they may have consumers and compatibility constraints. The first code PR should add the smallest stable contract and one integration point, then grow by evidence.

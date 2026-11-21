@@ -25,7 +25,8 @@ public final class EmbeddingGemma2PerLayerResidual {
      */
     public static float[][] apply(float[][] hiddenStates, float[][] perLayerInput,
             float[][] gateWeights, float[][] projectionWeights, float[] normScale, float epsilon) {
-        int sequence = requireMatrix(hiddenStates, "hiddenStates");
+        requireMatrix(hiddenStates, "hiddenStates");
+        int sequence = hiddenStates.length;
         int hidden = hiddenStates[0].length;
         int ple = requireMatrix(perLayerInput, "perLayerInput");
         if (perLayerInput.length != sequence) {

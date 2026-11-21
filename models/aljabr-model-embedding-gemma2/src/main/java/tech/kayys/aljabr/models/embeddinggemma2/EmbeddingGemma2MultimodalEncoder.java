@@ -62,10 +62,29 @@ public final class EmbeddingGemma2MultimodalEncoder {
         if (images.isEmpty()) {
             throw new IllegalArgumentException("at least one image is required");
         }
+        // Validate and embed text before running the (potentially expensive) vision tower.
+        float[][] textEmbeddings = EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
+                textBackbone, inputIds, imageTokenId, padTokenId);
         List<float[][]> imageFeatures = visionPipeline.encodeBatch(images);
-        float[][] mergedEmbeddings = EmbeddingGemma2MultimodalInputAssembler.assemble(
-                textBackbone, inputIds, imageTokenId, padTokenId, imageFeatures);
+        float[][] mergedEmbeddings = EmbeddingGemma2MultimodalInputAssembler.replaceImagePlaceholders(
+                textEmbeddings, inputIds, imageTokenId, imageFeatures);
         return textBackbone.encodeEmbeddings(mergedEmbeddings, validTokens, positionIds);
+    }
+
+    /**
+     * Encodes one prompt with decoded images using sequential text positions.
+     */
+    public float[][] encode(int[] inputIds, List<RgbImage> images) {
+        Objects.requireNonNull(inputIds, "inputIds must not be null");
+        return encode(inputIds, images, null, sequentialPositions(inputIds.length));
+    }
+
+    /**
+     * Encodes and mean-pools one prompt using sequential text positions.
+     */
+    public float[] encodePooled(int[] inputIds, List<RgbImage> images) {
+        Objects.requireNonNull(inputIds, "inputIds must not be null");
+        return encodePooled(inputIds, images, null, sequentialPositions(inputIds.length));
     }
 
     /**
@@ -80,6 +99,12 @@ public final class EmbeddingGemma2MultimodalEncoder {
         float[][] tokenStates = encode(inputIds, images, validTokens, positionIds);
         boolean[] poolingMask = validTokens == null ? allValid(inputIds.length) : validTokens;
         return EmbeddingGemma2MeanPooler.meanPool(tokenStates, poolingMask);
+    }
+
+    private static int[] sequentialPositions(int length) {
+        int[] positions = new int[length];
+        for (int index = 0; index < length; index++) positions[index] = index;
+        return positions;
     }
 
     private static boolean[] allValid(int length) {

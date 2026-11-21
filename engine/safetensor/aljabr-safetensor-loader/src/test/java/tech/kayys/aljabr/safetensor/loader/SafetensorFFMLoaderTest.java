@@ -38,8 +38,12 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
 
 import tech.kayys.aljabr.safetensor.exception.SafetensorException;
 
@@ -273,6 +277,24 @@ class SafetensorFFMLoaderTest {
 
     @Test
     @Order(24)
+    void parser_offsetAdditionOverflow_throws() {
+        // The relative end offset fits in a signed long, but adding the data
+        // section's absolute start would overflow and previously bypass bounds checks.
+        String json = """
+                {"huge": {"dtype":"U8","shape":[9223372036854775807],
+                          "data_offsets":[0,9223372036854775807]}}""";
+        byte[] payload = buildSafetensors(json, new byte[0]);
+
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = toSegment(payload, arena);
+            assertThatThrownBy(() -> PARSER.parse(seg, Path.of("overflow.safetensors")))
+                    .isInstanceOf(SafetensorException.ValidationException.class)
+                    .hasMessageContaining("extend beyond data section");
+        }
+    }
+
+    @Test
+    @Order(25)
     void parser_unknownDtype_throws() {
         String json = """
                 {"x": {"dtype":"FLOAT128","shape":[4],"data_offsets":[0,64]}}""";
@@ -285,7 +307,35 @@ class SafetensorFFMLoaderTest {
     }
 
     @Test
-    @Order(25)
+    @Order(26)
+    void parser_fractionalShapeDimension_throws() {
+        String json = """
+                {"x": {"dtype":"F32","shape":[1.5],"data_offsets":[0,4]}}""";
+        byte[] payload = buildSafetensors(json, new byte[4]);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = toSegment(payload, arena);
+            assertThatThrownBy(() -> PARSER.parse(seg, Path.of("fractional-shape.safetensors")))
+                    .isInstanceOf(SafetensorException.HeaderParseException.class)
+                    .hasMessageContaining("must be an integer");
+        }
+    }
+
+    @Test
+    @Order(27)
+    void parser_fractionalOffset_throws() {
+        String json = """
+                {"x": {"dtype":"F32","shape":[1],"data_offsets":[0,4.5]}}""";
+        byte[] payload = buildSafetensors(json, new byte[4]);
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment seg = toSegment(payload, arena);
+            assertThatThrownBy(() -> PARSER.parse(seg, Path.of("fractional-offset.safetensors")))
+                    .isInstanceOf(SafetensorException.HeaderParseException.class)
+                    .hasMessageContaining("exactly representable");
+        }
+    }
+
+    @Test
+    @Order(28)
     void parser_multiTensor_orderPreserved() {
         String json = """
                 {
@@ -839,6 +889,33 @@ class SafetensorFFMLoaderTest {
         assertThatThrownBy(() -> new SafetensorParserLimits(10, 1, -1, 10, 8, 100))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxMetadataEntries");
+    }
+
+    @Test
+    void loadResult_concurrentTensorLookupReturnsSingleCachedView() throws Exception {
+        String json = """
+                {"w": {"dtype":"F32","shape":[2],"data_offsets":[0,8]}}
+                """;
+        byte[] payload = buildSafetensors(json, new byte[8]);
+        Arena arena = Arena.ofShared();
+        MemorySegment segment = toSegment(payload, arena);
+        SafetensorHeader header = PARSER.parse(segment, Path.of("concurrent.safetensors"));
+
+        try (SafetensorLoadResult result = new SafetensorLoadResult(
+                Path.of("concurrent.safetensors"), header, segment, arena,
+                SafetensorLoadResult.LoadMode.COPY);
+                var executor = Executors.newFixedThreadPool(8)) {
+            List<Callable<SafetensorTensor>> lookups = new ArrayList<>();
+            for (int i = 0; i < 64; i++) {
+                lookups.add(() -> result.tensor("w"));
+            }
+
+            var futures = executor.invokeAll(lookups);
+            SafetensorTensor first = futures.get(0).get();
+            for (var future : futures) {
+                assertThat(future.get()).isSameAs(first);
+            }
+        }
     }
 
 }

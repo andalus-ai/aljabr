@@ -60,6 +60,10 @@ includeDirectProjectsUnder("spi")
 // Format engines and independently installable scientific/ML extensions.
 includeProjectsUnder("engine")
 
+// Cross-module integrations depend on stable core and provider APIs without
+// introducing dependency cycles into the foundational tensor/core modules.
+includeProjectsUnder("integration")
+
 // The legacy autograd integration still depends on IR and trainer API snapshot
 // artifacts that are not published or included as projects in this repository.
 // Keep it out of the default build until those dependencies are brought in-tree

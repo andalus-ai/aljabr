@@ -18,9 +18,12 @@ repositories {
 }
 
 dependencies {
+    api(project(":core:aljabr-core"))
     api(project(":spi:aljabr-spi-model"))
     api(project(":models:aljabr-model-gemma3"))
     implementation(project(":spi:aljabr-spi-tokenizer"))
+    api(project(":engine:safetensor:aljabr-safetensor-loader"))
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api")
     implementation("jakarta.inject:jakarta.inject-api")
 

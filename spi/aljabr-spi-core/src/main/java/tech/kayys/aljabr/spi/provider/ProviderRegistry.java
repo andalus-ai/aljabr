@@ -10,6 +10,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
+import tech.kayys.aljabr.diagnostics.DiagnosticSink;
+
 /**
  * Immutable, classloader-scoped snapshot of discoverable Aljabr providers.
  *
@@ -38,8 +40,18 @@ public final class ProviderRegistry {
      * remain available; inspect {@link #discoveryFailures()} for diagnostics.
      */
     public static ProviderRegistry discover(ClassLoader classLoader) {
+        return discover(classLoader, DiagnosticSink.noop());
+    }
+
+    /**
+     * Discovers providers and forwards structured discovery warnings to the
+     * supplied sink while retaining the original failure snapshot.
+     */
+    public static ProviderRegistry discover(
+            ClassLoader classLoader, DiagnosticSink diagnosticSink) {
         Objects.requireNonNull(classLoader, "classLoader");
-        ProviderDiscoveryResult result = ProviderDiscovery.discover(classLoader);
+        Objects.requireNonNull(diagnosticSink, "diagnosticSink");
+        ProviderDiscoveryResult result = ProviderDiscovery.discover(classLoader, diagnosticSink);
         return fromProviders(result.providers(), result.failures());
     }
 

@@ -24,11 +24,15 @@ public class LazyTensor implements Tensor {
     private final ComputeBackend executionBackend;
     private final GraphExecutor executor;
     private final AtomicBoolean released = new AtomicBoolean();
+    private final GraphMaterializationLease graphLease;
+    private volatile GraphNode executionNode;
+    private volatile GraphMaterializationLease executionLease;
 
     public LazyTensor(GraphNode node, ComputeBackend executionBackend) {
-        this.node = node;
+        this.node = java.util.Objects.requireNonNull(node, "node");
         this.executionBackend = executionBackend;
         this.executor = new GraphExecutor(executionBackend);
+        this.graphLease = GraphMaterializationLease.acquire(node);
     }
 
     /**
@@ -50,27 +54,57 @@ public class LazyTensor implements Tensor {
     }
 
     public GraphNode getNode() {
+        ensureOpen();
         return node;
     }
 
     @Override
-    public Tensor eval() {
+    public synchronized Tensor eval() {
         ensureOpen();
-        if (!node.isEvaluated()) {
-            // Graph rewrites are not yet required to preserve VJP metadata.
-            // Keep differentiable graphs structurally intact until that contract exists.
-            GraphNode executable = node.requiresGrad() ? node : GraphOptimizer.optimize(node);
-            executor.evaluate(executable);
-            node.setMaterializedData(executable.getMaterializedData());
+        GraphNode evaluated = executionNode;
+        if (evaluated != null && evaluated.isEvaluated()) {
+            return evaluated.getMaterializedData();
         }
-        return node.getMaterializedData();
+        if (node.isEvaluated()) {
+            executionNode = node;
+            return node.getMaterializedData();
+        }
+
+        // Differentiable graphs retain their original VJP structure. For
+        // inference graphs, the rewritten graph has its own lease: optimizer
+        // nodes may alias original nodes, but must never share cached tensor
+        // ownership by copying materializedData.
+        GraphNode executable = node.requiresGrad() ? node : GraphOptimizer.optimize(node);
+        GraphMaterializationLease optimizedLease = executable == node
+                ? null
+                : GraphMaterializationLease.acquire(executable);
+        try {
+            executor.evaluate(executable);
+        } catch (RuntimeException | Error failure) {
+            if (optimizedLease != null) {
+                try {
+                    optimizedLease.close();
+                } catch (RuntimeException | Error cleanupFailure) {
+                    failure.addSuppressed(cleanupFailure);
+                }
+            }
+            throw failure;
+        }
+
+        executionNode = executable;
+        executionLease = optimizedLease;
+        return executable.getMaterializedData();
     }
 
     /**
      * Direct storage access materializes the lazy graph first.
+     *
+     * <p>The returned storage is borrowed from the materialized tensor and is
+     * not an independent ownership reference. Retain it explicitly if it must
+     * outlive this lazy wrapper.</p>
      */
     @Override
-    public TensorStorage storage() {
+    public synchronized TensorStorage storage() {
         return eval().storage();
     }
 
@@ -80,15 +114,34 @@ public class LazyTensor implements Tensor {
      * their input when the lazy wrapper is closed.
      */
     @Override
-    public void release() {
+    public synchronized void release() {
         if (!released.compareAndSet(false, true)) {
             return;
         }
-        if (node.isEvaluated() && node.getOp() != OpType.CONSTANT) {
-            Tensor materialized = node.getMaterializedData();
-            if (materialized != null && materialized != this) {
-                materialized.release();
+
+        Throwable failure = null;
+        GraphMaterializationLease optimizedLease = executionLease;
+        if (optimizedLease != null) {
+            try {
+                optimizedLease.close();
+            } catch (RuntimeException | Error cleanupFailure) {
+                failure = cleanupFailure;
             }
+        }
+        try {
+            graphLease.close();
+        } catch (RuntimeException | Error cleanupFailure) {
+            if (failure == null) {
+                failure = cleanupFailure;
+            } else {
+                failure.addSuppressed(cleanupFailure);
+            }
+        }
+        if (failure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (failure instanceof Error errorFailure) {
+            throw errorFailure;
         }
     }
 
@@ -104,7 +157,7 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public float[] toFloatArray() {
+    public synchronized float[] toFloatArray() {
         return eval().toFloatArray();
     }
 
@@ -114,7 +167,11 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public DeviceType device() {
+    public synchronized DeviceType device() {
+        GraphNode evaluated = executionNode;
+        if (evaluated != null && evaluated.isEvaluated()) {
+            return evaluated.getMaterializedData().device();
+        }
         if (node.isEvaluated()) {
             return node.getMaterializedData().device();
         }
@@ -127,12 +184,12 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public float item() {
+    public synchronized float item() {
         return eval().item();
     }
 
     @Override
-    public void backward() {
+    public synchronized void backward() {
         ensureOpen();
         if (!node.requiresGrad()) {
             return;
@@ -159,7 +216,7 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public void backward(Tensor outputGradient) {
+    public synchronized void backward(Tensor outputGradient) {
         ensureOpen();
         java.util.Objects.requireNonNull(outputGradient, "outputGradient");
         if (!node.requiresGrad()) {
@@ -169,13 +226,21 @@ public class LazyTensor implements Tensor {
         executor.backward(node, outputGradient);
     }
 
+    /**
+     * Returns the materialized tensor's gradient as a borrowed reference.
+     * Callers must not release it.
+     */
     @Override
-    public Tensor grad() {
+    public synchronized Tensor grad() {
         return eval().grad();
     }
 
+    /**
+     * Transfers gradient ownership to the materialized tensor, matching the
+     * {@link Tensor#setGrad(Tensor)} contract.
+     */
     @Override
-    public void setGrad(Tensor grad) {
+    public synchronized void setGrad(Tensor grad) {
         eval().setGrad(grad);
     }
 

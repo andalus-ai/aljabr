@@ -34,8 +34,7 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
             int imageTokenId,
             int padTokenId,
             List<float[][]> imageFeatures) {
-        float[][] textEmbeddings = embedTextTokens(
-                textBackbone, inputIds, imageTokenId, padTokenId);
+        float[][] textEmbeddings = embedTextTokens(textBackbone, inputIds, imageTokenId, padTokenId);
         return replaceImagePlaceholders(textEmbeddings, inputIds, imageTokenId, imageFeatures);
     }
 
@@ -58,12 +57,14 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
             int padTokenId) {
         Objects.requireNonNull(textBackbone, "textBackbone must not be null");
         Objects.requireNonNull(inputIds, "inputIds must not be null");
-        if (imageTokenId < 0) {
-            throw new IllegalArgumentException("imageTokenId must be non-negative");
+        if (imageTokenId < 0 || padTokenId < 0) {
+            throw new IllegalArgumentException("imageTokenId and padTokenId must be non-negative");
         }
         int[] lookupIds = inputIds.clone();
         for (int index = 0; index < lookupIds.length; index++) {
-            if (lookupIds[index] == imageTokenId) lookupIds[index] = padTokenId;
+            if (lookupIds[index] == imageTokenId) {
+                lookupIds[index] = padTokenId;
+            }
         }
         return textBackbone.embedInputTokens(lookupIds);
     }

@@ -185,6 +185,71 @@ public class SafetensorShardLoader {
         index.validateShardHeaders(loadShardHeaders(index));
     }
 
+    /**
+     * Visit every tensor in a checkpoint while retaining at most one shard's
+     * mapped storage at a time.
+     *
+     * <p>Unlike {@link SafetensorShardSession}, this traversal API does not
+     * retain opened shard mappings after each callback. It is intended for
+     * conversion, validation, indexing, and other sequential workloads that
+     * process every tensor without keeping the complete model resident.
+     *
+     * <p>The supplied tensor view is valid only for the duration of the
+     * callback. Consumers must not retain the view or its {@code MemorySegment}
+     * after the callback returns. Copy data explicitly if it must outlive the
+     * callback.
+     *
+     * @param modelPath model file or directory containing a shard index
+     * @param consumer receives each tensor name and its zero-copy view
+     */
+    public void forEachTensor(Path modelPath, TensorConsumer consumer) {
+        Objects.requireNonNull(modelPath, "modelPath must not be null");
+        Objects.requireNonNull(consumer, "consumer must not be null");
+        Path resolved = modelPath.toAbsolutePath().normalize();
+
+        if (Files.isRegularFile(resolved)) {
+            visitFile(resolved, consumer, null);
+            return;
+        }
+        if (!Files.isDirectory(resolved)) {
+            throw new SafetensorException.IoException(
+                    "Path does not exist or is not a file/directory: " + resolved,
+                    resolved, null);
+        }
+
+        if (!SafetensorShardIndex.isShardedModel(resolved)) {
+            visitFile(findSingleSafetensorFile(resolved), consumer, null);
+            return;
+        }
+
+        SafetensorShardIndex index = SafetensorShardIndex.load(
+                SafetensorShardIndex.resolveIndexPath(resolved), objectMapper);
+        for (String shardName : index.shardFileNames()) {
+            visitFile(index.shardPath(shardName), consumer, index.tensorsInShard(shardName));
+        }
+    }
+
+    private void visitFile(Path shardPath, TensorConsumer consumer, List<String> selectedNames) {
+        try (SafetensorLoadResult result = ffmLoader.load(shardPath)) {
+            Collection<String> names = selectedNames == null
+                    ? result.tensorNames()
+                    : selectedNames;
+            for (String name : names) {
+                SafetensorTensor tensor = result.tensor(name);
+                consumer.accept(name, tensor);
+            }
+        }
+    }
+
+    /**
+     * Callback for sequential tensor traversal. The tensor view and its backing
+     * memory must not be retained after {@link #accept} returns.
+     */
+    @FunctionalInterface
+    public interface TensorConsumer {
+        void accept(String name, SafetensorTensor tensor);
+    }
+
     private Map<String, SafetensorHeader> loadShardHeaders(SafetensorShardIndex index) {
         Map<String, SafetensorHeader> headers = new LinkedHashMap<>();
         for (String shardName : index.shardFileNames()) {

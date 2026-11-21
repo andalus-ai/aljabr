@@ -47,15 +47,14 @@ public final class HatComputeProvider implements ComputeProvider {
             "tensor.reshape", "tensor.slice", "tensor.split",
             "tensor.flatten", "tensor.unsqueeze", "tensor.squeeze", "tensor.transpose",
             "tensor.softmax", "tensor.log_softmax", "tensor.mean", "tensor.sum",
-            "tensor.max", "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
+            "tensor.max", "tensor.sign", "tensor.abs", "tensor.relu", "tensor.gelu", "tensor.silu",
             "tensor.sigmoid", "tensor.tanh", "tensor.sqrt", "tensor.exp", "tensor.log",
             "tensor.pow", "tensor.layer_norm", "tensor.rms_norm", "tensor.batch_norm",
             "tensor.conv2d", "tensor.max_pool2d", "tensor.adaptive_avg_pool2d",
             "tensor.dropout", "tensor.cross_entropy", "tensor.binary_cross_entropy",
             "tensor.zeros_like");
 
-    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of(
-            "tensor.cat", "tensor.upsample_nearest2d");
+    private static final Set<String> UNSUPPORTED_OPERATIONS = Set.of();
 
     private static final ProviderDescriptor DESCRIPTOR = new ProviderDescriptor(
             PROVIDER_ID, "0.1.0", ">=0.1.0 <1.0.0",
@@ -173,17 +172,37 @@ public final class HatComputeProvider implements ComputeProvider {
             if ("tensor.attention.masked".equals(operationId)) {
                 return attentionSupport(operationId, constraints, true);
             }
+            if ("tensor.attention.gqa".equals(operationId)) {
+                return gqaSupport(operationId, constraints);
+            }
+            if ("tensor.upsample_nearest2d".equals(operationId)) {
+                return upsampleNearest2dSupport(operationId, constraints);
+            }
+            if ("tensor.cat".equals(operationId)) {
+                return catSupport(operationId, constraints);
+            }
 
             if ("tensor.matmul".equals(operationId)) {
-                String dtype = constraints.get("dtype");
-                String rank = constraints.get("rank");
-                if (dtype == null || rank == null) {
+                String leftDtype = constraints.get("dtype");
+                String rightDtype = constraints.get("rhs_dtype");
+                String leftRankValue = constraints.get("rank");
+                String rightRankValue = constraints.get("rhs_rank");
+                if (leftDtype == null || rightDtype == null
+                        || leftRankValue == null || rightRankValue == null) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
-                if ("F32".equalsIgnoreCase(dtype) && "2".equals(rank)) {
-                    return new OperationSupportDescriptor(operationId, OperationSupport.NATIVE, null);
+                if (!isF32(leftDtype) || !isF32(rightDtype)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
                 }
-                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                Integer leftRank = parseInteger(leftRankValue);
+                Integer rightRank = parseInteger(rightRankValue);
+                if (leftRank == null || rightRank == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (leftRank != 2 || rightRank != 2) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                return new OperationSupportDescriptor(operationId, OperationSupport.NATIVE, null);
             }
 
             if (CPU_DTYPE_PRESERVING_OPERATIONS.contains(operationId)) {
@@ -399,6 +418,153 @@ public final class HatComputeProvider implements ComputeProvider {
                 }
             } else if (maskDtype != null || maskRankValue != null || causal) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * CpuBackend nearest-neighbor upsampling accepts NCHW F32 input with
+         * positive input and output spatial dimensions.
+         */
+        private OperationSupportDescriptor upsampleNearest2dSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtype = constraints.get("dtype");
+            String rankValue = constraints.get("rank");
+            String inputHeightValue = constraints.get("input_height");
+            String inputWidthValue = constraints.get("input_width");
+            String outputHeightValue = constraints.get("output_height");
+            String outputWidthValue = constraints.get("output_width");
+            if (dtype == null || rankValue == null || inputHeightValue == null
+                    || inputWidthValue == null || outputHeightValue == null || outputWidthValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(dtype)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            Integer rank = parseInteger(rankValue);
+            Integer inputHeight = parseInteger(inputHeightValue);
+            Integer inputWidth = parseInteger(inputWidthValue);
+            Integer outputHeight = parseInteger(outputHeightValue);
+            Integer outputWidth = parseInteger(outputWidthValue);
+            if (rank == null || inputHeight == null || inputWidth == null
+                    || outputHeight == null || outputWidth == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (rank != 4 || inputHeight <= 0 || inputWidth <= 0
+                    || outputHeight <= 0 || outputWidth <= 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * Cat metadata describes every input: comma-separated dtypes and
+         * semicolon-separated shapes whose dimensions are comma-delimited.
+         * Example: input_dtypes=F32,F32; input_shapes=2,3;2,4.
+         */
+        private OperationSupportDescriptor catSupport(
+                String operationId, Map<String, String> constraints) {
+            String dtypesValue = constraints.get("input_dtypes");
+            String shapesValue = constraints.get("input_shapes");
+            String axisValue = constraints.get("axis");
+            if (dtypesValue == null || shapesValue == null || axisValue == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            String[] dtypes = dtypesValue.split(",", -1);
+            String[] shapes = shapesValue.split(";", -1);
+            Integer axis = parseInteger(axisValue);
+            if (axis == null || dtypes.length == 0 || dtypes.length != shapes.length) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            int[][] dimensions = new int[shapes.length][];
+            for (int i = 0; i < shapes.length; i++) {
+                if (!isF32(dtypes[i])) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                String[] values = shapes[i].split(",", -1);
+                dimensions[i] = new int[values.length];
+                for (int d = 0; d < values.length; d++) {
+                    Integer size = parseInteger(values[d]);
+                    if (size == null) return new OperationSupportDescriptor(
+                            operationId, OperationSupport.UNKNOWN, null);
+                    if (size < 0) return new OperationSupportDescriptor(
+                            operationId, OperationSupport.UNSUPPORTED, null);
+                    dimensions[i][d] = size;
+                }
+            }
+            int rank = dimensions[0].length;
+            if (rank == 0 || axis < 0 || axis >= rank) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            for (int i = 1; i < dimensions.length; i++) {
+                if (dimensions[i].length != rank) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                for (int d = 0; d < rank; d++) {
+                    if (d != axis && dimensions[i][d] != dimensions[0][d]) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                }
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * CpuBackend GQA fallback requires rank-4 F32 Q/K/V, with query heads
+         * divisible by key/value heads. Optional additive masks are F32 rank-2;
+         * exact batch/sequence/head dimensions are checked by CpuBackend.
+         */
+        private OperationSupportDescriptor gqaSupport(
+                String operationId, Map<String, String> constraints) {
+            String queryDtype = constraints.get("dtype");
+            String keyDtype = constraints.get("key_dtype");
+            String valueDtype = constraints.get("value_dtype");
+            String queryRankValue = constraints.get("rank");
+            String keyRankValue = constraints.get("key_rank");
+            String valueRankValue = constraints.get("value_rank");
+            String queryHeadsValue = constraints.get("query_heads");
+            String keyValueHeadsValue = constraints.get("key_value_heads");
+            String causalValue = constraints.get("causal");
+            String maskDtype = constraints.get("mask_dtype");
+            String maskRankValue = constraints.get("mask_rank");
+
+            if (queryDtype == null || keyDtype == null || valueDtype == null
+                    || queryRankValue == null || keyRankValue == null || valueRankValue == null
+                    || queryHeadsValue == null || keyValueHeadsValue == null || causalValue == null
+                    || ((maskDtype == null) != (maskRankValue == null))) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!isF32(queryDtype) || !isF32(keyDtype) || !isF32(valueDtype)
+                    || (maskDtype != null && !isF32(maskDtype))) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+
+            Integer queryRank = parseInteger(queryRankValue);
+            Integer keyRank = parseInteger(keyRankValue);
+            Integer valueRank = parseInteger(valueRankValue);
+            Integer queryHeads = parseInteger(queryHeadsValue);
+            Integer keyValueHeads = parseInteger(keyValueHeadsValue);
+            if (queryRank == null || keyRank == null || valueRank == null
+                    || queryHeads == null || keyValueHeads == null
+                    || !("true".equalsIgnoreCase(causalValue) || "false".equalsIgnoreCase(causalValue))) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (queryRank != 4 || keyRank != 4 || valueRank != 4
+                    || queryHeads <= 0 || keyValueHeads <= 0
+                    || queryHeads % keyValueHeads != 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (maskDtype != null) {
+                Integer maskRank = parseInteger(maskRankValue);
+                if (maskRank == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (maskRank != 2) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
             }
             return new OperationSupportDescriptor(
                     operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);

@@ -18,10 +18,12 @@ repositories {
 }
 
 dependencies {
-    implementation("tech.kayys.aljabr:aljabr-spi-model:0.1.0-SNAPSHOT")
+    api(project(":core:aljabr-core"))
+    api(project(":spi:aljabr-spi-model"))
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")
     implementation(group = "jakarta.inject", name = "jakarta.inject-api")
 
+    testImplementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
     testRuntimeOnly(group = "org.junit.platform", name = "junit-platform-launcher", version = "1.10.2")
 }

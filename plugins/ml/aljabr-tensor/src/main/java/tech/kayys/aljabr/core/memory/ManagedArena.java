@@ -2,6 +2,7 @@ package tech.kayys.aljabr.core.memory;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -40,7 +41,7 @@ public final class ManagedArena implements AutoCloseable {
 
     /** Wraps an existing arena. The initial reference count is 1. */
     public ManagedArena(Arena arena) {
-        this.arena = arena;
+        this.arena = Objects.requireNonNull(arena, "arena must not be null");
     }
 
     /** Creates a new shared (thread-safe) arena with ref-count 1. */
@@ -83,13 +84,18 @@ public final class ManagedArena implements AutoCloseable {
      * @return {@code this}
      */
     public ManagedArena retain() {
-        int prev = refCount.getAndIncrement();
-        if (prev <= 0) {
-            // Reverse the increment — the arena is already closed.
-            refCount.decrementAndGet();
-            throw new IllegalStateException("Cannot retain a closed ManagedArena");
+        while (true) {
+            int current = refCount.get();
+            if (current <= 0) {
+                throw new IllegalStateException("Cannot retain a closed ManagedArena");
+            }
+            if (current == Integer.MAX_VALUE) {
+                throw new IllegalStateException("ManagedArena reference count overflow");
+            }
+            if (refCount.compareAndSet(current, current + 1)) {
+                return this;
+            }
         }
-        return this;
     }
 
     /**
@@ -98,8 +104,18 @@ public final class ManagedArena implements AutoCloseable {
      */
     @Override
     public void close() {
-        if (refCount.decrementAndGet() == 0) {
-            arena.close();
+        while (true) {
+            int current = refCount.get();
+            if (current <= 0) {
+                throw new IllegalStateException("Over-release of ManagedArena detected");
+            }
+            int next = current - 1;
+            if (refCount.compareAndSet(current, next)) {
+                if (next == 0) {
+                    arena.close();
+                }
+                return;
+            }
         }
     }
 
