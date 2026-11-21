@@ -259,8 +259,13 @@ public interface ComputeBackend extends AutoCloseable {
      */
     Tensor squeeze(Tensor a);
 
+    /** Swaps the final two dimensions. Inputs must have rank at least two. */
     Tensor transpose(Tensor a);
 
+    /**
+     * Swaps two dimensions. Axes in {@code [-rank, rank)} are valid;
+     * negative axes count from the final dimension and equal axes are a no-op.
+     */
     Tensor transpose(Tensor a, int dim0, int dim1);
 
     // ── Reduction ─────────────────────────────────────────────────────
