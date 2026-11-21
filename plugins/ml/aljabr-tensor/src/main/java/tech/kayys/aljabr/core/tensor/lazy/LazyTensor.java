@@ -59,7 +59,7 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public Tensor eval() {
+    public synchronized Tensor eval() {
         ensureOpen();
         GraphNode evaluated = executionNode;
         if (evaluated != null && evaluated.isEvaluated()) {
@@ -114,7 +114,7 @@ public class LazyTensor implements Tensor {
      * their input when the lazy wrapper is closed.
      */
     @Override
-    public void release() {
+    public synchronized void release() {
         if (!released.compareAndSet(false, true)) {
             return;
         }
