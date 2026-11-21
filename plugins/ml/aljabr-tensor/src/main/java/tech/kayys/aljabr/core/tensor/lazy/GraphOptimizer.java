@@ -25,6 +25,34 @@ public class GraphOptimizer {
         return optimizeNode(root, visited);
     }
 
+    private static boolean usesStandardAttentionScale(GraphNode scale, GraphNode query) {
+        Object[] arguments = scale.getArgs();
+        if (arguments.length != 1 || !(arguments[0] instanceof Number number)) {
+            return false;
+        }
+
+        int rank = query.getOutputShape().rank();
+        if (rank == 0) {
+            return false;
+        }
+        long headDimension = query.getOutputShape().dim(rank - 1);
+        if (headDimension <= 0) {
+            return false;
+        }
+
+        float actual = number.floatValue();
+        float expected = scale.getOp() == OpType.DIV_SCALAR
+                ? (float) Math.sqrt(headDimension)
+                : (float) (1.0d / Math.sqrt(headDimension));
+        if (!Float.isFinite(actual)) {
+            return false;
+        }
+
+        // Allow normal float rounding while rejecting meaningful scale changes.
+        float tolerance = Math.max(1.0e-6f, Math.ulp(expected) * 4.0f);
+        return Math.abs(actual - expected) <= tolerance;
+    }
+
     private static GraphNode optimizeNode(GraphNode node, Map<GraphNode, GraphNode> memo) {
         if (memo.containsKey(node)) {
             return memo.get(node);
@@ -70,6 +98,10 @@ public class GraphOptimizer {
                             && !maybeMatmul.requiresGrad()
                             && maybeMatmul.getInputs().size() == 2) {
                         GraphNode query = maybeMatmul.getInputs().get(0);
+                        if (!usesStandardAttentionScale(maybeDiv, query)) {
+                            memo.put(node, node);
+                            return node;
+                        }
                         GraphNode maybeTranspose = maybeMatmul.getInputs().get(1);
 
                         if (maybeTranspose.getOp() == OpType.TRANSPOSE
