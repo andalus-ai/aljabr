@@ -76,6 +76,21 @@ class GraphOptimizerAttentionScaleTest {
     }
 
     @Test
+    void doesNotFuseAttentionWhenValueDTypeDiffersFromQueryAndKey() {
+        Shape shape = new Shape(4, 4);
+        GraphNode query = node(OpType.RELU, List.of(), new Object[0], shape);
+        GraphNode key = node(OpType.RELU, List.of(), new Object[0], shape);
+        GraphNode value = new GraphNode(OpType.RELU, List.of(), new Object[0], shape, DType.F16);
+        GraphNode transpose = node(OpType.TRANSPOSE, List.of(key), new Object[0], shape);
+        GraphNode scores = node(OpType.MATMUL, List.of(query, transpose), new Object[0], shape);
+        GraphNode scaled = node(OpType.MUL_SCALAR, List.of(scores), new Object[] { 0.5f }, shape);
+        GraphNode probabilities = node(OpType.SOFTMAX, List.of(scaled), new Object[0], shape);
+        GraphNode root = node(OpType.MATMUL, List.of(probabilities, value), new Object[0], shape);
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    @Test
     void doesNotFuseRankTwoAttentionWhenKeyAndValueSequenceLengthsDiffer() {
         GraphNode query = node(OpType.RELU, List.of(), new Object[0], new Shape(2, 4));
         GraphNode key = node(OpType.RELU, List.of(), new Object[0], new Shape(3, 4));

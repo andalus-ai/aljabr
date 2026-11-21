@@ -104,6 +104,25 @@ public class GraphOptimizer {
                 && java.util.Arrays.equals(queryShape, output.getOutputShape().dims());
     }
 
+    private static boolean hasConsistentAttentionDType(
+            GraphNode output,
+            GraphNode softmax,
+            GraphNode scale,
+            GraphNode scores,
+            GraphNode transpose,
+            GraphNode query,
+            GraphNode key,
+            GraphNode value) {
+        var dtype = query.getOutputDType();
+        return dtype == key.getOutputDType()
+                && dtype == value.getOutputDType()
+                && dtype == transpose.getOutputDType()
+                && dtype == scores.getOutputDType()
+                && dtype == scale.getOutputDType()
+                && dtype == softmax.getOutputDType()
+                && dtype == output.getOutputDType();
+    }
+
     private static boolean usesStandardAttentionTranspose(GraphNode transpose, GraphNode key) {
         Object[] arguments = transpose.getArgs();
         if (arguments.length == 0) {
@@ -181,6 +200,8 @@ public class GraphOptimizer {
                                     && usesStandardAttentionSoftmax(maybeSoftmax)
                                     && usesStandardAttentionTranspose(maybeTranspose, key)
                                     && supportsCanonicalAttentionShape(node, maybeMatmul, maybeSoftmax,
+                                            maybeTranspose, query, key, value)
+                                    && hasConsistentAttentionDType(node, maybeSoftmax, maybeDiv, maybeMatmul,
                                             maybeTranspose, query, key, value);
                             if (standardPattern) {
                                 GraphNode fusedNode = new GraphNode(
