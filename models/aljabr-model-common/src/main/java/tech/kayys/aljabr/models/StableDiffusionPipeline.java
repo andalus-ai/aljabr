@@ -1,5 +1,12 @@
 package tech.kayys.aljabr.models;
 
+import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.nn.NNModule;
+import tech.kayys.aljabr.models.diffusion.DDIMScheduler;
+import tech.kayys.aljabr.models.diffusion.DiffusionSchedule;
+import tech.kayys.aljabr.models.diffusion.DiffusionScheduler;
+import tech.kayys.aljabr.models.diffusion.SchedulerStepParameters;
+
 import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
@@ -14,78 +21,50 @@ import tech.kayys.aljabr.models.diffusion.DiffusionScheduler;
 import tech.kayys.aljabr.models.diffusion.SchedulerStepParameters;
 
 /**
- * Text-to-image diffusion orchestration over a text encoder, denoiser,
- * scheduler, and latent decoder.
+ * Text-to-image pipeline coordinating text encoding, denoising, and decoding.
  *
- * <p>The legacy {@link VAE} constructor remains available. New spatial
- * diffusion pipelines can use {@link AutoencoderKL}; its latent scaling
- * contract is applied by the decoder itself. The compact model components
- * remain architectural foundations and are not yet checkpoint-compatible
- * with Stable Diffusion, SDXL, SD3, or FLUX.</p>
+ * <p>The current CLIP and VAE classes in this module are compatibility
+ * scaffolds rather than checkpoint-compatible Stable Diffusion components.
+ * This pipeline therefore provides a reusable denoising orchestration surface,
+ * not a claim of end-to-end Stable Diffusion checkpoint compatibility.</p>
  */
 public class StableDiffusionPipeline extends NNModule {
 
-    private static final int DEFAULT_LATENT_CHANNELS = 4;
-    private static final int DEFAULT_LATENT_SIZE = 64;
+    private static final int LATENT_CHANNELS = 4;
+    private static final int LATENT_SIZE = 64;
     private static final int TIME_EMBEDDING_DIM = 320;
     private static final int TRAINING_TIMESTEPS = 1000;
 
     private final CLIP clip;
     private final UNet2DConditional unet;
-    private final NNModule decoder;
-    private final Function<Tensor, Tensor> decode;
+    private final VAE vae;
     private final DiffusionScheduler scheduler;
-    private final int latentChannels;
 
     /** Retains the original vector-VAE constructor for existing callers. */
     public StableDiffusionPipeline(CLIP clip, UNet2DConditional unet, VAE vae) {
-        this(clip, unet, vae, vae::decode, DEFAULT_LATENT_CHANNELS,
-                new DDIMScheduler(TRAINING_TIMESTEPS));
+        this(clip, unet, vae, new DDIMScheduler(TRAINING_TIMESTEPS));
     }
 
-    /** Creates a pipeline using the spatial AutoencoderKL decoder. */
-    public StableDiffusionPipeline(
-            CLIP clip, UNet2DConditional unet, AutoencoderKL autoencoder) {
-        this(clip, unet, autoencoder, autoencoder::decode,
-                autoencoder.config().latentChannels(), new DDIMScheduler(TRAINING_TIMESTEPS));
-    }
-
-    /** Legacy VAE constructor with an injectable scheduler. */
+    /**
+     * Creates a pipeline with an injectable scheduler implementation.
+     */
     public StableDiffusionPipeline(
             CLIP clip, UNet2DConditional unet, VAE vae, DiffusionScheduler scheduler) {
-        this(clip, unet, vae, vae::decode, DEFAULT_LATENT_CHANNELS, scheduler);
-    }
-
-    /** Spatial AutoencoderKL constructor with an injectable scheduler. */
-    public StableDiffusionPipeline(
-            CLIP clip, UNet2DConditional unet,
-            AutoencoderKL autoencoder, DiffusionScheduler scheduler) {
-        this(clip, unet, autoencoder, autoencoder::decode,
-                autoencoder.config().latentChannels(), scheduler);
-    }
-
-    private StableDiffusionPipeline(
-            CLIP clip,
-            UNet2DConditional unet,
-            NNModule decoder,
-            Function<Tensor, Tensor> decode,
-            int latentChannels,
-            DiffusionScheduler scheduler) {
         this.clip = register("clip", Objects.requireNonNull(clip, "clip"));
         this.unet = register("unet", Objects.requireNonNull(unet, "unet"));
-        this.decoder = register("decoder", Objects.requireNonNull(decoder, "decoder"));
-        this.decode = Objects.requireNonNull(decode, "decode");
+        this.vae = register("vae", Objects.requireNonNull(vae, "vae"));
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
-        if (latentChannels <= 0) {
-            throw new IllegalArgumentException("latentChannels must be positive");
-        }
-        this.latentChannels = latentChannels;
-        validateComponentBackends();
     }
 
     /**
      * Generates a sample using a fresh random seed and deterministic DDIM
      * updates ({@code eta = 0}).
+     *
+     * @param prompt text description
+     * @param numSteps number of inference steps
+     * @param guidance classifier-free guidance scale
+     * @param progress optional callback receiving completed step count
+     * @return decoded sample tensor
      */
     public Tensor generate(
             String prompt, int numSteps, float guidance, Consumer<Integer> progress) {
@@ -96,13 +75,16 @@ public class StableDiffusionPipeline extends NNModule {
     /**
      * Generates a sample with reproducible initial and per-step noise.
      *
+     * <p>For DDIM, {@code eta = 0} is deterministic for a fixed prompt,
+     * model state, and seed. Positive eta enables stochastic DDIM updates.</p>
+     *
      * @param prompt text description
      * @param numSteps number of inference steps
      * @param guidance classifier-free guidance scale
      * @param seed random seed
      * @param eta DDIM stochasticity; zero is deterministic
      * @param progress optional callback receiving completed step count
-     * @return decoded image tensor
+     * @return decoded sample tensor
      */
     public Tensor generate(
             String prompt,
@@ -123,47 +105,47 @@ public class StableDiffusionPipeline extends NNModule {
         }
 
         DiffusionSchedule schedule = scheduler.createSchedule(numSteps);
-        Tensor textEmbeds = null;
-        Tensor unconditionalEmbeds = null;
-        Tensor latents = null;
-        try {
-            textEmbeds = clip.encode(prompt);
-            unconditionalEmbeds = clip.encode("");
-            latents = gaussianTensor(seed, 0,
-                    1, latentChannels, DEFAULT_LATENT_SIZE, DEFAULT_LATENT_SIZE);
+        Tensor textEmbeds = clip.encode(prompt);
+        Tensor unconditionalEmbeds = clip.encode("");
+        Tensor latents = gaussianTensor(
+                seed, 0, 1, LATENT_CHANNELS, LATENT_SIZE, LATENT_SIZE);
 
-            for (int stepIndex = 0; stepIndex < schedule.inferenceSteps(); stepIndex++) {
-                int timestep = schedule.timestepAt(stepIndex);
-                try (Tensor timestepEmbedding = timestepEmbedding(timestep);
-                     Tensor noisePrediction = predictNoise(
-                             latents, timestepEmbedding, unconditionalEmbeds, textEmbeds, guidance)) {
-                    SchedulerStepParameters parameters =
-                            scheduler.stepParameters(schedule, stepIndex, eta);
-                    Tensor nextLatents;
-                    if (parameters.sigma() == 0.0f) {
-                        nextLatents = schedulerStep(latents, noisePrediction, parameters, null);
-                    } else {
-                        try (Tensor stepNoise = gaussianTensor(seed, stepIndex + 1,
-                                1, latentChannels, DEFAULT_LATENT_SIZE, DEFAULT_LATENT_SIZE)) {
-                            nextLatents = schedulerStep(
-                                    latents, noisePrediction, parameters, stepNoise);
+        try (textEmbeds; unconditionalEmbeds) {
+            try {
+                for (int stepIndex = 0; stepIndex < schedule.inferenceSteps(); stepIndex++) {
+                    int timestep = schedule.timestepAt(stepIndex);
+                    try (Tensor timestepEmbedding = timestepEmbedding(timestep);
+                         Tensor noisePrediction = predictNoise(
+                                 latents, timestepEmbedding, unconditionalEmbeds, textEmbeds, guidance)) {
+                        SchedulerStepParameters parameters =
+                                scheduler.stepParameters(schedule, stepIndex, eta);
+                        Tensor stepNoise = parameters.sigma() == 0.0f
+                                ? null
+                                : gaussianTensor(seed, stepIndex + 1,
+                                        1, LATENT_CHANNELS, LATENT_SIZE, LATENT_SIZE);
+                        Tensor nextLatents;
+                        if (stepNoise == null) {
+                            nextLatents = schedulerStep(latents, noisePrediction, parameters, null);
+                        } else {
+                            try (stepNoise) {
+                                nextLatents = schedulerStep(
+                                        latents, noisePrediction, parameters, stepNoise);
+                            }
                         }
+                        latents.close();
+                        latents = nextLatents;
                     }
-                    latents.release();
-                    latents = nextLatents;
-                }
 
-                if (progress != null) {
-                    progress.accept(stepIndex + 1);
+                    if (progress != null) {
+                        progress.accept(stepIndex + 1);
+                    }
                 }
+                try (Tensor decoded = vae.decode(latents)) {
+                    return decoded.squeeze();
+                }
+            } finally {
+                latents.close();
             }
-            try (Tensor decoded = decode.apply(latents)) {
-                return decoded.squeeze();
-            }
-        } finally {
-            release(latents);
-            release(textEmbeds);
-            release(unconditionalEmbeds);
         }
     }
 
@@ -190,7 +172,7 @@ public class StableDiffusionPipeline extends NNModule {
             embedding[i] = (float) Math.sin(timestep * frequency);
             embedding[i + halfDim] = (float) Math.cos(timestep * frequency);
         }
-        return tensorOf(embedding, 1, TIME_EMBEDDING_DIM);
+        return Tensor.of(embedding, 1, TIME_EMBEDDING_DIM);
     }
 
     private Tensor schedulerStep(
@@ -212,7 +194,7 @@ public class StableDiffusionPipeline extends NNModule {
             }
             try (deterministicSample;
                  Tensor scaledRandomNoise = Objects.requireNonNull(
-                         randomNoise, "randomNoise is required for stochastic DDIM")
+                         randomNoise, "randomNoise is required when eta produces non-zero sigma")
                          .mul(parameters.sigma())) {
                 return deterministicSample.add(scaledRandomNoise);
             }
@@ -232,34 +214,7 @@ public class StableDiffusionPipeline extends NNModule {
         for (int i = 0; i < values.length; i++) {
             values[i] = (float) random.nextGaussian();
         }
-        return tensorOf(values, shape);
-    }
-
-    private Tensor tensorOf(float[] values, long... shape) {
-        return unet.computeBackend() == null
-                ? Tensor.of(values, shape)
-                : Tensor.of(values, unet.computeBackend(), shape);
-    }
-
-    private void validateComponentBackends() {
-        var backend = unet.computeBackend();
-        if (backend == null) {
-            if (clip.computeBackend() != null || decoder.computeBackend() != null) {
-                throw new IllegalArgumentException(
-                        "Text encoder, denoiser, and decoder must share one compute backend");
-            }
-            return;
-        }
-        if (clip.computeBackend() != backend || decoder.computeBackend() != backend) {
-            throw new IllegalArgumentException(
-                    "Text encoder, denoiser, and decoder must share the same compute backend instance");
-        }
-    }
-
-    private static void release(Tensor tensor) {
-        if (tensor != null) {
-            tensor.release();
-        }
+        return Tensor.of(values, shape);
     }
 
     @Override
