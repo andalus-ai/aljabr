@@ -412,11 +412,16 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor unsqueeze(int dim) {
-        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim }, backend.unsqueeze(this, dim));
+        ensureOpen();
+        TensorOperationValidator.UnsqueezePlan plan =
+                TensorOperationValidator.validateUnsqueeze(shape, dim);
+        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim },
+                backend.unsqueeze(this, plan.axis()));
     }
 
     @Override
     public Tensor squeeze() {
+        ensureOpen();
         return record(OpType.SQUEEZE, new Tensor[] { this }, new Object[0], backend.squeeze(this));
     }
 
