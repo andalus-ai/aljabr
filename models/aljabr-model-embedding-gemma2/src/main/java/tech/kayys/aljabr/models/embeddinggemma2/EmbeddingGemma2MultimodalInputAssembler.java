@@ -39,9 +39,16 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
     }
 
     /**
-     * Looks up text token embeddings after replacing image placeholders with a
-     * valid in-vocabulary padding token. The returned matrix can be validated
-     * before the more expensive vision tower is executed.
+     * Looks up and scales text tokens while safely substituting image
+     * placeholders with an in-vocabulary pad token for the lookup. This can
+     * be called before image inference so malformed text IDs fail fast without
+     * spending time on the vision tower.
+     *
+     * @param textBackbone text embedding owner
+     * @param inputIds token IDs [sequence]
+     * @param imageTokenId configured image placeholder token ID
+     * @param padTokenId in-vocabulary token used for placeholder lookup
+     * @return scaled text embeddings [sequence][textHiddenSize]
      */
     public static float[][] embedTextTokens(
             EmbeddingGemma2TextBackbone textBackbone,
