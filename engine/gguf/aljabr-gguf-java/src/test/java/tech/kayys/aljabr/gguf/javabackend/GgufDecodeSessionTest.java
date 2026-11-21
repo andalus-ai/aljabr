@@ -31,6 +31,24 @@ class GgufDecodeSessionTest {
     }
 
     @Test
+    void sessionRetainsCommittedPrefixAcrossMultipleDecodeSteps() {
+        KVCache cache = new KVCache(1, 8, 1, 2);
+        cache.advance(3);
+        GgufDecodeSession session = new GgufDecodeSession(cache);
+
+        session.cacheSession().write(0, 3, new float[] {1f, 2f}, 0, new float[] {3f, 4f}, 0);
+        GgufKvCacheSequenceLifecycle.completeDecode(cache, 3, session.cacheSession());
+        assertDoesNotThrow(() -> session.validateDecodePosition(4));
+
+        session.cacheSession().write(0, 4, new float[] {5f, 6f}, 0, new float[] {7f, 8f}, 0);
+        GgufKvCacheSequenceLifecycle.completeDecode(cache, 4, session.cacheSession());
+
+        assertEquals(5, session.committedLength());
+        assertEquals(5, cache.seqLen());
+        assertDoesNotThrow(() -> session.validateDecodePosition(5));
+    }
+
+    @Test
     void sessionRejectsPositionThatDiffersFromBackingCache() {
         KVCache cache = new KVCache(1, 8, 1, 2);
         cache.advance(3);
