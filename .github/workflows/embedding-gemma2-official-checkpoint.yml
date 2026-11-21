@@ -1,0 +1,56 @@
+name: EmbeddingGemma 2 Official Checkpoint
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_forward:
+        description: "Run the full 16-layer vision forward pass after checkpoint mapping"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: embeddinggemma2-official-checkpoint-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  official-checkpoint:
+    name: Verify google/embeddinggemma-2 (Java 25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Aljabr
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Download, verify, and map official checkpoint
+        shell: bash
+        env:
+          GRADLE_OPTS: -Xmx4G
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.run_forward }}" == "true" ]]; then
+            bash scripts/test-embeddinggemma2-official-checkpoint.sh --forward
+          else
+            bash scripts/test-embeddinggemma2-official-checkpoint.sh
+          fi
+
+      - name: Upload official-checkpoint test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embeddinggemma2-official-checkpoint-test-reports
+          if-no-files-found: warn
+          path: |
+            engine/safetensor/aljabr-safetensor-embedding-gemma2/build/test-results/test/**
+            engine/safetensor/aljabr-safetensor-embedding-gemma2/build/reports/tests/test/**

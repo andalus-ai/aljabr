@@ -290,4 +290,43 @@ class TensorOperationValidatorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("not broadcast-compatible");
     }
+
+    @Test
+    void splitNormalizesAxisAndProducesEqualOutputShapes() {
+        TensorOperationValidator.SplitPlan plan =
+                TensorOperationValidator.validateSplit(new Shape(2, 12, 4), -2, 3);
+        assertThat(plan.axis()).isEqualTo(1);
+        assertThat(plan.parts()).isEqualTo(3);
+        assertThat(plan.chunkSize()).isEqualTo(4);
+        assertThat(plan.outputShape().dims()).containsExactly(2, 4, 4);
+    }
+
+    @Test
+    void splitRejectsScalarInvalidAxesAndInvalidPartCounts() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(), 0, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Split axis 0 is out of range for tensor rank 0");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(2, 3), -3, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Split axis -3 is out of range for tensor rank 2");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(2, 3), 2, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Split axis 2 is out of range for tensor rank 2");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(2, 3), 1, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("split parts must be positive; got 0");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(2, 3), 1, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("split parts must be positive; got -1");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(2, 3), 1, 4))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("axis size=3, parts=4");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(2, 3), 1, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("axis size=3, parts=2");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSplit(new Shape(2, 0, 3), 1, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("axis size=0, parts=1");
+    }
+
 }
