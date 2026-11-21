@@ -984,4 +984,46 @@ class CpuBackendStorageTest {
         assertEquals(0, biasStorage.references());
     }
 
+    @Test
+    void scalarUnaryOperationsAndDropoutReadTransposedOffsetViews() {
+        HostStorage storage = new HostStorage(99f, 1f, 4f, 9f, 16f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        Tensor powered = null;
+        Tensor absolute = null;
+        Tensor squareRoot = null;
+        Tensor sign = null;
+        Tensor dropped = null;
+        try {
+            assertArrayEquals(new float[] {1f, 4f, 9f, 16f}, input.toFloatArray(), 0f);
+            powered = backend.pow(input, 2f);
+            absolute = backend.abs(input);
+            squareRoot = backend.sqrt(input);
+            sign = backend.sign(input);
+            dropped = backend.dropout(input, 0.5f, true);
+
+            assertArrayEquals(new float[] {1f, 16f, 81f, 256f}, powered.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {1f, 4f, 9f, 16f}, absolute.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f}, squareRoot.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {1f, 1f, 1f, 1f}, sign.toFloatArray(), 0f);
+            float[] droppedValues = dropped.toFloatArray();
+            float[] sourceValues = {1f, 4f, 9f, 16f};
+            for (int index = 0; index < droppedValues.length; index++) {
+                assertTrue(droppedValues[index] == 0f
+                        || droppedValues[index] == sourceValues[index] * 2f);
+            }
+        } finally {
+            if (dropped != null) dropped.release();
+            if (sign != null) sign.release();
+            if (squareRoot != null) squareRoot.release();
+            if (absolute != null) absolute.release();
+            if (powered != null) powered.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+
 }
