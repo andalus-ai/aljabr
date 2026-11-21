@@ -70,6 +70,40 @@ public class GraphOptimizer {
         return normalized == rank - 1;
     }
 
+    /**
+     * The current backend contract does not define one common rank-4 attention
+     * layout: the CPU reference uses [B,H,S,D], while the Metal path consumes
+     * [B,S,H,D]. Keep this graph rewrite to the unambiguous rank-2 case until
+     * the backend attention layout contract is standardized.
+     *
+     * <p>The CPU rank-2 kernel also requires Q, K, and V to have matching
+     * [sequence, headDimension] shapes. The unfused matmul chain supports
+     * different key/value sequence lengths, so those graphs must remain intact.</p>
+     */
+    private static boolean supportsCanonicalAttentionShape(
+            GraphNode output,
+            GraphNode scores,
+            GraphNode softmax,
+            GraphNode transpose,
+            GraphNode query,
+            GraphNode key,
+            GraphNode value) {
+        long[] queryShape = query.getOutputShape().dims();
+        if (queryShape.length != 2 || queryShape[0] <= 0 || queryShape[1] <= 0) {
+            return false;
+        }
+        if (!java.util.Arrays.equals(queryShape, key.getOutputShape().dims())
+                || !java.util.Arrays.equals(queryShape, value.getOutputShape().dims())) {
+            return false;
+        }
+        long[] expectedScores = { queryShape[0], queryShape[0] };
+        long[] expectedTranspose = { queryShape[1], queryShape[0] };
+        return java.util.Arrays.equals(expectedScores, scores.getOutputShape().dims())
+                && java.util.Arrays.equals(expectedScores, softmax.getOutputShape().dims())
+                && java.util.Arrays.equals(expectedTranspose, transpose.getOutputShape().dims())
+                && java.util.Arrays.equals(queryShape, output.getOutputShape().dims());
+    }
+
     private static boolean usesStandardAttentionTranspose(GraphNode transpose, GraphNode key) {
         Object[] arguments = transpose.getArgs();
         if (arguments.length == 0) {
@@ -137,30 +171,27 @@ public class GraphOptimizer {
                             && !maybeMatmul.requiresGrad()
                             && maybeMatmul.getInputs().size() == 2) {
                         GraphNode query = maybeMatmul.getInputs().get(0);
-                        if (!usesStandardAttentionScale(maybeDiv, query)
-                                || !usesStandardAttentionSoftmax(maybeSoftmax)) {
-                            memo.put(node, node);
-                            return node;
-                        }
                         GraphNode maybeTranspose = maybeMatmul.getInputs().get(1);
 
                         if (maybeTranspose.getOp() == OpType.TRANSPOSE
                                 && !maybeTranspose.requiresGrad()
                                 && maybeTranspose.getInputs().size() == 1) {
                             GraphNode key = maybeTranspose.getInputs().get(0);
-                            if (!usesStandardAttentionTranspose(maybeTranspose, key)) {
-                                memo.put(node, node);
-                                return node;
+                            boolean standardPattern = usesStandardAttentionScale(maybeDiv, query)
+                                    && usesStandardAttentionSoftmax(maybeSoftmax)
+                                    && usesStandardAttentionTranspose(maybeTranspose, key)
+                                    && supportsCanonicalAttentionShape(node, maybeMatmul, maybeSoftmax,
+                                            maybeTranspose, query, key, value);
+                            if (standardPattern) {
+                                GraphNode fusedNode = new GraphNode(
+                                        OpType.ATTENTION,
+                                        java.util.List.of(query, key, value),
+                                        new Object[0],
+                                        node.getOutputShape(),
+                                        node.getOutputDType());
+                                memo.put(node, fusedNode);
+                                return fusedNode;
                             }
-
-                            GraphNode fusedNode = new GraphNode(
-                                    OpType.ATTENTION,
-                                    java.util.List.of(query, key, value),
-                                    new Object[0],
-                                    node.getOutputShape(),
-                                    node.getOutputDType());
-                            memo.put(node, fusedNode);
-                            return fusedNode;
                         }
                     }
                 }
