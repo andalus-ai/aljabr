@@ -50,8 +50,12 @@ List<FunctionGemmaToolCallParser.FunctionCall> calls = model.parseFunctionCalls(
 The parser extracts one or more native call blocks, including escaped string
 values, booleans, numbers, nulls, nested objects, and arrays. It preserves
 call order. Parsed arguments are untrusted model output: validate them against
-your registered tool schema and authorization policy before dispatch. Aljabr
-does not execute tools from this model adapter.
+your registered tool schema and authorization policy before dispatch. The
+`FunctionGemmaToolSchemaValidator` checks required and optional properties,
+nested objects and arrays, primitive types, enums, constants, numeric bounds,
+string constraints, and unexpected properties when `additionalProperties`
+is false. Its diagnostics identify the failing argument path. Aljabr does not
+execute tools from this model adapter.
 
 For direct prompting, `generate(String, int)` accepts an already formatted
 prompt. The model stops on EOS or the FunctionGemma function-response marker;
