@@ -53,6 +53,45 @@ public class GraphOptimizer {
         return Math.abs(actual - expected) <= tolerance;
     }
 
+    private static boolean usesStandardAttentionSoftmax(GraphNode softmax) {
+        Object[] arguments = softmax.getArgs();
+        if (arguments.length == 0) {
+            return true;
+        }
+        if (arguments.length != 1 || !(arguments[0] instanceof Number number)) {
+            return false;
+        }
+        int rank = softmax.getOutputShape().rank();
+        if (rank == 0) {
+            return false;
+        }
+        int dimension = number.intValue();
+        int normalized = dimension < 0 ? dimension + rank : dimension;
+        return normalized == rank - 1;
+    }
+
+    private static boolean usesStandardAttentionTranspose(GraphNode transpose, GraphNode key) {
+        Object[] arguments = transpose.getArgs();
+        if (arguments.length == 0) {
+            return key.getOutputShape().rank() >= 2;
+        }
+        if (arguments.length != 2
+                || !(arguments[0] instanceof Number first)
+                || !(arguments[1] instanceof Number second)) {
+            return false;
+        }
+        int rank = key.getOutputShape().rank();
+        if (rank < 2) {
+            return false;
+        }
+        int firstDimension = first.intValue();
+        int secondDimension = second.intValue();
+        int normalizedFirst = firstDimension < 0 ? firstDimension + rank : firstDimension;
+        int normalizedSecond = secondDimension < 0 ? secondDimension + rank : secondDimension;
+        return normalizedFirst == rank - 2 && normalizedSecond == rank - 1
+                || normalizedFirst == rank - 1 && normalizedSecond == rank - 2;
+    }
+
     private static GraphNode optimizeNode(GraphNode node, Map<GraphNode, GraphNode> memo) {
         if (memo.containsKey(node)) {
             return memo.get(node);
@@ -98,7 +137,8 @@ public class GraphOptimizer {
                             && !maybeMatmul.requiresGrad()
                             && maybeMatmul.getInputs().size() == 2) {
                         GraphNode query = maybeMatmul.getInputs().get(0);
-                        if (!usesStandardAttentionScale(maybeDiv, query)) {
+                        if (!usesStandardAttentionScale(maybeDiv, query)
+                                || !usesStandardAttentionSoftmax(maybeSoftmax)) {
                             memo.put(node, node);
                             return node;
                         }
@@ -108,6 +148,10 @@ public class GraphOptimizer {
                                 && !maybeTranspose.requiresGrad()
                                 && maybeTranspose.getInputs().size() == 1) {
                             GraphNode key = maybeTranspose.getInputs().get(0);
+                            if (!usesStandardAttentionTranspose(maybeTranspose, key)) {
+                                memo.put(node, node);
+                                return node;
+                            }
 
                             GraphNode fusedNode = new GraphNode(
                                     OpType.ATTENTION,
