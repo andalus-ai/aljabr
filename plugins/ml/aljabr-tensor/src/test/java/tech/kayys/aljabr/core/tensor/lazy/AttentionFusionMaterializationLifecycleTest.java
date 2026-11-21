@@ -31,7 +31,7 @@ class AttentionFusionMaterializationLifecycleTest {
 
         GraphNode transpose = operation(OpType.TRANSPOSE, List.of(key));
         GraphNode scores = operation(OpType.MATMUL, List.of(query, transpose));
-        GraphNode scaled = operation(OpType.DIV_SCALAR, List.of(scores), new Object[] { 2.0f });
+        GraphNode scaled = operation(OpType.DIV_SCALAR, List.of(scores), new Object[] { (float) Math.sqrt(2.0d) });
         GraphNode probabilities = operation(OpType.SOFTMAX, List.of(scaled));
         GraphNode root = operation(OpType.MATMUL, List.of(probabilities, value));
 
