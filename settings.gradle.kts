@@ -60,6 +60,9 @@ includeDirectProjectsUnder("spi")
 // Format engines and independently installable scientific/ML extensions.
 includeProjectsUnder("engine")
 
+// Thin developer-facing command-line tools; reusable conversion behavior stays in library SPIs.
+includeProjectsUnder("tools")
+
 // Cross-module integrations depend on stable core and provider APIs without
 // introducing dependency cycles into the foundational tensor/core modules.
 includeProjectsUnder("integration")
