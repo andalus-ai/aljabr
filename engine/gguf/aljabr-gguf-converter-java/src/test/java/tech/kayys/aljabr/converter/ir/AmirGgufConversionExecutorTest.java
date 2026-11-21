@@ -127,7 +127,7 @@ class AmirGgufConversionExecutorTest {
 
     private static long dataStart(byte[] gguf) {
         ByteBuffer buffer = ByteBuffer.wrap(gguf).order(ByteOrder.LITTLE_ENDIAN);
-        buffer.position(24);
+        buffer.position(16);
         long metadataCount = buffer.getLong();
         for (long i = 0; i < metadataCount; i++) {
             skipString(buffer);
