@@ -83,6 +83,16 @@ class FunctionGemmaToolDeclarationTest {
     }
 
     @Test
+    void rejectsConstraintsAppliedToIncompatibleSchemaTypes() {
+        assertThrows(IllegalStateException.class,
+                () -> FunctionGemmaToolDeclaration.Schema.integer().minLength(1));
+        assertThrows(IllegalArgumentException.class,
+                () -> FunctionGemmaToolDeclaration.Schema.string().enumValues(42));
+        assertThrows(IllegalStateException.class,
+                () -> FunctionGemmaToolDeclaration.Schema.number().pattern(".*"));
+    }
+
+    @Test
     void rejectsUnknownRequiredPropertiesWhenMaterializingSchema() {
         var schema = FunctionGemmaToolDeclaration.Schema.object().required("missing");
         var tool = FunctionGemmaToolDeclaration.of("lookup", "Lookup", schema);
