@@ -384,6 +384,9 @@ public final class CpuBackend implements ComputeBackend {
 
         Shape outShape = new Shape(sizes);
         long[] inDims = inShape.dims();
+        TensorLayout inputLayout = a.layout();
+        long[] inputStrides = inputLayout.strides();
+        long outputOffset = inputLayout.storageOffset();
         for (int i = 0; i < rank; i++) {
             if (offsets[i] < 0 || offsets[i] > inDims[i]
                     || sizes[i] > inDims[i] - offsets[i]) {
@@ -392,77 +395,24 @@ public final class CpuBackend implements ComputeBackend {
                                 + ": offset=" + offsets[i] + ", size=" + sizes[i]
                                 + ", dimension=" + inDims[i]);
             }
+            outputOffset = Math.addExact(
+                    outputOffset, Math.multiplyExact(offsets[i], inputStrides[i]));
         }
 
-        // Strides in elements (row-major) for the input.
-        long[] baseStrides = new long[rank];
-        baseStrides[rank - 1] = 1;
-        for (int i = rank - 2; i >= 0; i--) {
-            baseStrides[i] = Math.multiplyExact(baseStrides[i + 1], inDims[i + 1]);
+        // A slice is a logical sub-view of the input: preserve its physical
+        // strides and advance the storage offset by the requested coordinates.
+        // This works for contiguous, offset, and already-strided input tensors.
+        TensorLayout outputLayout = new TensorLayout(outShape, inputStrides, outputOffset);
+        HostAccessibleStorage ignored = hostStorage(a); // Reject device-only storage at the CPU boundary.
+        TensorStorage storage = a.storage();
+        storage.retain();
+        try {
+            return new DefaultTensor(
+                    outShape, a.dtype(), a.device(), storage, this, outputLayout);
+        } catch (RuntimeException | Error failure) {
+            storage.release();
+            throw failure;
         }
-
-        // A rectangular slice is contiguous when its dimensions preserve the
-        // input's trailing row-major strides.
-        long[] viewExpected = new long[rank];
-        long expectedStride = 1;
-        for (int i = rank - 1; i >= 0; i--) {
-            viewExpected[i] = expectedStride;
-            expectedStride = Math.multiplyExact(expectedStride, sizes[i]);
-        }
-
-        boolean isContiguous = true;
-        for (int i = 0; i < rank; i++) {
-            if (baseStrides[i] != viewExpected[i]) {
-                isContiguous = false;
-                break;
-            }
-        }
-
-        HostAccessibleStorage parentStorage = hostStorage(a);
-        MemorySegment src = parentStorage.segment();
-        long elemOffset = 0;
-        for (int i = 0; i < rank; i++) {
-            elemOffset = Math.addExact(elemOffset, Math.multiplyExact(offsets[i], baseStrides[i]));
-        }
-        long byteOffset = Math.multiplyExact(elemOffset, Float.BYTES);
-        long byteSize = Math.multiplyExact(outShape.numel(), Float.BYTES);
-
-        if (isContiguous) {
-            // Preserve the legacy Buffer view type for existing callers, while
-            // allowing non-Buffer host storage to use a neutral zero-copy view.
-            TensorStorage viewStorage = parentStorage instanceof Buffer legacyBuffer
-                    ? CpuBuffer.view(legacyBuffer, byteOffset, byteSize)
-                    : HostAccessibleStorageView.view(parentStorage, byteOffset, byteSize);
-            try {
-                return new DefaultTensor(outShape, a.dtype(), a.device(), viewStorage, this);
-            } catch (RuntimeException | Error e) {
-                viewStorage.release();
-                throw e;
-            }
-        }
-
-        // Non-contiguous slices are materialized into an independent CPU buffer.
-        HostAccessibleStorage outBuf = allocateOutput(byteSize);
-        long outIdx = 0;
-        long totalOut = outShape.numel();
-        long[] cursor = new long[rank];
-        for (long elem = 0; elem < totalOut; elem++) {
-            long inIdx = 0;
-            for (int d = 0; d < rank; d++) {
-                inIdx = Math.addExact(inIdx,
-                        Math.multiplyExact(Math.addExact(offsets[d], cursor[d]), baseStrides[d]));
-            }
-            outBuf.segment().set(ValueLayout.JAVA_FLOAT, outIdx * Float.BYTES,
-                    src.get(ValueLayout.JAVA_FLOAT, inIdx * Float.BYTES));
-            outIdx++;
-            for (int d = rank - 1; d >= 0; d--) {
-                if (++cursor[d] < sizes[d]) {
-                    break;
-                }
-                cursor[d] = 0;
-            }
-        }
-        return out(outShape, outBuf);
     }
 
     @Override
