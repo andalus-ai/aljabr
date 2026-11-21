@@ -105,6 +105,8 @@ public class HatComputeBackend implements ComputeBackend {
                     + reductionSize + " != " + rightReductionSize);
         }
 
+        int leftLength = Math.toIntExact(a.numel());
+        int rightLength = Math.toIntExact(b.numel());
         int outputLength = Math.multiplyExact(rows, columns);
         float[] result = new float[outputLength];
         if (outputLength == 0 || reductionSize == 0) {
@@ -131,9 +133,9 @@ public class HatComputeBackend implements ComputeBackend {
                                 accelerator.lookup(), bufferArena);
 
                 hat.buffer.F32Array hatA = hat.buffer.F32Array.create(
-                        bufferCarrier, Math.toIntExact(a.numel()));
+                        bufferCarrier, leftLength);
                 hat.buffer.F32Array hatB = hat.buffer.F32Array.create(
-                        bufferCarrier, Math.toIntExact(b.numel()));
+                        bufferCarrier, rightLength);
                 hat.buffer.F32Array hatC = hat.buffer.F32Array.create(bufferCarrier, outputLength);
 
                 hatA.copyFrom(a.toFloatArray());
