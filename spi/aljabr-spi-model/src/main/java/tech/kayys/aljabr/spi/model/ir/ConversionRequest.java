@@ -26,8 +26,9 @@ public record ConversionRequest(
         options = Collections.unmodifiableMap(
                 new LinkedHashMap<>(Objects.requireNonNull(options, "options must not be null")));
         options.forEach((key, value) -> {
-            if (key == null || key.isBlank() || value == null) {
-                throw new IllegalArgumentException("options must contain non-blank keys and non-null values");
+            if (key == null || key.isBlank() || !key.contains(".") || value == null) {
+                throw new IllegalArgumentException(
+                        "options must contain namespaced keys and non-null values");
             }
         });
     }
