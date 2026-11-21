@@ -3,6 +3,8 @@ package tech.kayys.aljabr.converter.ir;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.spi.model.ir.*;
+import tech.kayys.aljabr.converter.java.gguf.GgufReader;
+import tech.kayys.aljabr.gguf.core.GgufModel;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -43,9 +45,20 @@ class AmirGgufConversionExecutorTest {
         assertEquals(1L, result.tensorCount());
         assertEquals(8L, result.payloadBytes());
         assertEquals("gguf", result.targetFormat());
-        assertArrayEquals(payload, java.util.Arrays.copyOfRange(
-                written, Math.toIntExact(findAlignedPayloadStart(written)), 
-                Math.toIntExact(findAlignedPayloadStart(written) + payload.length)));
+
+        // Validate the complete output with Aljabr's existing GGUF reader,
+        // not only by scanning for the source byte sequence.
+        try (GgufReader reader = new GgufReader(output)) {
+            GgufModel parsed = reader.read();
+            var parsedTensor = parsed.findTensor("weight").orElseThrow();
+            assertEquals(tech.kayys.aljabr.gguf.core.GgmlType.F32, parsedTensor.type());
+            assertArrayEquals(new long[] {2L}, parsedTensor.shape());
+            assertEquals(payload.length, parsedTensor.dataSize());
+            assertArrayEquals(payload, java.util.Arrays.copyOfRange(
+                    parsed.tensorData(), Math.toIntExact(parsedTensor.dataOffset()),
+                    Math.toIntExact(parsedTensor.dataOffset() + parsedTensor.dataSize())));
+            assertEquals("test", parsed.architecture());
+        }
     }
 
     @Test
@@ -89,7 +102,15 @@ class AmirGgufConversionExecutorTest {
 
         assertEquals(1L, result.tensorCount());
         assertEquals(4L, result.payloadBytes());
-        assertTrue(Files.size(output) > payload.length);
+        try (GgufReader reader = new GgufReader(output)) {
+            GgufModel parsed = reader.read();
+            var parsedTensor = parsed.findTensor("scalar").orElseThrow();
+            assertArrayEquals(new long[] {1L}, parsedTensor.shape());
+            assertEquals(4L, parsedTensor.dataSize());
+            assertArrayEquals(payload, java.util.Arrays.copyOfRange(
+                    parsed.tensorData(), Math.toIntExact(parsedTensor.dataOffset()),
+                    Math.toIntExact(parsedTensor.dataOffset() + parsedTensor.dataSize())));
+        }
     }
 
     @Test
@@ -108,16 +129,4 @@ class AmirGgufConversionExecutorTest {
                         Map.of("gguf.quantization", "Q4_K"))));
     }
 
-    private static long findAlignedPayloadStart(byte[] file) {
-        // For this fixture the first payload starts at the first 32-byte boundary after the header.
-        // Header ends after the two metadata entries, one tensor descriptor, and their UTF-8 strings.
-        // Locate the known F32 payload byte sequence in the generated file.
-        byte[] marker = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
-                .putFloat(1.5f).putFloat(-3.0f).array();
-        outer: for (int i = 0; i <= file.length - marker.length; i++) {
-            for (int j = 0; j < marker.length; j++) if (file[i + j] != marker[j]) continue outer;
-            return i;
-        }
-        throw new AssertionError("Payload not found");
-    }
 }
