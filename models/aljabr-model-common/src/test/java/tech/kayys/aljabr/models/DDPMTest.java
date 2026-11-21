@@ -9,12 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 
 class DDPMTest {
 
     @Test
     void samplesConfiguredVectorDimension() {
-        try (DDPM model = new DDPM(6, 12, 4);
+        try (CpuBackend backend = new CpuBackend();
+             DDPM model = new DDPM(backend, 6, 12, 4);
              Tensor sample = model.sample(3, 1234L)) {
             assertEquals(2, sample.shape().rank());
             assertEquals(3, sample.shape().dim(0));
@@ -27,7 +30,8 @@ class DDPMTest {
 
     @Test
     void samplingIsDeterministicForSameModelAndSeed() {
-        try (DDPM model = new DDPM(4, 8, 5);
+        try (CpuBackend backend = new CpuBackend();
+             DDPM model = new DDPM(backend, 4, 8, 5);
              Tensor first = model.sample(2, 99L);
              Tensor second = model.sample(2, 99L)) {
             assertArrayEquals(first.toFloatArray(), second.toFloatArray(), 0f);
@@ -53,7 +57,8 @@ class DDPMTest {
 
     @Test
     void rejectsInvalidSampleBatchSize() {
-        try (DDPM model = new DDPM(4, 8, 3)) {
+        try (CpuBackend backend = new CpuBackend();
+             DDPM model = new DDPM(backend, 4, 8, 3)) {
             assertThrows(IllegalArgumentException.class, () -> model.sample(0, 1L));
             assertThrows(IllegalArgumentException.class, () -> model.sample(-1, 1L));
         }
@@ -61,8 +66,9 @@ class DDPMTest {
 
     @Test
     void rejectsTrainingInputWithWrongShape() {
-        try (DDPM model = new DDPM(4, 8, 3);
-             Tensor wrongWidth = Tensor.of(new float[6], 2, 3)) {
+        try (CpuBackend backend = new CpuBackend();
+             DDPM model = new DDPM(backend, 4, 8, 3);
+             Tensor wrongWidth = TensorFactory.of(new float[6], backend, 2, 3)) {
             assertThrows(IllegalArgumentException.class, () -> model.trainingLoss(wrongWidth));
         }
     }
