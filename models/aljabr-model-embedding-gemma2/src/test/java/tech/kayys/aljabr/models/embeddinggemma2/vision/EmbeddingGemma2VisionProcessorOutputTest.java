@@ -57,6 +57,18 @@ class EmbeddingGemma2VisionProcessorOutputTest {
     }
 
     @Test
+    void rejectsRectangularGridWhoseDimensionsCannotBePartitionedByPoolingKernel() {
+        assertThrows(IllegalArgumentException.class, () ->
+                new EmbeddingGemma2VisionProcessorOutput(
+                        new float[1][8][1],
+                        new int[][][]{
+                                {{0, 0}, {1, 0}, {2, 0}, {3, 0},
+                                        {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}}
+                        },
+                        new int[]{1}));
+    }
+
+    @Test
     void rejectsPaddedAxisThatCannotRepresentTheInferredPoolingArea() {
         assertThrows(IllegalArgumentException.class, () ->
                 new EmbeddingGemma2VisionProcessorOutput(
