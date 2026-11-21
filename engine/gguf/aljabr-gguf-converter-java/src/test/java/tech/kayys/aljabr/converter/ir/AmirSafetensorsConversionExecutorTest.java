@@ -3,7 +3,10 @@ package tech.kayys.aljabr.converter.ir;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
+import tech.kayys.aljabr.spi.model.ir.ConversionExecutionResult;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
+import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
+import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutor;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
@@ -45,6 +48,42 @@ class AmirSafetensorsConversionExecutorTest {
         assertTrue(header.contains("\"format\":\"pt\""));
         assertArrayEquals(payload, java.util.Arrays.copyOfRange(
                 written, Math.toIntExact(Long.BYTES + headerLength), written.length));
+    }
+
+    @Test
+    void executesThroughFormatNeutralExecutorContract() throws Exception {
+        Path source = writeSource("spi-source.safetensors");
+        ModelDescriptor model = model(source, Map.of(), Map.of());
+        ConversionPlan plan = plan(model, CompatibilityReport.ConversionFidelity.FULL);
+        ModelConversionExecutor executor = new AmirSafetensorsConversionExecutor();
+        Path output = temporaryDirectory.resolve("spi-output.safetensors");
+
+        assertTrue(executor.supports("SAFETENSORS", "safetensors"));
+        assertFalse(executor.supports("gguf", "safetensors"));
+
+        ConversionExecutionResult result = executor.execute(
+                model, plan, ConversionRequest.to(output.toUri()));
+
+        assertEquals("safetensors", result.sourceFormat());
+        assertEquals("safetensors", result.targetFormat());
+        assertEquals(output.toAbsolutePath().normalize().toUri(), result.output());
+        assertEquals(1, result.tensorCount());
+        assertEquals(8L, result.payloadBytes());
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL, result.compatibility().fidelity());
+        assertTrue(result.untransferredMetadataKeys().isEmpty());
+    }
+
+    @Test
+    void rejectsOptionsThatThisTargetExecutorDoesNotUnderstand() throws Exception {
+        Path source = writeSource("options-source.safetensors");
+        ModelDescriptor model = model(source, Map.of(), Map.of());
+        ConversionPlan plan = plan(model, CompatibilityReport.ConversionFidelity.FULL);
+        ConversionRequest request = new ConversionRequest(
+                temporaryDirectory.resolve("options-output.safetensors").toUri(),
+                false, Map.of("safetensors.unknown", "true"));
+
+        assertThrows(java.io.IOException.class,
+                () -> new AmirSafetensorsConversionExecutor().execute(model, plan, request));
     }
 
     @Test
