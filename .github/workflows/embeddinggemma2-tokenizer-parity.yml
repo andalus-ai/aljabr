@@ -1,0 +1,80 @@
+name: EmbeddingGemma 2 tokenizer parity
+
+on:
+  pull_request:
+    paths:
+      - "spi/aljabr-spi-tokenizer/**"
+      - "models/aljabr-model-embedding-gemma2/**"
+      - ".github/workflows/embeddinggemma2-tokenizer-parity.yml"
+  push:
+    branches: [main]
+    paths:
+      - "spi/aljabr-spi-tokenizer/**"
+      - "models/aljabr-model-embedding-gemma2/**"
+      - ".github/workflows/embeddinggemma2-tokenizer-parity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: embeddinggemma2-tokenizer-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-corpus-parity:
+    name: Gemma BPE full-corpus parity (Java 25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TOKENIZER_REVISION: 914f7f89142e33e77833254d9c9b90c3cef7303b
+      CORPUS_REVISION: 305fc2a96790d9343f38038aeca211dfca56d9a5
+      TOKENIZER_SHA256: 4d777ef5bdc1aa36227abdfb77c3e49e7b9c892d16e1b6bda41c393504828be4
+      CORPUS_SHA256: 0797f417a0fa96270dc2f439478000fe3b3a235eb1e83b3054cf69674e323ae9
+    steps:
+      - name: Checkout Aljabr
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Download pinned tokenizer and reference corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/embeddinggemma2-tokenizer"
+          tokenizer="$RUNNER_TEMP/embeddinggemma2-tokenizer/tokenizer.json"
+          corpus="$RUNNER_TEMP/embeddinggemma2-tokenizer/tokenizer-cases.json"
+
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://huggingface.co/google/embeddinggemma-2/resolve/$TOKENIZER_REVISION/tokenizer.json" \
+            --output "$tokenizer"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://huggingface.co/EverPaper/embeddinggemma-2-coreai/resolve/$CORPUS_REVISION/tests/tokenizer-cases.json" \
+            --output "$corpus"
+
+          printf '%s  %s\n' "$TOKENIZER_SHA256" "$tokenizer" | sha256sum --check
+          printf '%s  %s\n' "$CORPUS_SHA256" "$corpus" | sha256sum --check
+
+          echo "TOKENIZER_PATH=$tokenizer" >> "$GITHUB_ENV"
+          echo "CORPUS_PATH=$corpus" >> "$GITHUB_ENV"
+
+      - name: Run full tokenizer parity suite
+        shell: bash
+        run: |
+          ./gradlew --no-daemon \
+            "-Daljabr.embeddinggemma2.tokenizer=$TOKENIZER_PATH" \
+            "-Daljabr.embeddinggemma2.tokenizerCorpus=$CORPUS_PATH" \
+            :spi:aljabr-spi-tokenizer:test
+
+      - name: Upload tokenizer parity reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embeddinggemma2-tokenizer-parity-reports
+          if-no-files-found: warn
+          path: spi/aljabr-spi-tokenizer/build/reports/tests/test/

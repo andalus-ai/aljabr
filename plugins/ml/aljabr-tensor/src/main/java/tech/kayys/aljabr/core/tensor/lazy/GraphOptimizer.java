@@ -25,6 +25,126 @@ public class GraphOptimizer {
         return optimizeNode(root, visited);
     }
 
+    private static boolean usesStandardAttentionScale(GraphNode scale, GraphNode query) {
+        Object[] arguments = scale.getArgs();
+        if (arguments.length != 1 || !(arguments[0] instanceof Number number)) {
+            return false;
+        }
+
+        int rank = query.getOutputShape().rank();
+        if (rank == 0) {
+            return false;
+        }
+        long headDimension = query.getOutputShape().dim(rank - 1);
+        if (headDimension <= 0) {
+            return false;
+        }
+
+        float actual = number.floatValue();
+        float expected = scale.getOp() == OpType.DIV_SCALAR
+                ? (float) Math.sqrt(headDimension)
+                : (float) (1.0d / Math.sqrt(headDimension));
+        if (!Float.isFinite(actual)) {
+            return false;
+        }
+
+        // Allow normal float rounding while rejecting meaningful scale changes.
+        float tolerance = Math.max(1.0e-6f, Math.ulp(expected) * 4.0f);
+        return Math.abs(actual - expected) <= tolerance;
+    }
+
+    private static boolean usesStandardAttentionSoftmax(GraphNode softmax) {
+        Object[] arguments = softmax.getArgs();
+        if (arguments.length == 0) {
+            return true;
+        }
+        if (arguments.length != 1 || !(arguments[0] instanceof Number number)) {
+            return false;
+        }
+        int rank = softmax.getOutputShape().rank();
+        if (rank == 0) {
+            return false;
+        }
+        int dimension = number.intValue();
+        int normalized = dimension < 0 ? dimension + rank : dimension;
+        return normalized == rank - 1;
+    }
+
+    /**
+     * The current backend contract does not define one common rank-4 attention
+     * layout: the CPU reference uses [B,H,S,D], while the Metal path consumes
+     * [B,S,H,D]. Keep this graph rewrite to the unambiguous rank-2 case until
+     * the backend attention layout contract is standardized.
+     *
+     * <p>The CPU rank-2 kernel also requires Q, K, and V to have matching
+     * [sequence, headDimension] shapes. The unfused matmul chain supports
+     * different key/value sequence lengths, so those graphs must remain intact.</p>
+     */
+    private static boolean supportsCanonicalAttentionShape(
+            GraphNode output,
+            GraphNode scores,
+            GraphNode softmax,
+            GraphNode transpose,
+            GraphNode query,
+            GraphNode key,
+            GraphNode value) {
+        long[] queryShape = query.getOutputShape().dims();
+        if (queryShape.length != 2 || queryShape[0] <= 0 || queryShape[1] <= 0) {
+            return false;
+        }
+        if (!java.util.Arrays.equals(queryShape, key.getOutputShape().dims())
+                || !java.util.Arrays.equals(queryShape, value.getOutputShape().dims())) {
+            return false;
+        }
+        long[] expectedScores = { queryShape[0], queryShape[0] };
+        long[] expectedTranspose = { queryShape[1], queryShape[0] };
+        return java.util.Arrays.equals(expectedScores, scores.getOutputShape().dims())
+                && java.util.Arrays.equals(expectedScores, softmax.getOutputShape().dims())
+                && java.util.Arrays.equals(expectedTranspose, transpose.getOutputShape().dims())
+                && java.util.Arrays.equals(queryShape, output.getOutputShape().dims());
+    }
+
+    private static boolean hasConsistentAttentionDType(
+            GraphNode output,
+            GraphNode softmax,
+            GraphNode scale,
+            GraphNode scores,
+            GraphNode transpose,
+            GraphNode query,
+            GraphNode key,
+            GraphNode value) {
+        var dtype = query.getOutputDType();
+        return dtype == key.getOutputDType()
+                && dtype == value.getOutputDType()
+                && dtype == transpose.getOutputDType()
+                && dtype == scores.getOutputDType()
+                && dtype == scale.getOutputDType()
+                && dtype == softmax.getOutputDType()
+                && dtype == output.getOutputDType();
+    }
+
+    private static boolean usesStandardAttentionTranspose(GraphNode transpose, GraphNode key) {
+        Object[] arguments = transpose.getArgs();
+        if (arguments.length == 0) {
+            return key.getOutputShape().rank() >= 2;
+        }
+        if (arguments.length != 2
+                || !(arguments[0] instanceof Number first)
+                || !(arguments[1] instanceof Number second)) {
+            return false;
+        }
+        int rank = key.getOutputShape().rank();
+        if (rank < 2) {
+            return false;
+        }
+        int firstDimension = first.intValue();
+        int secondDimension = second.intValue();
+        int normalizedFirst = firstDimension < 0 ? firstDimension + rank : firstDimension;
+        int normalizedSecond = secondDimension < 0 ? secondDimension + rank : secondDimension;
+        return normalizedFirst == rank - 2 && normalizedSecond == rank - 1
+                || normalizedFirst == rank - 1 && normalizedSecond == rank - 2;
+    }
+
     private static GraphNode optimizeNode(GraphNode node, Map<GraphNode, GraphNode> memo) {
         if (memo.containsKey(node)) {
             return memo.get(node);
@@ -76,15 +196,23 @@ public class GraphOptimizer {
                                 && !maybeTranspose.requiresGrad()
                                 && maybeTranspose.getInputs().size() == 1) {
                             GraphNode key = maybeTranspose.getInputs().get(0);
-
-                            GraphNode fusedNode = new GraphNode(
-                                    OpType.ATTENTION,
-                                    java.util.List.of(query, key, value),
-                                    new Object[0],
-                                    node.getOutputShape(),
-                                    node.getOutputDType());
-                            memo.put(node, fusedNode);
-                            return fusedNode;
+                            boolean standardPattern = usesStandardAttentionScale(maybeDiv, query)
+                                    && usesStandardAttentionSoftmax(maybeSoftmax)
+                                    && usesStandardAttentionTranspose(maybeTranspose, key)
+                                    && supportsCanonicalAttentionShape(node, maybeMatmul, maybeSoftmax,
+                                            maybeTranspose, query, key, value)
+                                    && hasConsistentAttentionDType(node, maybeSoftmax, maybeDiv, maybeMatmul,
+                                            maybeTranspose, query, key, value);
+                            if (standardPattern) {
+                                GraphNode fusedNode = new GraphNode(
+                                        OpType.ATTENTION,
+                                        java.util.List.of(query, key, value),
+                                        new Object[0],
+                                        node.getOutputShape(),
+                                        node.getOutputDType());
+                                memo.put(node, fusedNode);
+                                return fusedNode;
+                            }
                         }
                     }
                 }

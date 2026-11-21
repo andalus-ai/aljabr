@@ -19,10 +19,56 @@ float[][] logits = model.forward(inputIds);
 ```
 
 The returned `FunctionGemmaModel` exposes the checkpoint configuration,
-FunctionGemma tokenizer, and the shared `Gemma3TextBackbone` reference path.
-Its current execution contract is full-sequence prefill: one vocabulary-logit
-vector per input token. It is a correctness/reference path, not an optimized
-backend or incremental KV-cache session.
+FunctionGemma tokenizer, and shared `Gemma3TextBackbone` execution path.
+It supports full-sequence logits and greedy incremental generation through
+Aljabr's shared KV-cache session. This is a CPU correctness/reference path,
+not yet an optimized accelerator backend.
+
+
+## Generate from a structured conversation
+
+The model uses the registered FunctionGemma chat template when passed SPI
+messages. Tool declarations can be built with the typed Java API and included in the developer message:
+
+```java
+FunctionGemmaChatTemplate template = new FunctionGemmaChatTemplate();
+var getWeather = FunctionGemmaToolDeclaration.of(
+    "get_weather",
+    "Get current weather.",
+    FunctionGemmaToolDeclaration.Schema.object()
+        .property("location", FunctionGemmaToolDeclaration.Schema.string()
+            .description("City or place").minLength(2))
+        .property("units", FunctionGemmaToolDeclaration.Schema.string()
+            .enumValues("celsius", "fahrenheit"))
+        .required("location")
+        .additionalProperties(false));
+
+String instructions = template.formatDeveloperContent(
+    "You are an assistant that can call functions.",
+    getWeather);
+
+var result = model.generate(List.of(
+    Message.system(instructions),
+    Message.user("What is the weather in Bandung?")
+), 96);
+
+List<FunctionGemmaToolCallParser.FunctionCall> calls = model.parseFunctionCalls(result);
+```
+
+The parser extracts one or more native call blocks, including escaped string
+values, booleans, numbers, nulls, nested objects, and arrays. It preserves
+call order. Parsed arguments are untrusted model output: validate them against
+your registered tool schema and authorization policy before dispatch. The
+`FunctionGemmaToolSchemaValidator` checks required and optional properties,
+nested objects and arrays, primitive types, enums, constants, numeric bounds,
+string constraints, and unexpected properties when `additionalProperties`
+is false. Its diagnostics identify the failing argument path. Aljabr does not
+execute tools from this model adapter.
+
+For direct prompting, `generate(String, int)` accepts an already formatted
+prompt. The model stops on EOS or the FunctionGemma function-response marker;
+the returned `GenerationResult` includes generated token IDs, decoded text,
+and the stop reason.
 
 ## Open a checkpoint without materializing model weights
 

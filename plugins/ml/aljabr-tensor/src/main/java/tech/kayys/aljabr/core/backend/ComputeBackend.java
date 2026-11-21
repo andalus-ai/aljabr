@@ -242,16 +242,34 @@ public interface ComputeBackend extends AutoCloseable {
 
     Tensor slice(Tensor a, long[] offsets, long[] sizes);
 
+    /**
+     * Returns equal, non-empty slices along an axis. Negative axes count from
+     * the final dimension; the axis size must be evenly divisible by parts.
+     */
     List<Tensor> split(Tensor a, int axis, int parts);
 
     Tensor flatten(Tensor a);
 
+    /**
+     * Inserts a singleton dimension at {@code dim}. Valid axes are in
+     * {@code [-rank - 1, rank]}; negative axes are normalized against the
+     * rank-plus-one output dimensions.
+     */
     Tensor unsqueeze(Tensor a, int dim);
 
+    /**
+     * Removes all singleton dimensions. For compatibility, when every
+     * dimension is removed (including scalar input), the result has shape [1].
+     */
     Tensor squeeze(Tensor a);
 
+    /** Swaps the final two dimensions. Inputs must have rank at least two. */
     Tensor transpose(Tensor a);
 
+    /**
+     * Swaps two dimensions. Axes in {@code [-rank, rank)} are valid;
+     * negative axes count from the final dimension and equal axes are a no-op.
+     */
     Tensor transpose(Tensor a, int dim0, int dim1);
 
     // ── Reduction ─────────────────────────────────────────────────────

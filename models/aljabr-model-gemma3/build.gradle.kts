@@ -19,7 +19,7 @@ repositories {
 
 dependencies {
     api(project(":core:aljabr-core"))
-    implementation("tech.kayys.aljabr:aljabr-spi-model:0.1.0-SNAPSHOT")
+    api(project(":spi:aljabr-spi-model"))
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")
     implementation(group = "jakarta.inject", name = "jakarta.inject-api")
 
