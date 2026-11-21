@@ -1513,7 +1513,7 @@ public final class CpuBackend implements ComputeBackend {
                     "GQA additive attention mask must be F32 [queryLength, keyLength] on this backend");
         }
 
-        MemorySegment mask = additiveMask == null ? null : seg(additiveMask);
+        MemorySegment mask = additiveMask == null ? null : CpuTensorLayoutAccess.contiguousF32(additiveMask);
         if (mask != null) validateAttentionMask(mask, queryLength, keyLength);
 
         Shape outputShape = new Shape(batch, queryHeads, queryLength, headDim);
