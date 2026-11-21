@@ -1441,13 +1441,14 @@ public final class CpuBackend implements ComputeBackend {
                 || additiveMask.shape().rank()!=2 || additiveMask.shape().dim(0)!=queryLength
                 || additiveMask.shape().dim(1)!=keyLength))
             throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] on this backend");
-        MemorySegment mask = additiveMask == null ? null : seg(additiveMask);
+        MemorySegment mask = additiveMask == null ? null : CpuTensorLayoutAccess.contiguousF32(additiveMask);
         if (mask != null) {
             validateAttentionMask(mask, queryLength, keyLength);
         }
         Shape outputShape=new Shape(batch,heads,queryLength,headDim);
         HostAccessibleStorage output=allocateOutput(Math.multiplyExact(outputShape.numel(),Float.BYTES));
-        MemorySegment q=seg(Q), k=seg(K), v=seg(V), out=output.segment();
+        MemorySegment q=CpuTensorLayoutAccess.contiguousF32(Q), k=CpuTensorLayoutAccess.contiguousF32(K),
+                v=CpuTensorLayoutAccess.contiguousF32(V), out=output.segment();
         float scale=(float)(1.0/Math.sqrt(headDim));
         int groupCount = Math.toIntExact(Math.multiplyExact(batch, heads));
         try {
@@ -1518,7 +1519,9 @@ public final class CpuBackend implements ComputeBackend {
         Shape outputShape = new Shape(batch, queryHeads, queryLength, headDim);
         HostAccessibleStorage output =
                 allocateOutput(Math.multiplyExact(outputShape.numel(), Float.BYTES));
-        MemorySegment q = seg(Q), k = seg(K), v = seg(V), out = output.segment();
+        MemorySegment q = CpuTensorLayoutAccess.contiguousF32(Q),
+                k = CpuTensorLayoutAccess.contiguousF32(K),
+                v = CpuTensorLayoutAccess.contiguousF32(V), out = output.segment();
         float scale = (float) (1.0 / Math.sqrt(headDim));
         int groupCount = Math.toIntExact(Math.multiplyExact(batch, queryHeads));
         int queriesPerKeyValueHead = Math.toIntExact(queryHeads / keyValueHeads);
