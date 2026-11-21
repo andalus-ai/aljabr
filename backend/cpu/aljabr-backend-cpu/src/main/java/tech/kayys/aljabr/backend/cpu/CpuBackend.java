@@ -1235,47 +1235,67 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor pow(Tensor a, float exponent) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++)
-            CpuOps.setF(dst, i, (float) Math.pow(CpuOps.getF(src, i), exponent));
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        MemorySegment source = seg(a), destination = output.segment();
+        CpuTensorLayoutAccess.unary(a, destination, elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, (float) Math.pow(CpuOps.getF(src, index), exponent));
+                    }
+                },
+                value -> (float) Math.pow(value, exponent));
+        return out(shape, output);
     }
 
     @Override
     public Tensor sign(Tensor a) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * Float.BYTES);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++) {
-            CpuOps.setF(dst, i, Math.signum(CpuOps.getF(src, i)));
-        }
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        CpuTensorLayoutAccess.unary(a, output.segment(), elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, Math.signum(CpuOps.getF(src, index)));
+                    }
+                },
+                Math::signum);
+        return out(shape, output);
     }
 
     @Override
     public Tensor abs(Tensor a) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++)
-            CpuOps.setF(dst, i, Math.abs(CpuOps.getF(src, i)));
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        CpuTensorLayoutAccess.unary(a, output.segment(), elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, Math.abs(CpuOps.getF(src, index)));
+                    }
+                },
+                Math::abs);
+        return out(shape, output);
     }
 
     @Override
     public Tensor sqrt(Tensor a) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++)
-            CpuOps.setF(dst, i, (float) Math.sqrt(CpuOps.getF(src, i)));
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        CpuTensorLayoutAccess.unary(a, output.segment(), elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, (float) Math.sqrt(CpuOps.getF(src, index)));
+                    }
+                },
+                value -> (float) Math.sqrt(value));
+        return out(shape, output);
     }
 
     @Override
@@ -1324,8 +1344,28 @@ public final class CpuBackend implements ComputeBackend {
             return input;
         Shape s = input.shape();
         long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.dropout(seg(input), o.segment(), n, p, ThreadLocalRandom.current().nextLong());
+        CpuTensorLayoutAccess.requireF32(input);
+        HostAccessibleStorage o = allocateOutput(Math.multiplyExact(n, Float.BYTES));
+        MemorySegment source = seg(input);
+        MemorySegment destination = o.segment();
+        TensorLayout layout = input.layout();
+        if (layout.isContiguous() && layout.storageOffset() == 0) {
+            CpuOps.dropout(source, destination, n, p, ThreadLocalRandom.current().nextLong());
+        } else {
+            long state = ThreadLocalRandom.current().nextLong();
+            state = state ^ (state << 13) | 1L;
+            float scale = 1.0f / (1.0f - p);
+            long[] dimensions = input.shape().dims();
+            for (long index = 0; index < n; index++) {
+                state ^= state >>> 12;
+                state ^= state << 25;
+                state ^= state >>> 27;
+                float random = (float) ((state * 0x2545F4914F6CDD1DL) >>> 32) / 0xFFFFFFFFL;
+                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, index);
+                destination.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(index, Float.BYTES),
+                        random < p ? 0f : value * scale);
+            }
+        }
         return out(s, o);
     }
 
