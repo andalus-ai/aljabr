@@ -87,8 +87,18 @@ public final class FunctionGemmaModel {
      */
     public GenerationResult generate(String prompt, int maxNewTokens) {
         Objects.requireNonNull(prompt, "prompt");
-        int[] promptIds = toIntArray(tokenizer.encode(prompt, EncodeOptions.defaultOptions()));
-        return generate(promptIds, maxNewTokens);
+        if (prompt.isBlank()) {
+            throw new IllegalArgumentException("prompt must not be blank");
+        }
+        long[] encoded = tokenizer.encode(prompt, EncodeOptions.defaultOptions());
+        int bosTokenId = tokenizer.bosTokenId();
+        if (bosTokenId >= 0 && (encoded.length == 0 || encoded[0] != bosTokenId)) {
+            long[] withBos = new long[encoded.length + 1];
+            withBos[0] = bosTokenId;
+            System.arraycopy(encoded, 0, withBos, 1, encoded.length);
+            encoded = withBos;
+        }
+        return generate(toIntArray(encoded), maxNewTokens);
     }
 
     /**
