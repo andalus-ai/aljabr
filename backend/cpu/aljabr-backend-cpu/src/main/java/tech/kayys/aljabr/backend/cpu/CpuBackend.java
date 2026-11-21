@@ -1057,39 +1057,79 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor crossEntropy(Tensor pred, Tensor target) {
-        // pred: [N, C] log-probabilities (after log_softmax); target: [N] class indices
-        // (I32)
+        // pred: [N, C] log-probabilities (after log_softmax); target: [N] class indices (I32)
+        Objects.requireNonNull(pred, "pred");
+        Objects.requireNonNull(target, "target");
+        if (pred.dtype() != DType.F32 || target.dtype() != DType.I32) {
+            throw new UnsupportedOperationException("crossEntropy requires F32 predictions and I32 class indices");
+        }
+        if (pred.shape().rank() != 2 || target.shape().rank() != 1) {
+            throw new IllegalArgumentException("crossEntropy requires predictions [N, C] and targets [N]");
+        }
         long batchSize = pred.shape().dim(0);
         long numClasses = pred.shape().dim(1);
+        if (batchSize <= 0 || numClasses <= 0 || target.shape().dim(0) != batchSize) {
+            throw new IllegalArgumentException("crossEntropy requires non-empty [N, C] predictions and matching [N] targets");
+        }
         MemorySegment sp = seg(pred);
         MemorySegment st = seg(target);
         float loss = 0f;
         for (long i = 0; i < batchSize; i++) {
-            int classIdx = st.get(ValueLayout.JAVA_INT, i * 4L);
-            loss -= sp.get(ValueLayout.JAVA_FLOAT, (i * numClasses + classIdx) * 4L);
+            int classIdx = st.get(ValueLayout.JAVA_INT, i * Integer.BYTES);
+            if (classIdx < 0 || classIdx >= numClasses) {
+                throw new IllegalArgumentException(
+                        "crossEntropy target class index " + classIdx + " is outside [0, " + numClasses + ")");
+            }
+            loss -= sp.get(ValueLayout.JAVA_FLOAT, (i * numClasses + classIdx) * Float.BYTES);
         }
         loss /= batchSize;
-        HostAccessibleStorage o = allocateOutput(4);
+        HostAccessibleStorage o = allocateOutput(Float.BYTES);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, loss);
         return out(new Shape(1), o);
     }
 
     @Override
     public Tensor binaryCrossEntropy(Tensor pred, Tensor target) {
-        // pred: [N] predicted probabilities; target: [N] binary labels in {0,1}
+        // pred: predicted probabilities; target: same-shaped binary labels in {0,1}
+        Objects.requireNonNull(pred, "pred");
+        Objects.requireNonNull(target, "target");
+        if (pred.dtype() != DType.F32 || target.dtype() != DType.F32) {
+            throw new UnsupportedOperationException("binaryCrossEntropy requires F32 predictions and targets");
+        }
+        if (pred.shape().rank() == 0 || !sameShape(pred.shape(), target.shape())) {
+            throw new IllegalArgumentException("binaryCrossEntropy requires non-scalar predictions and matching target shape");
+        }
         long n = pred.numel();
+        if (n <= 0) {
+            throw new IllegalArgumentException("binaryCrossEntropy requires non-empty tensors");
+        }
         MemorySegment sp = seg(pred);
         MemorySegment st = seg(target);
         float loss = 0f;
         for (long i = 0; i < n; i++) {
             float p = Math.max(1e-7f, Math.min(1 - 1e-7f, CpuOps.getF(sp, i)));
             float t = CpuOps.getF(st, i);
+            if (!Float.isFinite(t) || (t != 0f && t != 1f)) {
+                throw new IllegalArgumentException("binaryCrossEntropy targets must contain only finite 0 or 1 labels");
+            }
             loss -= t * (float) Math.log(p) + (1 - t) * (float) Math.log(1 - p);
         }
         loss /= n;
-        HostAccessibleStorage o = allocateOutput(4);
+        HostAccessibleStorage o = allocateOutput(Float.BYTES);
         o.segment().set(ValueLayout.JAVA_FLOAT, 0, loss);
         return out(new Shape(1), o);
+    }
+
+    private static boolean sameShape(Shape left, Shape right) {
+        if (left.rank() != right.rank()) {
+            return false;
+        }
+        for (int i = 0; i < left.rank(); i++) {
+            if (left.dim(i) != right.dim(i)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ── Attention ─────────────────────────────────────────────────────────────
