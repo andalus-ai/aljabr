@@ -191,6 +191,43 @@ public final class TensorOperationValidator {
     }
 
     /**
+     * Validates the default transpose operation, which swaps the final two axes.
+     */
+    public static TransposePlan validateTranspose(Shape input) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        if (rank < 2) {
+            throw new IllegalArgumentException(
+                    "transpose requires a tensor with rank >= 2; got " + rank);
+        }
+        return validateTranspose(input, rank - 2, rank - 1);
+    }
+
+    /**
+     * Validates two transpose axes and returns their normalized positions and output shape.
+     * Negative axes count from the final dimension; equal axes are a valid no-op.
+     */
+    public static TransposePlan validateTranspose(Shape input, int requestedAxis0, int requestedAxis1) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        long axis0 = requestedAxis0 < 0 ? (long) rank + requestedAxis0 : requestedAxis0;
+        long axis1 = requestedAxis1 < 0 ? (long) rank + requestedAxis1 : requestedAxis1;
+        if (rank == 0 || axis0 < 0 || axis0 >= rank || axis1 < 0 || axis1 >= rank) {
+            throw new IllegalArgumentException(
+                    "transpose dimensions must be in [-" + rank + ", " + rank + "); got d0="
+                            + requestedAxis0 + ", d1=" + requestedAxis1);
+        }
+        int normalizedAxis0 = (int) axis0;
+        int normalizedAxis1 = (int) axis1;
+        long[] outputDimensions = input.dims();
+        long temporary = outputDimensions[normalizedAxis0];
+        outputDimensions[normalizedAxis0] = outputDimensions[normalizedAxis1];
+        outputDimensions[normalizedAxis1] = temporary;
+        return new TransposePlan(normalizedAxis0, normalizedAxis1, new Shape(outputDimensions));
+    }
+
+    public record TransposePlan(int axis0, int axis1, Shape outputShape) { }
+    /**
      * Validates an unsqueeze axis and returns its normalized position and output shape.
      * Negative axes are counted from the end of the rank-plus-one output dimensions.
      */
