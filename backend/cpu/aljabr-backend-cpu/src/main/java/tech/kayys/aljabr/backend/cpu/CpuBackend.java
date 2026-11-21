@@ -936,7 +936,7 @@ public final class CpuBackend implements ComputeBackend {
         HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
         MemorySegment source = seg(input);
         MemorySegment destination = output.segment();
-        destination.copyFrom(source.asSlice(0, Math.multiplyExact(elements, Float.BYTES)));
+        copyLogicalToContiguous(input, source, destination);
 
         int halfDim = headDim / 2;
         for (long b = 0; b < batch; b++) {
@@ -1072,6 +1072,16 @@ public final class CpuBackend implements ComputeBackend {
             }
         }
         return out(input.shape(), output);
+    }
+
+    private static void copyLogicalToContiguous(
+            Tensor input, MemorySegment source, MemorySegment destination) {
+        long[] dimensions = input.shape().dims();
+        TensorLayout layout = input.layout();
+        for (long index = 0; index < input.numel(); index++) {
+            float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, index);
+            destination.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(index, Float.BYTES), value);
+        }
     }
 
     private static void validateBatchNormVector(Tensor tensor, long channels, String name) {
