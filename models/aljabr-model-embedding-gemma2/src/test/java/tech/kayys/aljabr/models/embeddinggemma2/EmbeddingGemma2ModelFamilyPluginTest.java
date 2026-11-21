@@ -43,6 +43,16 @@ class EmbeddingGemma2ModelFamilyPluginTest {
     }
 
     @Test
+    void declaresTextRunnerImplementationWithoutClaimingMultimodalReadiness() {
+        var descriptor = new EmbeddingGemma2ModelFamilyPlugin().descriptor();
+
+        assertEquals("text_runner_implemented_registration_and_checkpoint_validation_pending",
+                descriptor.metadata().get("runner_status"));
+        assertEquals("text", descriptor.metadata().get("supported_modalities"));
+        assertEquals("image,audio,video", descriptor.metadata().get("deferred_modalities"));
+    }
+
+    @Test
     void declaresGemmaSentencePieceTokenizerAndTextOnlyFirstMilestone() {
         var plugin = new EmbeddingGemma2ModelFamilyPlugin();
 
@@ -55,7 +65,7 @@ class EmbeddingGemma2ModelFamilyPluginTest {
     }
 
     @Test
-    void supportReportKeepsRunnerPending() {
+    void supportReportKeepsDirectSafetensorPending() {
         var report = new EmbeddingGemma2ModelFamilyPlugin().supportReport();
 
         assertEquals(ModelFamilyDirectSupport.PENDING, report.directSafetensorStatus());

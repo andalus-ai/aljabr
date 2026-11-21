@@ -32,7 +32,7 @@ public final class EmbeddingGemma2ModelFamilyPlugin implements ModelFamilyPlugin
                 Map.ofEntries(
                         Map.entry("bundle_profile", "optional"),
                         Map.entry("direct_safetensor", "pending_text_encoder_and_embedding_head"),
-                        Map.entry("runner_status", "not_registered_until_forward_path_is_complete"),
+                        Map.entry("runner_status", "text_runner_implemented_registration_and_checkpoint_validation_pending"),
                         Map.entry("supported_modalities", "text"),
                         Map.entry("deferred_modalities", "image,audio,video"),
                         Map.entry("text_layers", "24"),
