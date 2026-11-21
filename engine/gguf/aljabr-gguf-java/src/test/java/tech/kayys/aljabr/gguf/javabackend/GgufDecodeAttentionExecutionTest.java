@@ -7,6 +7,8 @@ import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.cache.KVCacheSession;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GgufDecodeAttentionExecutionTest {
     @Test
