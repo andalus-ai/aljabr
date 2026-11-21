@@ -78,7 +78,7 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
                 throw new IOException("Tensor '" + tensor.name() + "' uses unsupported GGUF dtype '"
                         + tensor.dataType() + "'", unsupported);
             }
-            long offset = absoluteOffset(payload, source);
+            long offset = absoluteOffset(payload, source, model.sourceFormat());
             validatePayload(tensor, payload, source, offset, type);
             try {
                 payloadBytes = Math.addExact(payloadBytes, payload.length());
@@ -169,9 +169,13 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         }
     }
 
-    private static long absoluteOffset(PayloadReference payload, Path source) throws IOException {
+    private static long absoluteOffset(PayloadReference payload, Path source, String sourceFormat) throws IOException {
         if (payload.offsetBasis() == PayloadReference.OffsetBasis.CONTAINER) {
             return payload.offset();
+        }
+        if (!"safetensors".equalsIgnoreCase(sourceFormat)) {
+            throw new IOException("DATA_SECTION offsets are currently supported only for Safetensors sources: "
+                    + sourceFormat);
         }
         try (FileChannel channel = FileChannel.open(source, StandardOpenOption.READ)) {
             if (channel.size() < Long.BYTES) {
