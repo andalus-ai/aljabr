@@ -485,33 +485,25 @@ public final class CpuBackend implements ComputeBackend {
     @Override
     public Tensor transpose(Tensor a) {
         Objects.requireNonNull(a, "input");
-        int rank = a.shape().rank();
-        if (rank < 2) {
-            throw new IllegalArgumentException(
-                    "transpose requires a tensor with rank >= 2; got " + rank);
-        }
-        return transpose(a, rank - 2, rank - 1);
+        TensorOperationValidator.TransposePlan plan =
+                TensorOperationValidator.validateTranspose(a.shape());
+        return transpose(a, plan.axis0(), plan.axis1());
     }
 
     @Override
     public Tensor transpose(Tensor a, int d0, int d1) {
         Objects.requireNonNull(a, "input");
-        int rank = a.shape().rank();
-        if (d0 < 0 || d0 >= rank || d1 < 0 || d1 >= rank) {
-            throw new IllegalArgumentException(
-                    "transpose dimensions must be in [0, " + rank + "); got d0="
-                            + d0 + ", d1=" + d1);
-        }
+        TensorOperationValidator.TransposePlan plan =
+                TensorOperationValidator.validateTranspose(a.shape(), d0, d1);
+        d0 = plan.axis0();
+        d1 = plan.axis1();
         if (a.dtype() != DType.F32) {
             throw new UnsupportedOperationException(
                     "CPU transpose currently supports F32 tensors only; actual dtype is " + a.dtype());
         }
 
-        long[] inDims = a.shape().dims();
-        long[] outDims = inDims.clone();
-        outDims[d0] = inDims[d1];
-        outDims[d1] = inDims[d0];
-        Shape outShape = new Shape(outDims);
+        int rank = a.shape().rank();
+        Shape outShape = plan.outputShape();
         long total = outShape.numel();
         long outputBytes = Math.multiplyExact(total, Float.BYTES);
         HostAccessibleStorage outBuf = allocateOutput(outputBytes);
