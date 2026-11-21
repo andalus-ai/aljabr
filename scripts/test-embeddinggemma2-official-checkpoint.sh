@@ -18,6 +18,26 @@ usage() {
     echo "Override download location with ALJABR_EMBEDDING_GEMMA2_DIR."
 }
 
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        echo "Error: sha256sum or shasum is required to verify the official checkpoint." >&2
+        return 1
+    fi
+}
+
+verify_checkpoint() {
+    local actual_sha
+    actual_sha="$(sha256_file "$CHECKPOINT")"
+    if [[ "$actual_sha" != "$CHECKPOINT_SHA256" ]]; then
+        echo "Checkpoint SHA-256 mismatch: expected ${CHECKPOINT_SHA256}, got ${actual_sha}" >&2
+        return 1
+    fi
+}
+
 RUN_FORWARD=false
 while (($#)); do
     case "$1" in
@@ -34,36 +54,38 @@ mkdir -p "$MODEL_DIR"
 download() {
     local name="$1"
     local destination="${MODEL_DIR}/${name}"
+    local temporary="${destination}.part"
+
     if [[ -s "$destination" ]]; then
-        echo "Using cached ${name}"
-        return
+        if [[ "$name" != "model.safetensors" ]] || verify_checkpoint; then
+            echo "Using verified cached ${name}"
+            return
+        fi
+        echo "Cached ${name} failed integrity verification; downloading a fresh copy." >&2
+        rm -f "$destination"
     fi
+
     echo "Downloading ${name}..."
-    curl --fail --location --retry 3 --retry-delay 2 \
+    rm -f "$temporary"
+    if ! curl --fail --location --retry 3 --retry-delay 2 \
         "${MODEL_URL}/${name}?download=true" \
-        --output "${destination}.part"
-    mv "${destination}.part" "$destination"
+        --output "$temporary"; then
+        rm -f "$temporary"
+        echo "Download failed: ${name}" >&2
+        return 1
+    fi
+    if [[ ! -s "$temporary" ]]; then
+        rm -f "$temporary"
+        echo "Downloaded file is empty: ${name}" >&2
+        return 1
+    fi
+    mv "$temporary" "$destination"
 }
 
 download config.json
 download processor_config.json
 download model.safetensors
-
-if command -v sha256sum >/dev/null 2>&1; then
-    actual_sha="$(sha256sum "$CHECKPOINT" | awk '{print $1}')"
-    if [[ "$actual_sha" != "$CHECKPOINT_SHA256" ]]; then
-        echo "Checkpoint SHA-256 mismatch: expected ${CHECKPOINT_SHA256}, got ${actual_sha}" >&2
-        exit 1
-    fi
-elif command -v shasum >/dev/null 2>&1; then
-    actual_sha="$(shasum -a 256 "$CHECKPOINT" | awk '{print $1}')"
-    if [[ "$actual_sha" != "$CHECKPOINT_SHA256" ]]; then
-        echo "Checkpoint SHA-256 mismatch: expected ${CHECKPOINT_SHA256}, got ${actual_sha}" >&2
-        exit 1
-    fi
-else
-    echo "Warning: neither sha256sum nor shasum is available; skipping checkpoint digest verification." >&2
-fi
+verify_checkpoint
 
 cd "$REPO_ROOT"
 if [[ "$RUN_FORWARD" == true ]]; then
