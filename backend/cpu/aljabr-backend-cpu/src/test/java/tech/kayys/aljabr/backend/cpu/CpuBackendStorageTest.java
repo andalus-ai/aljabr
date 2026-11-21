@@ -394,7 +394,8 @@ class CpuBackendStorageTest {
             reshaped = backend.reshape(slice, 2);
 
             assertSame(slice.storage(), reshaped.storage());
-            assertEquals(2, storage.references());
+            // Input, slice, and reshaped view each own one storage reference.
+            assertEquals(3, storage.references());
 
             HostAccessibleStorage viewStorage = (HostAccessibleStorage) slice.storage();
             viewStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0L, 30f);
