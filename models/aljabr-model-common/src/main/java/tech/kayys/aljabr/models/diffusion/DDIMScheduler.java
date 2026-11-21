@@ -1,33 +1,25 @@
 package tech.kayys.aljabr.models.diffusion;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 /**
- * DDIM scheduler using a configurable linear beta training schedule.
- * The class contains only scalar schedule mathematics and has no dependency
- * on a tensor implementation or execution backend.
+ * Compatibility adapter for the modular DDIM scheduler.
+ *
+ * <p>This legacy package remains available to existing pipeline consumers.
+ * All schedule construction and DDIM coefficient mathematics are delegated
+ * to the independently installable diffusion scheduler module.</p>
  */
+@Deprecated(since = "0.2.0", forRemoval = false)
 public final class DDIMScheduler implements DiffusionScheduler {
 
+    private final tech.kayys.aljabr.diffusion.scheduler.ddim.DDIMScheduler delegate;
     private final int trainingTimesteps;
-    private final float betaStart;
-    private final float betaEnd;
-    private final float[] alphasCumprod;
 
     public DDIMScheduler(int trainingTimesteps, float betaStart, float betaEnd) {
-        if (trainingTimesteps < 2) {
-            throw new IllegalArgumentException("trainingTimesteps must be at least 2");
-        }
-        if (!Float.isFinite(betaStart) || !Float.isFinite(betaEnd)
-                || betaStart <= 0.0f || betaEnd <= 0.0f
-                || betaStart >= 1.0f || betaEnd >= 1.0f
-                || betaStart > betaEnd) {
-            throw new IllegalArgumentException(
-                    "beta values must satisfy 0 < betaStart <= betaEnd < 1");
-        }
-
+        this.delegate = new tech.kayys.aljabr.diffusion.scheduler.ddim.DDIMScheduler(
+                trainingTimesteps, betaStart, betaEnd);
         this.trainingTimesteps = trainingTimesteps;
-        this.betaStart = betaStart;
-        this.betaEnd = betaEnd;
-        this.alphasCumprod = buildAlphasCumprod();
     }
 
     public DDIMScheduler(int trainingTimesteps) {
@@ -36,83 +28,49 @@ public final class DDIMScheduler implements DiffusionScheduler {
 
     @Override
     public DiffusionSchedule createSchedule(int inferenceSteps) {
-        if (inferenceSteps < 1 || inferenceSteps > trainingTimesteps) {
-            throw new IllegalArgumentException(
-                    "inferenceSteps must be between 1 and " + trainingTimesteps);
+        var modularSchedule = delegate.createInferenceSchedule(inferenceSteps);
+        float[] alphasCumprod = new float[trainingTimesteps];
+        for (int timestep = 0; timestep < trainingTimesteps; timestep++) {
+            alphasCumprod[timestep] =
+                    modularSchedule.alphaCumprodAtTrainingTimestep(timestep);
         }
-
-        int[] timesteps = new int[inferenceSteps];
-        if (inferenceSteps == 1) {
-            timesteps[0] = trainingTimesteps - 1;
-        } else {
-            for (int i = 0; i < inferenceSteps; i++) {
-                int ascending = Math.round(
-                        (float) i * (trainingTimesteps - 1) / (inferenceSteps - 1));
-                timesteps[i] = trainingTimesteps - 1 - ascending;
-            }
-        }
-        return new DiffusionSchedule(alphasCumprod, timesteps);
+        return new DiffusionSchedule(alphasCumprod, modularSchedule.timesteps());
     }
 
     @Override
     public SchedulerStepParameters stepParameters(
             DiffusionSchedule schedule, int stepIndex, float eta) {
-        if (schedule == null || schedule.trainingTimesteps() != trainingTimesteps) {
+        Objects.requireNonNull(schedule, "schedule");
+        if (schedule.trainingTimesteps() != trainingTimesteps) {
             throw new IllegalArgumentException(
                     "schedule must be created for this scheduler's training timestep count");
         }
-        if (stepIndex < 0 || stepIndex >= schedule.inferenceSteps()) {
-            throw new IllegalArgumentException("stepIndex is outside the inference schedule");
-        }
-        if (!Float.isFinite(eta) || eta < 0.0f) {
-            throw new IllegalArgumentException("eta must be finite and non-negative");
-        }
 
-        float alpha = schedule.alphaCumprodAtStep(stepIndex);
-        float alphaPrevious = schedule.previousAlphaCumprodAtStep(stepIndex);
-        float variance = ((1.0f - alphaPrevious) / (1.0f - alpha))
-                * (1.0f - alpha / alphaPrevious);
-        float sigma = eta * (float) Math.sqrt(Math.max(variance, 0.0f));
-        float directionVariance = 1.0f - alphaPrevious - sigma * sigma;
-        if (directionVariance < -1.0e-6f) {
+        var modularSchedule = delegate.createInferenceSchedule(schedule.inferenceSteps());
+        if (!Arrays.equals(schedule.timesteps(), modularSchedule.timesteps())) {
             throw new IllegalArgumentException(
-                    "eta is too large for a numerically valid DDIM update");
+                    "schedule timesteps do not match this scheduler's inference schedule");
         }
-        float directionCoefficient =
-                (float) Math.sqrt(Math.max(directionVariance, 0.0f));
 
+        var parameters = delegate.stepParameters(modularSchedule, stepIndex, eta);
         return new SchedulerStepParameters(
-                schedule.timestepAt(stepIndex),
-                schedule.previousTimestepAt(stepIndex),
-                alpha,
-                alphaPrevious,
-                sigma,
-                directionCoefficient);
+                parameters.timestep(),
+                parameters.previousTimestep(),
+                parameters.alphaCumprod(),
+                parameters.previousAlphaCumprod(),
+                parameters.sigma(),
+                parameters.directionCoefficient());
     }
 
     public int trainingTimesteps() {
-        return trainingTimesteps;
+        return delegate.trainingTimesteps();
     }
 
     public float betaStart() {
-        return betaStart;
+        return delegate.betaStart();
     }
 
     public float betaEnd() {
-        return betaEnd;
-    }
-
-    private float[] buildAlphasCumprod() {
-        float[] result = new float[trainingTimesteps];
-        float cumulative = 1.0f;
-        for (int timestep = 0; timestep < trainingTimesteps; timestep++) {
-            float fraction = trainingTimesteps == 1
-                    ? 0.0f
-                    : (float) timestep / (trainingTimesteps - 1);
-            float beta = betaStart + fraction * (betaEnd - betaStart);
-            cumulative *= 1.0f - beta;
-            result[timestep] = cumulative;
-        }
-        return result;
+        return delegate.betaEnd();
     }
 }
