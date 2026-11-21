@@ -1,7 +1,8 @@
 # EmbeddingGemma 2 — Safetensors adapter
 
 This module connects the shared Aljabr Safetensors loader to the
-format-neutral EmbeddingGemma 2 checkpoint mapper.
+format-neutral EmbeddingGemma 2 checkpoint mapper and assembles a complete
+text-only model bundle.
 
 ## Responsibilities
 
@@ -14,19 +15,29 @@ format-neutral EmbeddingGemma 2 checkpoint mapper.
   loader's typed tensor accessors.
 - Delegate tensor-name and shape validation to
   `EmbeddingGemma2CheckpointMapper`.
-- Close the mapped shard session after the model's weight arrays are
-  materialized.
+- Load the Hugging Face `config.json` and shared `tokenizer.json` from a model
+  directory, then compose the config, tokenizer adapter, and text backbone as
+  one `EmbeddingGemma2TextModel`.
+- Close mapped checkpoint storage after model weights are materialized.
 
 The adapter does not implement the SafeTensors binary format, mmap, shard
-indexing, tensor-name mapping, or model execution. It does not accept F16,
-F64, FP8, or integer checkpoint weights for this model family.
+indexing, tokenizer algorithms, tensor-name mapping, or model execution.
 
 ## Usage
 
-Construct this adapter with the shared `SafetensorShardLoader` and call
-`load(checkpointPath, config)`. The returned text backbone owns detached
-heap arrays and remains usable after the mapped session is closed.
+Construct `EmbeddingGemma2ModelBundleLoader` with the shared
+`ObjectMapper` and `SafetensorShardLoader`, then call
+`load(modelDirectory)`. The directory must contain `config.json`,
+`tokenizer.json` (or `tokenizer/tokenizer.json`), and a single-file or
+indexed Safetensors checkpoint.
 
-The model-family module has no dependency on this adapter or on the
-Safetensors loader, so the same checkpoint mapper can be reused by GGUF or
-other future format adapters.
+The returned `EmbeddingGemma2TextModel` exposes an end-to-end text embedding
+operation: task/role formatting, shared tokenization, BOS insertion,
+bidirectional text encoding, mask-aware mean pooling, Matryoshka truncation,
+and final L2 normalization. It supports native 768-dimensional vectors and
+the documented 512, 256, and 128-dimensional outputs.
+
+This is a text-only model bundle. Image, audio, and video execution and
+registered inference-runner integration remain separate milestones. The
+model-family module has no dependency on this adapter or on the Safetensors
+loader, so the same text model API can be assembled by future format adapters.
