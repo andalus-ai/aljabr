@@ -984,4 +984,59 @@ class CpuBackendStorageTest {
         assertEquals(0, biasStorage.references());
     }
 
+    @Test
+    void crossEntropyAndBinaryCrossEntropyReadStridedOffsetLayouts() {
+        HostStorage predictionStorage = new HostStorage(99f, -1f, -2f, -3f, -4f, -5f, -6f);
+        DefaultTensor predictions = new DefaultTensor(
+                new Shape(2, 3), DType.F32, DeviceType.CPU,
+                (TensorStorage) predictionStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 3), new long[] {1, 2}, 1));
+        HostStorage targetStorage = new HostStorage(0f, 0f, 0f, 0f);
+        targetStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, Float.BYTES, 2);
+        targetStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 3L * Float.BYTES, 1);
+        DefaultTensor targets = new DefaultTensor(
+                new Shape(2), DType.I32, DeviceType.CPU,
+                (TensorStorage) targetStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2), new long[] {2}, 1));
+        Tensor crossEntropy = null;
+        try {
+            crossEntropy = backend.crossEntropy(predictions, targets);
+            assertArrayEquals(new float[] {4.5f}, crossEntropy.toFloatArray(), 0f);
+        } finally {
+            if (crossEntropy != null) crossEntropy.release();
+            predictions.release();
+            targets.release();
+        }
+        assertEquals(0, predictionStorage.references());
+        assertEquals(0, targetStorage.references());
+
+        HostStorage probabilityStorage = new HostStorage(99f, 0.25f, 0.5f, 0.75f, 0.5f);
+        DefaultTensor probabilities = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) probabilityStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        HostStorage labelsStorage = new HostStorage(99f, 0f, 1f, 1f, 0f);
+        DefaultTensor labels = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) labelsStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        Tensor binaryCrossEntropy = null;
+        try {
+            binaryCrossEntropy = backend.binaryCrossEntropy(probabilities, labels);
+            float expected = (float) ((-2d * Math.log(0.75d) - 2d * Math.log(0.5d)) / 4d);
+            assertArrayEquals(new float[] {expected}, binaryCrossEntropy.toFloatArray(), 1e-6f);
+        } finally {
+            if (binaryCrossEntropy != null) binaryCrossEntropy.release();
+            probabilities.release();
+            labels.release();
+        }
+        assertEquals(0, probabilityStorage.references());
+        assertEquals(0, labelsStorage.references());
+    }
+
+
 }
