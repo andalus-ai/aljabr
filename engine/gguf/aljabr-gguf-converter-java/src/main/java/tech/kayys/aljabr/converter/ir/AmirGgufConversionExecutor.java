@@ -122,7 +122,8 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        boolean hasUnrepresentableLayers = model.architectureDescriptor().isPresent()
+        boolean hasUnrepresentableLayers = "unknown".equalsIgnoreCase(model.architecture())
+                || model.architectureDescriptor().isPresent()
                 || model.graphCollection().isPresent()
                 || model.assetCollection().isPresent()
                 || model.componentCollection().isPresent();
