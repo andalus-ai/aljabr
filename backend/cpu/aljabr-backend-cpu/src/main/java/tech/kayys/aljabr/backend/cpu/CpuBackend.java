@@ -1690,56 +1690,111 @@ public final class CpuBackend implements ComputeBackend {
     @Override
     public Tensor conv2d(Tensor input, Tensor weight, Tensor bias,
             int stride, int padding, int dilation, int groups) {
-        // Im2col + GEMM approach
-        long N = input.shape().dim(0);
-        long Cin = input.shape().dim(1);
-        long H = input.shape().dim(2);
-        long W = input.shape().dim(3);
-        long Cout = weight.shape().dim(0);
-        long kH = weight.shape().dim(2);
-        long kW = weight.shape().dim(3);
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(weight, "weight");
+        if (input.shape().rank() != 4 || weight.shape().rank() != 4) {
+            throw new IllegalArgumentException("conv2d expects rank-4 NCHW input and OIHW weight");
+        }
+        CpuTensorLayoutAccess.requireF32(input);
+        CpuTensorLayoutAccess.requireF32(weight);
+        if (bias != null) {
+            if (bias.shape().rank() != 1) {
+                throw new IllegalArgumentException("conv2d bias must be a rank-1 [C_out] tensor");
+            }
+            CpuTensorLayoutAccess.requireF32(bias);
+        }
+        if (stride <= 0 || dilation <= 0 || padding < 0 || groups <= 0) {
+            throw new IllegalArgumentException(
+                    "stride and dilation must be positive; padding must be non-negative; groups must be positive");
+        }
 
-        long outH = (H + 2L * padding - dilation * (kH - 1) - 1) / stride + 1;
-        long outW = (W + 2L * padding - dilation * (kW - 1) - 1) / stride + 1;
+        long batch = input.shape().dim(0);
+        long inputChannels = input.shape().dim(1);
+        long inputHeight = input.shape().dim(2);
+        long inputWidth = input.shape().dim(3);
+        long outputChannels = weight.shape().dim(0);
+        long channelsPerGroup = weight.shape().dim(1);
+        long kernelHeight = weight.shape().dim(2);
+        long kernelWidth = weight.shape().dim(3);
 
-        Shape outShape = new Shape(N, Cout, outH, outW);
-        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
-        outBuf.segment().fill((byte) 0);
+        if (inputChannels <= 0 || inputHeight <= 0 || inputWidth <= 0
+                || outputChannels <= 0 || kernelHeight <= 0 || kernelWidth <= 0) {
+            throw new IllegalArgumentException("conv2d channel and spatial dimensions must be positive");
+        }
+        if (inputChannels % groups != 0 || outputChannels % groups != 0
+                || channelsPerGroup != inputChannels / groups) {
+            throw new IllegalArgumentException(
+                    "conv2d groups must divide input/output channels and weight shape must be [C_out, C_in/groups, kH, kW]");
+        }
+        if (bias != null && bias.shape().dim(0) != outputChannels) {
+            throw new IllegalArgumentException("conv2d bias length must equal output channels");
+        }
 
-        MemorySegment si = seg(input);
-        MemorySegment sw = seg(weight);
-        MemorySegment so = outBuf.segment();
+        long effectiveKernelHeight = Math.addExact(Math.multiplyExact((long) dilation, kernelHeight - 1), 1L);
+        long effectiveKernelWidth = Math.addExact(Math.multiplyExact((long) dilation, kernelWidth - 1), 1L);
+        long paddedHeight = Math.addExact(inputHeight, Math.multiplyExact(2L, padding));
+        long paddedWidth = Math.addExact(inputWidth, Math.multiplyExact(2L, padding));
+        if (effectiveKernelHeight > paddedHeight || effectiveKernelWidth > paddedWidth) {
+            throw new IllegalArgumentException("conv2d effective kernel exceeds padded input dimensions");
+        }
+        long outputHeight = (paddedHeight - effectiveKernelHeight) / stride + 1;
+        long outputWidth = (paddedWidth - effectiveKernelWidth) / stride + 1;
+        Shape outputShape = new Shape(batch, outputChannels, outputHeight, outputWidth);
+        long outputBytes = Math.multiplyExact(outputShape.numel(), Float.BYTES);
+        HostAccessibleStorage output = allocateOutput(outputBytes);
 
-        for (long n = 0; n < N; n++) {
-            for (long oc = 0; oc < Cout; oc++) {
-                float biasVal = (bias != null)
-                        ? seg(bias).get(ValueLayout.JAVA_FLOAT, oc * 4L)
-                        : 0f;
-                for (long oh = 0; oh < outH; oh++) {
-                    for (long ow = 0; ow < outW; ow++) {
-                        float acc = biasVal;
-                        for (long ic = 0; ic < Cin; ic++) {
-                            for (long kh = 0; kh < kH; kh++) {
-                                for (long kw = 0; kw < kW; kw++) {
-                                    long ih = oh * stride - padding + kh * dilation;
-                                    long iw = ow * stride - padding + kw * dilation;
-                                    if (ih < 0 || ih >= H || iw < 0 || iw >= W)
-                                        continue;
-                                    float inVal = si.get(ValueLayout.JAVA_FLOAT,
-                                            ((n * Cin + ic) * H + ih) * W * 4L + iw * 4L);
-                                    float wVal = sw.get(ValueLayout.JAVA_FLOAT,
-                                            ((oc * Cin + ic) * kH + kh) * kW * 4L + kw * 4L);
-                                    acc += inVal * wVal;
+        MemorySegment inputSegment = seg(input);
+        MemorySegment weightSegment = seg(weight);
+        MemorySegment biasSegment = bias == null ? null : seg(bias);
+        MemorySegment outputSegment = output.segment();
+        long[] inputDimensions = input.shape().dims();
+        long[] weightDimensions = weight.shape().dims();
+        long[] biasDimensions = bias == null ? null : bias.shape().dims();
+        TensorLayout inputLayout = input.layout();
+        TensorLayout weightLayout = weight.layout();
+        TensorLayout biasLayout = bias == null ? null : bias.layout();
+        long outputChannelsPerGroup = outputChannels / groups;
+
+        for (long n = 0; n < batch; n++) {
+            for (long outputChannel = 0; outputChannel < outputChannels; outputChannel++) {
+                long group = outputChannel / outputChannelsPerGroup;
+                long inputChannelStart = group * channelsPerGroup;
+                float biasValue = bias == null ? 0f : CpuTensorLayoutAccess.readLogical(
+                        biasSegment, biasDimensions, biasLayout, outputChannel);
+                for (long outputY = 0; outputY < outputHeight; outputY++) {
+                    for (long outputX = 0; outputX < outputWidth; outputX++) {
+                        float accumulator = biasValue;
+                        for (long inputChannelInGroup = 0;
+                                inputChannelInGroup < channelsPerGroup; inputChannelInGroup++) {
+                            long inputChannel = inputChannelStart + inputChannelInGroup;
+                            for (long kernelY = 0; kernelY < kernelHeight; kernelY++) {
+                                long inputY = outputY * stride - padding + kernelY * dilation;
+                                if (inputY < 0 || inputY >= inputHeight) continue;
+                                for (long kernelX = 0; kernelX < kernelWidth; kernelX++) {
+                                    long inputX = outputX * stride - padding + kernelX * dilation;
+                                    if (inputX < 0 || inputX >= inputWidth) continue;
+                                    long inputIndex = ((n * inputChannels + inputChannel)
+                                            * inputHeight + inputY) * inputWidth + inputX;
+                                    long weightIndex = ((outputChannel * channelsPerGroup
+                                            + inputChannelInGroup) * kernelHeight + kernelY)
+                                            * kernelWidth + kernelX;
+                                    float inputValue = CpuTensorLayoutAccess.readLogical(
+                                            inputSegment, inputDimensions, inputLayout, inputIndex);
+                                    float weightValue = CpuTensorLayoutAccess.readLogical(
+                                            weightSegment, weightDimensions, weightLayout, weightIndex);
+                                    accumulator += inputValue * weightValue;
                                 }
                             }
                         }
-                        so.set(ValueLayout.JAVA_FLOAT,
-                                ((n * Cout + oc) * outH + oh) * outW * 4L + ow * 4L, acc);
+                        long outputIndex = ((n * outputChannels + outputChannel)
+                                * outputHeight + outputY) * outputWidth + outputX;
+                        outputSegment.set(ValueLayout.JAVA_FLOAT,
+                                outputIndex * Float.BYTES, accumulator);
                     }
                 }
             }
         }
-        return out(outShape, outBuf);
+        return out(outputShape, output);
     }
 
     @Override
