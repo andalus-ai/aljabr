@@ -94,7 +94,7 @@ final class CpuTensorLayoutAccess {
     static void requireF32(Tensor tensor) {
         if (tensor.dtype() != DType.F32) {
             throw new UnsupportedOperationException(
-                    "CPU pointwise operations currently support F32 tensors only; actual dtype=" + tensor.dtype());
+                    "CPU tensor kernels currently support F32 tensors only; actual dtype=" + tensor.dtype());
         }
     }
 }
