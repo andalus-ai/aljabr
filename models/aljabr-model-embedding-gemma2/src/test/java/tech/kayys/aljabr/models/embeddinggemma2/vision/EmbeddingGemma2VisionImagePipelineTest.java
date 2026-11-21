@@ -33,6 +33,27 @@ class EmbeddingGemma2VisionImagePipelineTest {
     }
 
     @Test
+    void propagatesNonZeroPatchFeaturesThroughSpatialPoolerAndTextBridge() {
+        var spec = new EmbeddingGemma2VisionCheckpointMapper.VisionSpec(
+                4, 4, 1, 1, 1, 4, 1, 32, false);
+        var pipeline = EmbeddingGemma2VisionImagePipeline.fromCheckpoint(
+                spec, nonZeroCheckpoint(), 3, 1e-6f, 1e-6f, 100d, 70, 2);
+
+        var whiteImage = EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(
+                4, 4, solidRgb(4, 4, (byte) 255));
+        float[][] features = pipeline.encode(whiteImage);
+
+        assertEquals(64, features.length);
+        float expected = (float) (1.0 / Math.sqrt(3.0));
+        for (float[] token : features) {
+            assertEquals(3, token.length);
+            assertEquals(expected, token[0], 1e-5f);
+            assertEquals(expected, token[1], 1e-5f);
+            assertEquals(expected, token[2], 1e-5f);
+        }
+    }
+
+    @Test
     void parsesHuggingFaceVisionAndProcessorConfigAndBuildsPipeline() throws Exception {
         var mapper = new ObjectMapper();
         var modelConfig = mapper.readTree("""
@@ -120,6 +141,22 @@ class EmbeddingGemma2VisionImagePipelineTest {
 
         put(tensors, "embed_vision.embedding_projection.weight", 3, 4);
         return tensors;
+    }
+
+    private static Map<String, CheckpointTensor> nonZeroCheckpoint() {
+        Map<String, CheckpointTensor> tensors = tinyCheckpoint();
+        putValues(tensors, "vision_tower.patch_embedder.input_proj.weight",
+                new int[]{4, 3},
+                new float[]{1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f});
+        putValues(tensors, "embed_vision.embedding_projection.weight",
+                new int[]{3, 4},
+                new float[]{1f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 1f, 0f});
+        return tensors;
+    }
+
+    private static void putValues(
+            Map<String, CheckpointTensor> tensors, String name, int[] shape, float[] values) {
+        tensors.put(name, new CheckpointTensor(shape, values));
     }
 
     private static void put(Map<String, CheckpointTensor> tensors, String name, int... shape) {
