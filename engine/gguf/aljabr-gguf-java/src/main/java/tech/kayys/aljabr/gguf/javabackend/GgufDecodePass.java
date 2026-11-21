@@ -176,6 +176,11 @@ final class GgufDecodePass {
 
     /** One token's forward pass with optional logit computation. */
     float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits) {
+        return forward(tokenId, pos, cache, computeLogits, null);
+    }
+
+    /** Host fallback variant supplied with a persistent request-owned cache session. */
+    float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits, KVCacheSession requestSession) {
         GgufKvCacheSequenceLifecycle.validateDecodeInputs(cache, tokenId, pos,
                 cfg.vocabSize(), cfg.contextLength());
         int dim = cfg.embeddingDim();
@@ -273,8 +278,15 @@ final class GgufDecodePass {
         // The session exposes the already-prefilled prefix and the current
         // token as each cache-owning layer writes it. KVCache remains the
         // backing storage and Metal continues to use its native cache path.
-        KVCacheSession cacheSession = new KVCacheSession(cache.asStorage());
-        cacheSession.commit(pos);
+        KVCacheSession cacheSession = requestSession;
+        if (cacheSession == null) {
+            cacheSession = new KVCacheSession(cache.asStorage());
+            cacheSession.commit(pos);
+        } else if (cacheSession.committedLength() != pos) {
+            throw new IllegalStateException(
+                    "decode position " + pos + " does not match request KV cache session length "
+                            + cacheSession.committedLength());
+        }
 
         long tQkv = 0, tRope = 0, tAttn = 0, tWo = 0, tFfn = 0, tLogits = 0;
         boolean nextQkvReady = false;
