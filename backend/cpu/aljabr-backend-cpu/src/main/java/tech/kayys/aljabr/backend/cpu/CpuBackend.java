@@ -138,7 +138,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.add(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, CpuOps::add, (x, y) -> x + y);
         return out(s, o);
     }
 
@@ -149,7 +149,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.sub(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, CpuOps::sub, (x, y) -> x - y);
         return out(s, o);
     }
 
@@ -158,7 +158,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.mulScalar(seg(a), scalar, o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, (src, dst, count) -> CpuOps.mulScalar(src, scalar, dst, count), x -> x * scalar);
         return out(s, o);
     }
 
@@ -169,7 +169,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.mul(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, CpuOps::mul, (x, y) -> x * y);
         return out(s, o);
     }
 
@@ -185,7 +185,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.div(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, CpuOps::div, (x, y) -> x / y);
         return out(s, o);
     }
 
@@ -254,7 +254,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.addScalar(seg(a), scalar, o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, (src, dst, count) -> CpuOps.addScalar(src, scalar, dst, count), x -> x + scalar);
         return out(s, o);
     }
 
@@ -354,12 +354,24 @@ public final class CpuBackend implements ComputeBackend {
                             + a.numel() + ", output=" + outputShape.numel());
         }
 
-        // Share the same backend-neutral storage and give the result its own
-        // ownership reference. This does not require the legacy Buffer API.
+        TensorLayout inputLayout = a.layout();
+        if (!inputLayout.isContiguous()) {
+            throw new UnsupportedOperationException(
+                    "CPU reshape of a non-contiguous tensor requires materialization; "
+                            + "input layout=" + inputLayout);
+        }
+
+        // A contiguous tensor may still be a view with a non-zero storage
+        // offset. Preserve that offset while assigning the output's canonical
+        // row-major strides.
+        TensorLayout contiguousOutput = TensorLayout.contiguous(outputShape);
+        TensorLayout outputLayout = new TensorLayout(
+                outputShape, contiguousOutput.strides(), inputLayout.storageOffset());
         TensorStorage storage = a.storage();
         storage.retain();
         try {
-            return new DefaultTensor(outputShape, a.dtype(), a.device(), storage, this);
+            return new DefaultTensor(
+                    outputShape, a.dtype(), a.device(), storage, this, outputLayout);
         } catch (RuntimeException | Error e) {
             storage.release();
             throw e;
@@ -384,6 +396,9 @@ public final class CpuBackend implements ComputeBackend {
 
         Shape outShape = new Shape(sizes);
         long[] inDims = inShape.dims();
+        TensorLayout inputLayout = a.layout();
+        long[] inputStrides = inputLayout.strides();
+        long outputOffset = inputLayout.storageOffset();
         for (int i = 0; i < rank; i++) {
             if (offsets[i] < 0 || offsets[i] > inDims[i]
                     || sizes[i] > inDims[i] - offsets[i]) {
@@ -392,77 +407,24 @@ public final class CpuBackend implements ComputeBackend {
                                 + ": offset=" + offsets[i] + ", size=" + sizes[i]
                                 + ", dimension=" + inDims[i]);
             }
+            outputOffset = Math.addExact(
+                    outputOffset, Math.multiplyExact(offsets[i], inputStrides[i]));
         }
 
-        // Strides in elements (row-major) for the input.
-        long[] baseStrides = new long[rank];
-        baseStrides[rank - 1] = 1;
-        for (int i = rank - 2; i >= 0; i--) {
-            baseStrides[i] = Math.multiplyExact(baseStrides[i + 1], inDims[i + 1]);
+        // A slice is a logical sub-view of the input: preserve its physical
+        // strides and advance the storage offset by the requested coordinates.
+        // This works for contiguous, offset, and already-strided input tensors.
+        TensorLayout outputLayout = new TensorLayout(outShape, inputStrides, outputOffset);
+        hostStorage(a); // Reject device-only storage at the CPU boundary.
+        TensorStorage storage = a.storage();
+        storage.retain();
+        try {
+            return new DefaultTensor(
+                    outShape, a.dtype(), a.device(), storage, this, outputLayout);
+        } catch (RuntimeException | Error failure) {
+            storage.release();
+            throw failure;
         }
-
-        // A rectangular slice is contiguous when its dimensions preserve the
-        // input's trailing row-major strides.
-        long[] viewExpected = new long[rank];
-        long expectedStride = 1;
-        for (int i = rank - 1; i >= 0; i--) {
-            viewExpected[i] = expectedStride;
-            expectedStride = Math.multiplyExact(expectedStride, sizes[i]);
-        }
-
-        boolean isContiguous = true;
-        for (int i = 0; i < rank; i++) {
-            if (baseStrides[i] != viewExpected[i]) {
-                isContiguous = false;
-                break;
-            }
-        }
-
-        HostAccessibleStorage parentStorage = hostStorage(a);
-        MemorySegment src = parentStorage.segment();
-        long elemOffset = 0;
-        for (int i = 0; i < rank; i++) {
-            elemOffset = Math.addExact(elemOffset, Math.multiplyExact(offsets[i], baseStrides[i]));
-        }
-        long byteOffset = Math.multiplyExact(elemOffset, Float.BYTES);
-        long byteSize = Math.multiplyExact(outShape.numel(), Float.BYTES);
-
-        if (isContiguous) {
-            // Preserve the legacy Buffer view type for existing callers, while
-            // allowing non-Buffer host storage to use a neutral zero-copy view.
-            TensorStorage viewStorage = parentStorage instanceof Buffer legacyBuffer
-                    ? CpuBuffer.view(legacyBuffer, byteOffset, byteSize)
-                    : HostAccessibleStorageView.view(parentStorage, byteOffset, byteSize);
-            try {
-                return new DefaultTensor(outShape, a.dtype(), a.device(), viewStorage, this);
-            } catch (RuntimeException | Error e) {
-                viewStorage.release();
-                throw e;
-            }
-        }
-
-        // Non-contiguous slices are materialized into an independent CPU buffer.
-        HostAccessibleStorage outBuf = allocateOutput(byteSize);
-        long outIdx = 0;
-        long totalOut = outShape.numel();
-        long[] cursor = new long[rank];
-        for (long elem = 0; elem < totalOut; elem++) {
-            long inIdx = 0;
-            for (int d = 0; d < rank; d++) {
-                inIdx = Math.addExact(inIdx,
-                        Math.multiplyExact(Math.addExact(offsets[d], cursor[d]), baseStrides[d]));
-            }
-            outBuf.segment().set(ValueLayout.JAVA_FLOAT, outIdx * Float.BYTES,
-                    src.get(ValueLayout.JAVA_FLOAT, inIdx * Float.BYTES));
-            outIdx++;
-            for (int d = rank - 1; d >= 0; d--) {
-                if (++cursor[d] < sizes[d]) {
-                    break;
-                }
-                cursor[d] = 0;
-            }
-        }
-        return out(outShape, outBuf);
     }
 
     @Override
@@ -572,7 +534,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.relu(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, CpuOps::relu, x -> Math.max(0f, x));
         return out(s, o);
     }
 
@@ -581,7 +543,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.sigmoid(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, CpuOps::sigmoid, x -> (float) (1d / (1d + Math.exp(-x))));
         return out(s, o);
     }
 
@@ -590,7 +552,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.tanh(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, CpuOps::tanh, x -> (float) Math.tanh(x));
         return out(s, o);
     }
 
@@ -599,7 +561,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.log(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, CpuOps::log, x -> (float) Math.log(x));
         return out(s, o);
     }
 
@@ -608,7 +570,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.exp(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, CpuOps::exp, x -> (float) Math.exp(x));
         return out(s, o);
     }
 
@@ -617,7 +579,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.silu(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, CpuOps::silu, x -> x / (1f + (float) Math.exp(-x)));
         return out(s, o);
     }
 
@@ -626,7 +588,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.gelu(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, CpuOps::gelu, x -> 0.5f * x * (1f + (float) Math.tanh(0.7978845608f * (x + 0.044715f * x * x * x))));
         return out(s, o);
     }
 

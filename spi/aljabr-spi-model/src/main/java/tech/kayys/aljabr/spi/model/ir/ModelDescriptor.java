@@ -10,25 +10,23 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Immutable, format-neutral descriptor of a model and its tensor inventory.
+ * Immutable, format-neutral descriptor of a model and its metadata-first
+ * structure. Tensor payloads and external assets are referenced, not loaded.
  *
- * <p>This is a metadata-first representation: it describes model identity,
- * architecture, source format, metadata, extensions, and tensors without
- * requiring tensor payloads to be loaded. Payload bytes remain reachable only
- * through optional {@link PayloadReference} values on tensor descriptors.
- *
- * <p>Architecture identifiers and source-format identifiers are opaque strings
- * so AMIR can preserve models from format and architecture families that the
- * current Aljabr release does not yet understand. When known, richer typed
- * architecture information is available through {@link #architectureDescriptor()}.
+ * <p>Architecture, graph, component, and asset descriptors are independent
+ * typed layers. Source-format and architecture identifiers remain opaque so
+ * unknown ecosystems can be preserved without coercion.
  *
  * @param identity stable model identity
  * @param architecture stable architecture identifier
- * @param sourceFormat identifier of the source serialization format
+ * @param sourceFormat source serialization format identifier
  * @param metadata standardized or source-provided metadata
- * @param extensions opaque namespaced metadata not interpreted by this version
+ * @param extensions opaque namespaced metadata
  * @param tensors tensor descriptors, with unique names
  * @param architectureDescriptor optional typed architecture details
+ * @param graphCollection optional computation graphs
+ * @param assetCollection optional external asset references
+ * @param componentCollection optional tokenizer and modality components
  */
 public record ModelDescriptor(
         ModelIdentity identity,
@@ -37,20 +35,39 @@ public record ModelDescriptor(
         Map<String, String> metadata,
         Map<String, String> extensions,
         List<TensorDescriptor> tensors,
-        Optional<ArchitectureDescriptor> architectureDescriptor) {
+        Optional<ArchitectureDescriptor> architectureDescriptor,
+        Optional<GraphCollection> graphCollection,
+        Optional<AssetCollection> assetCollection,
+        Optional<ComponentCollection> componentCollection) {
 
-    /**
-     * Compatibility constructor for descriptors created before typed
-     * architecture information was introduced.
-     */
+    /** Compatibility constructor retaining the graph-era descriptor shape. */
     public ModelDescriptor(
-            ModelIdentity identity,
-            String architecture,
-            String sourceFormat,
-            Map<String, String> metadata,
-            Map<String, String> extensions,
+            ModelIdentity identity, String architecture, String sourceFormat,
+            Map<String, String> metadata, Map<String, String> extensions,
+            List<TensorDescriptor> tensors,
+            Optional<ArchitectureDescriptor> architectureDescriptor,
+            Optional<GraphCollection> graphCollection) {
+        this(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, graphCollection, Optional.empty(), Optional.empty());
+    }
+
+    /** Compatibility constructor retaining the typed-architecture descriptor shape. */
+    public ModelDescriptor(
+            ModelIdentity identity, String architecture, String sourceFormat,
+            Map<String, String> metadata, Map<String, String> extensions,
+            List<TensorDescriptor> tensors,
+            Optional<ArchitectureDescriptor> architectureDescriptor) {
+        this(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, Optional.empty(), Optional.empty(), Optional.empty());
+    }
+
+    /** Compatibility constructor for the original metadata-only descriptor. */
+    public ModelDescriptor(
+            ModelIdentity identity, String architecture, String sourceFormat,
+            Map<String, String> metadata, Map<String, String> extensions,
             List<TensorDescriptor> tensors) {
-        this(identity, architecture, sourceFormat, metadata, extensions, tensors, Optional.empty());
+        this(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
     }
 
     public ModelDescriptor {
@@ -62,6 +79,9 @@ public record ModelDescriptor(
         tensors = List.copyOf(Objects.requireNonNull(tensors, "tensors must not be null"));
         architectureDescriptor = Objects.requireNonNull(
                 architectureDescriptor, "architectureDescriptor must not be null");
+        graphCollection = Objects.requireNonNull(graphCollection, "graphCollection must not be null");
+        assetCollection = Objects.requireNonNull(assetCollection, "assetCollection must not be null");
+        componentCollection = Objects.requireNonNull(componentCollection, "componentCollection must not be null");
 
         if (architectureDescriptor.isPresent()
                 && !architecture.equals(architectureDescriptor.orElseThrow().id())) {
@@ -69,34 +89,92 @@ public record ModelDescriptor(
                     "architecture identifier must match architecture descriptor id");
         }
 
-        Set<String> names = new HashSet<>();
+        Set<String> tensorNames = new HashSet<>();
         for (TensorDescriptor tensor : tensors) {
             Objects.requireNonNull(tensor, "tensor descriptor must not be null");
-            if (!names.add(tensor.name())) {
+            if (!tensorNames.add(tensor.name())) {
                 throw new IllegalArgumentException("Duplicate tensor name: " + tensor.name());
+            }
+        }
+
+        if (componentCollection.isPresent()) {
+            Set<String> assetIds = assetCollection.map(collection -> {
+                Set<String> ids = new HashSet<>();
+                collection.assets().forEach(asset -> ids.add(asset.id()));
+                return ids;
+            }).orElseGet(Set::of);
+            Set<String> graphIds = graphCollection.map(collection -> {
+                Set<String> ids = new HashSet<>();
+                collection.graphs().forEach(graph -> ids.add(graph.id()));
+                return ids;
+            }).orElseGet(Set::of);
+
+            for (ModelComponent component : componentCollection.orElseThrow().components()) {
+                for (String assetId : component.assetIds()) {
+                    if (!assetIds.contains(assetId)) {
+                        throw new IllegalArgumentException(
+                                "component '" + component.id() + "' references unknown asset: " + assetId);
+                    }
+                }
+                for (ComponentGraphBinding binding : component.graphBindings()) {
+                    if (!graphIds.contains(binding.graphId())) {
+                        throw new IllegalArgumentException(
+                                "component '" + component.id() + "' references unknown graph: " + binding.graphId());
+                    }
+                    GraphDescriptor graph = graphCollection.orElseThrow().graphs().stream()
+                            .filter(candidate -> candidate.id().equals(binding.graphId()))
+                            .findFirst().orElseThrow();
+                    binding.inputPorts().forEach((componentPort, graphPort) -> {
+                        if (!graph.signature().inputs().containsKey(graphPort)) {
+                            throw new IllegalArgumentException("unknown graph input port: " + graphPort);
+                        }
+                    });
+                    binding.outputPorts().forEach((componentPort, graphPort) -> {
+                        if (!graph.signature().outputs().containsKey(graphPort)) {
+                            throw new IllegalArgumentException("unknown graph output port: " + graphPort);
+                        }
+                    });
+                }
             }
         }
     }
 
     /** Returns a descriptor with the same content and a different identity. */
     public ModelDescriptor withIdentity(ModelIdentity replacement) {
-        return new ModelDescriptor(
-                replacement, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor);
+        return new ModelDescriptor(replacement, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, graphCollection, assetCollection, componentCollection);
     }
 
     /** Returns a descriptor enriched with typed architecture information. */
     public ModelDescriptor withArchitectureDescriptor(ArchitectureDescriptor replacement) {
         Objects.requireNonNull(replacement, "replacement must not be null");
-        return new ModelDescriptor(
-                identity, replacement.id(), sourceFormat, metadata, extensions, tensors,
-                Optional.of(replacement));
+        return new ModelDescriptor(identity, replacement.id(), sourceFormat, metadata, extensions, tensors,
+                Optional.of(replacement), graphCollection, assetCollection, componentCollection);
+    }
+
+    /** Returns a descriptor enriched with its computation graph collection. */
+    public ModelDescriptor withGraphCollection(GraphCollection replacement) {
+        Objects.requireNonNull(replacement, "replacement must not be null");
+        return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, Optional.of(replacement), assetCollection, componentCollection);
+    }
+
+    /** Returns a descriptor enriched with external asset references. */
+    public ModelDescriptor withAssetCollection(AssetCollection replacement) {
+        Objects.requireNonNull(replacement, "replacement must not be null");
+        return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, graphCollection, Optional.of(replacement), componentCollection);
+    }
+
+    /** Returns a descriptor enriched with tokenizer and modality components. */
+    public ModelDescriptor withComponentCollection(ComponentCollection replacement) {
+        Objects.requireNonNull(replacement, "replacement must not be null");
+        return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, graphCollection, assetCollection, Optional.of(replacement));
     }
 
     private static String requireText(String value, String name) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(name + " must not be blank");
-        }
+        if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
         return value;
     }
 

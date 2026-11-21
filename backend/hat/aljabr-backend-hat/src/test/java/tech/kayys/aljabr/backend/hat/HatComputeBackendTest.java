@@ -287,5 +287,21 @@ public class HatComputeBackendTest {
         assertInstanceOf(CpuBackend.class, convResult.backend());
         assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f, 4.0f },
                 convResult.toFloatArray(), 1e-4f);
+    public void testEmbeddingAndLossFallbacksConsumeHatOwnedOperands() {
+        Tensor embeddingWeight = TensorFactory.of(
+                new float[] { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f },
+                backend, 3, 2);
+        Tensor tokenIds = TensorFactory.of(new int[] { 2, 0 }, backend, 2);
+        Tensor embeddingResult = backend.embedding(embeddingWeight, tokenIds, -1);
+        assertInstanceOf(CpuBackend.class, embeddingResult.backend());
+        assertArrayEquals(new float[] { 5.0f, 6.0f, 1.0f, 2.0f },
+                embeddingResult.toFloatArray(), 1e-4f);
+
+        Tensor probabilities = TensorFactory.of(new float[] { 0.25f, 0.75f }, backend, 2);
+        Tensor labels = TensorFactory.of(new float[] { 0.0f, 1.0f }, backend, 2);
+        Tensor loss = backend.binaryCrossEntropy(probabilities, labels);
+        assertInstanceOf(CpuBackend.class, loss.backend());
+        assertEquals((float) (-(Math.log(0.75) + Math.log(0.75)) / 2.0),
+                loss.toFloatArray()[0], 1e-4f);
     }
 }

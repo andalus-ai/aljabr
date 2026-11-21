@@ -88,6 +88,43 @@ class CpuBackendStorageTest {
         assertEquals(0, storage.references());
     }
 
+
+    @Test
+    void pointwiseArithmeticReadsNonZeroOffsetAndStridedLayouts() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 3, 1 }, 1));
+        Tensor result = null;
+        try {
+            result = backend.add(input, input);
+            assertArrayEquals(new float[] { 2f, 4f, 6f, 8f }, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void unaryActivationReadsTransposedLogicalLayout() {
+        HostStorage storage = new HostStorage(-1f, 2f, -3f, 4f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 0));
+        Tensor result = null;
+        try {
+            result = backend.relu(input);
+            assertArrayEquals(new float[] { 0f, 0f, 2f, 4f }, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
     @Test
     void reshapeSharesNeutralStorageWithIndependentOwnership() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
@@ -106,12 +143,32 @@ class CpuBackendStorageTest {
     }
 
     @Test
-    void contiguousSliceIsZeroCopyAndRetainsNonBufferParent() {
+    void reshapePreservesNonZeroOffsetOfContiguousSlice() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 2, 2);
+        Tensor slice = null;
+        Tensor reshaped = null;
+        try {
+            slice = backend.slice(input, new long[] { 1, 0 }, new long[] { 1, 2 });
+            reshaped = backend.reshape(slice, 2);
+            assertSame(storage, reshaped.storage());
+            assertEquals(2, reshaped.layout().storageOffset());
+            assertArrayEquals(new float[] { 3f, 4f }, reshaped.toFloatArray(), 0f);
+        } finally {
+            if (reshaped != null) reshaped.release();
+            if (slice != null) slice.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void contiguousSliceSharesAndRetainsNonBufferParent() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
         DefaultTensor input = tensor(storage, 2, 2);
         Tensor slice = backend.slice(input, new long[] { 1, 0 }, new long[] { 1, 2 });
         try {
-            assertNotSame(storage, slice.storage());
+            assertSame(storage, slice.storage());
             assertInstanceOf(HostAccessibleStorage.class, slice.storage());
             assertEquals(2, storage.references());
 
@@ -124,19 +181,40 @@ class CpuBackendStorageTest {
     }
 
     @Test
-    void nonContiguousSliceMaterializesIndependentCpuStorage() {
+    void nonContiguousSlicePreservesParentStorageAndLogicalOrder() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
         DefaultTensor input = tensor(storage, 2, 3);
         Tensor slice = null;
         try {
             slice = backend.slice(input, new long[] { 0, 1 }, new long[] { 2, 2 });
-            assertNotSame(storage, slice.storage());
+            assertSame(storage, slice.storage());
+            assertEquals(2, storage.references());
             assertArrayEquals(new float[] { 2f, 3f, 5f, 6f }, slice.toFloatArray(), 0f);
-            assertEquals(1, storage.references());
         } finally {
             if (slice != null) {
                 slice.release();
             }
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void sliceOfStridedInputPreservesInputStridesAndStorageOffset() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(3, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage,
+                backend, new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(3, 2), new long[] { 1, 3 }, 0));
+        Tensor slice = null;
+        try {
+            slice = backend.slice(input, new long[] { 1, 0 }, new long[] { 2, 2 });
+            assertSame(storage, slice.storage());
+            assertArrayEquals(new float[] { 2f, 5f, 3f, 6f }, slice.toFloatArray(), 0f);
+            assertArrayEquals(new long[] { 1, 3 }, slice.layout().strides());
+            assertEquals(1, slice.layout().storageOffset());
+        } finally {
+            if (slice != null) slice.release();
             input.release();
         }
         assertEquals(0, storage.references());
