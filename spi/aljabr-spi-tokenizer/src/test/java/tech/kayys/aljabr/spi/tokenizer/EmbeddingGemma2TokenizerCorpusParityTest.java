@@ -26,8 +26,10 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
  * 608,225 expected IDs. Download the exact pinned artifacts and run this test with:
  *
  * <pre>
- * hf download google/embeddinggemma-2 tokenizer.json
- * hf download EverPaper/embeddinggemma-2-coreai tests/tokenizer-cases.json
+ * hf download google/embeddinggemma-2 tokenizer.json \
+ *   --revision 914f7f89142e33e77833254d9c9b90c3cef7303b
+ * hf download EverPaper/embeddinggemma-2-coreai tests/tokenizer-cases.json \
+ *   --revision 305fc2a96790d9343f38038aeca211dfca56d9a5
  * ./gradlew :spi:aljabr-spi-tokenizer:test \
  *   -Daljabr.embeddinggemma2.tokenizer=/path/to/tokenizer.json \
  *   -Daljabr.embeddinggemma2.tokenizerCorpus=/path/to/tokenizer-cases.json
