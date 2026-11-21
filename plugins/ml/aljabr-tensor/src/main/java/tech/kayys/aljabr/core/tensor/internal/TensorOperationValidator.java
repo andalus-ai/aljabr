@@ -166,6 +166,22 @@ public final class TensorOperationValidator {
 
 
     /**
+     * Validates a reshape request without imposing backend-specific layout rules.
+     * Reshape dimensions must be explicit and non-negative; inferred dimensions
+     * are not part of the current tensor API contract.
+     */
+    public static Shape validateReshape(Shape input, long... requestedDimensions) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        Shape output = new Shape(requestedDimensions);
+        if (output.numel() != input.numel()) {
+            throw new IllegalArgumentException(
+                    "reshape must preserve the number of elements: input="
+                            + input.numel() + ", output=" + output.numel());
+        }
+        return output;
+    }
+
+    /**
      * Validates a single-axis reduction and returns its normalized axis and output shape.
      * Mean reductions reject empty axes; sum reductions preserve the additive identity
      * semantics for empty axes.
