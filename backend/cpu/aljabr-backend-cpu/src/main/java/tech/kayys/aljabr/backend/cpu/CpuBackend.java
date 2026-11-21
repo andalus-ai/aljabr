@@ -842,7 +842,6 @@ public final class CpuBackend implements ComputeBackend {
             boolean isNeox, float positionScale, long[] positionIds) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(positionIds, "positionIds");
-        if (input.backend() != this) throw new IllegalArgumentException("RoPE input must belong to this CPU backend instance");
         if (input.dtype() != DType.F32) throw new UnsupportedOperationException("CPU RoPE currently supports F32 tensors only");
         if (input.shape().rank() != 4) throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
         if (!Float.isFinite(freqBase) || freqBase <= 1f
@@ -887,7 +886,6 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor applyRoPE(Tensor input, int posOffset, float freqBase,
             int rotaryDimension, boolean isNeox, float positionScale) {
         Objects.requireNonNull(input, "input");
-        if (input.backend() != this) throw new IllegalArgumentException("RoPE input must belong to this CPU backend instance");
         if (input.dtype() != DType.F32) throw new UnsupportedOperationException("CPU RoPE currently supports F32 tensors only");
         if (input.shape().rank() != 4) throw new IllegalArgumentException("RoPE expects [batch, heads, sequence, headDim]");
         if (posOffset < 0 || !Float.isFinite(freqBase) || freqBase <= 1f
