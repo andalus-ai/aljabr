@@ -57,7 +57,19 @@ class FormatTargetCapabilityTest {
     }
 
     @Test
-    void opaqueExtensionsMakeSafetensorsAssessmentPartial() {
+    void q4ZeroAndQ8ZeroAreSupportedWithExplicitLossyDequantization() {
+        var q4 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q4", "Q4_0", List.of(32L))));
+        var q8 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q8", "Q8_0", List.of(32L))));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q4.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q8.fidelity());
+        assertEquals("GGML_QUANTIZATION_DEQUANTIZED", q4.diagnostics().getFirst().code());
+    }
+
+    @Test
+    void opaqueExtensionsArePreservedInSafetensorsFileMetadata() {
         var source = new ModelDescriptor(
                 ModelIdentity.of("test"), "llama", "gguf", Map.of(),
                 Map.of("gguf.metadata.json", "{\"custom\":true}"),
@@ -65,7 +77,16 @@ class FormatTargetCapabilityTest {
 
         var report = new SafetensorsTargetCapability().assess(source);
 
-        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
+    }
+
+    @Test
+    void nonGgufOpaqueExtensionsRemainPartialWhenNotMappedByExecutor() {
+        var source = new ModelDescriptor(ModelIdentity.of("test"), "llama", "safetensors",
+                Map.of(), Map.of("vendor.extra", "value"), List.of(tensor("weight", "F32", List.of(2L))));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL,
+                new SafetensorsTargetCapability().assess(source).fidelity());
     }
 
     private static ModelDescriptor model(String architecture, String format, TensorDescriptor tensor) {
