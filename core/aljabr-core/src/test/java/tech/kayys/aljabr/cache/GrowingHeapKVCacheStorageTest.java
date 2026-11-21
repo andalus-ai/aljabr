@@ -7,6 +7,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class GrowingHeapKVCacheStorageTest {
 
     @Test
+    void defaultInitialCapacityIsCappedByShortLogicalContext() {
+        KVCacheLayout layout = KVCacheLayout.uniform(1, 4, 1, 2);
+        try (GrowingHeapKVCacheStorage storage = new GrowingHeapKVCacheStorage(layout)) {
+            assertEquals(4, storage.allocatedPositions());
+        }
+    }
+
+    @Test
     void allocatesOnlyInitialCapacityAndGrowsForWrites() {
         KVCacheLayout layout = KVCacheLayout.uniform(2, 64, 2, 4);
         try (GrowingHeapKVCacheStorage storage = new GrowingHeapKVCacheStorage(layout, 2)) {
