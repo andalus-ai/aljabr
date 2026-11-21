@@ -398,7 +398,7 @@ class CpuBackendStorageTest {
             assertEquals(3, storage.references());
 
             HostAccessibleStorage viewStorage = (HostAccessibleStorage) slice.storage();
-            viewStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0L, 30f);
+            viewStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 2L * Float.BYTES, 30f);
             assertArrayEquals(new float[] { 1f, 2f, 30f, 4f }, input.toFloatArray(), 0f);
 
             input.release();
