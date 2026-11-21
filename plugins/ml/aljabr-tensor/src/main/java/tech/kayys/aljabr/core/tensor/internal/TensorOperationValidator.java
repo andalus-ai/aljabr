@@ -182,6 +182,36 @@ public final class TensorOperationValidator {
     }
 
     /**
+     * Validates slice coordinates and returns the logical output shape.
+     * Storage offsets, strides, device constraints, and ownership remain backend concerns.
+     */
+    public static Shape validateSlice(Shape input, long[] offsets, long[] sizes) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        if (rank == 0) {
+            throw new IllegalArgumentException("Cannot slice a scalar tensor");
+        }
+        if (offsets == null || sizes == null || offsets.length != rank || sizes.length != rank) {
+            throw new IllegalArgumentException(
+                    "Slice offsets and sizes must both have one entry per tensor dimension");
+        }
+
+        Shape output = new Shape(sizes);
+        for (int axis = 0; axis < rank; axis++) {
+            long offset = offsets[axis];
+            long size = sizes[axis];
+            long dimension = input.dim(axis);
+            if (offset < 0 || offset > dimension || size > dimension - offset) {
+                throw new IllegalArgumentException(
+                        "Slice is outside tensor bounds at dimension " + axis
+                                + ": offset=" + offset + ", size=" + size
+                                + ", dimension=" + dimension);
+            }
+        }
+        return output;
+    }
+
+    /**
      * Validates a single-axis reduction and returns its normalized axis and output shape.
      * Mean reductions reject empty axes; sum reductions preserve the additive identity
      * semantics for empty axes.

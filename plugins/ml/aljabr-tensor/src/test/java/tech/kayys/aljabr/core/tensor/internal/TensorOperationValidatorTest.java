@@ -40,6 +40,42 @@ class TensorOperationValidatorTest {
     }
 
     @Test
+    void sliceValidatesRankBoundsAndReturnsRequestedShape() {
+        Shape output = TensorOperationValidator.validateSlice(
+                new Shape(4, 5, 6), new long[] { 1, 0, 2 }, new long[] { 3, 5, 4 });
+        assertThat(output.dims()).containsExactly(3, 5, 4);
+
+        Shape empty = TensorOperationValidator.validateSlice(
+                new Shape(4, 5), new long[] { 4, 1 }, new long[] { 0, 2 });
+        assertThat(empty.dims()).containsExactly(0, 2);
+
+        assertThatThrownBy(() -> TensorOperationValidator.validateSlice(
+                new Shape(), new long[0], new long[0]))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Cannot slice a scalar tensor");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSlice(
+                new Shape(2, 3), new long[] { 0 }, new long[] { 1 }))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Slice offsets and sizes must both have one entry per tensor dimension");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSlice(
+                new Shape(2, 3), new long[] { -1, 0 }, new long[] { 1, 1 }))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("offset=-1");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSlice(
+                new Shape(2, 3), new long[] { 0, 2 }, new long[] { 1, 2 }))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dimension 1");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSlice(
+                new Shape(2, 3), new long[] { 3, 0 }, new long[] { 0, 1 }))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("offset=3");
+        assertThatThrownBy(() -> TensorOperationValidator.validateSlice(
+                new Shape(2, 3), new long[] { 0, 0 }, new long[] { -1, 1 }))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dimensions must be non-negative");
+    }
+
+    @Test
     void reductionNormalizesNegativeAxisAndPreservesReductionSize() {
         TensorOperationValidator.ReductionPlan plan = TensorOperationValidator.validateReduction(
                 new Shape(2, 3, 4), -1, false);
