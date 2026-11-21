@@ -14,6 +14,7 @@ class GgufKvCacheReadExecutionTest {
         float[] keys = {1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f};
         float[] values = {10f, 20f, 30f, 40f, 50f, 60f, 70f, 80f};
         cache.storeBatch(0, 0, keys, 0, values, 0, keys.length);
+        cache.advance(2);
 
         float[] targetKeys = new float[8];
         float[] targetValues = new float[8];
@@ -50,6 +51,7 @@ class GgufKvCacheReadExecutionTest {
         float[] keys = {1f, 2f, 99f, 3f, 4f, 99f};
         float[] values = {10f, 20f, 99f, 30f, 40f, 99f};
         cache.storeBatch(0, 0, keys, 0, values, 0, keys.length);
+        cache.advance(2);
 
         float[] targetKeys = new float[] {-1f, -1f, -1f, -1f};
         float[] targetValues = new float[] {-2f, -2f, -2f, -2f};
