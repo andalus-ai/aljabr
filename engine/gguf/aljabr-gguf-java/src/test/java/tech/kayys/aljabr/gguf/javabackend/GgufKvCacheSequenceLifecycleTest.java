@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.gguf.javabackend;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.gguf.loader.inference.KVCache;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -113,6 +114,34 @@ class GgufKvCacheSequenceLifecycleTest {
         assertThrows(IndexOutOfBoundsException.class,
                 () -> GgufKvCacheSequenceLifecycle.validateDecodeInputs(cache, 1, 4, 32, 4));
         assertEquals(4, cache.seqLen());
+    }
+
+
+    @Test
+    void sessionDecodeCommitAdvancesSessionAndBackingCacheTogether() {
+        KVCache cache = new KVCache(1, 8, 1, 2);
+        cache.advance(4);
+        KVCacheSession session = new KVCacheSession(cache.asStorage());
+        session.commit(4);
+        session.write(0, 4, new float[] {1f, 2f}, 0, new float[] {3f, 4f}, 0);
+
+        GgufKvCacheSequenceLifecycle.completeDecode(cache, 4, session);
+
+        assertEquals(5, session.committedLength());
+        assertEquals(5, cache.seqLen());
+    }
+
+    @Test
+    void sessionDecodeCommitRejectsMismatchedPrefixWithoutAdvancingBackingCache() {
+        KVCache cache = new KVCache(1, 8, 1, 2);
+        cache.advance(4);
+        KVCacheSession session = new KVCacheSession(cache.asStorage());
+        session.commit(3);
+
+        assertThrows(IllegalStateException.class,
+                () -> GgufKvCacheSequenceLifecycle.completeDecode(cache, 4, session));
+        assertEquals(4, cache.seqLen());
+        assertEquals(3, session.committedLength());
     }
 
 }
