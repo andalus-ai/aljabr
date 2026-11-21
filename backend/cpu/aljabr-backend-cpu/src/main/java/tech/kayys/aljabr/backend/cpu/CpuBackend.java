@@ -504,6 +504,7 @@ public final class CpuBackend implements ComputeBackend {
 
         int rank = a.shape().rank();
         Shape outShape = plan.outputShape();
+        long[] outDims = outShape.dims();
         long total = outShape.numel();
         long outputBytes = Math.multiplyExact(total, Float.BYTES);
         HostAccessibleStorage outBuf = allocateOutput(outputBytes);
