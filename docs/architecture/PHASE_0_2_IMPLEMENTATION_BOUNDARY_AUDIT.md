@@ -82,7 +82,20 @@ Observed classes include:
 
 The module's build declares JAX-RS, CDI, MicroProfile Config/OpenAPI and Quarkus REST dependencies. Several resources use reflection to reach engine/RAG objects and maintain their own model registries or runtime policy. These are not Safetensors format contracts or reusable weight-loading primitives.
 
-**Direction:** Map all imports and runtime packaging consumers. Separate format parsing/loading and model/tensor capabilities from HTTP transport, model routing/deployment policy and RAG workflow. The latter belong to AQLI or an explicitly optional downstream integration artifact. Do not add HTTP/Quarkus dependencies to the core Safetensors loader path.
+**Additional source and consumer evidence (follow-up audit, 2026-11-21):**
+
+- `aljabr-safetensor-api/build.gradle.kts` directly declares Mutiny, MicroProfile Config/OpenAPI, JAX-RS, CDI, and Quarkus REST/Jackson dependencies. A nominal Safetensors API dependency therefore brings in an HTTP/CDI stack.
+- The package contains seven transport resources: `OpenAiCompatibleResource`, `EmbeddingsResource`, `ModelRouterResource`, `RagResource`, `AudioResource`, and `QuantizationResource`, plus the shared API package DTOs. (The resource inventory also includes `RagPipeline`, a workflow contract.)
+- `OpenAiCompatibleResource` owns alias-to-path state, Hugging Face download orchestration, model load/unload calls, chat/completion DTOs, SSE framing, and token estimation. It obtains engine and hub services through `Instance<Object>` and reflective method lookup.
+- `EmbeddingsResource` injects `OpenAiCompatibleResource` to reuse its registry and reflectively invokes an embedding engine. The two HTTP resources are coupled through a CDI resource instance rather than a transport-neutral model registry/runtime service.
+- `ModelRouterResource` owns admin-key checks and primary/secondary model, canary-mode, and promotion endpoints. These are serving/deployment control-plane operations.
+- `RagResource` owns collection/model registries and HTTP ingest/query operations. `RagPipeline` models document ingest, retrieval, and answer generation; it is not a Safetensors format contract.
+- AQLI's `runtime/runner/safetensor/aqli-safetensor-engine/build.gradle.kts` declares `aljabr-safetensor-api` as an implementation dependency alongside the Safetensors core/SPI/loader/bridge artifacts. AQLI root dependency substitution also maps the legacy Alkhawarizm Safetensors API coordinate to this artifact. This proves a runtime dependency edge, but not which API classes AQLI imports or whether the dependency is currently needed at runtime.
+- The AQLI Safetensors engine source tree has its own direct generation, routing, session, model lifecycle, and execution packages. Its runtime responsibilities should not be inferred from the Aljabr HTTP resource API.
+- Import-level follow-up checked AQLI's primary execution classes (`DirectInferenceEngine`, `DirectModelLoader`, `DirectSafetensorBackend`, `SafetensorInferenceEngineAdapter`, and `TextInferenceEngine`): none imports `tech.kayys.aljabr.safetensor.api`. Repository code search for the package and resource types returned no AQLI matches.
+- Based on that evidence, AQLI PR [#706](https://github.com/andalus-ai/aqli/pull/706) removes the direct implementation dependency from `aqli-safetensor-engine`. It intentionally retains the legacy coordinate substitution and Aljabr artifact pending external-consumer/compatibility audit. Gradle CI remains the validation gate.
+
+**Direction:** Complete the exact AQLI import/runtime-use check and inspect tests, published POMs, and external compatibility before moving anything. Separate format parsing/loading and model/tensor capabilities from HTTP transport, model routing/deployment policy and RAG workflow. The latter belong to AQLI or an explicitly optional downstream integration artifact. Do not add HTTP/Quarkus dependencies to the core Safetensors loader path. Preserve any genuine format execution contract through a focused format API/SPI artifact rather than moving it with the HTTP resources.
 
 ### F-006 — GGUF API artifact exposes a generic inference-engine facade and a legacy service descriptor
 
