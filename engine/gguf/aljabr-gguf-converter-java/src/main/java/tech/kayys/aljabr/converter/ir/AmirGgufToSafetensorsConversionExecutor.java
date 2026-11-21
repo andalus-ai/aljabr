@@ -193,8 +193,8 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 elements = Math.multiplyExact(elements, dimension);
             }
             if (encoding.dequantized() && elements % encoding.elementsPerBlock() != 0L) {
-                throw new IOException("Tensor '" + tensor.name() + "' element count must be divisible by 32 "
-                        + "for " + encoding.ggmlType());
+                throw new IOException("Tensor '" + tensor.name() + "' element count must be divisible by "
+                        + encoding.elementsPerBlock() + " for " + encoding.ggmlType());
             }
             long expectedInput = encoding.inputBytes(elements);
             long expectedOutput = encoding.outputBytes(elements);
