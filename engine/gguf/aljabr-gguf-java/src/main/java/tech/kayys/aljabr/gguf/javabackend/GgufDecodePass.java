@@ -278,8 +278,8 @@ final class GgufDecodePass {
         }
 
         // The session exposes the already-prefilled prefix and the current
-        // token as each cache-owning layer writes it. KVCache remains the
-        // backing storage and Metal continues to use its native cache path.
+        // token as each cache-owning layer writes it. Legacy calls create a
+        // one-pass session; request-scoped calls reuse their persistent session.
         KVCacheSession cacheSession = requestSession;
         if (cacheSession == null) {
             cacheSession = new KVCacheSession(cache.asStorage());
