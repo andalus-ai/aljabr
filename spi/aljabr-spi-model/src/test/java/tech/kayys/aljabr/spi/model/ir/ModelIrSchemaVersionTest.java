@@ -58,7 +58,16 @@ class ModelIrSchemaVersionTest {
     }
 
     @Test
-    void codecContractSupportsStreamingWithoutTakingStreamOwnership() throws IOException {
+    void codecContractStreamsAndDoesNotTakeOwnershipOfCallerStreams() throws IOException {
+        final class TrackingInput extends ByteArrayInputStream {
+            private boolean closed;
+            TrackingInput(byte[] bytes) { super(bytes); }
+            @Override public void close() { closed = true; }
+        }
+        final class TrackingOutput extends ByteArrayOutputStream {
+            private boolean closed;
+            @Override public void close() throws IOException { closed = true; super.close(); }
+        }
         final class TestCodec implements ModelIrCodec {
             @Override public String formatId() { return "test-text"; }
             @Override public Set<String> mediaTypes() { return Set.of("application/x-amir-test"); }
@@ -76,7 +85,7 @@ class ModelIrSchemaVersionTest {
             @Override
             public void write(ModelIrDocument document, java.io.OutputStream output) throws IOException {
                 ModelIrSchemaVersion.CURRENT.requireCompatibleWith(document.schemaVersion());
-                output.write((document.schemaVersion() + "\\n"
+                output.write((document.schemaVersion() + "\n"
                         + document.extensions().getOrDefault("test/opaque", ""))
                         .getBytes(StandardCharsets.UTF_8));
             }
@@ -89,16 +98,17 @@ class ModelIrSchemaVersionTest {
         }
 
         TestCodec codec = new TestCodec();
-        byte[] bytes = "1.0.0\\nopaque-payload".getBytes(StandardCharsets.UTF_8);
-        ByteArrayInputStream input = new ByteArrayInputStream(bytes);
+        byte[] bytes = "1.0.0\nopaque-payload".getBytes(StandardCharsets.UTF_8);
+        TrackingInput input = new TrackingInput(bytes);
         ModelIrDocument decoded = codec.read(input);
         assertEquals("test-text", codec.formatId());
         assertEquals("opaque-payload", decoded.extensions().get("test/opaque"));
-        assertEquals(bytes.length, input.available());
+        assertFalse(input.closed);
 
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        TrackingOutput output = new TrackingOutput();
         codec.write(decoded, output);
         assertEquals(new String(bytes, StandardCharsets.UTF_8),
                 output.toString(StandardCharsets.UTF_8));
+        assertFalse(output.closed);
     }
 }
