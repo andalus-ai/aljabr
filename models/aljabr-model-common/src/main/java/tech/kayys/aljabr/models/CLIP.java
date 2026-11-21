@@ -24,7 +24,7 @@ public class CLIP extends NNModule {
     /** Creates a text encoder whose output tensors are allocated on the selected backend. */
     public CLIP(ComputeBackend backend) {
         super(backend);
-        this.encoder = register("encoder", TransformerEncoder.builder()
+        this.encoder = register("encoder", TransformerEncoder.builder(backend)
             .vocabSize(49408) // CLIP vocab size
             .dModel(dModel)
             .nHeads(12)
