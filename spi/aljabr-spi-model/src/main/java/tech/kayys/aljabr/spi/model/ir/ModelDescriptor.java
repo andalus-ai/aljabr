@@ -29,6 +29,7 @@ import java.util.Set;
  * @param extensions opaque namespaced metadata not interpreted by this version
  * @param tensors tensor descriptors, with unique names
  * @param architectureDescriptor optional typed architecture details
+ * @param graphCollection optional collection of model computation graphs
  */
 public record ModelDescriptor(
         ModelIdentity identity,
@@ -37,7 +38,8 @@ public record ModelDescriptor(
         Map<String, String> metadata,
         Map<String, String> extensions,
         List<TensorDescriptor> tensors,
-        Optional<ArchitectureDescriptor> architectureDescriptor) {
+        Optional<ArchitectureDescriptor> architectureDescriptor,
+        Optional<GraphCollection> graphCollection) {
 
     /**
      * Compatibility constructor for descriptors created before typed
@@ -49,8 +51,22 @@ public record ModelDescriptor(
             String sourceFormat,
             Map<String, String> metadata,
             Map<String, String> extensions,
+            List<TensorDescriptor> tensors,
+            Optional<ArchitectureDescriptor> architectureDescriptor) {
+        this(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, Optional.empty());
+    }
+
+    /** Compatibility constructor for the original metadata-only descriptor. */
+    public ModelDescriptor(
+            ModelIdentity identity,
+            String architecture,
+            String sourceFormat,
+            Map<String, String> metadata,
+            Map<String, String> extensions,
             List<TensorDescriptor> tensors) {
-        this(identity, architecture, sourceFormat, metadata, extensions, tensors, Optional.empty());
+        this(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                Optional.empty(), Optional.empty());
     }
 
     public ModelDescriptor {
@@ -62,6 +78,7 @@ public record ModelDescriptor(
         tensors = List.copyOf(Objects.requireNonNull(tensors, "tensors must not be null"));
         architectureDescriptor = Objects.requireNonNull(
                 architectureDescriptor, "architectureDescriptor must not be null");
+        graphCollection = Objects.requireNonNull(graphCollection, "graphCollection must not be null");
 
         if (architectureDescriptor.isPresent()
                 && !architecture.equals(architectureDescriptor.orElseThrow().id())) {
@@ -82,7 +99,7 @@ public record ModelDescriptor(
     public ModelDescriptor withIdentity(ModelIdentity replacement) {
         return new ModelDescriptor(
                 replacement, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor);
+                architectureDescriptor, graphCollection);
     }
 
     /** Returns a descriptor enriched with typed architecture information. */
@@ -90,7 +107,15 @@ public record ModelDescriptor(
         Objects.requireNonNull(replacement, "replacement must not be null");
         return new ModelDescriptor(
                 identity, replacement.id(), sourceFormat, metadata, extensions, tensors,
-                Optional.of(replacement));
+                Optional.of(replacement), graphCollection);
+    }
+
+ 
+    /** Returns a descriptor enriched with its computation graph collection. */
+    public ModelDescriptor withGraphCollection(GraphCollection replacement) {
+        Objects.requireNonNull(replacement, "replacement must not be null");
+        return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, Optional.of(replacement));
     }
 
     private static String requireText(String value, String name) {
