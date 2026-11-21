@@ -63,4 +63,22 @@ class FunctionGemmaToolDeclarationRendererTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new FunctionGemmaToolDeclarationRenderer().render(invalid));
     }
+    @Test
+    void formatsSharedToolSetWithoutModelSpecificDeclarationTypes() {
+        ToolDeclaration declaration = new ToolDeclaration() {
+            @Override public String name() { return "search"; }
+            @Override public String description() { return "Search records"; }
+            @Override public Map<String, Object> parameterSchema() {
+                return Map.of("type", "object", "properties", Map.of());
+            }
+        };
+        tech.kayys.aljabr.core.tool.ToolSet tools =
+                tech.kayys.aljabr.core.tool.ToolSet.of(declaration);
+
+        String content = new FunctionGemmaChatTemplate().formatDeveloperContent("Search when needed.", tools);
+
+        assertTrue(content.contains("declaration:search"));
+        assertTrue(content.contains("Search records"));
+    }
+
 }
