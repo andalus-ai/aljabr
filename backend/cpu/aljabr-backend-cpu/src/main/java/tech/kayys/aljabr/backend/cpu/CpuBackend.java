@@ -1782,7 +1782,8 @@ public final class CpuBackend implements ComputeBackend {
         return out(outputShape, output);
     }
 
-        public Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding) {
+    @Override
+    public Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding) {
         requireSpatialInput(input, "maxPool2d");
         if (kernelSize <= 0 || stride <= 0 || padding < 0) {
             throw new IllegalArgumentException("kernel size and stride must be positive; padding must be non-negative");
@@ -1829,7 +1830,8 @@ public final class CpuBackend implements ComputeBackend {
         return out(outputShape, output);
     }
 
-        public Tensor adaptiveAvgPool2d(Tensor input, int outputH, int outputW) {
+    @Override
+    public Tensor adaptiveAvgPool2d(Tensor input, int outputH, int outputW) {
         requireSpatialInput(input, "adaptiveAvgPool2d");
         if (outputH <= 0 || outputW <= 0) {
             throw new IllegalArgumentException("output height and width must be positive");
@@ -1884,7 +1886,7 @@ public final class CpuBackend implements ComputeBackend {
         CpuTensorLayoutAccess.requireF32(input);
     }
 
-        // ── Embedding ─────────────────────────────────────────────────────────────
+    // ── Embedding ─────────────────────────────────────────────────────────────
 
     @Override
     public Tensor embedding(Tensor weight, Tensor input, long paddingIdx) {
