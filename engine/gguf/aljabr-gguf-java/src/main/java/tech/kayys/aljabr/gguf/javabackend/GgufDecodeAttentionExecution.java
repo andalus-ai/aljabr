@@ -9,14 +9,6 @@ final class GgufDecodeAttentionExecution {
     }
 
     /**
-     * Computes grouped-query attention for one decode position.
-     *
-     * <p>The caller selects the KV-cache layer and active sequence window. This
-     * keeps cache ownership, SWA layer selection, and KV writes in the decode
-     * orchestrator while this class owns only score, softmax, and value
-     * accumulation.</p>
-     */
-    /**
      * Computes decode attention from a sequence-aware cache session.
      *
      * <p>The session may expose the committed prefix plus the current
@@ -67,6 +59,14 @@ final class GgufDecodeAttentionExecution {
                 kvHeads, queryHeads, headDimension, activeLength, 0, scale);
     }
 
+    /**
+     * Computes grouped-query attention for one decode position.
+     *
+     * <p>The caller selects the KV-cache layer and active sequence window. This
+     * keeps cache ownership, SWA layer selection, and KV writes in the decode
+     * orchestrator while this class owns only score, softmax, and value
+     * accumulation.</p>
+     */
     static void execute(
             float[] query,
             float[] output,
