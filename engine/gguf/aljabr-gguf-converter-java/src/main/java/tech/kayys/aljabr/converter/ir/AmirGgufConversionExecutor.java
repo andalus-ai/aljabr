@@ -22,7 +22,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -205,7 +204,14 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
             for (long dimension : tensor.shape()) {
                 elements = Math.multiplyExact(elements, dimension);
             }
-            long expectedBytes = type.bytesFor(elements);
+            if (tensor.shape().isEmpty() || tensor.shape().size() > 4
+                    || tensor.shape().stream().anyMatch(dimension -> dimension <= 0L)) {
+                throw new IOException("GGUF tensors require one to four positive dimensions: " + tensor.name());
+            }
+            if (type.blockSize <= 0 || type.typeSize <= 0 || elements % type.blockSize != 0L) {
+                throw new IOException("Tensor '" + tensor.name() + "' cannot be represented by GGML type " + type.label);
+            }
+            long expectedBytes = Math.multiplyExact(elements / type.blockSize, type.typeSize);
             if (expectedBytes != payload.length()) {
                 throw new IOException("Tensor '" + tensor.name() + "' declares " + payload.length()
                         + " bytes but GGUF dtype " + type.label + " and shape require " + expectedBytes);
