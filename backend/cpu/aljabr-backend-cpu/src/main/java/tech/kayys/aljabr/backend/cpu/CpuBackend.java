@@ -1351,12 +1351,16 @@ public final class CpuBackend implements ComputeBackend {
         MemorySegment st = seg(target);
         float loss = 0f;
         for (long i = 0; i < batchSize; i++) {
-            int classIdx = st.get(ValueLayout.JAVA_INT, i * Integer.BYTES);
+            long targetOffset = CpuTensorLayoutAccess.logicalElementOffset(
+                    target.shape().dims(), target.layout(), i);
+            int classIdx = st.get(ValueLayout.JAVA_INT,
+                    Math.multiplyExact(targetOffset, Integer.BYTES));
             if (classIdx < 0 || classIdx >= numClasses) {
                 throw new IllegalArgumentException(
                         "crossEntropy target class index " + classIdx + " is outside [0, " + numClasses + ")");
             }
-            loss -= sp.get(ValueLayout.JAVA_FLOAT, (i * numClasses + classIdx) * Float.BYTES);
+            loss -= CpuTensorLayoutAccess.readLogical(sp, pred.shape().dims(), pred.layout(),
+                    i * numClasses + classIdx);
         }
         loss /= batchSize;
         HostAccessibleStorage o = allocateOutput(Float.BYTES);
@@ -1383,8 +1387,9 @@ public final class CpuBackend implements ComputeBackend {
         MemorySegment st = seg(target);
         float loss = 0f;
         for (long i = 0; i < n; i++) {
-            float p = Math.max(1e-7f, Math.min(1 - 1e-7f, CpuOps.getF(sp, i)));
-            float t = CpuOps.getF(st, i);
+            float p = Math.max(1e-7f, Math.min(1 - 1e-7f,
+                    CpuTensorLayoutAccess.readLogical(sp, pred.shape().dims(), pred.layout(), i)));
+            float t = CpuTensorLayoutAccess.readLogical(st, target.shape().dims(), target.layout(), i);
             if (!Float.isFinite(t) || (t != 0f && t != 1f)) {
                 throw new IllegalArgumentException("binaryCrossEntropy targets must contain only finite 0 or 1 labels");
             }
