@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.lang.reflect.Proxy;
+import java.util.Map;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -95,8 +98,59 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
         int textHiddenSize = textConfig.path("hidden_size").asInt(0);
         assertTrue(textHiddenSize > 0, "text_config.hidden_size must be positive");
 
-        return new EmbeddingGemma2VisionSafetensorLoader(new SafetensorShardLoader())
+        return new EmbeddingGemma2VisionSafetensorLoader(testShardLoader(json))
                 .load(checkpoint, visionConfig, textHiddenSize, 1e-6f);
+    }
+
+    /**
+     * Builds the same loader graph as CDI for this plain JUnit test. The
+     * production loader beans use field injection, so constructing only the
+     * outer SafetensorShardLoader with {@code new} leaves its dependencies
+     * unset and makes an opt-in real-checkpoint test fail before reading a file.
+     */
+    private static SafetensorShardLoader testShardLoader(ObjectMapper json) {
+        SafetensorLoaderConfig.Validation validation = proxy(
+                SafetensorLoaderConfig.Validation.class,
+                Map.of("strict", true, "warnOnEmptyTensors", true, "maxHeaderBytes", 104857600L));
+        SafetensorLoaderConfig.Cache cache = proxy(
+                SafetensorLoaderConfig.Cache.class,
+                Map.of("enabled", false, "maxSize", 1, "ttlSeconds", 300L));
+        SafetensorLoaderConfig config = proxy(
+                SafetensorLoaderConfig.class,
+                Map.of("preferMmap", true, "readChunkBytes", 8388608,
+                        "validation", validation, "cache", cache, "logLoadSummary", false));
+
+        SafetensorMetrics metrics = new SafetensorMetrics();
+        metrics.registry = new SimpleMeterRegistry();
+        metrics.registerGauge();
+
+        SafetensorFFMLoader fileLoader = new SafetensorFFMLoader();
+        fileLoader.config = config;
+        fileLoader.objectMapper = json;
+        fileLoader.metrics = metrics;
+
+        SafetensorShardLoader shardLoader = new SafetensorShardLoader();
+        shardLoader.ffmLoader = fileLoader;
+        shardLoader.objectMapper = json;
+        return shardLoader;
+    }
+
+    private static <T> T proxy(Class<T> type, Map<String, Object> values) {
+        return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type},
+                (instance, method, arguments) -> {
+                    if (method.getDeclaringClass() == Object.class) {
+                        return switch (method.getName()) {
+                            case "toString" -> type.getSimpleName() + "TestProxy";
+                            case "hashCode" -> System.identityHashCode(instance);
+                            case "equals" -> instance == arguments[0];
+                            default -> throw new UnsupportedOperationException(method.getName());
+                        };
+                    }
+                    if (values.containsKey(method.getName())) {
+                        return values.get(method.getName());
+                    }
+                    throw new UnsupportedOperationException("Unexpected config access: " + method.getName());
+                }));
     }
 
     private static EmbeddingGemma2VisionImageProcessor.RgbImage gradientImage(int width, int height) {
