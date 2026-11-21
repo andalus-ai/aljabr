@@ -1,7 +1,6 @@
 package tech.kayys.aljabr.models.functiongemma;
 
 import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -143,7 +142,7 @@ public final class FunctionGemmaToolSchemaValidator {
         BigDecimal bound = decimal(asNumber(schema.get(key), path + "." + key), path + "." + key);
         int comparison = value.compareTo(bound);
         if ((minimum && comparison < 0) || (!minimum && comparison > 0)) {
-            errors.add(error(path, (minimum ? "must be >= " : "must be <= ") + bound);
+            errors.add(error(path, (minimum ? "must be >= " : "must be <= ") + bound));
         }
     }
 
