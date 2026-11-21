@@ -24,7 +24,7 @@ Aljabr is not a universal application framework, an inference server, a data pla
 | Project | Owns | Explicit boundary |
 |---|---|---|
 | **Aljabr** | Numerical and mathematical semantics, tensor/array and memory contracts, reusable algorithms, computational APIs, provider SPI, conformance and diagnostics | No product workflows, serving control plane, tenant governance or agent orchestration |
-| **AQLI** | Model loading/execution lifecycle at runtime, inference requests, scheduling, generation policy, streaming, serving APIs and deployment operations | Consumes Aljabr computation; does not own general-purpose tensor/math algorithms |
+| **AQLI** | Serving-time model/session lifecycle and loading orchestration, inference requests, request scheduling, generation policy, client-facing streaming, serving APIs and deployment operations | Consumes Aljabr model/format loading primitives and computation; does not own general-purpose tensor/math algorithms |
 | **Tafkir** | Training and adaptation workflows, dataset pipelines, experiment orchestration and fine-tuning policy | Consumes Aljabr primitives; must remain optional to Aljabr and ordinary AQLI inference |
 | **Farabi** | Research/analytics product, data access, semantic layer, query/research planning, governance, provenance, interpretation and presentation | Selects and invokes computational methods; does not fork canonical algorithms |
 | **NumU** | Shared platform foundation and infrastructure | Does not replace Aljabr's computational semantics |
@@ -38,8 +38,9 @@ Dependency direction is inward: products and runtimes consume Aljabr; Aljabr doe
 
 Aljabr began as a computational engine for AQLI, and that remains a first-class use case. The relationship should be:
 
-- Aljabr supplies tensors, numerical kernels, memory/resource contracts, model-computation primitives and execution-provider abstractions.
-- AQLI owns inference-specific runtime behavior: model/session lifecycle, request batching and scheduling, token generation policy, streaming, cancellation, service APIs, deployment and operational controls.
+- Aljabr supplies tensors, numerical kernels, memory/resource contracts, reusable model construction and format/weight-loading primitives, model computation and execution-provider abstractions.
+- AQLI owns serving-time model/session lifecycle and loading orchestration, request batching and scheduling, token generation policy, client-facing streaming, cancellation policy, service APIs, deployment and operational controls.
+- Aljabr owns provider descriptors, capability discovery, compatibility checks, provider initialization and explainable execution mechanisms. AQLI owns the production policy that chooses providers for serving profiles; standalone Aljabr applications choose policy through Aljabr's public contracts.
 - AQLI may define requirements that motivate reusable Aljabr capabilities, but those requirements do not automatically make AQLI-specific orchestration part of Aljabr.
 - Aljabr must be usable without AQLI. A numerics-only or statistics-only consumer must not load inference, model-format, tokenizer, GPU or serving dependencies.
 
@@ -217,7 +218,7 @@ Aljabr owns the public programming model and extension contracts. Implementation
 
 - Stable, namespaced provider IDs; semantic versions; declared Aljabr API compatibility range; and machine-readable capability descriptors.
 - Explicit distinction between a capability being declared, implemented, installed, available on the current host, validated, stable, and optimized.
-- Deterministic provider selection with explainable reasons. No silent fallback that changes numerical semantics or hides provider failures.
+- Deterministic provider compatibility and selection mechanisms with explainable reasons. The consuming application/runtime owns product-specific policy; no silent fallback may change numerical semantics or hide provider failures.
 - Aljabr-owned value types, configuration contracts, errors, diagnostics, and lifecycle semantics. Translate provider-specific failures at the adapter boundary.
 - Resource ownership and lifecycle rules for initialization, execution, cancellation, shutdown, native handles, threads, and memory.
 - Thread-safety, concurrency, determinism, precision/tolerance, device constraints, and supported-shape guarantees documented per capability.
