@@ -71,6 +71,28 @@ class AmirGgufConversionExecutorTest {
     }
 
     @Test
+    void convertsAmirScalarShapeToExplicitSingleElementGgufDimension() throws Exception {
+        Path source = temp.resolve("scalar.bin");
+        byte[] payload = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(2.5f).array();
+        Files.write(source, payload);
+        var tensor = new TensorDescriptor("scalar", "F32", List.of(), "contiguous", null,
+                new PayloadReference(source.toUri(), "weights", 0, payload.length,
+                        PayloadReference.OffsetBasis.CONTAINER));
+        var model = new ModelDescriptor(ModelIdentity.of("scalar-fixture"), "test", "safetensors",
+                Map.of(), Map.of(), List.of(tensor));
+        var report = new CompatibilityReport(CompatibilityReport.ConversionFidelity.FULL, List.of());
+        Path output = temp.resolve("scalar.gguf");
+
+        var result = new AmirGgufConversionExecutor().execute(model,
+                new ConversionPlan(model.identity(), "safetensors", "gguf", report),
+                ConversionRequest.to(output.toUri()));
+
+        assertEquals(1L, result.tensorCount());
+        assertEquals(4L, result.payloadBytes());
+        assertTrue(Files.size(output) > payload.length);
+    }
+
+    @Test
     void refusesImplicitQuantizationAndUnsupportedOptions() throws Exception {
         Path source = temp.resolve("quant.bin");
         Files.write(source, new byte[1]);
