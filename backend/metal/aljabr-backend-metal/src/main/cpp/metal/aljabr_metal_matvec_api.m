@@ -2548,7 +2548,7 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
           (activationKind == 2) ? pipelines->gelu_ffn : pipelines->silu_ffn;
       if (actP == nil) {
         [enc endEncoding];
-          return -3;
+        return -3;
       }
       [enc setComputePipelineState:actP];
       [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
@@ -2674,6 +2674,7 @@ int aljabr_metal_wo_ffn_fused(float *x, const float *attn_full, const void *wO,
 }
 
 // Compatibility no-op: fused residual state is now scoped to each call.
+void aljabr_metal_wo_ffn_reset_x(void) {}
 
 static id<MTLBuffer> g_woff_logits = nil;
 static size_t g_woff_logits_cap = 0;
