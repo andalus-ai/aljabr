@@ -118,6 +118,11 @@ public final class EmbeddingGemma2VisionProcessorOutput {
         if (validPatchCount % gridWidth != 0) {
             throw new IllegalArgumentException("image " + image + " valid patches do not form a rectangular grid");
         }
+        int gridHeight = validPatchCount / gridWidth;
+        if (gridWidth % poolingKernel != 0 || gridHeight % poolingKernel != 0) {
+            throw new IllegalArgumentException("image " + image
+                    + " patch grid dimensions must both be divisible by the inferred pooling kernel");
+        }
         for (int patch = 0; patch < validPatchCount; patch++) {
             int expectedX = patch % gridWidth;
             int expectedY = patch / gridWidth;
