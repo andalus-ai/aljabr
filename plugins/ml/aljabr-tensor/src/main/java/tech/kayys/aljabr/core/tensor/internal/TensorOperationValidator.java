@@ -182,6 +182,42 @@ public final class TensorOperationValidator {
     }
 
     /**
+     * Validates an unsqueeze axis and returns its normalized position and output shape.
+     * Negative axes are counted from the end of the rank-plus-one output dimensions.
+     */
+    public static UnsqueezePlan validateUnsqueeze(Shape input, int requestedAxis) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        long normalized = requestedAxis < 0 ? (long) rank + 1 + requestedAxis : requestedAxis;
+        if (normalized < 0 || normalized > rank) {
+            throw new IllegalArgumentException(
+                    "unsqueeze axis " + requestedAxis + " is out of range for tensor rank " + rank);
+        }
+        int axis = (int) normalized;
+        long[] outputDimensions = new long[rank + 1];
+        long[] inputDimensions = input.dims();
+        System.arraycopy(inputDimensions, 0, outputDimensions, 0, axis);
+        outputDimensions[axis] = 1;
+        System.arraycopy(inputDimensions, axis, outputDimensions, axis + 1, rank - axis);
+        return new UnsqueezePlan(axis, new Shape(outputDimensions));
+    }
+
+    /**
+     * Returns the shape produced by removing every singleton dimension.
+     * The legacy tensor contract represents an all-singleton (including scalar)
+     * result as a one-element vector rather than a rank-zero scalar.
+     */
+    public static Shape validateSqueeze(Shape input) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        long[] outputDimensions = java.util.Arrays.stream(input.dims())
+                .filter(dimension -> dimension != 1)
+                .toArray();
+        return new Shape(outputDimensions.length == 0 ? new long[] { 1 } : outputDimensions);
+    }
+
+    public record UnsqueezePlan(int axis, Shape outputShape) { }
+
+    /**
      * Validates slice coordinates and returns the logical output shape.
      * Storage offsets, strides, device constraints, and ownership remain backend concerns.
      */
