@@ -179,6 +179,19 @@ public class HatComputeBackendTest {
     }
 
     @Test
+    public void testMatmulReturnsZerosForEmptyReductionDimension() {
+        try (Tensor left = TensorFactory.of(new float[0], backend, 2, 0);
+                Tensor right = TensorFactory.of(new float[0], backend, 0, 3);
+                Tensor result = backend.matmul(left, right)) {
+            assertEquals(2, result.shape().dim(0));
+            assertEquals(3, result.shape().dim(1));
+            assertEquals(backend, result.backend());
+            assertArrayEquals(new float[] { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f },
+                    result.toFloatArray(), 0.0f);
+        }
+    }
+
+    @Test
     public void testMatmulSupportsRepeatedCallsOnSameBackend() {
         Tensor first = backend.matmul(
                 TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, 2, 2),
