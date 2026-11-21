@@ -89,6 +89,63 @@ class LazyTensorLifecycleConcurrencyTest {
         }
     }
 
+    @Test
+    void concurrentEvaluationsShareOneMaterialization() throws Exception {
+        CountDownLatch evaluationEntered = new CountDownLatch(1);
+        CountDownLatch allowEvaluationToFinish = new CountDownLatch(1);
+        AtomicInteger backendCalls = new AtomicInteger();
+        AtomicInteger outputReleases = new AtomicInteger();
+        Tensor output = tensor(outputReleases);
+        ComputeBackend backend = (ComputeBackend) Proxy.newProxyInstance(
+                ComputeBackend.class.getClassLoader(),
+                new Class<?>[] { ComputeBackend.class },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("relu")) {
+                        backendCalls.incrementAndGet();
+                        evaluationEntered.countDown();
+                        if (!allowEvaluationToFinish.await(5, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("Timed out waiting to finish test evaluation");
+                        }
+                        return output;
+                    }
+                    if (method.getName().equals("toString")) {
+                        return "BlockingComputeBackend";
+                    }
+                    if (method.getName().equals("hashCode")) {
+                        return System.identityHashCode(proxy);
+                    }
+                    if (method.getName().equals("equals")) {
+                        return proxy == args[0];
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+
+        GraphNode root = new GraphNode(
+                OpType.RELU,
+                List.of(GraphNode.constant(tensor(new AtomicInteger()))),
+                new Object[0],
+                new Shape(2, 2),
+                DType.F32);
+        LazyTensor lazy = new LazyTensor(root, backend);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Tensor> first = executor.submit(lazy::eval);
+            assertTrue(evaluationEntered.await(5, TimeUnit.SECONDS), "first evaluation should enter backend");
+            Future<Tensor> second = executor.submit(lazy::eval);
+
+            allowEvaluationToFinish.countDown();
+            assertSame(output, first.get(5, TimeUnit.SECONDS));
+            assertSame(output, second.get(5, TimeUnit.SECONDS));
+            assertEquals(1, backendCalls.get(), "only one backend evaluation should run");
+
+            lazy.release();
+            assertEquals(1, outputReleases.get());
+        } finally {
+            allowEvaluationToFinish.countDown();
+            executor.shutdownNow();
+        }
+    }
+
     private static Tensor tensor(AtomicInteger releases) {
         Shape shape = new Shape(2, 2);
         return (Tensor) Proxy.newProxyInstance(
