@@ -103,6 +103,11 @@ class FunctionGemmaSafetensorCheckpointLoaderTest {
                 assertTrue(Float.isFinite(logit), "logits must be finite");
             }
         }
+
+        FunctionGemmaModel.GenerationResult generated = model.generate("a", 2);
+        assertEquals(2, generated.tokenIds().length);
+        assertEquals(FunctionGemmaModel.GenerationStopReason.MAX_NEW_TOKENS, generated.stopReason());
+        assertNotNull(generated.text());
     }
 
     private FunctionGemmaSafetensorCheckpointLoader newLoaderWithRealFfmStack() throws Exception {
