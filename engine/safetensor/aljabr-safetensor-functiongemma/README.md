@@ -28,16 +28,24 @@ not yet an optimized accelerator backend.
 ## Generate from a structured conversation
 
 The model uses the registered FunctionGemma chat template when passed SPI
-messages. Tool declarations should be included in the developer message:
+messages. Tool declarations can be built with the typed Java API and included in the developer message:
 
 ```java
 FunctionGemmaChatTemplate template = new FunctionGemmaChatTemplate();
+var getWeather = FunctionGemmaToolDeclaration.of(
+    "get_weather",
+    "Get current weather.",
+    FunctionGemmaToolDeclaration.Schema.object()
+        .property("location", FunctionGemmaToolDeclaration.Schema.string()
+            .description("City or place").minLength(2))
+        .property("units", FunctionGemmaToolDeclaration.Schema.string()
+            .enumValues("celsius", "fahrenheit"))
+        .required("location")
+        .additionalProperties(false));
+
 String instructions = template.formatDeveloperContent(
     "You are an assistant that can call functions.",
-    List.of(
-        "declaration:get_weather{description:<escape>Get current weather.<escape>,"
-            + "parameters:{properties:{location:{type:<escape>STRING<escape>}},"
-            + "required:[<escape>location<escape>],type:<escape>OBJECT<escape>}}"));
+    getWeather);
 
 var result = model.generate(List.of(
     Message.system(instructions),
