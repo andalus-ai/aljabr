@@ -15,8 +15,7 @@ import tech.kayys.aljabr.safetensor.loader.SafetensorTensor;
  * Safetensors storage adapter for the EmbeddingGemma 2 text model.
  *
  * <p>All file and shard lifecycle management remains in Aljabr's shared
- * Safetensors loader. This adapter only selects text tensors, converts BF16
- * or F32 payloads to detached float32 arrays, and delegates tensor-name and
+ * Safetensors loader. This adapter only selects text tensors, converts BF16, F16, or F32 payloads to detached float32 arrays, and delegates tensor-name and
  * shape validation to the model-family checkpoint mapper.</p>
  *
  * <p>The returned backbone owns heap arrays and is independent of the
@@ -76,8 +75,9 @@ public final class EmbeddingGemma2SafetensorLoader {
             SafetensorTensor tensor) {
         Objects.requireNonNull(tensor, "tensor must not be null");
         SafetensorDType dtype = tensor.dtype();
-        if (dtype != SafetensorDType.BF16 && dtype != SafetensorDType.F32) {
-            throw new IllegalArgumentException("EmbeddingGemma 2 supports BF16/F32 checkpoint tensors, not "
+        if (dtype != SafetensorDType.BF16 && dtype != SafetensorDType.F16
+                && dtype != SafetensorDType.F32) {
+            throw new IllegalArgumentException("EmbeddingGemma 2 supports BF16/F16/F32 checkpoint tensors, not "
                     + dtype.jsonName() + " for '" + tensor.name() + "'");
         }
         long[] sourceShape = tensor.shape();
