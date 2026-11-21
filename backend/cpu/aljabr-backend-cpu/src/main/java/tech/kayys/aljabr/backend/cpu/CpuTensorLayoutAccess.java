@@ -78,16 +78,45 @@ final class CpuTensorLayoutAccess {
         }
     }
 
+    static MemorySegment contiguousF32(Tensor tensor) {
+        requireF32(tensor);
+        MemorySegment source = CpuTensorStorageAccess.segment(tensor);
+        TensorLayout layout = tensor.layout();
+        if (layout.isContiguous() && layout.storageOffset() == 0) {
+            return source;
+        }
+        long elements = tensor.numel();
+        float[] values = new float[Math.toIntExact(elements)];
+        long[] dimensions = tensor.shape().dims();
+        for (int index = 0; index < values.length; index++) {
+            values[index] = readLogical(source, dimensions, layout, index);
+        }
+        return MemorySegment.ofArray(values);
+    }
+
     static float readLogical(
             MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
         long[] strides = layout.strides();
         long remaining = logicalIndex;
         long elementOffset = layout.storageOffset();
         for (int axis = dimensions.length - 1; axis >= 0; axis--) {
-            long coordinate = remaining % dimensions[axis];
-            remaining /= dimensions[axis];
+            long dimension = dimensions[axis];
+            if (dimension <= 0) {
+                throw new IndexOutOfBoundsException("cannot address an empty tensor dimension");
+            }
+            long coordinate = remaining % dimension;
+            remaining /= dimension;
             elementOffset = Math.addExact(elementOffset, Math.multiplyExact(coordinate, strides[axis]));
         }
+        if (remaining != 0) {
+            throw new IndexOutOfBoundsException("logical index exceeds tensor element count");
+        }
+        return elementOffset;
+    }
+
+    static float readLogical(
+            MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
+        long elementOffset = logicalElementOffset(dimensions, layout, logicalIndex);
         return source.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(elementOffset, Float.BYTES));
     }
 

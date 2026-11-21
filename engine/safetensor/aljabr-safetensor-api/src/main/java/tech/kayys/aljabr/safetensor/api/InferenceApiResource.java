@@ -25,18 +25,18 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * OpenAI-compatible inference REST API.
+ * Inference REST API exposing an OpenAI-compatible protocol surface.
  * Uses reflection to access Engine and HubClient to avoid circular
  * dependencies.
  * @author bhangun
  */
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@Tag(name = "Inference", description = "OpenAI-compatible inference endpoints")
-public class OpenAiCompatibleResource {
+@Tag(name = "Inference", description = "Inference endpoints using an OpenAI-compatible protocol")
+public class InferenceApiResource {
 
     private static final org.jboss.logging.Logger log = org.jboss.logging.Logger
-            .getLogger(OpenAiCompatibleResource.class);
+            .getLogger(InferenceApiResource.class);
 
     @Inject
     jakarta.enterprise.inject.Instance<Object> engineInstance;

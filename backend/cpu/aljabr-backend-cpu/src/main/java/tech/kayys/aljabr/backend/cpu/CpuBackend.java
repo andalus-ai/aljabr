@@ -288,22 +288,22 @@ public final class CpuBackend implements ComputeBackend {
         MemorySegment output = outBuf.segment();
         output.fill((byte) 0);
 
-        long[] stridesA = batchStrides(shapeA);
-        long[] stridesB = batchStrides(shapeB);
+        TensorLayout layoutA = a.layout();
+        TensorLayout layoutB = b.layout();
+        long[] stridesA = layoutA.strides();
+        long[] stridesB = layoutB.strides();
         long batchCount = 1;
         for (long dimension : outputBatchDims) {
             batchCount = Math.multiplyExact(batchCount, dimension);
         }
-        long leftMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, k), Float.BYTES);
-        long rightMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) k, n), Float.BYTES);
         long outputMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, n), Float.BYTES);
         MemorySegment left = seg(a);
         MemorySegment right = seg(b);
 
         for (long batch = 0; batch < batchCount; batch++) {
             long remaining = batch;
-            long leftElementOffset = 0;
-            long rightElementOffset = 0;
+            long leftElementOffset = layoutA.storageOffset();
+            long rightElementOffset = layoutB.storageOffset();
             for (int axis = batchRank - 1; axis >= 0; axis--) {
                 long dimension = outputBatchDims[axis];
                 long coordinate = remaining % dimension;
@@ -320,26 +320,39 @@ public final class CpuBackend implements ComputeBackend {
                 }
             }
 
+            MemorySegment leftMatrix = matrixSegment(
+                    left, leftElementOffset, m, k,
+                    stridesA[batchRankA], stridesA[batchRankA + 1]);
+            MemorySegment rightMatrix = matrixSegment(
+                    right, rightElementOffset, k, n,
+                    stridesB[batchRankB], stridesB[batchRankB + 1]);
             long outputOffset = Math.multiplyExact(batch, outputMatrixBytes);
-            MatmulCpu.matmul(
-                    left.asSlice(Math.multiplyExact(leftElementOffset, Float.BYTES), leftMatrixBytes),
-                    right.asSlice(Math.multiplyExact(rightElementOffset, Float.BYTES), rightMatrixBytes),
-                    output.asSlice(outputOffset, outputMatrixBytes),
-                    m, n, k);
+            MatmulCpu.matmul(leftMatrix, rightMatrix,
+                    output.asSlice(outputOffset, outputMatrixBytes), m, n, k);
         }
         return out(outShape, outBuf);
     }
 
-    /** Returns row-major batch strides in elements, excluding the final matrix dimensions. */
-    private static long[] batchStrides(long[] shape) {
-        int batchRank = shape.length - 2;
-        long[] strides = new long[batchRank];
-        long stride = Math.multiplyExact(shape[batchRank], shape[batchRank + 1]);
-        for (int axis = batchRank - 1; axis >= 0; axis--) {
-            strides[axis] = stride;
-            stride = Math.multiplyExact(stride, shape[axis]);
+    /** Materializes a matrix view only when its inner matrix layout is not row-major contiguous. */
+    private static MemorySegment matrixSegment(
+            MemorySegment storage, long baseOffset, int rows, int columns,
+            long rowStride, long columnStride) {
+        long elements = Math.multiplyExact((long) rows, columns);
+        long bytes = Math.multiplyExact(elements, Float.BYTES);
+        if (columnStride == 1 && rowStride == columns) {
+            return storage.asSlice(Math.multiplyExact(baseOffset, Float.BYTES), bytes);
         }
-        return strides;
+        float[] packed = new float[Math.toIntExact(elements)];
+        for (int row = 0; row < rows; row++) {
+            long rowOffset = Math.addExact(baseOffset, Math.multiplyExact((long) row, rowStride));
+            for (int column = 0; column < columns; column++) {
+                long elementOffset = Math.addExact(rowOffset,
+                        Math.multiplyExact((long) column, columnStride));
+                packed[row * columns + column] =
+                        storage.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(elementOffset, Float.BYTES));
+            }
+        }
+        return MemorySegment.ofArray(packed);
     }
 
     // ── Shape ops ────────────────────────────────────────────────────────────
@@ -853,7 +866,7 @@ public final class CpuBackend implements ComputeBackend {
         long byteSize=Math.multiplyExact(elements, Float.BYTES);
         HostAccessibleStorage output=allocateOutput(byteSize);
         MemorySegment source=seg(input), destination=output.segment();
-        destination.copyFrom(source.asSlice(0, byteSize));
+        copyLogicalToContiguous(input, source, destination);
         int half=rotaryDimension/2, sequenceInt=Math.toIntExact(sequence);
         for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) for(int s=0;s<sequenceInt;s++) {
             double pos=positionIds[Math.toIntExact(b)*sequenceInt+s]/positionScale;
@@ -863,7 +876,7 @@ public final class CpuBackend implements ComputeBackend {
                 float cos=(float)Math.cos(angle), sin=(float)Math.sin(angle);
                 int first=isNeox?pair:pair*2, second=isNeox?pair+half:pair*2+1;
                 long fo=(row+first)*Float.BYTES, so=(row+second)*Float.BYTES;
-                float x=source.get(ValueLayout.JAVA_FLOAT,fo), y=source.get(ValueLayout.JAVA_FLOAT,so);
+                float x=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + first), y=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + second);
                 destination.set(ValueLayout.JAVA_FLOAT,fo,x*cos-y*sin);
                 destination.set(ValueLayout.JAVA_FLOAT,so,x*sin+y*cos);
             }
@@ -890,7 +903,7 @@ public final class CpuBackend implements ComputeBackend {
         long elements=input.numel();
         HostAccessibleStorage output=allocateOutput(Math.multiplyExact(elements, Float.BYTES));
         MemorySegment source=seg(input), destination=output.segment();
-        destination.copyFrom(source.asSlice(0, Math.multiplyExact(elements, Float.BYTES)));
+        copyLogicalToContiguous(input, source, destination);
         int half=rotaryDimension/2;
         for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) for(long s=0;s<sequence;s++) {
             double pos=(posOffset+s)/positionScale;
@@ -900,7 +913,7 @@ public final class CpuBackend implements ComputeBackend {
                 float cos=(float)Math.cos(angle), sin=(float)Math.sin(angle);
                 int first=isNeox?pair:pair*2, second=isNeox?pair+half:pair*2+1;
                 long fo=(row+first)*Float.BYTES, so=(row+second)*Float.BYTES;
-                float x=source.get(ValueLayout.JAVA_FLOAT,fo), y=source.get(ValueLayout.JAVA_FLOAT,so);
+                float x=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + first), y=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + second);
                 destination.set(ValueLayout.JAVA_FLOAT,fo,x*cos-y*sin);
                 destination.set(ValueLayout.JAVA_FLOAT,so,x*sin+y*cos);
             }
@@ -936,7 +949,7 @@ public final class CpuBackend implements ComputeBackend {
         HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
         MemorySegment source = seg(input);
         MemorySegment destination = output.segment();
-        destination.copyFrom(source.asSlice(0, Math.multiplyExact(elements, Float.BYTES)));
+        copyLogicalToContiguous(input, source, destination);
 
         int halfDim = headDim / 2;
         for (long b = 0; b < batch; b++) {
@@ -953,8 +966,8 @@ public final class CpuBackend implements ComputeBackend {
                         int second = isNeox ? pair + halfDim : pair * 2 + 1;
                         long firstOffset = (row + first) * Float.BYTES;
                         long secondOffset = (row + second) * Float.BYTES;
-                        float x = source.get(ValueLayout.JAVA_FLOAT, firstOffset);
-                        float y = source.get(ValueLayout.JAVA_FLOAT, secondOffset);
+                        float x = CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + first);
+                        float y = CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + second);
                         destination.set(ValueLayout.JAVA_FLOAT, firstOffset, x * cos - y * sin);
                         destination.set(ValueLayout.JAVA_FLOAT, secondOffset, x * sin + y * cos);
                     }
@@ -1072,6 +1085,16 @@ public final class CpuBackend implements ComputeBackend {
             }
         }
         return out(input.shape(), output);
+    }
+
+    private static void copyLogicalToContiguous(
+            Tensor input, MemorySegment source, MemorySegment destination) {
+        long[] dimensions = input.shape().dims();
+        TensorLayout layout = input.layout();
+        for (long index = 0; index < input.numel(); index++) {
+            float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, index);
+            destination.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(index, Float.BYTES), value);
+        }
     }
 
     private static void validateBatchNormVector(Tensor tensor, long channels, String name) {
@@ -1235,47 +1258,67 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor pow(Tensor a, float exponent) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++)
-            CpuOps.setF(dst, i, (float) Math.pow(CpuOps.getF(src, i), exponent));
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        MemorySegment destination = output.segment();
+        CpuTensorLayoutAccess.unary(a, destination, elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, (float) Math.pow(CpuOps.getF(src, index), exponent));
+                    }
+                },
+                value -> (float) Math.pow(value, exponent));
+        return out(shape, output);
     }
 
     @Override
     public Tensor sign(Tensor a) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * Float.BYTES);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++) {
-            CpuOps.setF(dst, i, Math.signum(CpuOps.getF(src, i)));
-        }
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        CpuTensorLayoutAccess.unary(a, output.segment(), elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, Math.signum(CpuOps.getF(src, index)));
+                    }
+                },
+                Math::signum);
+        return out(shape, output);
     }
 
     @Override
     public Tensor abs(Tensor a) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++)
-            CpuOps.setF(dst, i, Math.abs(CpuOps.getF(src, i)));
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        CpuTensorLayoutAccess.unary(a, output.segment(), elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, Math.abs(CpuOps.getF(src, index)));
+                    }
+                },
+                Math::abs);
+        return out(shape, output);
     }
 
     @Override
     public Tensor sqrt(Tensor a) {
-        Shape s = a.shape();
-        long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        MemorySegment src = seg(a), dst = o.segment();
-        for (long i = 0; i < n; i++)
-            CpuOps.setF(dst, i, (float) Math.sqrt(CpuOps.getF(src, i)));
-        return out(s, o);
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
+        CpuTensorLayoutAccess.unary(a, output.segment(), elements,
+                (src, dst, count) -> {
+                    for (long index = 0; index < count; index++) {
+                        CpuOps.setF(dst, index, (float) Math.sqrt(CpuOps.getF(src, index)));
+                    }
+                },
+                value -> (float) Math.sqrt(value));
+        return out(shape, output);
     }
 
     @Override
@@ -1324,8 +1367,28 @@ public final class CpuBackend implements ComputeBackend {
             return input;
         Shape s = input.shape();
         long n = s.numel();
-        HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.dropout(seg(input), o.segment(), n, p, ThreadLocalRandom.current().nextLong());
+        CpuTensorLayoutAccess.requireF32(input);
+        HostAccessibleStorage o = allocateOutput(Math.multiplyExact(n, Float.BYTES));
+        MemorySegment source = seg(input);
+        MemorySegment destination = o.segment();
+        TensorLayout layout = input.layout();
+        if (layout.isContiguous() && layout.storageOffset() == 0) {
+            CpuOps.dropout(source, destination, n, p, ThreadLocalRandom.current().nextLong());
+        } else {
+            long state = ThreadLocalRandom.current().nextLong();
+            state = state ^ (state << 13) | 1L;
+            float scale = 1.0f / (1.0f - p);
+            long[] dimensions = input.shape().dims();
+            for (long index = 0; index < n; index++) {
+                state ^= state >>> 12;
+                state ^= state << 25;
+                state ^= state >>> 27;
+                float random = (float) ((state * 0x2545F4914F6CDD1DL) >>> 32) / 0xFFFFFFFFL;
+                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, index);
+                destination.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(index, Float.BYTES),
+                        random < p ? 0f : value * scale);
+            }
+        }
         return out(s, o);
     }
 
@@ -1351,12 +1414,16 @@ public final class CpuBackend implements ComputeBackend {
         MemorySegment st = seg(target);
         float loss = 0f;
         for (long i = 0; i < batchSize; i++) {
-            int classIdx = st.get(ValueLayout.JAVA_INT, i * Integer.BYTES);
+            long targetOffset = CpuTensorLayoutAccess.logicalElementOffset(
+                    target.shape().dims(), target.layout(), i);
+            int classIdx = st.get(ValueLayout.JAVA_INT,
+                    Math.multiplyExact(targetOffset, Integer.BYTES));
             if (classIdx < 0 || classIdx >= numClasses) {
                 throw new IllegalArgumentException(
                         "crossEntropy target class index " + classIdx + " is outside [0, " + numClasses + ")");
             }
-            loss -= sp.get(ValueLayout.JAVA_FLOAT, (i * numClasses + classIdx) * Float.BYTES);
+            loss -= CpuTensorLayoutAccess.readLogical(sp, pred.shape().dims(), pred.layout(),
+                    i * numClasses + classIdx);
         }
         loss /= batchSize;
         HostAccessibleStorage o = allocateOutput(Float.BYTES);
@@ -1383,8 +1450,9 @@ public final class CpuBackend implements ComputeBackend {
         MemorySegment st = seg(target);
         float loss = 0f;
         for (long i = 0; i < n; i++) {
-            float p = Math.max(1e-7f, Math.min(1 - 1e-7f, CpuOps.getF(sp, i)));
-            float t = CpuOps.getF(st, i);
+            float p = Math.max(1e-7f, Math.min(1 - 1e-7f,
+                    CpuTensorLayoutAccess.readLogical(sp, pred.shape().dims(), pred.layout(), i)));
+            float t = CpuTensorLayoutAccess.readLogical(st, target.shape().dims(), target.layout(), i);
             if (!Float.isFinite(t) || (t != 0f && t != 1f)) {
                 throw new IllegalArgumentException("binaryCrossEntropy targets must contain only finite 0 or 1 labels");
             }
@@ -1441,13 +1509,14 @@ public final class CpuBackend implements ComputeBackend {
                 || additiveMask.shape().rank()!=2 || additiveMask.shape().dim(0)!=queryLength
                 || additiveMask.shape().dim(1)!=keyLength))
             throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] on this backend");
-        MemorySegment mask = additiveMask == null ? null : seg(additiveMask);
+        MemorySegment mask = additiveMask == null ? null : CpuTensorLayoutAccess.contiguousF32(additiveMask);
         if (mask != null) {
             validateAttentionMask(mask, queryLength, keyLength);
         }
         Shape outputShape=new Shape(batch,heads,queryLength,headDim);
         HostAccessibleStorage output=allocateOutput(Math.multiplyExact(outputShape.numel(),Float.BYTES));
-        MemorySegment q=seg(Q), k=seg(K), v=seg(V), out=output.segment();
+        MemorySegment q=CpuTensorLayoutAccess.contiguousF32(Q), k=CpuTensorLayoutAccess.contiguousF32(K),
+                v=CpuTensorLayoutAccess.contiguousF32(V), out=output.segment();
         float scale=(float)(1.0/Math.sqrt(headDim));
         int groupCount = Math.toIntExact(Math.multiplyExact(batch, heads));
         try {
@@ -1512,13 +1581,15 @@ public final class CpuBackend implements ComputeBackend {
                     "GQA additive attention mask must be F32 [queryLength, keyLength] on this backend");
         }
 
-        MemorySegment mask = additiveMask == null ? null : seg(additiveMask);
+        MemorySegment mask = additiveMask == null ? null : CpuTensorLayoutAccess.contiguousF32(additiveMask);
         if (mask != null) validateAttentionMask(mask, queryLength, keyLength);
 
         Shape outputShape = new Shape(batch, queryHeads, queryLength, headDim);
         HostAccessibleStorage output =
                 allocateOutput(Math.multiplyExact(outputShape.numel(), Float.BYTES));
-        MemorySegment q = seg(Q), k = seg(K), v = seg(V), out = output.segment();
+        MemorySegment q = CpuTensorLayoutAccess.contiguousF32(Q),
+                k = CpuTensorLayoutAccess.contiguousF32(K),
+                v = CpuTensorLayoutAccess.contiguousF32(V), out = output.segment();
         float scale = (float) (1.0 / Math.sqrt(headDim));
         int groupCount = Math.toIntExact(Math.multiplyExact(batch, queryHeads));
         int queriesPerKeyValueHead = Math.toIntExact(queryHeads / keyValueHeads);

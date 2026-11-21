@@ -19,7 +19,7 @@ import java.util.*;
 import java.util.concurrent.Executors;
 
 /**
- * OpenAI-compatible /v1/embeddings endpoint.
+ * Text embedding endpoint implementing the OpenAI-compatible embeddings request/response protocol.
  * Uses reflection to access EmbeddingEngine to avoid circular dependencies.
  * @author bhangun
  */
@@ -33,9 +33,9 @@ public class EmbeddingsResource {
     @Inject
     jakarta.enterprise.inject.Instance<Object> embeddingEngineInstance;
 
-    /** Model registry (shared with OpenAiCompatibleResource via CDI). */
+    /** Model registry (shared with InferenceApiResource via CDI). */
     @Inject
-    OpenAiCompatibleResource openAiResource;
+    InferenceApiResource inferenceApiResource;
 
     private Object getEngine() {
         try {
@@ -99,7 +99,7 @@ public class EmbeddingsResource {
     }
 
     private java.nio.file.Path resolveModelPath(String alias) {
-        Map<String, java.nio.file.Path> registry = openAiResource.getModelRegistry();
+        Map<String, java.nio.file.Path> registry = inferenceApiResource.getModelRegistry();
         java.nio.file.Path p = registry.get(alias);
         if (p == null) {
             java.nio.file.Path direct = java.nio.file.Path.of(alias);
