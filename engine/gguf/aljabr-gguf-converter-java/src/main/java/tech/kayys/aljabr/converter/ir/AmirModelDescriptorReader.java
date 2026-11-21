@@ -34,9 +34,8 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
     public static final String SAFETENSORS = "SAFETENSORS";
 
     @Override
-    public String format() {
-        throw new UnsupportedOperationException(
-                "This provider supports multiple formats; use supports(Path) dispatch");
+    public java.util.Set<String> formats() {
+        return java.util.Set.of(GGUF, SAFETENSORS);
     }
 
     @Override
@@ -111,7 +110,8 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             for (SafetensorsReader.TensorEntry tensor : reader.tensors().values()) {
                 SafetensorDType type = SafetensorDType.fromJson(tensor.dtype());
                 long length = tensor.byteSize();
-                if (tensor.dataStart() < 0 || length < 0) {
+                if (tensor.dataStart() < 0 || length < 0
+                        || Math.addExact(tensor.dataEnd(), reader.dataOffset()) > fileSize) {
                     throw new IOException("Invalid Safetensors payload range for " + tensor.name());
                 }
                 long expected = type.totalBytes(tensor.shape());
@@ -127,11 +127,6 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
                         tensor.name(), type.jsonName(),
                         java.util.Arrays.stream(tensor.shape()).boxed().toList(),
                         "contiguous", null, payload));
-            }
-            long dataLength = fileSize - (fileSize - reader.tensors().values().stream()
-                    .mapToLong(SafetensorsReader.TensorEntry::dataEnd).max().orElse(0L));
-            if (dataLength < 0) {
-                throw new IOException("Invalid Safetensors data section");
             }
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
