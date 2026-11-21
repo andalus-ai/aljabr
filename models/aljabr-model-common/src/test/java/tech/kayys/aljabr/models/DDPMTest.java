@@ -40,7 +40,8 @@ class DDPMTest {
 
     @Test
     void differentSeedsChangeInitialAndReverseNoise() {
-        try (DDPM model = new DDPM(4, 8, 5);
+        try (CpuBackend backend = new CpuBackend();
+             DDPM model = new DDPM(backend, 4, 8, 5);
              Tensor first = model.sample(2, 11L);
              Tensor second = model.sample(2, 12L)) {
             assertFalse(java.util.Arrays.equals(first.toFloatArray(), second.toFloatArray()));
