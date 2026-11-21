@@ -215,6 +215,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     void dequantizesQ6KBlockUsingLowBitsHighBitsAndSubgroupScales() throws Exception {
         byte[] block = new byte[210];
         java.util.Arrays.fill(block, 192, 208, (byte) 1);
+        for (int scale : new int[] {193, 195, 197, 199}) block[scale] = 2;
         block[209] = 0x3c; // fp16 super-scale = 1
 
         block[0] = 0x21;
@@ -240,9 +241,13 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                 .slice().order(ByteOrder.LITTLE_ENDIAN);
 
         assertEquals(-31.0f, values.getFloat(0 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(16 * Float.BYTES), 0.0f);
         assertEquals(-13.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(48 * Float.BYTES), 0.0f);
         assertEquals(2.0f, values.getFloat(64 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(80 * Float.BYTES), 0.0f);
         assertEquals(20.0f, values.getFloat(96 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(112 * Float.BYTES), 0.0f);
         assertEquals(21.0f, values.getFloat(128 * Float.BYTES), 0.0f);
         assertEquals(7.0f, values.getFloat(160 * Float.BYTES), 0.0f);
         assertEquals(-10.0f, values.getFloat(192 * Float.BYTES), 0.0f);
