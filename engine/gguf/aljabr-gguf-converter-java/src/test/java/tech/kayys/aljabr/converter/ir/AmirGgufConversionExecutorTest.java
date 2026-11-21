@@ -7,6 +7,7 @@ import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
+import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -30,6 +31,12 @@ class AmirGgufConversionExecutorTest {
         assertTrue(executor.supports("safetensors", "gguf"));
         assertTrue(executor.supports("gguf", "GGUF"));
         assertFalse(executor.supports("safetensors", "safetensors"));
+    }
+
+    @Test
+    void discoversProviderThroughModelConversionExecutorService() {
+        assertInstanceOf(AmirGgufConversionExecutor.class,
+                ModelConversionExecutors.find("safetensors", "gguf").orElseThrow());
     }
 
     @Test
