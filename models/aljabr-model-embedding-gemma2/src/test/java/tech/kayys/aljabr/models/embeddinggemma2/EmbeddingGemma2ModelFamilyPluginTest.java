@@ -53,6 +53,18 @@ class EmbeddingGemma2ModelFamilyPluginTest {
     }
 
     @Test
+    void distinguishesImplementedVisionPipelineFromUnavailableMultimodalRunner() {
+        var descriptor = new EmbeddingGemma2ModelFamilyPlugin().descriptor();
+
+        assertEquals("implemented_checkpoint_backed_processor_tower_and_text_projection",
+                descriptor.metadata().get("vision_pipeline_status"));
+        assertEquals("pending_prompt_expansion_tokenizer_integration_and_runner_lifecycle",
+                descriptor.metadata().get("multimodal_runner_status"));
+        assertEquals("text", descriptor.metadata().get("supported_modalities"));
+        assertTrue(descriptor.metadata().get("deferred_modalities").contains("image"));
+    }
+
+    @Test
     void declaresGemmaSentencePieceTokenizerAndTextOnlyFirstMilestone() {
         var plugin = new EmbeddingGemma2ModelFamilyPlugin();
 
