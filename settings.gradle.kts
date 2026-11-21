@@ -128,7 +128,13 @@ if (withHat) {
     include("backend:hat:aljabr-backend-hat")
 }
 
-// Model family modules remain discoverable without coupling them to core.
+// Diffusion is a nested, independently installable model subsystem.
+// Discover only modules that contain their own Gradle build; speculative future
+// family directories remain inert until an implementation is added.
+includeProjectsUnder("models/diffusion")
+
+// Existing top-level model family modules remain discoverable without coupling
+// them to core. Diffusion family modules use the dedicated nested namespace above.
 file("models").listFiles { dir ->
     dir.isDirectory && dir.name.startsWith("aljabr-model-") &&
         (dir.resolve("build.gradle.kts").isFile || dir.resolve("build.gradle").isFile)
