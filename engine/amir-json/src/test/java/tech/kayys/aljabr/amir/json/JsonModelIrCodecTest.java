@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
@@ -29,6 +30,14 @@ class JsonModelIrCodecTest {
                 Map.of("context_length", "4096", "hidden_size", "2048"),
                 Map.of("vendor.example/source", "checkpoint-v2"),
                 List.of());
+    }
+
+    @Test
+    void isDiscoverableThroughTheModelIrCodecService() {
+        assertTrue(ServiceLoader.load(tech.kayys.aljabr.spi.model.ir.ModelIrCodec.class)
+                .stream()
+                .map(ServiceLoader.Provider::get)
+                .anyMatch(JsonModelIrCodec.class::isInstance));
     }
 
     @Test
