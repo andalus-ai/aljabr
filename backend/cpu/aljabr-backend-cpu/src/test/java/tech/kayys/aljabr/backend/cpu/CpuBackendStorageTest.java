@@ -856,4 +856,51 @@ class CpuBackendStorageTest {
         assertEquals(0, weightStorage.references());
     }
 
+
+    @Test
+    void spatialPoolingAndUpsamplingReadNonZeroOffsetTransposedLayouts() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] { 4, 4, 1, 2 }, 1));
+        Tensor maximum = null;
+        Tensor average = null;
+        Tensor upsampled = null;
+        try {
+            maximum = backend.maxPool2d(input, 2, 1, 0);
+            average = backend.adaptiveAvgPool2d(input, 1, 1);
+            upsampled = backend.upsampleNearest2d(input, 2, 4);
+
+            assertArrayEquals(new float[] { 4f }, maximum.toFloatArray(), 0f);
+            assertArrayEquals(new float[] { 2.5f }, average.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {
+                    1f, 1f, 3f, 3f,
+                    1f, 1f, 3f, 3f,
+                    2f, 2f, 4f, 4f,
+                    2f, 2f, 4f, 4f
+            }, upsampled.toFloatArray(), 0f);
+        } finally {
+            if (upsampled != null) upsampled.release();
+            if (average != null) average.release();
+            if (maximum != null) maximum.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void spatialPoolingRejectsInvalidKernelAndOutputDimensions() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 1, 1, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> backend.maxPool2d(input, 0, 1, 0));
+            assertThrows(IllegalArgumentException.class, () -> backend.adaptiveAvgPool2d(input, 0, 1));
+            assertThrows(IllegalArgumentException.class, () -> backend.upsampleNearest2d(input, 1, 0));
+        } finally {
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
 }
