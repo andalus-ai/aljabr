@@ -8,6 +8,7 @@ import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
@@ -25,6 +26,12 @@ class AmirGgufToSafetensorsConversionExecutorTest {
 
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void discoversExecutorThroughServiceLoader() {
+        assertInstanceOf(AmirGgufToSafetensorsConversionExecutor.class,
+                ModelConversionExecutors.find("gguf", "safetensors").orElseThrow());
+    }
 
     @Test
     void copiesScalarF32PayloadAndPreservesSourceMetadata() throws Exception {
