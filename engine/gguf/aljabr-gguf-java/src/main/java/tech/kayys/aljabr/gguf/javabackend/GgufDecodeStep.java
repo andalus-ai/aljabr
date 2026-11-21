@@ -236,6 +236,17 @@ final class GgufDecodeStep {
         return prefillPass.execute(tokenIds, cache);
     }
 
+    /** Prefills a request-scoped session and publishes its prompt prefix on success. */
+    float[] prefill(int[] tokenIds, GgufDecodeSession session) {
+        if (session == null) {
+            throw new IllegalArgumentException("decode session must not be null");
+        }
+        session.requireEmptyForPrefill();
+        float[] logits = prefillPass.execute(tokenIds, session.cache());
+        session.commitPrefill();
+        return logits;
+    }
+
     void syncMetalCache(int tokenCount, KVCache cache) {
         prefillPass.syncMetalCache(tokenCount, cache);
     }
@@ -258,6 +269,19 @@ final class GgufDecodeStep {
 
     float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits) {
         return decodePass.forward(tokenId, pos, cache, computeLogits);
+    }
+
+    /** Executes host fallback decode using the persistent cache session for this request. */
+    float[] forward(int tokenId, int pos, GgufDecodeSession session, boolean computeLogits) {
+        if (session == null) {
+            throw new IllegalArgumentException("decode session must not be null");
+        }
+        session.validateDecodePosition(pos);
+        return decodePass.forward(tokenId, pos, session.cache(), computeLogits, session.cacheSession());
+    }
+
+    float[] forward(int tokenId, int pos, GgufDecodeSession session) {
+        return forward(tokenId, pos, session, true);
     }
 
     float[] forward(int tokenId, int pos, KVCache cache) {
