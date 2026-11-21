@@ -121,10 +121,10 @@ public final class Gemma3TextBackbone {
                     maximumPositions, headsPerLayer, dimensionsPerLayer);
             cacheStorage = Objects.requireNonNull(
                     cacheStorageFactory.create(layout), "cacheStorageFactory returned null");
-            if (cacheStorage.layout() != layout) {
+            if (!hasSameGeometry(cacheStorage.layout(), layout)) {
                 cacheStorage.close();
                 throw new IllegalArgumentException(
-                        "KV cache storage factory must preserve the supplied layout instance");
+                        "KV cache storage factory returned storage with incompatible geometry");
             }
             cacheSession = new KVCacheSession(cacheStorage);
         }
@@ -285,6 +285,20 @@ public final class Gemma3TextBackbone {
             feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
             return add(afterAttention, feedForward);
         }
+    }
+
+    private static boolean hasSameGeometry(KVCacheLayout actual, KVCacheLayout expected) {
+        if (actual.maxSequenceLength() != expected.maxSequenceLength()
+                || actual.layerCount() != expected.layerCount()) {
+            return false;
+        }
+        for (int layer = 0; layer < expected.layerCount(); layer++) {
+            if (actual.kvHeads(layer) != expected.kvHeads(layer)
+                    || actual.headDimension(layer) != expected.headDimension(layer)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public int hiddenSize() { return hidden; }
