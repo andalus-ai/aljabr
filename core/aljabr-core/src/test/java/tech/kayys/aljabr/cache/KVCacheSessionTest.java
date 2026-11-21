@@ -28,6 +28,26 @@ class KVCacheSessionTest {
     }
 
     @Test
+    void attentionCanReadCurrentLayerWriteBeforeSequenceCommit() {
+        KVCacheSession session = new KVCacheSession(
+                new HeapKVCacheStorage(KVCacheLayout.uniform(2, 4, 1, 2)));
+        float[] key = {1, 2};
+        float[] value = {3, 4};
+        session.write(0, 0, key, 0, value, 0);
+
+        float[] actualKey = new float[2];
+        float[] actualValue = new float[2];
+        session.readKeyRangeForAttention(0, 0, 1, actualKey, 0);
+        session.readValueRangeForAttention(0, 0, 1, actualValue, 0);
+        assertArrayEquals(key, actualKey);
+        assertArrayEquals(value, actualValue);
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> session.readKey(0, 0, new float[2], 0));
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> session.readKeyRangeForAttention(0, 0, 2, new float[4], 0));
+    }
+
+    @Test
     void supportsHybridLayerGeometryAndBulkPrefill() {
         KVCacheLayout layout = new KVCacheLayout(
                 4, new int[] {1, 2}, new int[] {2, 2});
