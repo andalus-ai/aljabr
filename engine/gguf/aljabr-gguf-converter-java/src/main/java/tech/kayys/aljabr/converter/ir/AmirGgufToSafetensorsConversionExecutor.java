@@ -137,7 +137,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
         boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
-                "Q4_0".equalsIgnoreCase(tensor.dataType()) || "Q8_0".equalsIgnoreCase(tensor.dataType()));
+                isDequantizedType(tensor.dataType()));
         boolean partial = hasUnrepresentableLayers(model)
                 || model.architecture().equalsIgnoreCase("unknown") || hasLossyQuantization;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
@@ -154,9 +154,19 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
             case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18);
+            case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20);
+            case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22);
+            case "Q5_1" -> TensorEncoding.dequantized("Q5_1", 24);
             case "Q8_0" -> TensorEncoding.dequantized("Q8_0", 34);
             default -> throw new IOException("No verified GGUF-to-Safetensors decoder for dtype '"
                     + tensor.dataType() + "' (tensor " + tensor.name() + ")");
+        };
+    }
+
+    private static boolean isDequantizedType(String dtype) {
+        return switch (dtype.toUpperCase(Locale.ROOT)) {
+            case "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q8_0" -> true;
+            default -> false;
         };
     }
 
@@ -239,7 +249,14 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             throws IOException {
         long elements = 1L;
         for (long dimension : shape) elements = Math.multiplyExact(elements, dimension);
-        int blockBytes = type.equals("Q4_0") ? 18 : 34;
+        int blockBytes = switch (type) {
+            case "Q4_0" -> 18;
+            case "Q4_1" -> 20;
+            case "Q5_0" -> 22;
+            case "Q5_1" -> 24;
+            case "Q8_0" -> 34;
+            default -> throw new IOException("Unsupported dequantization type: " + type);
+        };
         int valuesPerBlock = 32;
         long blocks = elements / valuesPerBlock;
         byte[] source = new byte[blockBytes * BLOCKS_PER_BATCH];
@@ -260,21 +277,55 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     for (int j = 0; j < 32; j++) {
                         values.putFloat(source[base + 2 + j] * scale);
                     }
-                } else {
-                    for (int j = 0; j < 16; j++) {
-                        int packedValue = source[base + 2 + j] & 0xff;
-                        values.putFloat(((packedValue & 0x0f) - 8) * scale);
-                    }
-                    for (int j = 0; j < 16; j++) {
-                        int packedValue = source[base + 2 + j] & 0xff;
-                        values.putFloat(((packedValue >>> 4) - 8) * scale);
-                    }
+                    continue;
+                }
+
+                float minimum = switch (type) {
+                    case "Q4_1", "Q5_1" -> halfToFloat(source[base + 2] & 0xff, source[base + 3] & 0xff);
+                    default -> 0.0f;
+                };
+                int highBitsOffset = type.equals("Q5_0") ? base + 2 : base + 4;
+                int quantizedValuesOffset = switch (type) {
+                    case "Q4_0" -> base + 2;
+                    case "Q4_1" -> base + 4;
+                    case "Q5_0" -> base + 6;
+                    case "Q5_1" -> base + 8;
+                    default -> throw new IOException("Unsupported dequantization type: " + type);
+                };
+                long highBits = type.startsWith("Q5") ? readUInt32LE(source, highBitsOffset) : 0L;
+                for (int j = 0; j < 16; j++) {
+                    int packedValue = source[quantizedValuesOffset + j] & 0xff;
+                    int quantized = packedValue & 0x0f;
+                    if (type.startsWith("Q5")) quantized |= (int) ((highBits >>> j) & 1L) << 4;
+                    values.putFloat(dequantizeValue(type, quantized, scale, minimum));
+                }
+                for (int j = 0; j < 16; j++) {
+                    int packedValue = source[quantizedValuesOffset + j] & 0xff;
+                    int quantized = packedValue >>> 4;
+                    if (type.startsWith("Q5")) quantized |= (int) ((highBits >>> (j + 16)) & 1L) << 4;
+                    values.putFloat(dequantizeValue(type, quantized, scale, minimum));
                 }
             }
             values.flip();
             writeFully(output, values);
             block += count;
         }
+    }
+
+    private static float dequantizeValue(String type, int quantized, float scale, float minimum) {
+        return switch (type) {
+            case "Q4_0" -> (quantized - 8) * scale;
+            case "Q4_1", "Q5_1" -> quantized * scale + minimum;
+            case "Q5_0" -> (quantized - 16) * scale;
+            default -> throw new IllegalArgumentException("Unsupported quantization type: " + type);
+        };
+    }
+
+    private static long readUInt32LE(byte[] bytes, int offset) {
+        return (bytes[offset] & 0xffL)
+                | ((bytes[offset + 1] & 0xffL) << 8)
+                | ((bytes[offset + 2] & 0xffL) << 16)
+                | ((bytes[offset + 3] & 0xffL) << 24);
     }
 
     private static float halfToFloat(int low, int high) {
