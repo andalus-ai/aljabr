@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.models.embeddinggemma2;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -58,6 +59,24 @@ class EmbeddingGemma2CheckpointMapperTest {
 
         assertEquals(3, merged.length);
         org.junit.jupiter.api.Assertions.assertArrayEquals(new float[]{7f, 8f}, merged[1], 0f);
+    }
+
+    @Test
+    void embedsTextBeforeVisionAndSafelySubstitutesOutOfVocabularyPlaceholder() throws Exception {
+        EmbeddingGemma2Config config = config();
+        var backbone = new EmbeddingGemma2TextBackbone(
+                config, EmbeddingGemma2CheckpointMapper.map(config, tensors()));
+        int[] inputIds = {1, 99, 2};
+
+        float[][] textEmbeddings = EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
+                backbone, inputIds, 99, 0);
+
+        assertEquals(3, textEmbeddings.length);
+        assertArrayEquals(textEmbeddings[0], textEmbeddings[1], 0f);
+        assertArrayEquals(new int[]{1, 99, 2}, inputIds);
+        assertThrows(IllegalArgumentException.class,
+                () -> EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
+                        backbone, new int[]{1, 100}, 99, 0));
     }
 
     @Test

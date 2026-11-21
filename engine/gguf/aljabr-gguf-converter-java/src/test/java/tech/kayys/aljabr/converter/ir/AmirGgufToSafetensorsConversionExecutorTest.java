@@ -212,6 +212,49 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesQ6KBlockUsingLowBitsHighBitsAndSubgroupScales() throws Exception {
+        byte[] block = new byte[210];
+        java.util.Arrays.fill(block, 192, 208, (byte) 1);
+        for (int scale : new int[] {193, 195, 197, 199}) block[scale] = 2;
+        block[209] = 0x3c; // fp16 super-scale = 1
+
+        block[0] = 0x21;
+        block[32] = 0x43;
+        block[128] = (byte) 0b11_10_01_00;
+        block[64] = 0x65;
+        block[96] = (byte) 0x87;
+        block[160] = (byte) 0b00_01_10_11;
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q6_K", List.of(256L), source, 8L, block.length);
+        var model = model("q6_k", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("q6_k.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        assertEquals(-31.0f, values.getFloat(0 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(16 * Float.BYTES), 0.0f);
+        assertEquals(-13.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(48 * Float.BYTES), 0.0f);
+        assertEquals(2.0f, values.getFloat(64 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(80 * Float.BYTES), 0.0f);
+        assertEquals(20.0f, values.getFloat(96 * Float.BYTES), 0.0f);
+        assertEquals(-64.0f, values.getFloat(112 * Float.BYTES), 0.0f);
+        assertEquals(21.0f, values.getFloat(128 * Float.BYTES), 0.0f);
+        assertEquals(7.0f, values.getFloat(160 * Float.BYTES), 0.0f);
+        assertEquals(-10.0f, values.getFloat(192 * Float.BYTES), 0.0f);
+        assertEquals(-24.0f, values.getFloat(224 * Float.BYTES), 0.0f);
+    }
+
+    @Test
     void requiresAcknowledgementForLossyDequantization() throws Exception {
         byte[] block = new byte[18];
         Path source = writeContainer(block);

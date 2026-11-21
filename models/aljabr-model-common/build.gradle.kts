@@ -20,6 +20,7 @@ repositories {
 dependencies {
     api(project(":plugins:ml:aljabr-nn"))
     api(project(":plugins:ml:aljabr-tensor"))
+    api(project(":models:diffusion:aljabr-diffusion-scheduler-ddim"))
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
 }
