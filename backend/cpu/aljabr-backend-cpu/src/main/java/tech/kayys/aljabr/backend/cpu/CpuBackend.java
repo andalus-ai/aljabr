@@ -138,7 +138,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.add(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, (x, y) -> x + y);
         return out(s, o);
     }
 
@@ -149,7 +149,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.sub(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, (x, y) -> x - y);
         return out(s, o);
     }
 
@@ -158,7 +158,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.mulScalar(seg(a), scalar, o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> x * scalar);
         return out(s, o);
     }
 
@@ -169,7 +169,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.mul(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, (x, y) -> x * y);
         return out(s, o);
     }
 
@@ -185,7 +185,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.div(seg(a), seg(b), o.segment(), n);
+        CpuTensorLayoutAccess.binary(a, b, o.segment(), n, (x, y) -> x / y);
         return out(s, o);
     }
 
@@ -254,7 +254,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.addScalar(seg(a), scalar, o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> x + scalar);
         return out(s, o);
     }
 
@@ -534,7 +534,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.relu(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> Math.max(0f, x));
         return out(s, o);
     }
 
@@ -543,7 +543,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.sigmoid(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> (float) (1d / (1d + Math.exp(-x))));
         return out(s, o);
     }
 
@@ -552,7 +552,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.tanh(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> (float) Math.tanh(x));
         return out(s, o);
     }
 
@@ -561,7 +561,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.log(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> (float) Math.log(x));
         return out(s, o);
     }
 
@@ -570,7 +570,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.exp(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> (float) Math.exp(x));
         return out(s, o);
     }
 
@@ -579,7 +579,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.silu(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> x / (1f + (float) Math.exp(-x)));
         return out(s, o);
     }
 
@@ -588,7 +588,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape s = a.shape();
         long n = s.numel();
         HostAccessibleStorage o = allocateOutput(n * 4);
-        CpuOps.gelu(seg(a), o.segment(), n);
+        CpuTensorLayoutAccess.unary(a, o.segment(), n, x -> 0.5f * x * (1f + (float) Math.tanh(0.7978845608f * (x + 0.044715f * x * x * x))));
         return out(s, o);
     }
 
