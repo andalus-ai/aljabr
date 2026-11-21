@@ -66,7 +66,7 @@ class DDIMSchedulerTest {
         assertEquals(0.0f, last.timestep());
         assertEquals(-1, last.previousTimestep());
         assertEquals(1.0f, last.previousAlphaCumprod(), 0.0f);
-        assertEquals(1.0f, last.directionCoefficient(), 1.0e-6f);
+        assertEquals(0.0f, last.directionCoefficient(), 1.0e-6f);
     }
 
     @Test
