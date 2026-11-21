@@ -300,11 +300,16 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
     }
 
+    /**
+     * GGUF stores dimensions in ggml order (dimension zero is contiguous /
+     * fastest-changing). Safetensors consumers use the conventional outermost-
+     * to-innermost shape order, so the dimensions must always be reversed.
+     *
+     * <p>This is a metadata-only transformation: the payload byte sequence is
+     * intentionally copied unchanged.
+     */
     private static List<Long> safetensorsShape(ModelDescriptor model, TensorDescriptor tensor) {
-        boolean ggmlFastestFirst = "ggml-fastest-first".equalsIgnoreCase(
-                tensor.extensions().getOrDefault("gguf.dimension-order",
-                        model.extensions().get("gguf.tensor.dimension-order")));
-        if (!ggmlFastestFirst || tensor.shape().size() < 2) {
+        if (tensor.shape().size() < 2) {
             return tensor.shape();
         }
         List<Long> reversed = new ArrayList<>(tensor.shape());
