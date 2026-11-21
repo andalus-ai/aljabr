@@ -33,13 +33,19 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            if (!SUPPORTED.contains(type)) {
+            if ("Q4_0".equals(type) || "Q8_0".equals(type)) {
+                diagnostics.add(new CompatibilityReport.Diagnostic(
+                        CompatibilityReport.Severity.WARNING,
+                        "GGML_QUANTIZATION_DEQUANTIZED",
+                        "Tensor '" + tensor.name() + "' will be dequantized to F32; quantized storage "
+                                + "and exact quantized values are not preserved."));
+                partial = true;
+            } else if (!SUPPORTED.contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.ERROR,
                         "SAFETENSORS_DTYPE_UNSUPPORTED",
                         "Tensor '" + tensor.name() + "' uses '" + tensor.dataType()
-                                + "'. Safetensors requires a supported scalar dtype; quantized block data "
-                                + "must be dequantized or handled by a dedicated extension."));
+                                + "'. No verified Safetensors conversion decoder is available."));
             }
         }
 
@@ -51,11 +57,13 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             partial = true;
         }
 
-        if (!source.extensions().isEmpty()) {
+        if (source.architectureDescriptor().isPresent() || source.graphCollection().isPresent()
+                || source.assetCollection().isPresent() || source.componentCollection().isPresent()) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
-                    CompatibilityReport.Severity.INFO,
-                    "OPAQUE_METADATA_REQUIRES_MAPPING",
-                    "Opaque source extensions are not part of the Safetensors tensor format and require sidecar preservation."));
+                    CompatibilityReport.Severity.WARNING,
+                    "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
+                    "Safetensors stores tensor data and string metadata only; typed architecture, graph, "
+                            + "asset, and component layers are not encoded."));
             partial = true;
         }
 
