@@ -117,13 +117,13 @@ class DefaultTensorTest {
 
     @Test
     void explicitStridedLayoutValidatesReachableStorageRange() {
-        DeviceOnlyStorage storage = new DeviceOnlyStorage(8L * Float.BYTES);
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(9L * Float.BYTES);
         TensorLayout layout = new TensorLayout(new Shape(2, 2), new long[] {4, 1}, 3);
         DefaultTensor tensor = new DefaultTensor(
                 new Shape(2, 2), DType.F32, DeviceType.METAL, storage, unusedBackend(), layout);
         try {
             assertSame(layout, tensor.layout());
-            assertEquals(8L * Float.BYTES, storage.sizeBytes());
+            assertEquals(9L * Float.BYTES, storage.sizeBytes());
         } finally {
             tensor.release();
         }

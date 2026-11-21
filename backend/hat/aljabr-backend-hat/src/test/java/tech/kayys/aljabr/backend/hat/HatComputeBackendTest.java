@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 public class HatComputeBackendTest {
 
@@ -287,6 +288,9 @@ public class HatComputeBackendTest {
         assertInstanceOf(CpuBackend.class, convResult.backend());
         assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f, 4.0f },
                 convResult.toFloatArray(), 1e-4f);
+    }
+
+    @Test
     public void testEmbeddingAndLossFallbacksConsumeHatOwnedOperands() {
         Tensor embeddingWeight = TensorFactory.of(
                 new float[] { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f },

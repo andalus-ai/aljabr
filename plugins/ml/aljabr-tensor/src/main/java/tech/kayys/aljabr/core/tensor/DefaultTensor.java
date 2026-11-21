@@ -407,27 +407,41 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor flatten() {
+        ensureOpen();
+        TensorOperationValidator.validateFlatten(shape);
         return record(OpType.FLATTEN, new Tensor[] { this }, new Object[0], backend.flatten(this));
     }
 
     @Override
     public Tensor unsqueeze(int dim) {
-        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim }, backend.unsqueeze(this, dim));
+        ensureOpen();
+        TensorOperationValidator.UnsqueezePlan plan =
+                TensorOperationValidator.validateUnsqueeze(shape, dim);
+        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim },
+                backend.unsqueeze(this, plan.axis()));
     }
 
     @Override
     public Tensor squeeze() {
+        ensureOpen();
         return record(OpType.SQUEEZE, new Tensor[] { this }, new Object[0], backend.squeeze(this));
     }
 
     @Override
     public Tensor transpose() {
+        ensureOpen();
+        TensorOperationValidator.validateTranspose(shape);
         return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[0], backend.transpose(this));
     }
 
     @Override
     public Tensor transpose(int d0, int d1) {
-        return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[] { d0, d1 }, backend.transpose(this, d0, d1));
+        ensureOpen();
+        TensorOperationValidator.TransposePlan plan =
+                TensorOperationValidator.validateTranspose(shape, d0, d1);
+        return record(OpType.TRANSPOSE, new Tensor[] { this },
+                new Object[] { plan.axis0(), plan.axis1() },
+                backend.transpose(this, plan.axis0(), plan.axis1()));
     }
 
     @Override

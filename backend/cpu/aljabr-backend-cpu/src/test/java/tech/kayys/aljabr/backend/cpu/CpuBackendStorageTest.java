@@ -72,6 +72,49 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void flattenPreservesLogicalValuesAndStorageOwnershipForRegularScalarAndEmptyTensors() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor input = tensor(storage, 2, 3);
+        Tensor flattened = null;
+        try {
+            flattened = backend.flatten(input);
+            assertArrayEquals(new long[] { 6 }, flattened.shape().dims());
+            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f, 5f, 6f }, flattened.toFloatArray(), 0f);
+            assertEquals(2, storage.references());
+        } finally {
+            if (flattened != null) flattened.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+
+        HostStorage scalarStorage = new HostStorage(7f);
+        DefaultTensor scalar = tensor(scalarStorage);
+        Tensor scalarFlat = null;
+        try {
+            scalarFlat = backend.flatten(scalar);
+            assertArrayEquals(new long[] { 1 }, scalarFlat.shape().dims());
+            assertArrayEquals(new float[] { 7f }, scalarFlat.toFloatArray(), 0f);
+        } finally {
+            if (scalarFlat != null) scalarFlat.release();
+            scalar.release();
+        }
+        assertEquals(0, scalarStorage.references());
+
+        HostStorage emptyStorage = new HostStorage();
+        DefaultTensor empty = tensor(emptyStorage, 2, 0, 3);
+        Tensor emptyFlat = null;
+        try {
+            emptyFlat = backend.flatten(empty);
+            assertArrayEquals(new long[] { 0 }, emptyFlat.shape().dims());
+            assertEquals(0, emptyFlat.numel());
+        } finally {
+            if (emptyFlat != null) emptyFlat.release();
+            empty.release();
+        }
+        assertEquals(0, emptyStorage.references());
+    }
+
+    @Test
     void cpuKernelsReadHostAccessibleStorageWithoutLegacyBuffer() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
         DefaultTensor input = tensor(storage, 2, 2);
@@ -91,7 +134,7 @@ class CpuBackendStorageTest {
 
     @Test
     void pointwiseArithmeticReadsNonZeroOffsetAndStridedLayouts() {
-        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 99f, 3f, 4f);
         DefaultTensor input = new DefaultTensor(
                 new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
@@ -394,10 +437,12 @@ class CpuBackendStorageTest {
             reshaped = backend.reshape(slice, 2);
 
             assertSame(slice.storage(), reshaped.storage());
-            assertEquals(2, storage.references());
+            // Input, slice, and reshaped view each own one storage reference.
+            assertEquals(3, storage.references());
 
             HostAccessibleStorage viewStorage = (HostAccessibleStorage) slice.storage();
-            viewStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0L, 30f);
+            // The slice starts at physical element 2 in the shared base storage.
+            viewStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 2L * Float.BYTES, 30f);
             assertArrayEquals(new float[] { 1f, 2f, 30f, 4f }, input.toFloatArray(), 0f);
 
             input.release();
@@ -486,6 +531,329 @@ class CpuBackendStorageTest {
             input.release();
         }
         assertEquals(0, storage.references());
+    }
+
+
+    @Test
+    void transposeNormalizesNegativeAxesAndPreservesLogicalValues() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor input = tensor(storage, 2, 3);
+        Tensor trailing = null;
+        Tensor sameAxis = null;
+        try {
+            trailing = input.transpose(-2, -1);
+            sameAxis = input.transpose(-1, 1);
+            assertArrayEquals(new long[] { 3, 2 }, trailing.shape().dims());
+            assertArrayEquals(new float[] { 1f, 4f, 2f, 5f, 3f, 6f }, trailing.toFloatArray(), 0f);
+            assertArrayEquals(new long[] { 2, 3 }, sameAxis.shape().dims());
+            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f, 5f, 6f }, sameAxis.toFloatArray(), 0f);
+        } finally {
+            if (sameAxis != null) sameAxis.release();
+            if (trailing != null) trailing.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+
+        HostStorage nonTerminalStorage = new HostStorage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11f, 12f);
+        DefaultTensor nonTerminalInput = tensor(nonTerminalStorage, 2, 2, 3);
+        Tensor nonTerminal = null;
+        Tensor defaultTranspose = null;
+        try {
+            nonTerminal = nonTerminalInput.transpose(0, -1);
+            defaultTranspose = nonTerminalInput.transpose();
+            assertArrayEquals(new long[] { 3, 2, 2 }, nonTerminal.shape().dims());
+            assertArrayEquals(new float[] {
+                    1f, 7f, 4f, 10f, 2f, 8f, 5f, 11f, 3f, 9f, 6f, 12f
+            }, nonTerminal.toFloatArray(), 0f);
+            assertArrayEquals(new long[] { 2, 3, 2 }, defaultTranspose.shape().dims());
+        } finally {
+            if (defaultTranspose != null) defaultTranspose.release();
+            if (nonTerminal != null) nonTerminal.release();
+            nonTerminalInput.release();
+        }
+        assertEquals(0, nonTerminalStorage.references());
+    }
+
+    @Test
+    void transposeRejectsInvalidAxesBeforeAllocatingOutput() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> input.transpose(-3, 1));
+            assertThrows(IllegalArgumentException.class, () -> input.transpose(0, 2));
+            assertEquals(1, storage.references());
+        } finally {
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+    @Test
+    void squeezeAndUnsqueezePreserveValuesAndUseSharedShapeContracts() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 2, 2);
+        Tensor trailing = null;
+        Tensor leading = null;
+        try {
+            trailing = input.unsqueeze(-1);
+            leading = input.unsqueeze(-3);
+            assertArrayEquals(new long[] { 2, 2, 1 }, trailing.shape().dims());
+            assertArrayEquals(new long[] { 1, 2, 2 }, leading.shape().dims());
+            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f }, trailing.toFloatArray(), 0f);
+        } finally {
+            if (leading != null) leading.release();
+            if (trailing != null) trailing.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+
+        HostStorage singletonStorage = new HostStorage(5f, 6f, 7f, 8f);
+        DefaultTensor singletonInput = tensor(singletonStorage, 1, 2, 1, 2);
+        Tensor squeezed = null;
+        try {
+            squeezed = singletonInput.squeeze();
+            assertArrayEquals(new long[] { 2, 2 }, squeezed.shape().dims());
+            assertArrayEquals(new float[] { 5f, 6f, 7f, 8f }, squeezed.toFloatArray(), 0f);
+        } finally {
+            if (squeezed != null) squeezed.release();
+            singletonInput.release();
+        }
+        assertEquals(0, singletonStorage.references());
+    }
+
+    @Test
+    void squeezeRetainsOneElementVectorForAllSingletonAndScalarInputs() {
+        HostStorage singletonStorage = new HostStorage(9f);
+        DefaultTensor singletonInput = tensor(singletonStorage, 1, 1);
+        Tensor singletonResult = null;
+        try {
+            singletonResult = singletonInput.squeeze();
+            assertArrayEquals(new long[] { 1 }, singletonResult.shape().dims());
+        } finally {
+            if (singletonResult != null) singletonResult.release();
+            singletonInput.release();
+        }
+        assertEquals(0, singletonStorage.references());
+
+        HostStorage scalarStorage = new HostStorage(11f);
+        DefaultTensor scalarInput = tensor(scalarStorage);
+        Tensor scalarResult = null;
+        try {
+            scalarResult = scalarInput.squeeze();
+            assertArrayEquals(new long[] { 1 }, scalarResult.shape().dims());
+            assertArrayEquals(new float[] { 11f }, scalarResult.toFloatArray(), 0f);
+        } finally {
+            if (scalarResult != null) scalarResult.release();
+            scalarInput.release();
+        }
+        assertEquals(0, scalarStorage.references());
+    }
+    void softmaxReadsStridedTensorWithNonZeroStorageOffset() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        Tensor result = null;
+        try {
+            result = backend.softmax(input, -1);
+            float probabilityLow = (float) (1d / (1d + Math.exp(2d)));
+            float probabilityHigh = 1f - probabilityLow;
+            assertArrayEquals(
+                    new float[] { probabilityLow, probabilityHigh, probabilityLow, probabilityHigh },
+                    result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void logSoftmaxUsesStableLogSumExpForLargeLogits() {
+        HostStorage storage = new HostStorage(1000f, 1001f);
+        DefaultTensor input = tensor(storage, 2);
+        Tensor result = null;
+        try {
+            result = backend.logSoftmax(input, 0);
+            assertArrayEquals(
+                    new float[] { -1.3132617f, -0.3132617f },
+                    result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void batchNormInferenceReadsStridedInputWithStorageOffset() {
+        HostStorage inputStorage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        HostStorage biasStorage = new HostStorage(0f, 0f);
+        HostStorage meanStorage = new HostStorage(2f, 3f);
+        HostStorage varianceStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(1, 2, 2), DType.F32, DeviceType.CPU, (TensorStorage) inputStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 2, 2), new long[] { 4, 1, 2 }, 1));
+        DefaultTensor weight = tensor(weightStorage, 2);
+        DefaultTensor bias = tensor(biasStorage, 2);
+        DefaultTensor runningMean = tensor(meanStorage, 2);
+        DefaultTensor runningVar = tensor(varianceStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.batchNorm(input, weight, bias, runningMean, runningVar,
+                    false, 0.1f, 0f);
+            assertArrayEquals(new float[] { -1f, 1f, -1f, 1f }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+            bias.release();
+            runningMean.release();
+            runningVar.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+        assertEquals(0, biasStorage.references());
+        assertEquals(0, meanStorage.references());
+        assertEquals(0, varianceStorage.references());
+    }
+
+    @Test
+    void batchNormTrainingUsesBatchStatisticsAndUpdatesRunningStatistics() {
+        HostStorage inputStorage = new HostStorage(1f, 10f, 3f, 14f);
+        HostStorage meanStorage = new HostStorage(0f, 0f);
+        HostStorage varianceStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        DefaultTensor runningMean = tensor(meanStorage, 2);
+        DefaultTensor runningVar = tensor(varianceStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.batchNorm(input, null, null, runningMean, runningVar,
+                    true, 0.1f, 0f);
+            assertArrayEquals(new float[] { -1f, -1f, 1f, 1f }, result.toFloatArray(), 1e-6f);
+            assertArrayEquals(new float[] { 0.2f, 1.2f }, runningMean.toFloatArray(), 1e-6f);
+            assertArrayEquals(new float[] { 1.1f, 1.7f }, runningVar.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            runningMean.release();
+            runningVar.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, meanStorage.references());
+        assertEquals(0, varianceStorage.references());
+    }
+
+    @Test
+    void batchNormWithoutRunningStatisticsUsesBatchStatisticsInEvaluation() {
+        HostStorage inputStorage = new HostStorage(1f, 10f, 3f, 14f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        Tensor result = null;
+        try {
+            result = backend.batchNorm(input, null, null, null, null,
+                    false, 0.1f, 0f);
+            assertArrayEquals(new float[] { -1f, -1f, 1f, 1f }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, inputStorage.references());
+    }
+
+    @Test
+    void batchNormRejectsInvalidMomentumAndChannelParameters() {
+        HostStorage inputStorage = new HostStorage(1f, 2f, 3f, 4f);
+        HostStorage parameterStorage = new HostStorage(1f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        DefaultTensor parameter = tensor(parameterStorage, 1);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.batchNorm(input, parameter, null, null, null,
+                            false, 0.1f, 1e-5f));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.batchNorm(input, null, null, null, null,
+                            true, 1.1f, 1e-5f));
+        } finally {
+            input.release();
+            parameter.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, parameterStorage.references());
+    }
+
+    @Test
+    void layerNormReadsStridedInputWithStorageOffset() {
+        HostStorage inputStorage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        HostStorage biasStorage = new HostStorage(0f, 0f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) inputStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        DefaultTensor weight = tensor(weightStorage, 2);
+        DefaultTensor bias = tensor(biasStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.layerNorm(input, new long[] { 2 }, weight, bias, 1e-5f);
+            assertArrayEquals(new float[] { -1f, 1f, -1f, 1f }, result.toFloatArray(), 1e-5f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+            bias.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+        assertEquals(0, biasStorage.references());
+    }
+
+    @Test
+    void rmsNormReadsStridedInputWithStorageOffset() {
+        HostStorage inputStorage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) inputStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        DefaultTensor weight = tensor(weightStorage, 2);
+        Tensor result = null;
+        try {
+            result = backend.rmsNorm(input, weight, 0f);
+            assertArrayEquals(new float[] {
+                    (float) (1d / Math.sqrt(5d)), (float) (3d / Math.sqrt(5d)),
+                    (float) (2d / Math.sqrt(10d)), (float) (4d / Math.sqrt(10d))
+            }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+    }
+
+    @Test
+    void normalizationRejectsInvalidShapeAndEpsilon() {
+        HostStorage inputStorage = new HostStorage(1f, 2f, 3f, 4f);
+        HostStorage weightStorage = new HostStorage(1f, 1f);
+        DefaultTensor input = tensor(inputStorage, 2, 2);
+        DefaultTensor weight = tensor(weightStorage, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.layerNorm(input, new long[] { 3 }, weight, null, 1e-5f));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.layerNorm(input, new long[] { 2 }, weight, null, Float.NaN));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.rmsNorm(input, weight, -1f));
+        } finally {
+            input.release();
+            weight.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
     }
 
 }
