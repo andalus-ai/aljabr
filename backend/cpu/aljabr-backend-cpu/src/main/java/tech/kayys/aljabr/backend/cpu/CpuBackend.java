@@ -900,7 +900,7 @@ public final class CpuBackend implements ComputeBackend {
                 float cos=(float)Math.cos(angle), sin=(float)Math.sin(angle);
                 int first=isNeox?pair:pair*2, second=isNeox?pair+half:pair*2+1;
                 long fo=(row+first)*Float.BYTES, so=(row+second)*Float.BYTES;
-                float x=source.get(ValueLayout.JAVA_FLOAT,fo), y=source.get(ValueLayout.JAVA_FLOAT,so);
+                float x=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + first), y=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + second);
                 destination.set(ValueLayout.JAVA_FLOAT,fo,x*cos-y*sin);
                 destination.set(ValueLayout.JAVA_FLOAT,so,x*sin+y*cos);
             }
