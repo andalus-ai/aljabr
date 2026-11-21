@@ -866,7 +866,7 @@ public final class CpuBackend implements ComputeBackend {
         long byteSize=Math.multiplyExact(elements, Float.BYTES);
         HostAccessibleStorage output=allocateOutput(byteSize);
         MemorySegment source=seg(input), destination=output.segment();
-        destination.copyFrom(source.asSlice(0, byteSize));
+        copyLogicalToContiguous(input, source, destination);
         int half=rotaryDimension/2, sequenceInt=Math.toIntExact(sequence);
         for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) for(int s=0;s<sequenceInt;s++) {
             double pos=positionIds[Math.toIntExact(b)*sequenceInt+s]/positionScale;
@@ -876,7 +876,7 @@ public final class CpuBackend implements ComputeBackend {
                 float cos=(float)Math.cos(angle), sin=(float)Math.sin(angle);
                 int first=isNeox?pair:pair*2, second=isNeox?pair+half:pair*2+1;
                 long fo=(row+first)*Float.BYTES, so=(row+second)*Float.BYTES;
-                float x=source.get(ValueLayout.JAVA_FLOAT,fo), y=source.get(ValueLayout.JAVA_FLOAT,so);
+                float x=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + first), y=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + second);
                 destination.set(ValueLayout.JAVA_FLOAT,fo,x*cos-y*sin);
                 destination.set(ValueLayout.JAVA_FLOAT,so,x*sin+y*cos);
             }
@@ -903,7 +903,7 @@ public final class CpuBackend implements ComputeBackend {
         long elements=input.numel();
         HostAccessibleStorage output=allocateOutput(Math.multiplyExact(elements, Float.BYTES));
         MemorySegment source=seg(input), destination=output.segment();
-        destination.copyFrom(source.asSlice(0, Math.multiplyExact(elements, Float.BYTES)));
+        copyLogicalToContiguous(input, source, destination);
         int half=rotaryDimension/2;
         for(long b=0;b<batch;b++) for(long h=0;h<heads;h++) for(long s=0;s<sequence;s++) {
             double pos=(posOffset+s)/positionScale;
@@ -913,7 +913,7 @@ public final class CpuBackend implements ComputeBackend {
                 float cos=(float)Math.cos(angle), sin=(float)Math.sin(angle);
                 int first=isNeox?pair:pair*2, second=isNeox?pair+half:pair*2+1;
                 long fo=(row+first)*Float.BYTES, so=(row+second)*Float.BYTES;
-                float x=source.get(ValueLayout.JAVA_FLOAT,fo), y=source.get(ValueLayout.JAVA_FLOAT,so);
+                float x=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + first), y=CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + second);
                 destination.set(ValueLayout.JAVA_FLOAT,fo,x*cos-y*sin);
                 destination.set(ValueLayout.JAVA_FLOAT,so,x*sin+y*cos);
             }
@@ -949,7 +949,7 @@ public final class CpuBackend implements ComputeBackend {
         HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
         MemorySegment source = seg(input);
         MemorySegment destination = output.segment();
-        destination.copyFrom(source.asSlice(0, Math.multiplyExact(elements, Float.BYTES)));
+        copyLogicalToContiguous(input, source, destination);
 
         int halfDim = headDim / 2;
         for (long b = 0; b < batch; b++) {
@@ -966,8 +966,8 @@ public final class CpuBackend implements ComputeBackend {
                         int second = isNeox ? pair + halfDim : pair * 2 + 1;
                         long firstOffset = (row + first) * Float.BYTES;
                         long secondOffset = (row + second) * Float.BYTES;
-                        float x = source.get(ValueLayout.JAVA_FLOAT, firstOffset);
-                        float y = source.get(ValueLayout.JAVA_FLOAT, secondOffset);
+                        float x = CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + first);
+                        float y = CpuTensorLayoutAccess.readLogical(source, input.shape().dims(), input.layout(), row + second);
                         destination.set(ValueLayout.JAVA_FLOAT, firstOffset, x * cos - y * sin);
                         destination.set(ValueLayout.JAVA_FLOAT, secondOffset, x * sin + y * cos);
                     }
@@ -1085,6 +1085,16 @@ public final class CpuBackend implements ComputeBackend {
             }
         }
         return out(input.shape(), output);
+    }
+
+    private static void copyLogicalToContiguous(
+            Tensor input, MemorySegment source, MemorySegment destination) {
+        long[] dimensions = input.shape().dims();
+        TensorLayout layout = input.layout();
+        for (long index = 0; index < input.numel(); index++) {
+            float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, index);
+            destination.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(index, Float.BYTES), value);
+        }
     }
 
     private static void validateBatchNormVector(Tensor tensor, long channels, String name) {

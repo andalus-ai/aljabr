@@ -198,4 +198,40 @@ class CpuRotaryEmbeddingTest {
         }
     }
 
+    @Test
+    void everyRoPEOverloadReadsNonZeroOffsetLogicalInput() {
+        CpuBackend backend = new CpuBackend();
+        Tensor backing = TensorFactory.of(new float[] {
+                -9f, -9f, -9f, -9f,
+                1f, 2f, 3f, 4f
+        }, backend, 1, 1, 2, 4);
+        Tensor input = null;
+        Tensor basic = null;
+        Tensor configured = null;
+        Tensor positioned = null;
+        try {
+            input = backend.slice(backing, new long[] {0, 0, 1, 0}, new long[] {1, 1, 1, 4});
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f}, input.toFloatArray(), 0f);
+
+            basic = backend.applyRoPE(input, 1, 10_000f, false);
+            configured = backend.applyRoPE(input, 1, 10_000f, 2, false, 1f);
+            positioned = backend.applyRoPE(input, 10_000f, 2, false, 1f, new long[] {1L});
+
+            float x0 = (float) (Math.cos(1.0) - 2 * Math.sin(1.0));
+            float y0 = (float) (Math.sin(1.0) + 2 * Math.cos(1.0));
+            float x1 = (float) (3 * Math.cos(0.01) - 4 * Math.sin(0.01));
+            float y1 = (float) (3 * Math.sin(0.01) + 4 * Math.cos(0.01));
+            assertArrayEquals(new float[] {x0, y0, x1, y1}, basic.toFloatArray(), 1e-5f);
+            assertArrayEquals(new float[] {x0, y0, 3f, 4f}, configured.toFloatArray(), 1e-5f);
+            assertArrayEquals(new float[] {x0, y0, 3f, 4f}, positioned.toFloatArray(), 1e-5f);
+        } finally {
+            if (positioned != null) positioned.release();
+            if (configured != null) configured.release();
+            if (basic != null) basic.release();
+            if (input != null) input.release();
+            backing.release();
+            backend.close();
+        }
+    }
+
 }
