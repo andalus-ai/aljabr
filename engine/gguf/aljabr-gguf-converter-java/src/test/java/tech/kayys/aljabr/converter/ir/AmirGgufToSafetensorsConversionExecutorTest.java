@@ -212,6 +212,47 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesQ2KBlockUsingFourBitPlanesAndPerGroupScaleAndMinimum() throws Exception {
+        byte[] block = new byte[84];
+        for (int i = 0; i < 16; i++) block[i] = (byte) ((i + 1) * 0x11);
+        java.util.Arrays.fill(block, 16, 80, (byte) 0xe4); // packed 2-bit values: 0, 1, 2, 3
+        block[81] = 0x3c; // fp16 d = 1
+        block[83] = 0x40; // fp16 dmin = 2
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q2_K", List.of(256L), source, 8L, block.length);
+        var model = model("q2_k", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("q2_k.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        assertEquals(-2.0f, values.getFloat(0 * Float.BYTES), 0.0f);
+        assertEquals(-4.0f, values.getFloat(16 * Float.BYTES), 0.0f);
+        assertEquals(-3.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        assertEquals(-4.0f, values.getFloat(48 * Float.BYTES), 0.0f);
+        assertEquals(0.0f, values.getFloat(64 * Float.BYTES), 0.0f);
+        assertEquals(0.0f, values.getFloat(80 * Float.BYTES), 0.0f);
+        assertEquals(7.0f, values.getFloat(96 * Float.BYTES), 0.0f);
+        assertEquals(8.0f, values.getFloat(112 * Float.BYTES), 0.0f);
+        assertEquals(-18.0f, values.getFloat(128 * Float.BYTES), 0.0f);
+        assertEquals(-20.0f, values.getFloat(144 * Float.BYTES), 0.0f);
+        assertEquals(-11.0f, values.getFloat(160 * Float.BYTES), 0.0f);
+        assertEquals(-12.0f, values.getFloat(176 * Float.BYTES), 0.0f);
+        assertEquals(0.0f, values.getFloat(192 * Float.BYTES), 0.0f);
+        assertEquals(0.0f, values.getFloat(208 * Float.BYTES), 0.0f);
+        assertEquals(15.0f, values.getFloat(224 * Float.BYTES), 0.0f);
+        assertEquals(16.0f, values.getFloat(240 * Float.BYTES), 0.0f);
+    }
+
+    @Test
     void dequantizesQ6KBlockUsingLowBitsHighBitsAndSubgroupScales() throws Exception {
         byte[] block = new byte[210];
         java.util.Arrays.fill(block, 192, 208, (byte) 1);
@@ -280,10 +321,10 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
-    void rejectsUnsupportedQuantizationWithoutCreatingOutput() throws Exception {
+    void rejectsUnsupportedQ3KQuantizationWithoutCreatingOutput() throws Exception {
         byte[] payload = new byte[84];
         Path source = writeContainer(payload);
-        var tensor = tensor("weight", "Q2_K", List.of(256L), source, 8L, payload.length);
+        var tensor = tensor("weight", "Q3_K", List.of(256L), source, 8L, payload.length);
         var model = model("q2", "llama", List.of(tensor));
         Path output = temporaryDirectory.resolve("unsupported.safetensors");
         assertThrows(java.io.IOException.class, () ->
