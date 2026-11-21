@@ -209,8 +209,11 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
     }
 
     private static long[] toDimensions(TensorDescriptor tensor) throws IOException {
+        // AMIR represents scalars with an empty shape. GGUF tensor descriptors
+        // use an explicit dimension vector, so encode a scalar as a one-element
+        // vector of length one while preserving its single-element payload.
         if (tensor.shape().isEmpty()) {
-            throw new IOException("GGUF conversion requires explicit tensor dimensions: " + tensor.name());
+            return new long[] {1L};
         }
         long[] dimensions = new long[tensor.shape().size()];
         for (int i = 0; i < dimensions.length; i++) dimensions[i] = tensor.shape().get(i);
