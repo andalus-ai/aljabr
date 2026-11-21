@@ -440,10 +440,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor mean(int dim, boolean keepDim) {
-        int axis = validateReductionAxis(dim);
-        if (shape.dim(axis) == 0) {
-            throw new IllegalArgumentException("Mean is undefined for an empty reduction dimension");
-        }
+        int axis = TensorOperationValidator.validateReduction(shape, dim, true).axis();
         return record(OpType.MEAN, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.mean(this, axis, keepDim));
     }
 
@@ -454,21 +451,9 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor sum(int dim, boolean keepDim) {
-        int axis = validateReductionAxis(dim);
+        int axis = TensorOperationValidator.validateReduction(shape, dim, false).axis();
         return record(OpType.SUM, new Tensor[] { this }, new Object[] { axis, keepDim }, backend.sum(this, axis, keepDim));
     }
-
-    private int validateReductionAxis(int dim) {
-        ensureOpen();
-        int rank = shape.rank();
-        int axis = dim < 0 ? rank + dim : dim;
-        if (rank == 0 || axis < 0 || axis >= rank) {
-            throw new IllegalArgumentException(
-                    "Reduction axis " + dim + " is out of range for tensor rank " + rank);
-        }
-        return axis;
-    }
-
 
     /**
      * Concatenates eager tensors and records a multi-input graph node when any
