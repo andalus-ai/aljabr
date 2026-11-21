@@ -25,7 +25,8 @@ public final class GrowingHeapKVCacheStorage implements KVCacheStorage {
 
     /** Creates storage with a small initial allocation, capped by the logical maximum. */
     public GrowingHeapKVCacheStorage(KVCacheLayout layout) {
-        this(layout, DEFAULT_INITIAL_POSITIONS);
+        this(layout, Math.min(DEFAULT_INITIAL_POSITIONS,
+                Objects.requireNonNull(layout, "layout").maxSequenceLength()));
     }
 
     /**
