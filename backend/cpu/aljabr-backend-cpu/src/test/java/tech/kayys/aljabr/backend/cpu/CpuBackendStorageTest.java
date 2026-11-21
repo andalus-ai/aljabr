@@ -986,7 +986,7 @@ class CpuBackendStorageTest {
 
     @Test
     void scalarUnaryOperationsAndDropoutReadTransposedOffsetViews() {
-        HostStorage storage = new HostStorage(99f, 1f, 4f, 9f, 16f);
+        HostStorage storage = new HostStorage(99f, 1f, 9f, 4f, 16f);
         DefaultTensor input = new DefaultTensor(
                 new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
