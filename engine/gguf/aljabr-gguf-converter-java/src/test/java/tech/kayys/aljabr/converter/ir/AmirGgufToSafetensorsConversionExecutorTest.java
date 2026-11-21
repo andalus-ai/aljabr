@@ -147,6 +147,71 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesQ4OneBlocksUsingScaleAndMinimum() throws Exception {
+        byte[] block = new byte[20];
+        block[1] = 0x3c;
+        block[3] = 0x40;
+        java.util.Arrays.fill(block, 4, block.length, (byte) 0x98);
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q4_1", List.of(32L), source, 8L, block.length);
+        var model = model("q4_1", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("q4_1.safetensors");
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+        byte[] file = Files.readAllBytes(output);
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 32 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < 16; i++) assertEquals(10.0f, values.getFloat(), 0.0f);
+        for (int i = 0; i < 16; i++) assertEquals(11.0f, values.getFloat(), 0.0f);
+    }
+
+    @Test
+    void dequantizesQ5ZeroBlocksIncludingHighBits() throws Exception {
+        byte[] block = new byte[22];
+        block[1] = 0x3c;
+        block[2] = 0x01;
+        block[4] = 0x01;
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q5_0", List.of(32L), source, 8L, block.length);
+        var model = model("q5_0", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("q5_0.safetensors");
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+        byte[] file = Files.readAllBytes(output);
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 32 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        assertEquals(0.0f, values.getFloat(), 0.0f);
+        for (int i = 1; i < 16; i++) assertEquals(-16.0f, values.getFloat(), 0.0f);
+        assertEquals(0.0f, values.getFloat(), 0.0f);
+        for (int i = 17; i < 32; i++) assertEquals(-16.0f, values.getFloat(), 0.0f);
+    }
+
+    @Test
+    void dequantizesQ5OneBlocksUsingScaleMinimumAndHighBits() throws Exception {
+        byte[] block = new byte[24];
+        block[1] = 0x3c;
+        block[3] = 0x40;
+        block[4] = 0x01;
+        block[6] = 0x01;
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q5_1", List.of(32L), source, 8L, block.length);
+        var model = model("q5_1", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("q5_1.safetensors");
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+        byte[] file = Files.readAllBytes(output);
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 32 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        assertEquals(18.0f, values.getFloat(), 0.0f);
+        for (int i = 1; i < 16; i++) assertEquals(2.0f, values.getFloat(), 0.0f);
+        assertEquals(18.0f, values.getFloat(), 0.0f);
+        for (int i = 17; i < 32; i++) assertEquals(2.0f, values.getFloat(), 0.0f);
+    }
+
+    @Test
     void requiresAcknowledgementForLossyDequantization() throws Exception {
         byte[] block = new byte[18];
         Path source = writeContainer(block);
