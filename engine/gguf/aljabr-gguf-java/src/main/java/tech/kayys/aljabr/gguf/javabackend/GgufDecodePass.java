@@ -148,7 +148,7 @@ final class GgufDecodePass {
             bestToken = GgufMetalBridge.decodeStepGreedy(pos, cfg.slidingWindow(), eps, x);
         }
         if (bestToken >= 0) {
-            GgufKvCacheSequenceLifecycle.completeDecode(cache, pos, cacheSession);
+            GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
             metalDecodeState.recordSuccessfulDecode();
             long tElapsed = System.nanoTime() - t0;
             if (GgufDecodeStep.isVerbose() && (pos % 10 == 0 || pos < 5)) {
@@ -537,7 +537,7 @@ final class GgufDecodePass {
             }
         }
 
-        GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
+        GgufKvCacheSequenceLifecycle.completeDecode(cache, pos, cacheSession);
 
         if (computeLogits && !logitsComputed) {
             float cap = cfg.finalLogitSoftcap();
