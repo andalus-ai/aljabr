@@ -46,6 +46,7 @@ public final class FunctionGemmaToolDeclaration {
 
     /** Renders one native FunctionGemma declaration without surrounding control tokens. */
     public String render() {
+        parameters.toMap();
         return "declaration:" + name + "{description:" + escaped(description)
                 + ",parameters:" + renderSchema(parameters) + "}";
     }
@@ -181,6 +182,7 @@ public final class FunctionGemmaToolDeclaration {
             enumValues.clear();
             for (Object value : values) {
                 validateLiteral(value);
+                if (!matchesType(value)) throw new IllegalArgumentException("Enum value does not match schema type " + type);
                 enumValues.add(value);
             }
             return this;
@@ -188,27 +190,31 @@ public final class FunctionGemmaToolDeclaration {
 
         public Schema constant(Object value) {
             validateLiteral(value);
+            if (!matchesType(value)) throw new IllegalArgumentException("Constant does not match schema type " + type);
             this.constant = value;
             this.hasConstant = true;
             return this;
         }
 
         public Schema minimum(Number value) {
+            requireNumericType("minimum");
             this.minimum = decimal(value, "minimum");
             return this;
         }
 
         public Schema maximum(Number value) {
+            requireNumericType("maximum");
             this.maximum = decimal(value, "maximum");
             return this;
         }
 
-        public Schema minLength(int value) { this.minLength = nonNegative(value, "minLength"); return this; }
-        public Schema maxLength(int value) { this.maxLength = nonNegative(value, "maxLength"); return this; }
-        public Schema minItems(int value) { this.minItems = nonNegative(value, "minItems"); return this; }
-        public Schema maxItems(int value) { this.maxItems = nonNegative(value, "maxItems"); return this; }
+        public Schema minLength(int value) { requireType(Type.STRING, "minLength"); this.minLength = nonNegative(value, "minLength"); return this; }
+        public Schema maxLength(int value) { requireType(Type.STRING, "maxLength"); this.maxLength = nonNegative(value, "maxLength"); return this; }
+        public Schema minItems(int value) { requireType(Type.ARRAY, "minItems"); this.minItems = nonNegative(value, "minItems"); return this; }
+        public Schema maxItems(int value) { requireType(Type.ARRAY, "maxItems"); this.maxItems = nonNegative(value, "maxItems"); return this; }
 
         public Schema pattern(String value) {
+            requireType(Type.STRING, "pattern");
             Objects.requireNonNull(value, "pattern");
             try {
                 Pattern.compile(value);
@@ -217,6 +223,38 @@ public final class FunctionGemmaToolDeclaration {
             }
             this.pattern = value;
             return this;
+        }
+
+        private void requireType(Type expected, String keyword) {
+            if (type != expected) throw new IllegalStateException(keyword + " is only valid on " + expected + " schemas");
+        }
+
+        private void requireNumericType(String keyword) {
+            if (type != Type.INTEGER && type != Type.NUMBER) {
+                throw new IllegalStateException(keyword + " is only valid on INTEGER or NUMBER schemas");
+            }
+        }
+
+        private boolean matchesType(Object value) {
+            if (value == null) return type == Type.NULL;
+            return switch (type) {
+                case OBJECT -> value instanceof Map<?, ?>;
+                case ARRAY -> value instanceof List<?>;
+                case STRING -> value instanceof String;
+                case INTEGER -> value instanceof Number number && isIntegral(number);
+                case NUMBER -> value instanceof Number;
+                case BOOLEAN -> value instanceof Boolean;
+                case NULL -> false;
+            };
+        }
+
+        private static boolean isIntegral(Number value) {
+            try {
+                new BigDecimal(value.toString()).toBigIntegerExact();
+                return true;
+            } catch (NumberFormatException | ArithmeticException exception) {
+                return false;
+            }
         }
 
         private Schema copy() {
@@ -240,6 +278,15 @@ public final class FunctionGemmaToolDeclaration {
         }
 
         private Map<String, Object> toMap() {
+            if (minimum != null && maximum != null && minimum.compareTo(maximum) > 0) {
+                throw new IllegalStateException("minimum must not exceed maximum");
+            }
+            if (minLength != null && maxLength != null && minLength > maxLength) {
+                throw new IllegalStateException("minLength must not exceed maxLength");
+            }
+            if (minItems != null && maxItems != null && minItems > maxItems) {
+                throw new IllegalStateException("minItems must not exceed maxItems");
+            }
             for (String name : required) {
                 if (!properties.containsKey(name)) {
                     throw new IllegalStateException("Required property is not declared: " + name);
