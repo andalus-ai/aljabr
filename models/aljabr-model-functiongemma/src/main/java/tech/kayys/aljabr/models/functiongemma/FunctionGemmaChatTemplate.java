@@ -50,6 +50,16 @@ public final class FunctionGemmaChatTemplate implements ModelChatTemplate {
         return content.toString();
     }
 
+    /** Formats typed declarations directly into the developer-turn body. */
+    public String formatDeveloperContent(String instructions, FunctionGemmaToolDeclaration... tools) {
+        Objects.requireNonNull(tools, "tools");
+        List<String> declarations = new java.util.ArrayList<>(tools.length);
+        for (FunctionGemmaToolDeclaration tool : tools) {
+            declarations.add(Objects.requireNonNull(tool, "tool").render());
+        }
+        return formatDeveloperContent(instructions, declarations);
+    }
+
     @Override
     public String format(List<Message> messages) {
         Objects.requireNonNull(messages, "messages");
