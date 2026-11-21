@@ -16,16 +16,6 @@ class CpuTransposeValidationTest {
 
     private final CpuBackend backend = new CpuBackend();
 
-    private DefaultTensor tensor(float... values) {
-        CpuBuffer buffer = new CpuBuffer((long) values.length * Float.BYTES);
-        for (int i = 0; i < values.length; i++) {
-            buffer.segment().set(ValueLayout.JAVA_FLOAT, (long) i * Float.BYTES, values[i]);
-        }
-        return new DefaultTensor(
-                new tech.kayys.aljabr.core.tensor.Shape(values.length == 6 ? 2 : values.length),
-                DType.F32, DeviceType.CPU, buffer, backend);
-    }
-
     @Test
     void transposeSwapsRectangularMatrixDimensionsAndValues() {
         DefaultTensor input = new DefaultTensor(
