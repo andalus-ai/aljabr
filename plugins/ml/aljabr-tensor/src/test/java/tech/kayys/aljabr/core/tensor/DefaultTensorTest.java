@@ -236,6 +236,59 @@ class DefaultTensorTest {
     }
 
     @Test
+    void integerArrayExportReadsOffsetContiguousLayout() {
+        CpuBuffer buffer = new CpuBuffer(5L * Integer.BYTES);
+        for (int i = 0; i < 5; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, (long) i * Integer.BYTES, i * 10);
+        }
+        TensorLayout layout = new TensorLayout(new Shape(3), new long[] {1}, 1);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(3), DType.I32, DeviceType.CPU, buffer, unusedBackend(), layout);
+        try {
+            assertArrayEquals(new int[] {10, 20, 30}, tensor.toIntArray());
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void integerArrayExportReadsTransposedStridedLayoutInLogicalOrder() {
+        CpuBuffer buffer = new CpuBuffer(6L * Integer.BYTES);
+        for (int i = 0; i < 6; i++) {
+            buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, (long) i * Integer.BYTES, i + 1);
+        }
+        TensorLayout transposed = new TensorLayout(new Shape(3, 2), new long[] {1, 3}, 0);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(3, 2), DType.I32, DeviceType.CPU, buffer, unusedBackend(), transposed);
+        try {
+            assertArrayEquals(new int[] {1, 4, 2, 5, 3, 6}, tensor.toIntArray());
+        } finally {
+            tensor.release();
+        }
+    }
+
+    @Test
+    void integerArrayExportRejectsNonI32AndOpaqueStorage() {
+        CpuBuffer floatBuffer = new CpuBuffer(Float.BYTES);
+        DefaultTensor floatTensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.CPU, floatBuffer, unusedBackend());
+        try {
+            assertThrows(UnsupportedOperationException.class, floatTensor::toIntArray);
+        } finally {
+            floatTensor.release();
+        }
+
+        DeviceOnlyStorage deviceStorage = new DeviceOnlyStorage(Integer.BYTES);
+        DefaultTensor deviceTensor = new DefaultTensor(
+                new Shape(1), DType.I32, DeviceType.METAL, deviceStorage, unusedBackend());
+        try {
+            assertThrows(UnsupportedOperationException.class, deviceTensor::toIntArray);
+        } finally {
+            deviceTensor.release();
+        }
+    }
+
+    @Test
     void itemReturnsActualScalarValue() {
         CpuBuffer buffer = new CpuBuffer(Float.BYTES);
         buffer.segment().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 3.5f);
