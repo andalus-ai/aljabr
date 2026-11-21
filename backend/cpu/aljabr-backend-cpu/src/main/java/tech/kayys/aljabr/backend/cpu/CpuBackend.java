@@ -471,24 +471,15 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor unsqueeze(Tensor a, int dim) {
-        long[] dims = a.shape().dims();
-        int rank = dims.length;
-        if (dim < 0)
-            dim += rank + 1;
-        long[] newDims = new long[rank + 1];
-        System.arraycopy(dims, 0, newDims, 0, dim);
-        newDims[dim] = 1;
-        System.arraycopy(dims, dim, newDims, dim + 1, rank - dim);
-        return reshape(a, newDims);
+        TensorOperationValidator.UnsqueezePlan plan =
+                TensorOperationValidator.validateUnsqueeze(a.shape(), dim);
+        return reshape(a, plan.outputShape().dims());
     }
 
     @Override
     public Tensor squeeze(Tensor a) {
-        long[] dims = a.shape().dims();
-        long[] newDims = java.util.Arrays.stream(dims).filter(d -> d != 1).toArray();
-        if (newDims.length == 0)
-            newDims = new long[] { 1 };
-        return reshape(a, newDims);
+        Shape outputShape = TensorOperationValidator.validateSqueeze(a.shape());
+        return reshape(a, outputShape.dims());
     }
 
     @Override
