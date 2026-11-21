@@ -38,7 +38,7 @@ class FunctionGemmaToolSchemaValidatorTest {
                 "properties", Map.of("query", Map.of("type", "STRING")));
         var result = validator.validate(Map.of("extra", true, "query", 42), schema);
         assertFalse(result.valid());
-        assertEquals(3, result.errors().size());
+        assertEquals(2, result.errors().size());
         assertTrue(result.errors().stream().anyMatch(e -> e.path().equals("$.query")));
         assertTrue(result.errors().stream().anyMatch(e -> e.path().equals("$.extra")));
     }
@@ -64,6 +64,18 @@ class FunctionGemmaToolSchemaValidatorTest {
                         "optional", Map.of("type", List.of("STRING", "NULL"))));
         assertTrue(validator.validate(Map.of("code", "ID-42"), schema).valid());
         assertFalse(validator.validate(Map.of("code", "bad", "optional", "x"), schema).valid());
+    }
+
+    @Test
+    void acceptsIntegralDecimalAndNullForDeclaredNullableType() {
+        var integerSchema = Map.<String, Object>of("type", "INTEGER");
+        assertTrue(validator.validate(Map.of("count", new BigDecimal("3.0")),
+                Map.of("type", "OBJECT", "properties", Map.of("count", integerSchema))).valid());
+
+        Map<String, Object> arguments = new java.util.LinkedHashMap<>();
+        arguments.put("optional", null);
+        assertTrue(validator.validate(arguments, Map.of("type", "OBJECT", "properties",
+                Map.of("optional", Map.of("type", List.of("STRING", "NULL"))))).valid());
     }
 
     @Test
