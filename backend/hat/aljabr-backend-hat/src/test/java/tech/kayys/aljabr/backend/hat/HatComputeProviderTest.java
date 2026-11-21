@@ -799,6 +799,12 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.split", Map.of(
                             "dtype", "F16", "rank", "2", "axis", "1", "parts", "2", "axis_size", "8")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
     void unaryElementwiseOperationsRequireF32ForCpuFallback() throws Exception {
         HatComputeProvider provider = new HatComputeProvider();
         provider.initialize(new ProviderContext("test", Map.of()));
