@@ -26,8 +26,8 @@ public final class FunctionGemmaToolDeclaration {
     private FunctionGemmaToolDeclaration(String name, String description, Schema parameters) {
         this.name = requireIdentifier(name, "tool name");
         this.description = requireText(description, "tool description");
-        this.parameters = Objects.requireNonNull(parameters, "parameters");
-        if (parameters.type != Type.OBJECT) {
+        this.parameters = Objects.requireNonNull(parameters, "parameters").copy();
+        if (this.parameters.type != Type.OBJECT) {
             throw new IllegalArgumentException("Tool parameters must have OBJECT type");
         }
     }
@@ -219,7 +219,32 @@ public final class FunctionGemmaToolDeclaration {
             return this;
         }
 
+        private Schema copy() {
+            Schema copy = new Schema(type);
+            copy.description = description;
+            properties.forEach((key, value) -> copy.properties.put(key, value.copy()));
+            copy.required.addAll(required);
+            copy.items = items == null ? null : items.copy();
+            copy.additionalProperties = additionalProperties;
+            copy.enumValues.addAll(enumValues);
+            copy.constant = constant;
+            copy.hasConstant = hasConstant;
+            copy.minimum = minimum;
+            copy.maximum = maximum;
+            copy.minLength = minLength;
+            copy.maxLength = maxLength;
+            copy.minItems = minItems;
+            copy.maxItems = maxItems;
+            copy.pattern = pattern;
+            return copy;
+        }
+
         private Map<String, Object> toMap() {
+            for (String name : required) {
+                if (!properties.containsKey(name)) {
+                    throw new IllegalStateException("Required property is not declared: " + name);
+                }
+            }
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("type", type.name());
             if (description != null) result.put("description", description);
@@ -231,7 +256,7 @@ public final class FunctionGemmaToolDeclaration {
             if (!required.isEmpty()) result.put("required", List.copyOf(required));
             if (items != null) result.put("items", items.toMap());
             if (additionalProperties != null) result.put("additionalProperties", additionalProperties);
-            if (!enumValues.isEmpty()) result.put("enum", List.copyOf(enumValues));
+            if (!enumValues.isEmpty()) result.put("enum", Collections.unmodifiableList(new ArrayList<>(enumValues)));
             if (hasConstant) result.put("const", constant);
             if (minimum != null) result.put("minimum", minimum);
             if (maximum != null) result.put("maximum", maximum);
