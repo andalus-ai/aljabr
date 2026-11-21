@@ -427,12 +427,19 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor transpose() {
+        ensureOpen();
+        TensorOperationValidator.validateTranspose(shape);
         return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[0], backend.transpose(this));
     }
 
     @Override
     public Tensor transpose(int d0, int d1) {
-        return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[] { d0, d1 }, backend.transpose(this, d0, d1));
+        ensureOpen();
+        TensorOperationValidator.TransposePlan plan =
+                TensorOperationValidator.validateTranspose(shape, d0, d1);
+        return record(OpType.TRANSPOSE, new Tensor[] { this },
+                new Object[] { plan.axis0(), plan.axis1() },
+                backend.transpose(this, plan.axis0(), plan.axis1()));
     }
 
     @Override

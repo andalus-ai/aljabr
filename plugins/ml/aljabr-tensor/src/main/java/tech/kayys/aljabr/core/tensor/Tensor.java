@@ -278,8 +278,14 @@ public interface Tensor extends AutoCloseable {
 
     Tensor squeeze();
 
+    /** Swaps the final two dimensions. The tensor must have rank at least two. */
     Tensor transpose();
 
+    /**
+     * Swaps two dimensions. Negative axes count from the final dimension
+     * (for example, {@code -1} is the final axis). Both axes must be in
+     * {@code [-rank, rank)}; using the same axis is a valid no-op.
+     */
     Tensor transpose(int dim0, int dim1);
 
     Tensor softmax(int dim);
