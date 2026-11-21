@@ -1239,7 +1239,7 @@ public final class CpuBackend implements ComputeBackend {
         Shape shape = a.shape();
         long elements = shape.numel();
         HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, Float.BYTES));
-        MemorySegment source = seg(a), destination = output.segment();
+        MemorySegment destination = output.segment();
         CpuTensorLayoutAccess.unary(a, destination, elements,
                 (src, dst, count) -> {
                     for (long index = 0; index < count; index++) {
