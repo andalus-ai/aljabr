@@ -13,7 +13,7 @@ import java.util.Objects;
  * 1/255; bicubic antialias filtering can produce small values outside [0,1],
  * so finite overshoot is retained exactly as in torchvision. Patch ordering
  * is row-major with channels-last values within each patch. Padding positions
- * are exactly (-1,-1).</p>
+ * are exactly (-1,-1) and form a contiguous suffix.</p>
  *
  * <p>Resizing and RGB decoding are intentionally outside this adapter. It
  * accepts processor-produced patch tensors without introducing an image
@@ -48,7 +48,9 @@ public final class EmbeddingGemma2VisionProcessorOutput {
             if (numSoftTokensPerImage[image] <= 0) {
                 throw new IllegalArgumentException("numSoftTokensPerImage[" + image + "] must be positive");
             }
-            boolean hasValid = false;
+            int validPatchCount = 0;
+            int maxX = -1;
+            boolean paddingStarted = false;
             for (int patch = 0; patch < patchCount; patch++) {
                 float[] pixels = pixelValues[image][patch];
                 int[] position = imagePositionIds[image][patch];
@@ -69,11 +71,19 @@ public final class EmbeddingGemma2VisionProcessorOutput {
                 if (!padding && (position[0] < 0 || position[1] < 0)) {
                     throw new IllegalArgumentException("padding position must be exactly (-1,-1)");
                 }
-                hasValid |= !padding;
+                if (padding) {
+                    paddingStarted = true;
+                } else {
+                    if (paddingStarted) {
+                        throw new IllegalArgumentException("valid patch positions must precede the padded suffix");
+                    }
+                    validPatchCount++;
+                    maxX = Math.max(maxX, position[0]);
+                }
                 this.pixelValues[image][patch] = pixels.clone();
                 this.imagePositionIds[image][patch] = position.clone();
             }
-            if (!hasValid) throw new IllegalArgumentException("image " + image + " has no valid patches");
+            validateGeometry(image, patchCount, validPatchCount, maxX, numSoftTokensPerImage[image]);
         }
         this.numSoftTokensPerImage = numSoftTokensPerImage.clone();
     }
@@ -84,6 +94,40 @@ public final class EmbeddingGemma2VisionProcessorOutput {
     public float[][][] pixelValues() { return copy(pixelValues); }
     public int[][][] imagePositionIds() { return copy(imagePositionIds); }
     public int[] numSoftTokensPerImage() { return numSoftTokensPerImage.clone(); }
+
+    private void validateGeometry(
+            int image, int paddedPatchCount, int validPatchCount, int maxX, int softTokenCount) {
+        if (validPatchCount == 0) {
+            throw new IllegalArgumentException("image " + image + " has no valid patches");
+        }
+        if (validPatchCount % softTokenCount != 0) {
+            throw new IllegalArgumentException("image " + image
+                    + " patch count is not divisible by its declared soft-token count");
+        }
+        int poolingArea = validPatchCount / softTokenCount;
+        int poolingKernel = (int) Math.sqrt(poolingArea);
+        if (poolingKernel <= 0 || poolingKernel * poolingKernel != poolingArea
+                || paddedPatchCount % poolingArea != 0) {
+            throw new IllegalArgumentException("image " + image
+                    + " patch and soft-token counts do not describe a square pooling grid");
+        }
+        if (maxX == Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("image " + image + " patch grid width overflows an integer");
+        }
+        int gridWidth = maxX + 1;
+        if (validPatchCount % gridWidth != 0) {
+            throw new IllegalArgumentException("image " + image + " valid patches do not form a rectangular grid");
+        }
+        for (int patch = 0; patch < validPatchCount; patch++) {
+            int expectedX = patch % gridWidth;
+            int expectedY = patch / gridWidth;
+            int[] position = imagePositionIds[image][patch];
+            if (position[0] != expectedX || position[1] != expectedY) {
+                throw new IllegalArgumentException("image " + image
+                        + " patch positions must form a row-major rectangular grid; invalid patch " + patch);
+            }
+        }
+    }
 
     private static int requireNonEmpty(float[][] values, String name) {
         if (values == null || values.length == 0) throw new IllegalArgumentException(name + " must be non-empty");

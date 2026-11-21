@@ -314,6 +314,14 @@ public interface Tensor extends AutoCloseable {
      */
     Tensor sum(int dim, boolean keepDim);
 
+    /**
+     * Splits this tensor into {@code parts} equal, non-empty chunks along {@code axis}.
+     *
+     * <p>Negative axes count from the final dimension ({@code -1} is the last
+     * axis). The axis size must be positive and evenly divisible by the positive
+     * part count; requesting more parts than elements is invalid. The returned
+     * tensors preserve chunk order.</p>
+     */
     java.util.List<Tensor> split(int axis, int parts);
 
     Tensor layerNorm(long[] normalizedShape, Tensor weight, Tensor bias, float eps);

@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.models.functiongemma;
 
+import tech.kayys.aljabr.core.tool.ToolDeclaration;
 import tech.kayys.aljabr.spi.Message;
 import tech.kayys.aljabr.spi.tokenizer.ModelChatTemplate;
 
@@ -51,11 +52,12 @@ public final class FunctionGemmaChatTemplate implements ModelChatTemplate {
     }
 
     /** Formats typed declarations directly into the developer-turn body. */
-    public String formatDeveloperContent(String instructions, FunctionGemmaToolDeclaration... tools) {
+    public String formatDeveloperContent(String instructions, ToolDeclaration... tools) {
         Objects.requireNonNull(tools, "tools");
+        FunctionGemmaToolDeclarationRenderer renderer = new FunctionGemmaToolDeclarationRenderer();
         List<String> declarations = new java.util.ArrayList<>(tools.length);
-        for (FunctionGemmaToolDeclaration tool : tools) {
-            declarations.add(Objects.requireNonNull(tool, "tool").render());
+        for (ToolDeclaration tool : tools) {
+            declarations.add(renderer.render(Objects.requireNonNull(tool, "tool")));
         }
         return formatDeveloperContent(instructions, declarations);
     }

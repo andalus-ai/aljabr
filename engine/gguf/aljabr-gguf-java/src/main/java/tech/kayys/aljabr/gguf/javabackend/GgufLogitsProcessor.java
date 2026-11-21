@@ -38,13 +38,10 @@ final class GgufLogitsProcessor {
         execution.dispatchMatVec(outputWeight, normalizedState, logits);
         long projectionEnd = System.nanoTime();
         if (softcap > 0.0f) {
-            // Prefer the GPU kernel; retain the numerically equivalent Java fallback.
+            // Prefer the GPU kernel; retain the shared Java fallback.
             boolean gpuDone = GgufMetalBridge.softcapLogits(logits, softcap);
             if (!gpuDone) {
-                float inverseSoftcap = 1.0f / softcap;
-                for (int i = 0; i < logits.length; i++) {
-                    logits[i] = softcap * (float) Math.tanh(logits[i] * inverseSoftcap);
-                }
+                applySoftcap(logits, softcap);
             }
         }
         long softcapEnd = System.nanoTime();
@@ -75,11 +72,26 @@ final class GgufLogitsProcessor {
         GGUFVectorOps.rmsNorm(hiddenStates, hiddenOffset, outputNorm,
                 normalizedState, 0, dimension, epsilon);
         execution.dispatchMatVec(outputWeight, normalizedState, logits);
-        if (softcap > 0.0f) {
-            float inverseSoftcap = 1.0f / softcap;
-            for (int i = 0; i < logits.length; i++) {
-                logits[i] = softcap * (float) Math.tanh(logits[i] * inverseSoftcap);
-            }
+        applySoftcap(logits, softcap);
+    }
+
+    /**
+     * Applies the GGUF final-logit softcap in place. A zero cap is a no-op;
+     * enabled caps must be finite and positive.
+     */
+    static void applySoftcap(float[] logits, float softcap) {
+        if (logits == null) {
+            throw new IllegalArgumentException("logits must not be null");
+        }
+        if (!Float.isFinite(softcap) || softcap < 0.0f) {
+            throw new IllegalArgumentException("softcap must be finite and non-negative, got " + softcap);
+        }
+        if (softcap == 0.0f) {
+            return;
+        }
+        float inverseSoftcap = 1.0f / softcap;
+        for (int i = 0; i < logits.length; i++) {
+            logits[i] = softcap * (float) Math.tanh(logits[i] * inverseSoftcap);
         }
     }
 
