@@ -16,6 +16,30 @@ class TensorOperationValidatorTest {
 
 
     @Test
+    void reshapeRequiresAnExplicitNonNegativeShapeWithTheSameElementCount() {
+        Shape output = TensorOperationValidator.validateReshape(new Shape(2, 3, 4), 4, 6);
+        assertThat(output.dims()).containsExactly(4, 6);
+
+        Shape scalar = TensorOperationValidator.validateReshape(new Shape(1), new long[0]);
+        assertThat(scalar.rank()).isZero();
+        Shape empty = TensorOperationValidator.validateReshape(new Shape(2, 0, 3), 0, 6);
+        assertThat(empty.numel()).isZero();
+
+        assertThatThrownBy(() -> TensorOperationValidator.validateReshape(new Shape(2, 3), 4, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("reshape must preserve the number of elements: input=6, output=8");
+        assertThatThrownBy(() -> TensorOperationValidator.validateReshape(new Shape(2, 3), 3, -1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Tensor dimensions must be non-negative");
+        assertThatThrownBy(() -> TensorOperationValidator.validateReshape(new Shape(2, 3), 2, 2, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("reshape must preserve the number of elements");
+        assertThatThrownBy(() -> TensorOperationValidator.validateReshape(new Shape(2, 3), Long.MAX_VALUE, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("element count overflows long");
+    }
+
+    @Test
     void reductionNormalizesNegativeAxisAndPreservesReductionSize() {
         TensorOperationValidator.ReductionPlan plan = TensorOperationValidator.validateReduction(
                 new Shape(2, 3, 4), -1, false);
