@@ -64,6 +64,14 @@ public record GraphDescriptor(
                 if (!regionsById.containsKey(parent))
                     throw new IllegalArgumentException("unknown parent control-flow region: " + parent);
             });
+            Set<String> ancestors = new HashSet<>();
+            ControlFlowRegion current = region;
+            while (current.parentRegionId().isPresent()) {
+                String parentId = current.parentRegionId().orElseThrow();
+                if (!ancestors.add(parentId))
+                    throw new IllegalArgumentException("cyclic control-flow region nesting: " + region.id());
+                current = regionsById.get(parentId);
+            }
         }
     }
 
