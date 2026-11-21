@@ -2,6 +2,7 @@ package tech.kayys.aljabr.models.embeddinggemma2.vision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -129,7 +130,7 @@ class EmbeddingGemma2VisionImageProcessorTest {
             int actualPatches = (size[0] / 16) * (size[1] / 16);
             assertEquals(0, actualPatches % 9);
             assertEquals(budgets[index] * 9, processor.maxPatches());
-            assertEquals(true, actualPatches <= processor.maxPatches());
+            assertTrue(actualPatches <= processor.maxPatches());
         }
     }
 
