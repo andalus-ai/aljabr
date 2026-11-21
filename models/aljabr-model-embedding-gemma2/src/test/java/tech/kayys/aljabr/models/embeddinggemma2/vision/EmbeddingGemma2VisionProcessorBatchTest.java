@@ -49,12 +49,11 @@ class EmbeddingGemma2VisionProcessorBatchTest {
     @Test
     void rejectsProcessorMetadataWhenItDoesNotMatchValidPooledTokens() {
         var tower = tower();
-        var processorOutput = new EmbeddingGemma2VisionProcessorOutput(
-                new float[][][]{{{0.5f, 0.5f, 0.5f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}}},
-                new int[][][]{{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}}},
-                new int[]{2});
-
-        assertThrows(IllegalArgumentException.class, () -> tower.encodeAndProject(processorOutput));
+        assertThrows(IllegalArgumentException.class, () ->
+                new EmbeddingGemma2VisionProcessorOutput(
+                        new float[][][]{{{0.5f, 0.5f, 0.5f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}}},
+                        new int[][][]{{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}}},
+                        new int[]{2}));
     }
 
     @Test
