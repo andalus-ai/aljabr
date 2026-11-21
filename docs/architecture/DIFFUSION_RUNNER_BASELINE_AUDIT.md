@@ -1,96 +1,251 @@
-# Diffusion Runner Baseline Audit
+# Diffusion Model Architecture and Runner Roadmap
 
-**Status:** source audit; no runtime behavior changed  
-**Scope:** `:models:aljabr-model-common` on the default branch at audit time  
-**Purpose:** establish a correctness-first baseline before replacing the current diffusion path.
+**Status:** architecture guidance and implementation roadmap  
+**Scope:** Aljabr diffusion model ecosystem  
+**Java baseline:** JDK 25  
+**Last reviewed:** 2026-11-21
 
-## Executive summary
+## 1. Executive direction
 
-The repository contains diffusion-related building blocks, but the current Stable Diffusion path is a scaffold, not a usable pretrained-model inference pipeline. The most urgent issue is a deterministic runtime failure in the generic DDPM sampler. The Stable Diffusion pipeline also uses placeholder scheduler coefficients and dummy text embeddings, while the current VAE is a small fully connected educational VAE rather than a spatial latent-diffusion VAE.
+Diffusion is a first-class model domain in Aljabr. Its shared mathematics and execution contracts belong in a dedicated diffusion subsystem, while model-family architectures and their checkpoint conventions belong in independently installable family modules.
 
-Do not advertise this implementation as Stable Diffusion-compatible until model loading, tokenizer/text encoder, architecture fidelity, scheduler math, and end-to-end numerical tests are in place.
+Do not keep the complete diffusion implementation inside `:models:aljabr-model-common`. That module is a shared model layer, not the permanent home for Stable Diffusion, FLUX, SD3, or future generative-image architectures.
 
-## Current source inventory
+**Core principle: model families are pluggable; computational primitives are shared.**
 
-| Source | Current role | Audit finding |
+Aljabr remains the compute and model-execution framework. AQLI may consume diffusion APIs for serving, but diffusion modules must not depend on AQLI. Tafkir may reuse shared training primitives without owning inference model-family implementations.
+
+## 2. Architectural boundaries
+
+The diffusion subsystem is organized into five responsibility layers:
+
+1. **Diffusion API:** stable public contracts for model families, pipeline requests/results, conditioning, latent state, scheduler behavior, progress, cancellation and model capabilities.
+2. **Diffusion core:** family-neutral orchestration primitives, noise/latent utilities, prediction semantics, timestep/sigma representations and reusable execution helpers.
+3. **Shared components:** scheduler implementations, VAE/autoencoder components, conditioning abstractions, image preprocessing/postprocessing and reusable attention/transformer blocks where their contracts are genuinely shared.
+4. **Model families:** architecture-specific pipelines, configs, denoisers, conditioning composition, weight mapping and checkpoint conventions.
+5. **Compute backends:** existing Aljabr backend SPI and tensor/operator implementations. Diffusion must not create its own CPU/Metal/CUDA backend hierarchy.
+
+Keep the boundaries explicit. A shared class belongs in diffusion core only when it is independent of a particular family and has stable semantics. Similar-looking operations are not automatically interchangeable: for example, a U-Net epsilon-prediction model and a flow-prediction MMDiT model have different denoising/integration contracts.
+
+## 3. Proposed Gradle module organization
+
+The following is the target logical layout. Introduce modules incrementally when there is a concrete implementation and test suite; do not create empty projects for every future family.
+
+```text
+models/
+  diffusion/
+    aljabr-diffusion-api/
+    aljabr-diffusion-core/
+
+    schedulers/
+      aljabr-diffusion-scheduler-api/
+      aljabr-diffusion-scheduler-ddim/
+      aljabr-diffusion-scheduler-ddpm/
+      aljabr-diffusion-scheduler-euler/
+      aljabr-diffusion-scheduler-heun/
+      aljabr-diffusion-scheduler-dpm-solver/
+      aljabr-diffusion-scheduler-flow-matching/
+
+    components/
+      aljabr-diffusion-vae/
+      aljabr-diffusion-conditioning/
+      aljabr-diffusion-image-io/
+
+    families/
+      aljabr-diffusion-stable/
+      aljabr-diffusion-sdxl/
+      aljabr-diffusion-sd3/
+      aljabr-diffusion-flux/
+      aljabr-diffusion-pixart/
+      aljabr-diffusion-kandinsky/
+```
+
+Names are illustrative until aligned with the repository's published artifact naming conventions. Avoid both extremes: one monolithic diffusion module and a project for every small class. A module should represent a meaningful dependency, release, ownership or optional-installation boundary.
+
+### 3.1 Module responsibilities
+
+| Module | Owns | Must not own |
 |---|---|---|
-| `models/.../DDPM.java` | Generic DDPM training and sampling | Sampling dimension is initialized to -1, making allocation/shape invalid; schedule constructor does not validate timestep count. |
-| `models/.../StableDiffusionPipeline.java` | Text-to-image orchestration | Hard-coded 1000-step placeholder alpha cumulative products; fixed 4x64x64 latent; unseeded random initialization; fixed 0.02 subtraction masquerading as scheduler; no cancellation; no model/config-driven latent scaling. |
-| `models/.../CLIP.java` | Text conditioning | `encode(String)` returns deterministic hash-seeded random values; it does not tokenize or execute the registered transformer. |
-| `models/.../UNet2DConditional.java` | Conditional denoiser | Source explicitly describes a simplified scaffold, not a complete Stable Diffusion UNet. Its forward contract validates rank/backend/dimensions, but that does not establish checkpoint compatibility. |
-| `models/.../VAE.java` | Generic educational VAE | Fully connected vector VAE with sigmoid output; not the convolutional spatial latent VAE required by Stable Diffusion. |
-| `models/.../ResnetBlock2D.java`, `SpatialTransformer.java` | UNet building blocks | Require separate architecture/shape/numerical parity audit before checkpoint loading can be claimed. |
+| `aljabr-diffusion-api` | Public family-neutral contracts and immutable request/config/result types | Concrete scheduler math, family architectures, backend implementations |
+| `aljabr-diffusion-core` | Pipeline orchestration primitives, latent/noise utilities, common prediction and execution semantics | Stable/FLUX-specific assumptions |
+| `aljabr-diffusion-scheduler-api` | Scheduler contracts, timestep/sigma schedule values and prediction/integration metadata | DDIM-specific equations |
+| Scheduler implementation modules | Their named algorithm, configuration validation, deterministic math and reference tests | Model-family checkpoint loading or device backend selection |
+| `aljabr-diffusion-vae` | Reusable spatial autoencoder interfaces and implementations such as AutoencoderKL | Stable/FLUX pipeline orchestration |
+| `aljabr-diffusion-conditioning` | Conditioning composition and reusable text/image conditioning contracts | A specific tokenizer vocabulary or family-specific encoder topology |
+| Family modules | Family pipeline, architecture/config, component graph, weight mapping, conditioning assembly and family-specific validation | Duplicated tensor math, private backend stacks, AQLI serving policy |
+| Image I/O module | Image preprocessing, normalization and output conversion | Model-family denoising logic |
 
-## Confirmed correctness and compatibility gaps
+### 3.2 Family modules and optional dependencies
 
-### P0 — DDPM sampler cannot produce a valid sample
+- **Stable Diffusion:** classic latent diffusion with conditional U-Net, CLIP text conditioning, spatial VAE and supported discrete schedulers. SD 1.x, SD 2.x and inpainting variants should be configuration/variant boundaries where topology is truly compatible; do not claim compatibility from a shared class name.
+- **SDXL:** dual text encoders, pooled embeddings, size/crop conditioning and its own U-Net/configuration/weight mapping. It must not be treated as a flag on an SD 1.x pipeline unless parity proves that abstraction.
+- **SD3:** MMDiT-style denoiser and its text-conditioning composition, including the family-specific encoder combination and flow-oriented sampling semantics.
+- **FLUX:** MMDiT/transformer denoiser, joint text/image sequence handling, family-specific latent packing and guidance inputs, with flow-matching integration. FLUX is not Stable Diffusion with a different scheduler.
+- **PixArt, Kandinsky and future families:** independently added when architecture, weights and tests justify a module.
 
-In `DDPM.sample(int batchSize)`, the local dimension is assigned `int D = (int) 0 - 1`. This yields -1, then allocates an array with a negative length and later constructs invalid tensor dimensions. The constructor also accepts invalid timestep counts; the linear schedule divides by `T - 1`, so `T <= 1` needs explicit rejection.
+A consumer that needs only Stable Diffusion should not transitively install FLUX, SD3 or every other family. Family implementations should be independently resolvable artifacts and register optional providers without making the API/core depend on every family.
 
-**Remediation:** require a configured positive sample dimension, validate `batchSize` and `timesteps >= 2`, and add deterministic seeded sampling tests. Keep this generic vector DDPM separate from image latent-diffusion orchestration.
+## 4. Scheduler contract: discrete diffusion and flow matching
 
-### P0 — Stable Diffusion scheduler is mathematically a placeholder
+The scheduler abstraction must not be DDIM-centric. A single generic `step(modelOutput, timestep, sample)` signature is insufficient if it silently assumes every model predicts epsilon in an alpha/beta discrete process.
 
-The pipeline initializes `alphasCumprod[i]` using `pow(0.999f, i)` rather than loading/constructing the checkpoint's configured beta schedule. The denoising update subtracts `noise * 0.02` regardless of timestep, prediction type, sigma/alpha parameterization, or scheduler configuration. The loop's integer timestep mapping is not a scheduler implementation.
+The scheduler API should represent, explicitly and without forcing one family of equations:
 
-**Remediation:** introduce a standalone scheduler contract and immutable schedule/config values; implement and test DDIM first against reference equations. Support epsilon prediction explicitly before adding v-prediction or sample prediction. Do not silently infer scheduler behavior from model family names.
+- Schedule construction and immutable inference schedule values.
+- Discrete timesteps and continuous sigma/time values.
+- Model prediction semantics, such as epsilon, velocity, sample, or flow.
+- Scheduler/integrator family and required model-output interpretation.
+- Per-step inputs and outputs, including any scheduler state required by multistep methods.
+- Deterministic seed/noise behavior where stochastic sampling is used.
+- Configuration validation and terminal-step behavior.
 
-### P0 — Text conditioning is not real CLIP inference
+Keep algorithm-specific implementations independent and test each against reference values. DDIM/DDPM and Euler/Heun/DPM-Solver have distinct numerical behavior; flow-matching schedulers must not be shoehorned into alpha-cumprod-only contracts. Family compatibility should be explicit and validated before the first denoising step.
 
-`CLIP.encode(String)` explicitly creates random values from the prompt hash. The registered transformer is not invoked by this method and no tokenizer is present in this call path.
+## 5. Pluggable model-family provider SPI
 
-**Remediation:** separate tokenizer from text encoder; make the pipeline accept validated conditioning tensors initially. Add a real tokenizer/encoder integration only when vocabulary, special tokens, attention mask, positional embeddings, and checkpoint weights are available.
+The API may expose a small provider contract so optional family modules can be discovered without static dependencies. A conceptual shape is:
 
-### P0 — Current VAE is not a Stable Diffusion VAE
+```java
+public interface DiffusionModelProvider {
+    String modelFamily();
 
-The existing `VAE` is an MLP with vector input/output and sigmoid reconstruction. Stable Diffusion requires a spatial convolutional encoder/decoder, latent distribution handling, scaling factor, and correct image normalization.
+    boolean supports(ModelDescriptor descriptor);
 
-**Remediation:** do not adapt the MLP VAE by renaming it. Introduce a distinct spatial AutoencoderKL implementation with explicit encode/decode contracts and checkpoint configuration.
+    DiffusionModel create(
+        DiffusionModelConfig config,
+        DiffusionComponents components
+    );
+}
+```
 
-### P1 — UNet scaffold is not checkpoint-compatible
+This is illustrative, not a commitment to this exact public signature. Finalize it only after the model descriptor, weight-loading and component-lifecycle contracts are audited.
 
-The UNet class documents itself as simplified. It has a fixed small number of blocks and attention stages. Existing tests exercise backend ownership and input validation, not full forward parity or loading a real SD checkpoint.
+Use Java `ServiceLoader` as an optional discovery mechanism when it fits the existing Aljabr provider conventions. Keep direct dependency injection/explicit registration available for deterministic tests and embedded use. Provider discovery must not become a hidden global mutable registry.
 
-**Remediation:** preserve the current class as an experimental scaffold until a configuration-driven block graph, skip topology, attention layout, normalization, time embedding, and weight mapping are verified.
+Provider rules:
 
-## Recommended module boundaries
+- A family module depends inward on diffusion API/core and Aljabr tensor/model APIs.
+- API/core never depends on a family implementation.
+- A provider declares supported family/config/checkpoint traits and rejects unsupported descriptors with actionable diagnostics.
+- Provider creation validates required components, scheduler compatibility, latent shape and conditioning requirements.
+- Model weights and tokenizer artifacts are resolved through Aljabr's existing format/loading contracts; family modules own mapping, not duplicate parsers.
+- Backend choice remains an Aljabr execution concern and is injected through existing compute/tensor contracts.
 
-Keep the first implementation inside the existing model-family ownership unless the repository already has a stable generative-model SPI suitable for extraction. Avoid creating a parallel runtime or introducing a dependency on AQLI.
+## 6. Dependency direction and optionality
 
-Proposed responsibilities:
+The dependency graph must point inward:
 
-- **Diffusion API:** generation request/result, progress, cancellation, seed and validation.
-- **Scheduler:** training/inference timestep setup and one mathematically defined update step.
-- **Conditioning:** tokenization and text encoder contracts; positive/negative conditioning.
-- **Denoiser:** architecture-specific UNet/DiT forward contract.
-- **Latent autoencoder:** encode/decode and latent scaling.
-- **Pipeline:** orchestrates these components and owns no model-family-specific scheduler math.
-- **Backend:** all tensor execution remains on the selected Aljabr backend; avoid CPU round-trips in the denoising loop.
+```text
+Application / AQLI / user code
+          |
+          v
+Optional family module (Stable / SDXL / SD3 / FLUX / ...)
+          |
+          +------> diffusion core
+          +------> diffusion API
+          +------> shared components (VAE / conditioning / scheduler impl)
+          |
+          v
+Aljabr model, tensor, NN and operator APIs
+          |
+          v
+Aljabr backend SPI and backend implementations
+```
 
-## Sequenced implementation plan
+Required rules:
 
-1. **This audit:** record actual baseline and prevent false compatibility claims.
-2. **DDPM correctness:** repair generic vector DDPM dimension/configuration defects with deterministic tests.
-3. **Scheduler SPI + DDIM:** introduce independently testable scheduler math and reference-value tests.
-4. **Stable Diffusion pipeline contract:** inject scheduler, denoiser, conditioning tensors, latent initializer, and decoder; add cancellation and seed.
-5. **Spatial AutoencoderKL:** implement and test encode/decode shape and scaling semantics.
-6. **Checkpoint-backed CLIP/tokenizer and UNet:** only claim SD 1.x after real weight mapping and reference parity.
-7. **Performance:** device-resident latents, reusable workspaces, graph reuse, fused guidance, and backend kernels after correctness.
+- No diffusion API/core dependency on AQLI, Tafkir, server frameworks or a specific family.
+- No mandatory dependency on every family module.
+- No duplicated tensor, memory ownership, backend selection or native integration layer.
+- No model-name string conditionals in generic orchestration where a typed capability/configuration can express the requirement.
+- No implicit CPU round-trips in the denoising loop.
+- Family configs remain independent of concrete hardware backends.
+- Optional provider absence must produce an actionable unsupported-family diagnostic.
+- Avoid circular dependencies between schedulers, components and family modules.
 
-## Acceptance criteria for a real SD 1.x claim
+## 7. Migration from the current source layout
 
-- Loads a known SD 1.x checkpoint/config without Python or LibTorch at inference time.
-- Uses actual tokenizer and CLIP weights; no synthetic embeddings.
-- Uses actual spatial VAE weights and latent scaling.
-- Matches reference scheduler timestep/alpha values and deterministic update outputs within documented tolerances.
-- Matches denoiser intermediate tensors against a trusted reference on a small fixture.
-- Reproducible output for a fixed seed and deterministic backend mode.
-- No hidden CPU tensor conversions in the denoising loop.
-- End-to-end image generation test is separated from fast unit tests and does not require network access in normal CI.
+The repository currently has diffusion classes under `:models:aljabr-model-common`. The following migration keeps the public surface deliberate and avoids a risky all-at-once rewrite.
 
-## Non-goals for this audit PR
+| Existing capability | Target ownership | Migration guidance |
+|---|---|---|
+| `DiffusionScheduler`, `DiffusionSchedule`, `SchedulerStepParameters` | Scheduler API / diffusion API | Audit and generalize semantics before moving; preserve a compatibility adapter if public |
+| `DDIMScheduler` | DDIM scheduler implementation | Keep DDIM equations and tests isolated from family pipelines |
+| `StableDiffusionPipeline` | Stable family module | Move only after API/core contracts and component ownership are established |
+| `AutoencoderKL` | Shared VAE component module | Keep generic spatial AutoencoderKL separate from family-specific checkpoint configs/mapping |
+| `CLIP` and tokenizer integration | Conditioning component + family integration | Separate tokenizer, encoder and prompt/conditioning assembly; no synthetic embeddings in a compatibility claim |
+| `UNet2DConditional` and SD blocks | Stable family module | Preserve as experimental until configuration fidelity, checkpoint mapping and reference parity are demonstrated |
+| Generic latent/noise helpers | Diffusion core | Move only if family-neutral and backend/tensor ownership is explicit |
+| Existing vector `VAE` and generic `DDPM` | Generic model/training scope | Do not relabel them as image latent-diffusion implementations |
 
-- No speculative new public API.
-- No new backend or external runtime dependency.
-- No broad rewrite of UNet/VAE before contracts and parity fixtures exist.
-- No claim that SDXL, SD3, FLUX, video diffusion, or image-to-image is supported.
+Do not make `:models:aljabr-model-common` depend on all diffusion family modules. During migration, it may temporarily retain deprecated adapters, but new diffusion features should be added to the dedicated modules.
+
+## 8. Current implementation baseline and compatibility claims
+
+The initial source audit identified these issues:
+
+- The original `DDPM.sample` path had an invalid hard-coded sample dimension and insufficient timestep validation. Keep generic vector DDPM separate from image latent diffusion and retain regression tests for its configuration.
+- The original Stable Diffusion pipeline used placeholder scheduler coefficients, fixed latent dimensions and a fixed subtraction update. DDIM scheduler work has since landed; do not treat that alone as proof of a complete Stable Diffusion pipeline.
+- The original `CLIP.encode(String)` path generated synthetic hash-seeded embeddings rather than performing tokenizer-backed checkpoint inference. This is not valid text conditioning for a pretrained-model compatibility claim.
+- The original `VAE` is a vector/MLP educational VAE, not a spatial latent-diffusion autoencoder.
+- The initial `UNet2DConditional` implementation is a simplified scaffold, not evidence of SD checkpoint compatibility.
+- A spatial `AutoencoderKL` foundation has been added, but that alone does not establish compatibility with SD/SDXL/SD3/FLUX checkpoints.
+
+The following milestones are present in repository history at the time of this document update:
+
+- DDIM scheduler implementation and pipeline integration changes have merged.
+- Spatial AutoencoderKL foundation has merged.
+- Further AutoencoderKL pipeline integration is tracked separately and must be checked for merge/CI status before relying on it.
+
+Do not advertise Stable Diffusion, SDXL, SD3 or FLUX checkpoint compatibility until the relevant family has real checkpoint loading, exact architecture/configuration, tokenizer/conditioning, weight mapping, scheduler compatibility and reference numerical tests.
+
+## 9. Sequenced implementation roadmap
+
+1. **Architecture and module boundary (this document):** establish family-neutral API/core, shared components, scheduler and family ownership.
+2. **Repository module setup:** align nested module discovery in `settings.gradle.kts`, Gradle conventions, publishing and dependency verification; do not include empty future modules.
+3. **Scheduler API:** support discrete and flow-oriented schedules and explicit prediction semantics without breaking existing DDIM callers silently.
+4. **Extract scheduler implementations:** move DDIM behind the scheduler API; add DDPM/Euler/Heun/DPM-Solver only with reference fixtures and validated contracts.
+5. **Shared VAE/conditioning components:** isolate AutoencoderKL and conditioning abstractions, with deterministic lifecycle and tensor ownership tests.
+6. **Stable family vertical slice:** establish a family module with config-driven UNet, real tokenizer/CLIP, VAE checkpoint mapping and end-to-end reference parity.
+7. **SDXL family support:** add dual-encoder and size/crop conditioning with independent fixtures.
+8. **SD3 and FLUX family foundations:** implement MMDiT and flow-matching semantics as distinct architecture paths, not Stable pipeline conditionals.
+9. **Additional families:** add PixArt, Kandinsky or others only when there is concrete demand and validated implementation.
+10. **Performance:** device-resident latent/conditioning tensors, reusable workspaces, fused guidance, graph reuse and backend kernels after numerical correctness.
+
+## 10. Acceptance criteria
+
+### Shared API and module architecture
+
+- Core and API build without any family implementation on the classpath.
+- A family module can be added/removed without changing diffusion core.
+- Optional provider discovery is deterministic and testable.
+- Scheduler contracts can express both discrete alpha/beta schedules and continuous sigma/flow schedules.
+- Model prediction type and scheduler compatibility are validated explicitly.
+- Resource ownership, tensor aliasing, cancellation and deterministic seed semantics are documented and tested.
+
+### Family compatibility
+
+- Loads a known checkpoint/config using Aljabr-native format/weight APIs without Python or LibTorch at inference time.
+- Uses actual tokenizer and text/image conditioning weights; no synthetic embeddings.
+- Uses actual denoiser and autoencoder weights with correct topology and latent scaling/packing.
+- Matches trusted reference intermediate tensors within documented tolerances.
+- Matches scheduler timesteps/sigmas and deterministic update outputs.
+- Produces reproducible output for a fixed seed in deterministic backend mode.
+- Has family-specific tests and a separate opt-in end-to-end test profile that does not require network access in normal CI.
+
+### Performance and backend behavior
+
+- No hidden CPU tensor conversion in the iterative denoising loop.
+- Backend capability requirements are reported before execution.
+- Family modules do not own or fork hardware backend implementations.
+- Performance measurements separate model load, conditioning, denoising and decode phases.
+
+## 11. Non-goals
+
+- Do not implement every diffusion family in one PR.
+- Do not create empty modules for speculative future architectures.
+- Do not claim full Stable Diffusion compatibility from a scheduler or AutoencoderKL class alone.
+- Do not force FLUX into a Stable Diffusion U-Net/CLIP/alpha-scheduler abstraction.
+- Do not add a second tensor/backend/memory system for diffusion.
+- Do not make AQLI or Tafkir a dependency of diffusion modules.
+- Do not broaden the current work into video diffusion until image-family contracts and resource semantics are stable.
