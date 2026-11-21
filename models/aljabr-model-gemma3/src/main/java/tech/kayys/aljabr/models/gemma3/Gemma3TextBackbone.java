@@ -1,18 +1,19 @@
 package tech.kayys.aljabr.models.gemma3;
 
 import java.util.Objects;
-import tech.kayys.aljabr.spi.model.ModelConfig;
+import java.util.Arrays;
 import tech.kayys.aljabr.cache.GrowingHeapKVCacheStorage;
 import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.cache.KVCacheSession;
+import tech.kayys.aljabr.spi.model.ModelConfig;
 
 /**
  * Float32 CPU reference forward path for the Gemma 3 text decoder.
  *
- * <p>This class implements full-sequence causal prefill. It deliberately
- * exposes no KV-cache or incremental decode API yet; those belong in a later
- * execution-session layer. The reference path is useful for correctness tests
- * and as the semantic baseline for optimized Aljabr backends.</p>
+ * <p>This class provides full-sequence causal forward and a float32 incremental
+ * reference decoder. Incremental sessions use Aljabr's shared KV-cache storage
+ * and committed-prefix contract; optimized backends can implement the same
+ * storage abstraction without changing model semantics.</p>
  */
 public final class Gemma3TextBackbone {
     private final ModelConfig config;
@@ -102,8 +103,8 @@ public final class Gemma3TextBackbone {
         private DecodeSession() {
             int[] headsPerLayer = new int[weights.layers().size()];
             int[] dimensionsPerLayer = new int[weights.layers().size()];
-            java.util.Arrays.fill(headsPerLayer, kvHeads);
-            java.util.Arrays.fill(dimensionsPerLayer, headDim);
+            Arrays.fill(headsPerLayer, kvHeads);
+            Arrays.fill(dimensionsPerLayer, headDim);
             KVCacheLayout layout = new KVCacheLayout(
                     maximumPositions, headsPerLayer, dimensionsPerLayer);
             cacheStorage = new GrowingHeapKVCacheStorage(layout);
@@ -218,16 +219,17 @@ public final class Gemma3TextBackbone {
             double scoreScale = 1.0d / Math.sqrt(config.queryPreAttnScalar());
             Double configuredSoftcap = config.attnLogitSoftcapping();
             double softcap = configuredSoftcap == null ? 0.0d : configuredSoftcap;
+            int visibleTokenCount = absolutePosition - firstVisible + 1;
+            float[] visibleKeys = new float[Math.multiplyExact(visibleTokenCount, cacheWidth)];
+            float[] visibleValues = new float[visibleKeys.length];
+            cacheSession.readKeyRangeForAttention(
+                    layerIndex, firstVisible, visibleTokenCount, visibleKeys, 0);
+            cacheSession.readValueRangeForAttention(
+                    layerIndex, firstVisible, visibleTokenCount, visibleValues, 0);
             for (int head = 0; head < queryHeads; head++) {
                 int kvHead = head / groups;
                 double maximum = Double.NEGATIVE_INFINITY;
-                double[] scores = new double[absolutePosition - firstVisible + 1];
-                float[] visibleKeys = new float[(absolutePosition - firstVisible + 1) * cacheWidth];
-                float[] visibleValues = new float[visibleKeys.length];
-                cacheSession.readKeyRangeForAttention(layerIndex, firstVisible,
-                        absolutePosition - firstVisible + 1, visibleKeys, 0);
-                cacheSession.readValueRangeForAttention(layerIndex, firstVisible,
-                        absolutePosition - firstVisible + 1, visibleValues, 0);
+                double[] scores = new double[visibleTokenCount];
                 for (int source = firstVisible; source <= absolutePosition; source++) {
                     int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double dot = 0.0d;
