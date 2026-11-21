@@ -870,7 +870,7 @@ class CpuBackendStorageTest {
         try {
             maximum = backend.maxPool2d(input, 2, 1, 0);
             average = backend.adaptiveAvgPool2d(input, 1, 1);
-            upsampled = backend.upsampleNearest2d(input, 2, 4);
+            upsampled = backend.upsampleNearest2d(input, 4, 4);
 
             assertArrayEquals(new float[] { 4f }, maximum.toFloatArray(), 0f);
             assertArrayEquals(new float[] { 2.5f }, average.toFloatArray(), 0f);
