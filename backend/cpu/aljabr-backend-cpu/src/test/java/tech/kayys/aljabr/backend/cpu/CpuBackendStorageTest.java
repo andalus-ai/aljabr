@@ -491,6 +491,65 @@ class CpuBackendStorageTest {
 
 
     @Test
+    void squeezeAndUnsqueezePreserveValuesAndUseSharedShapeContracts() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 2, 2);
+        Tensor trailing = null;
+        Tensor leading = null;
+        try {
+            trailing = input.unsqueeze(-1);
+            leading = input.unsqueeze(-3);
+            assertArrayEquals(new long[] { 2, 2, 1 }, trailing.shape().dims());
+            assertArrayEquals(new long[] { 1, 2, 2 }, leading.shape().dims());
+            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f }, trailing.toFloatArray(), 0f);
+        } finally {
+            if (leading != null) leading.release();
+            if (trailing != null) trailing.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+
+        HostStorage singletonStorage = new HostStorage(5f, 6f, 7f, 8f);
+        DefaultTensor singletonInput = tensor(singletonStorage, 1, 2, 1, 2);
+        Tensor squeezed = null;
+        try {
+            squeezed = singletonInput.squeeze();
+            assertArrayEquals(new long[] { 2, 2 }, squeezed.shape().dims());
+            assertArrayEquals(new float[] { 5f, 6f, 7f, 8f }, squeezed.toFloatArray(), 0f);
+        } finally {
+            if (squeezed != null) squeezed.release();
+            singletonInput.release();
+        }
+        assertEquals(0, singletonStorage.references());
+    }
+
+    @Test
+    void squeezeRetainsOneElementVectorForAllSingletonAndScalarInputs() {
+        HostStorage singletonStorage = new HostStorage(9f);
+        DefaultTensor singletonInput = tensor(singletonStorage, 1, 1);
+        Tensor singletonResult = null;
+        try {
+            singletonResult = singletonInput.squeeze();
+            assertArrayEquals(new long[] { 1 }, singletonResult.shape().dims());
+        } finally {
+            if (singletonResult != null) singletonResult.release();
+            singletonInput.release();
+        }
+        assertEquals(0, singletonStorage.references());
+
+        HostStorage scalarStorage = new HostStorage(11f);
+        DefaultTensor scalarInput = tensor(scalarStorage);
+        Tensor scalarResult = null;
+        try {
+            scalarResult = scalarInput.squeeze();
+            assertArrayEquals(new long[] { 1 }, scalarResult.shape().dims());
+            assertArrayEquals(new float[] { 11f }, scalarResult.toFloatArray(), 0f);
+        } finally {
+            if (scalarResult != null) scalarResult.release();
+            scalarInput.release();
+        }
+        assertEquals(0, scalarStorage.references());
+    }
     void softmaxReadsStridedTensorWithNonZeroStorageOffset() {
         HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
         DefaultTensor input = new DefaultTensor(
