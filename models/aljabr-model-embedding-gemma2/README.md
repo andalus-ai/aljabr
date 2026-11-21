@@ -1,5 +1,7 @@
 # EmbeddingGemma 2 model family
 
+> Runner readiness and integration status: [EmbeddingGemma 2 runner readiness](../../docs/architecture/EMBEDDING_GEMMA2_RUNNER_READINESS.md). Reference image components are not yet a registered multimodal inference runner.
+
 This module registers the distinct `embedding_gemma2` family in Aljabr. It is
 not an alias for the causal `gemma2` or `gemma4` modules.
 
