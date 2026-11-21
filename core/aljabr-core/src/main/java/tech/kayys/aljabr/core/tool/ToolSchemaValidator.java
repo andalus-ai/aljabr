@@ -31,7 +31,7 @@ public final class ToolSchemaValidator {
             errors.add(new ValidationError("$tool", "expected tool '" + declaration.name()
                     + "' but call names '" + call.name() + "'"));
         }
-        validate(call.arguments(), declaration.parameterSchema(), errors);
+        validate(call.arguments(), declaration.parameterSchema(), "$", errors, 0);
         return new ValidationResult(errors);
     }
 
