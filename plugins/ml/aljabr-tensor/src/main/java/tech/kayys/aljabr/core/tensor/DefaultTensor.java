@@ -301,6 +301,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor reshape(long... newShape) {
+        TensorOperationValidator.validateReshape(shape, newShape);
         return record(OpType.RESHAPE, new Tensor[] { this }, new Object[] { newShape.clone() }, backend.reshape(this, newShape));
     }
 
