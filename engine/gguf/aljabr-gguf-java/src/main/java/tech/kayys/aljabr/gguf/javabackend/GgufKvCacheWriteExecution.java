@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.gguf.javabackend;
 
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.gguf.loader.inference.KVCache;
 
 /**
@@ -15,6 +16,11 @@ final class GgufKvCacheWriteExecution {
 
     static void storeToken(KVCache cache, int layer, float[] key, float[] value) {
         cache.store(layer, key, value);
+    }
+
+    static void storeToken(
+            KVCacheSession session, int layer, int position, float[] key, float[] value) {
+        session.write(layer, position, key, 0, value, 0);
     }
 
     static void storeBatch(

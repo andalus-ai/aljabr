@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.gguf.javabackend;
 
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.gguf.loader.GGUFModel;
 import tech.kayys.aljabr.gguf.loader.GGUFTensorInfo;
 import tech.kayys.aljabr.gguf.loader.inference.KVCache;
@@ -175,6 +176,11 @@ final class GgufDecodePass {
 
     /** One token's forward pass with optional logit computation. */
     float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits) {
+        return forward(tokenId, pos, cache, computeLogits, null);
+    }
+
+    /** Host fallback variant supplied with a persistent request-owned cache session. */
+    float[] forward(int tokenId, int pos, KVCache cache, boolean computeLogits, KVCacheSession requestSession) {
         GgufKvCacheSequenceLifecycle.validateDecodeInputs(cache, tokenId, pos,
                 cfg.vocabSize(), cfg.contextLength());
         int dim = cfg.embeddingDim();
@@ -190,7 +196,9 @@ final class GgufDecodePass {
                             + "Recreate the decoder and prefill the full context before retrying.");
         }
 
-        if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
+        // A request-scoped host session must not enter the native path: Metal
+        // advances native cache state without populating this host KV storage.
+        if (requestSession == null && metalDecodeState.canUse(canUseMetalDecodeStep)) {
             long t0 = System.nanoTime();
             boolean ok = false;
             if (canUseMetalTokenEmbd) {
@@ -269,6 +277,19 @@ final class GgufDecodePass {
             }
         }
 
+        // The session exposes the already-prefilled prefix and the current
+        // token as each cache-owning layer writes it. Legacy calls create a
+        // one-pass session; request-scoped calls reuse their persistent session.
+        KVCacheSession cacheSession = requestSession;
+        if (cacheSession == null) {
+            cacheSession = new KVCacheSession(cache.asStorage());
+            cacheSession.commit(pos);
+        } else if (cacheSession.committedLength() != pos) {
+            throw new IllegalStateException(
+                    "decode position " + pos + " does not match request KV cache session length "
+                            + cacheSession.committedLength());
+        }
+
         long tQkv = 0, tRope = 0, tAttn = 0, tWo = 0, tFfn = 0, tLogits = 0;
         boolean nextQkvReady = false;
         boolean logitsComputed = false;
@@ -339,7 +360,7 @@ final class GgufDecodePass {
                 GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq,
                         layerRopeFreqs);
 
-                GgufKvCacheWriteExecution.storeToken(cache, layer, k, v);
+                GgufKvCacheWriteExecution.storeToken(cacheSession, kvLayerToUse, pos, k, v);
             }
             tRope += (System.nanoTime() - tRope0);
 
@@ -363,10 +384,9 @@ final class GgufDecodePass {
 
             long tAttn0 = System.nanoTime();
             GgufDecodeAttentionExecution.execute(
-                    q, attnFull, scores,
-                    cache.kLayer(kvLayerToUse), cache.vLayer(kvLayerToUse),
-                    cache.headStride(kvLayerToUse), cache.nKVHeads(kvLayerToUse),
-                    nH, layerHDim, seqLen, tStart, scale);
+                    q, attnFull, scores, cacheSession, kvLayerToUse,
+                    cache.nKVHeads(kvLayerToUse), nH, layerHDim,
+                    seqLen, tStart, scale);
             long tAttnEnd = System.nanoTime();
             tAttn += (tAttnEnd - tAttn0);
 
@@ -531,7 +551,7 @@ final class GgufDecodePass {
             }
         }
 
-        GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
+        GgufKvCacheSequenceLifecycle.completeDecode(cache, pos, cacheSession);
 
         if (computeLogits && !logitsComputed) {
             float cap = cfg.finalLogitSoftcap();

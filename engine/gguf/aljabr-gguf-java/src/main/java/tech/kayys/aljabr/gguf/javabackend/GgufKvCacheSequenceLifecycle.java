@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.gguf.javabackend;
 
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.gguf.loader.inference.KVCache;
 
 /**
@@ -51,6 +52,29 @@ final class GgufKvCacheSequenceLifecycle {
             throw new IllegalStateException(
                     "decode position " + position + " does not match KV cache sequence length " + cache.seqLen());
         }
+        cache.advance();
+    }
+
+    /**
+     * Commits a host decode step to both its logical session and the legacy
+     * GGUF cache sequence pointer. The session must describe the same prefix
+     * as the backing cache before the current token is published.
+     */
+    static void completeDecode(KVCache cache, int position, KVCacheSession session) {
+        if (session == null) {
+            throw new IllegalArgumentException("KV cache session must not be null");
+        }
+        if (session.committedLength() != position) {
+            throw new IllegalStateException(
+                    "decode position " + position + " does not match KV cache session length "
+                            + session.committedLength());
+        }
+        if (cache == null || cache.seqLen() != position) {
+            throw new IllegalStateException(
+                    "decode position " + position + " does not match backing KV cache sequence length "
+                            + (cache == null ? "null" : cache.seqLen()));
+        }
+        session.commit(position + 1);
         cache.advance();
     }
 }
