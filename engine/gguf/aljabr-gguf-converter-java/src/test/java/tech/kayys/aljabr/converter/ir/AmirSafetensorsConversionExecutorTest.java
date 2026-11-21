@@ -55,6 +55,8 @@ class AmirSafetensorsConversionExecutorTest {
         Path output = temporaryDirectory.resolve("partial-output.safetensors");
         AmirSafetensorsConversionExecutor executor = new AmirSafetensorsConversionExecutor();
 
+        assertThrows(java.io.IOException.class, () -> executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false));
         assertThrows(java.io.IOException.class, () -> executor.execute(model, plan, output, false));
         assertFalse(Files.exists(output));
 
