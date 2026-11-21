@@ -11,7 +11,7 @@ The architectural principle is:
 Aljabr owns:
 - Public Java APIs and the developer-facing programming model.
 - Computational semantics: data types, shapes, broadcasting, precision, determinism, memory/resource behavior, concurrency, and errors.
-- Capability identity, metadata, registry contracts, and provider selection policy.
+- Capability identity, metadata, registry contracts, and provider compatibility/selection mechanisms. Aljabr evaluates capabilities and initializes providers; the consuming application/runtime owns product-specific selection policy.
 - Provider and extension SPIs, compatibility rules, validation, and conformance contracts.
 - Reusable mathematical, numerical, statistical, scientific, ML, and deep-learning primitives.
 
@@ -340,12 +340,12 @@ Every component must have one clear primary responsibility and an identifiable o
 |---|---|---|
 | Public SDK/API | Stable Java types, computational semantics and library contracts | Entry points adapt to the API; they do not fork its semantics |
 | CLI and developer tools | Thin command parsing, validation, presentation and diagnostics | No kernels, model execution engines, provider implementations or duplicated business rules in command handlers |
-| Model construction/loading | Model configuration, architecture composition, format adapters, tokenizer/preprocessor contracts and weight loading | Keep file-format parsing separate from architecture construction and execution; CLI must delegate |
+| Model construction/loading | Reusable model configuration, architecture composition, format adapters, tokenizer/preprocessor contracts and weight decoding/loading primitives | Keep file-format parsing separate from architecture construction and execution; CLI delegates. AQLI owns serving-time model/session lifecycle and loading orchestration |
 | Execution | Reusable operation/model execution plans, execution contexts and execution primitives | Keep execution mechanics separate from product workflow and deployment lifecycle |
-| Provider/backend integration | Provider SPI, capability declarations, conformance, resource adapters and backend implementations | Implementations depend on stable contracts; public APIs do not depend on a concrete backend |
+| Provider/backend integration | Provider SPI, capability declarations, compatibility evaluation, conformance, resource adapters and backend implementations | Aljabr exposes explainable selection/initialization mechanisms; the consuming application/runtime owns product-specific policy. Implementations depend on stable contracts; public APIs do not depend on a concrete backend |
 | Scheduling | Local execution ordering/resource coordination only where it is part of a reusable computation contract | AQLI owns inference-request scheduling, admission, batching policy and serving lifecycle; Aljabr does not own cluster/cloud scheduling |
 | Streaming | Reusable data/operation stream contracts where they are computational primitives | AQLI owns token/response streaming, client backpressure and serving cancellation policy |
-| Configuration | Each setting has one authoritative owner, schema, default and validation point | Aljabr owns compute/provider configuration semantics; AQLI owns serving/runtime profiles and deployment policy; adapters translate rather than shadow settings |
+| Configuration | Each setting has one authoritative owner, schema, default and validation point | Aljabr owns provider technical configuration and capability constraints; AQLI owns serving/runtime profiles and provider-selection policy; adapters translate rather than shadow settings |
 
 Do not infer ownership from a package name or current file location. Verify callers, dependencies, lifecycle and consumers before moving code. A CLI command may orchestrate calls, but must not become the owner of the underlying computation. A model loader must not become a model runner, and a model runner must not become a serving runtime.
 
