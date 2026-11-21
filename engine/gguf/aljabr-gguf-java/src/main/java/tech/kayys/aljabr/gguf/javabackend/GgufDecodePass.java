@@ -196,7 +196,9 @@ final class GgufDecodePass {
                             + "Recreate the decoder and prefill the full context before retrying.");
         }
 
-        if (metalDecodeState.canUse(canUseMetalDecodeStep)) {
+        // A request-scoped host session must not enter the native path: Metal
+        // advances native cache state without populating this host KV storage.
+        if (requestSession == null && metalDecodeState.canUse(canUseMetalDecodeStep)) {
             long t0 = System.nanoTime();
             boolean ok = false;
             if (canUseMetalTokenEmbd) {
