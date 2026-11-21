@@ -2,10 +2,13 @@ package tech.kayys.aljabr.safetensor.functiongemma;
 
 import java.util.Objects;
 import tech.kayys.aljabr.models.functiongemma.FunctionGemmaTokenizer;
+import tech.kayys.aljabr.models.functiongemma.FunctionGemmaToolCallParser;
+import tech.kayys.aljabr.spi.Message;
 import tech.kayys.aljabr.models.gemma3.Gemma3TextBackbone;
 import tech.kayys.aljabr.spi.model.ModelConfig;
 import tech.kayys.aljabr.spi.tokenizer.DecodeOptions;
 import tech.kayys.aljabr.spi.tokenizer.EncodeOptions;
+import tech.kayys.aljabr.spi.tokenizer.ChatTemplateFormatter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +53,26 @@ public final class FunctionGemmaModel {
         return backbone.forward(converted);
     }
 
+
+    /**
+     * Formats structured conversation messages with the registered
+     * FunctionGemma chat template, then performs greedy generation.
+     */
+    public GenerationResult generate(List<Message> messages, int maxNewTokens) {
+        Objects.requireNonNull(messages, "messages");
+        String prompt = ChatTemplateFormatter.format(messages, "functiongemma");
+        return generate(prompt, maxNewTokens);
+    }
+
+    /**
+     * Extracts native FunctionGemma calls from a generation result. Parsed
+     * arguments remain untrusted data; execution and authorization belong to
+     * the application/runtime.
+     */
+    public List<FunctionGemmaToolCallParser.FunctionCall> parseFunctionCalls(GenerationResult result) {
+        Objects.requireNonNull(result, "result");
+        return new FunctionGemmaToolCallParser().parse(result.text());
+    }
 
     /**
      * Greedily generates from a caller-formatted prompt. The prompt is tokenized
