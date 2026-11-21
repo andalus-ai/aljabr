@@ -40,6 +40,44 @@ class TensorOperationValidatorTest {
     }
 
     @Test
+    void unsqueezeNormalizesNegativeAxesAndBuildsExpectedOutputShape() {
+        assertThat(TensorOperationValidator.validateUnsqueeze(new Shape(2, 3, 4), 0).outputShape().dims())
+                .containsExactly(1, 2, 3, 4);
+        assertThat(TensorOperationValidator.validateUnsqueeze(new Shape(2, 3, 4), -4).axis())
+                .isZero();
+        assertThat(TensorOperationValidator.validateUnsqueeze(new Shape(2, 3, 4), -1).outputShape().dims())
+                .containsExactly(2, 3, 4, 1);
+        assertThat(TensorOperationValidator.validateUnsqueeze(new Shape(2, 3, 4), 3).outputShape().dims())
+                .containsExactly(2, 3, 4, 1);
+        assertThat(TensorOperationValidator.validateUnsqueeze(new Shape(), -1).outputShape().dims())
+                .containsExactly(1);
+    }
+
+    @Test
+    void unsqueezeRejectsAxesOutsideRankPlusOneRange() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateUnsqueeze(new Shape(2, 3), -4))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("unsqueeze axis -4 is out of range for tensor rank 2");
+        assertThatThrownBy(() -> TensorOperationValidator.validateUnsqueeze(new Shape(2, 3), 3))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("unsqueeze axis 3 is out of range for tensor rank 2");
+    }
+
+    @Test
+    void squeezeRemovesAllSingletonDimensionsAndPreservesLegacyFallback() {
+        assertThat(TensorOperationValidator.validateSqueeze(new Shape(1, 2, 1, 3)).dims())
+                .containsExactly(2, 3);
+        assertThat(TensorOperationValidator.validateSqueeze(new Shape(2, 0, 1, 3)).dims())
+                .containsExactly(2, 0, 3);
+        assertThat(TensorOperationValidator.validateSqueeze(new Shape(2, 3)).dims())
+                .containsExactly(2, 3);
+        assertThat(TensorOperationValidator.validateSqueeze(new Shape(1, 1)).dims())
+                .containsExactly(1);
+        assertThat(TensorOperationValidator.validateSqueeze(new Shape()).dims())
+                .containsExactly(1);
+    }
+
+    @Test
     void sliceValidatesRankBoundsAndReturnsRequestedShape() {
         Shape output = TensorOperationValidator.validateSlice(
                 new Shape(4, 5, 6), new long[] { 1, 0, 2 }, new long[] { 3, 5, 4 });
