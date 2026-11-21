@@ -175,8 +175,10 @@ public final class GrowingHeapKVCacheStorage implements KVCacheStorage {
         if (requiredPositions <= allocatedPositions) {
             return;
         }
-        int doubled = allocatedPositions == 0 ? 1 : Math.multiplyExact(allocatedPositions, 2);
-        int nextCapacity = Math.min(layout.maxSequenceLength(), Math.max(requiredPositions, doubled));
+        int maximum = layout.maxSequenceLength();
+        int doubled = allocatedPositions == 0 ? 1
+                : allocatedPositions > maximum / 2 ? maximum : allocatedPositions * 2;
+        int nextCapacity = Math.min(maximum, Math.max(requiredPositions, doubled));
         for (int layer = 0; layer < layout.layerCount(); layer++) {
             int elements = Math.multiplyExact(nextCapacity, layout.layerStride(layer));
             keys[layer] = Arrays.copyOf(keys[layer], elements);
