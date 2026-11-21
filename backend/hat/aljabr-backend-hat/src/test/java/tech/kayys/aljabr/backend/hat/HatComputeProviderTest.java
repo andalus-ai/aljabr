@@ -56,12 +56,26 @@ class HatComputeProviderTest {
         provider.initialize(new ProviderContext("test", Map.of()));
         ProviderSession session = provider.openSession(provider.devices().get(0));
         try {
-            assertEquals(OperationSupport.NATIVE,
-                    session.operationSupport("tensor.matmul", Map.of("dtype", "F32", "rank", "2")).support());
-            assertEquals(OperationSupport.UNSUPPORTED,
-                    session.operationSupport("tensor.matmul", Map.of("dtype", "F16", "rank", "2")).support());
             assertEquals(OperationSupport.UNKNOWN,
-                    session.operationSupport("tensor.matmul", Map.of("dtype", "F32")).support());
+                    session.operationSupport("tensor.matmul", Map.of("dtype", "F32", "rank", "2")).support());
+            assertEquals(OperationSupport.NATIVE,
+                    session.operationSupport("tensor.matmul", Map.of(
+                            "dtype", "F32", "rank", "2", "rhs_dtype", "F32", "rhs_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.matmul", Map.of(
+                            "dtype", "F16", "rank", "2", "rhs_dtype", "F32", "rhs_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.matmul", Map.of(
+                            "dtype", "F32", "rank", "2", "rhs_dtype", "F16", "rhs_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.matmul", Map.of(
+                            "dtype", "F32", "rank", "1", "rhs_dtype", "F32", "rhs_rank", "2")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.matmul", Map.of(
+                            "dtype", "F32", "rank", "2", "rhs_dtype", "F32", "rhs_rank", "3")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.matmul", Map.of(
+                            "dtype", "F32", "rank", "2", "rhs_dtype", "F32")).support());
 
             for (String operation : Set.of("tensor.add", "tensor.sub", "tensor.mul", "tensor.div")) {
                 assertEquals(OperationSupport.UNKNOWN,
@@ -785,6 +799,12 @@ class HatComputeProviderTest {
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.split", Map.of(
                             "dtype", "F16", "rank", "2", "axis", "1", "parts", "2", "axis_size", "8")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
+    @Test
     void unaryElementwiseOperationsRequireF32ForCpuFallback() throws Exception {
         HatComputeProvider provider = new HatComputeProvider();
         provider.initialize(new ProviderContext("test", Map.of()));

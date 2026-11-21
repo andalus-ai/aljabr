@@ -183,15 +183,26 @@ public final class HatComputeProvider implements ComputeProvider {
             }
 
             if ("tensor.matmul".equals(operationId)) {
-                String dtype = constraints.get("dtype");
-                String rank = constraints.get("rank");
-                if (dtype == null || rank == null) {
+                String leftDtype = constraints.get("dtype");
+                String rightDtype = constraints.get("rhs_dtype");
+                String leftRankValue = constraints.get("rank");
+                String rightRankValue = constraints.get("rhs_rank");
+                if (leftDtype == null || rightDtype == null
+                        || leftRankValue == null || rightRankValue == null) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
-                if ("F32".equalsIgnoreCase(dtype) && "2".equals(rank)) {
-                    return new OperationSupportDescriptor(operationId, OperationSupport.NATIVE, null);
+                if (!isF32(leftDtype) || !isF32(rightDtype)) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
                 }
-                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                Integer leftRank = parseInteger(leftRankValue);
+                Integer rightRank = parseInteger(rightRankValue);
+                if (leftRank == null || rightRank == null) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+                if (leftRank != 2 || rightRank != 2) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                return new OperationSupportDescriptor(operationId, OperationSupport.NATIVE, null);
             }
 
             if (CPU_DTYPE_PRESERVING_OPERATIONS.contains(operationId)) {

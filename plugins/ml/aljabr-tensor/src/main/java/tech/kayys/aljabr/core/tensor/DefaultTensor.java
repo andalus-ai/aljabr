@@ -407,27 +407,41 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor flatten() {
+        ensureOpen();
+        TensorOperationValidator.validateFlatten(shape);
         return record(OpType.FLATTEN, new Tensor[] { this }, new Object[0], backend.flatten(this));
     }
 
     @Override
     public Tensor unsqueeze(int dim) {
-        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim }, backend.unsqueeze(this, dim));
+        ensureOpen();
+        TensorOperationValidator.UnsqueezePlan plan =
+                TensorOperationValidator.validateUnsqueeze(shape, dim);
+        return record(OpType.UNSQUEEZE, new Tensor[] { this }, new Object[] { dim },
+                backend.unsqueeze(this, plan.axis()));
     }
 
     @Override
     public Tensor squeeze() {
+        ensureOpen();
         return record(OpType.SQUEEZE, new Tensor[] { this }, new Object[0], backend.squeeze(this));
     }
 
     @Override
     public Tensor transpose() {
+        ensureOpen();
+        TensorOperationValidator.validateTranspose(shape);
         return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[0], backend.transpose(this));
     }
 
     @Override
     public Tensor transpose(int d0, int d1) {
-        return record(OpType.TRANSPOSE, new Tensor[] { this }, new Object[] { d0, d1 }, backend.transpose(this, d0, d1));
+        ensureOpen();
+        TensorOperationValidator.TransposePlan plan =
+                TensorOperationValidator.validateTranspose(shape, d0, d1);
+        return record(OpType.TRANSPOSE, new Tensor[] { this },
+                new Object[] { plan.axis0(), plan.axis1() },
+                backend.transpose(this, plan.axis0(), plan.axis1()));
     }
 
     @Override
@@ -503,17 +517,9 @@ public final class DefaultTensor implements Tensor {
     @Override
     public java.util.List<Tensor> split(int axis, int parts) {
         ensureOpen();
-        int rank = shape.rank();
-        int normalizedAxis = axis < 0 ? rank + axis : axis;
-        if (normalizedAxis < 0 || normalizedAxis >= rank) {
-            throw new IllegalArgumentException(
-                    "Split axis " + axis + " is out of range for tensor rank " + rank);
-        }
-        if (parts <= 0 || shape.dim(normalizedAxis) % parts != 0) {
-            throw new IllegalArgumentException(
-                    "Split dimension " + shape.dim(normalizedAxis)
-                            + " must be evenly divisible by a positive part count; parts=" + parts);
-        }
+        TensorOperationValidator.SplitPlan plan =
+                TensorOperationValidator.validateSplit(shape, axis, parts);
+        int normalizedAxis = plan.axis();
 
         java.util.List<Tensor> outputs = backend.split(this, normalizedAxis, parts);
         if (!AutogradContext.isRecordingEnabled()
@@ -532,12 +538,12 @@ public final class DefaultTensor implements Tensor {
                     "Autograd recording requires eager DefaultTensor split outputs");
         }
 
-        long chunkSize = shape.dim(normalizedAxis) / parts;
+        long chunkSize = plan.chunkSize();
         try {
             for (int index = 0; index < outputs.size(); index++) {
                 Tensor output = outputs.get(index);
                 DefaultTensor eagerOutput = (DefaultTensor) output;
-                long[] offsets = new long[rank];
+                long[] offsets = new long[shape.rank()];
                 long[] sizes = shape.dims();
                 offsets[normalizedAxis] = Math.multiplyExact((long) index, chunkSize);
                 sizes[normalizedAxis] = chunkSize;

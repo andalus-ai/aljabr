@@ -33,6 +33,11 @@ class KVCacheSessionTest {
                 new HeapKVCacheStorage(KVCacheLayout.uniform(2, 4, 1, 2)));
         float[] key = {1, 2};
         float[] value = {3, 4};
+        assertThrows(IllegalStateException.class,
+                () -> session.readKeyRangeForAttention(0, 0, 1, new float[2], 0));
+        assertThrows(IllegalStateException.class,
+                () -> session.readValueRangeForAttention(1, 0, 1, new float[2], 0));
+
         session.write(0, 0, key, 0, value, 0);
 
         float[] actualKey = new float[2];
@@ -41,6 +46,8 @@ class KVCacheSessionTest {
         session.readValueRangeForAttention(0, 0, 1, actualValue, 0);
         assertArrayEquals(key, actualKey);
         assertArrayEquals(value, actualValue);
+        assertThrows(IllegalStateException.class,
+                () -> session.readKeyRangeForAttention(1, 0, 1, new float[2], 0));
         assertThrows(IndexOutOfBoundsException.class,
                 () -> session.readKey(0, 0, new float[2], 0));
         assertThrows(IndexOutOfBoundsException.class,
