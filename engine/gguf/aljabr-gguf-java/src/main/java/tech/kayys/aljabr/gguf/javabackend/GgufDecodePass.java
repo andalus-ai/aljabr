@@ -1,5 +1,6 @@
 package tech.kayys.aljabr.gguf.javabackend;
 
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.gguf.loader.GGUFModel;
 import tech.kayys.aljabr.gguf.loader.GGUFTensorInfo;
 import tech.kayys.aljabr.gguf.loader.inference.KVCache;
@@ -147,7 +148,7 @@ final class GgufDecodePass {
             bestToken = GgufMetalBridge.decodeStepGreedy(pos, cfg.slidingWindow(), eps, x);
         }
         if (bestToken >= 0) {
-            GgufKvCacheSequenceLifecycle.completeDecode(cache, pos);
+            GgufKvCacheSequenceLifecycle.completeDecode(cache, pos, cacheSession);
             metalDecodeState.recordSuccessfulDecode();
             long tElapsed = System.nanoTime() - t0;
             if (GgufDecodeStep.isVerbose() && (pos % 10 == 0 || pos < 5)) {
@@ -269,6 +270,12 @@ final class GgufDecodePass {
             }
         }
 
+        // The session exposes the already-prefilled prefix and the current
+        // token as each cache-owning layer writes it. KVCache remains the
+        // backing storage and Metal continues to use its native cache path.
+        KVCacheSession cacheSession = new KVCacheSession(cache.asStorage());
+        cacheSession.commit(pos);
+
         long tQkv = 0, tRope = 0, tAttn = 0, tWo = 0, tFfn = 0, tLogits = 0;
         boolean nextQkvReady = false;
         boolean logitsComputed = false;
@@ -339,7 +346,7 @@ final class GgufDecodePass {
                 GGUFVectorOps.rope(k, layerNKVH, layerHDim, cfg.rotaryDimForLayer(layer), pos, layerRopeFreq,
                         layerRopeFreqs);
 
-                GgufKvCacheWriteExecution.storeToken(cache, layer, k, v);
+                GgufKvCacheWriteExecution.storeToken(cacheSession, kvLayerToUse, pos, k, v);
             }
             tRope += (System.nanoTime() - tRope0);
 
@@ -363,10 +370,9 @@ final class GgufDecodePass {
 
             long tAttn0 = System.nanoTime();
             GgufDecodeAttentionExecution.execute(
-                    q, attnFull, scores,
-                    cache.kLayer(kvLayerToUse), cache.vLayer(kvLayerToUse),
-                    cache.headStride(kvLayerToUse), cache.nKVHeads(kvLayerToUse),
-                    nH, layerHDim, seqLen, tStart, scale);
+                    q, attnFull, scores, cacheSession, kvLayerToUse,
+                    cache.nKVHeads(kvLayerToUse), nH, layerHDim,
+                    seqLen, tStart, scale);
             long tAttnEnd = System.nanoTime();
             tAttn += (tAttnEnd - tAttn0);
 
