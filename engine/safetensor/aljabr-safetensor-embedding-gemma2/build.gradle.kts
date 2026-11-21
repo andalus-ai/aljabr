@@ -13,6 +13,7 @@ dependencies {
     api(project(":engine:safetensor:aljabr-safetensor-loader"))
     implementation("jakarta.inject:jakarta.inject-api:2.0.1")
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
 }
 
