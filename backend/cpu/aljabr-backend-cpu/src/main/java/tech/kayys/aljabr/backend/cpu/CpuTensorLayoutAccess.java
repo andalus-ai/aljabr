@@ -17,6 +17,16 @@ import tech.kayys.aljabr.core.tensor.TensorLayout;
  */
 final class CpuTensorLayoutAccess {
     @FunctionalInterface
+    interface ContiguousBinaryKernel {
+        void apply(MemorySegment left, MemorySegment right, MemorySegment output, long elements);
+    }
+
+    @FunctionalInterface
+    interface ContiguousUnaryKernel {
+        void apply(MemorySegment input, MemorySegment output, long elements);
+    }
+
+    @FunctionalInterface
     interface BinaryFloatOperator {
         float apply(float left, float right);
     }
@@ -30,7 +40,8 @@ final class CpuTensorLayoutAccess {
     }
 
     static void binary(
-            Tensor left, Tensor right, MemorySegment output, long elements, BinaryFloatOperator operator) {
+            Tensor left, Tensor right, MemorySegment output, long elements,
+            ContiguousBinaryKernel contiguousKernel, BinaryFloatOperator operator) {
         requireF32(left);
         requireF32(right);
         Objects.requireNonNull(operator, "operator");
@@ -40,12 +51,7 @@ final class CpuTensorLayoutAccess {
         TensorLayout rightLayout = right.layout();
         if (leftLayout.isContiguous() && leftLayout.storageOffset() == 0
                 && rightLayout.isContiguous() && rightLayout.storageOffset() == 0) {
-            // The SIMD path is kept in CpuOps for common contiguous tensors.
-            for (long i = 0; i < elements; i++) {
-                float a = leftSegment.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
-                float b = rightSegment.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
-                output.set(ValueLayout.JAVA_FLOAT, i * Float.BYTES, operator.apply(a, b));
-            }
+            contiguousKernel.apply(leftSegment, rightSegment, output, elements);
             return;
         }
         for (long i = 0; i < elements; i++) {
@@ -55,16 +61,14 @@ final class CpuTensorLayoutAccess {
         }
     }
 
-    static void unary(Tensor input, MemorySegment output, long elements, UnaryFloatOperator operator) {
+    static void unary(Tensor input, MemorySegment output, long elements,
+            ContiguousUnaryKernel contiguousKernel, UnaryFloatOperator operator) {
         requireF32(input);
         Objects.requireNonNull(operator, "operator");
         MemorySegment source = CpuTensorStorageAccess.segment(input);
         TensorLayout layout = input.layout();
         if (layout.isContiguous() && layout.storageOffset() == 0) {
-            for (long i = 0; i < elements; i++) {
-                float value = source.get(ValueLayout.JAVA_FLOAT, i * Float.BYTES);
-                output.set(ValueLayout.JAVA_FLOAT, i * Float.BYTES, operator.apply(value));
-            }
+            contiguousKernel.apply(source, output, elements);
             return;
         }
         long[] dimensions = input.shape().dims();
