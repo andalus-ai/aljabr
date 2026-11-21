@@ -80,6 +80,23 @@ class CpuSplitValidationTest {
     }
 
     @Test
+    void tensorSplitUsesSharedNegativeAxisValidation() {
+        DefaultTensor input = tensor(new Shape(2, 6),
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11f, 12f);
+        List<Tensor> chunks = null;
+        try {
+            chunks = input.split(-1, 3);
+            assertEquals(3, chunks.size());
+            assertArrayEquals(new float[] { 1f, 2f, 7f, 8f }, chunks.get(0).toFloatArray(), 0f);
+            assertArrayEquals(new float[] { 3f, 4f, 9f, 10f }, chunks.get(1).toFloatArray(), 0f);
+            assertArrayEquals(new float[] { 5f, 6f, 11f, 12f }, chunks.get(2).toFloatArray(), 0f);
+        } finally {
+            if (chunks != null) chunks.forEach(Tensor::close);
+            input.release();
+        }
+    }
+
+    @Test
     void splitRejectsEmptyAxis() {
         CpuBuffer buffer = new CpuBuffer(0);
         DefaultTensor input = new DefaultTensor(
