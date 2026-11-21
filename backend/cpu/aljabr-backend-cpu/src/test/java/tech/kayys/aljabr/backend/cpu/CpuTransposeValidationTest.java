@@ -52,11 +52,17 @@ class CpuTransposeValidationTest {
         DefaultTensor vector = new DefaultTensor(
                 new tech.kayys.aljabr.core.tensor.Shape(4), DType.F32, DeviceType.CPU,
                 floats(1, 2, 3, 4), backend);
+        Tensor sameAxis = null;
         try {
-            assertThrows(IllegalArgumentException.class, () -> backend.transpose(matrix, -1, 1));
+            sameAxis = backend.transpose(matrix, -1, 1);
+            assertArrayEquals(new long[] {2, 2}, sameAxis.shape().dims());
+            assertArrayEquals(new float[] {1, 2, 3, 4}, sameAxis.toFloatArray(), 0f);
+
+            assertThrows(IllegalArgumentException.class, () -> backend.transpose(matrix, -3, 1));
             assertThrows(IllegalArgumentException.class, () -> backend.transpose(matrix, 0, 2));
             assertThrows(IllegalArgumentException.class, () -> backend.transpose(vector));
         } finally {
+            if (sameAxis != null) sameAxis.close();
             matrix.close();
             vector.close();
         }
