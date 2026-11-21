@@ -49,6 +49,16 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             }
         }
 
+        boolean hasOpaqueExtensions = !source.extensions().isEmpty()
+                || source.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
+        if (hasOpaqueExtensions && !"gguf".equalsIgnoreCase(source.sourceFormat())) {
+            diagnostics.add(new CompatibilityReport.Diagnostic(
+                    CompatibilityReport.Severity.INFO,
+                    "OPAQUE_METADATA_REQUIRES_MAPPING",
+                    "This conversion path does not preserve all opaque source extensions."));
+            partial = true;
+        }
+
         if ("unknown".equalsIgnoreCase(source.architecture())) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
