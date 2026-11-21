@@ -79,7 +79,7 @@ class AmirGgufConversionExecutorTest {
         Path source = writeSafetensors();
         var payload = new PayloadReference(source.toUri(), source.getFileName().toString(),
                 0L, 8L, PayloadReference.OffsetBasis.DATA_SECTION);
-        var model = new ModelDescriptor(ModelIdentity.of("partial"), "decoder", "safetensors",
+        var model = new ModelDescriptor(ModelIdentity.of("partial"), "unknown", "safetensors",
                 Map.of(), Map.of("vendor.note", "keep-as-metadata"),
                 List.of(new TensorDescriptor("weight", "F32", List.of(2L), "unknown", null, payload)));
         var executor = new AmirGgufConversionExecutor();
