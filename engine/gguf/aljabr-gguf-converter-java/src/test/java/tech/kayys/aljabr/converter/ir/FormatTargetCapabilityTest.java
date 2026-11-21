@@ -40,6 +40,19 @@ class FormatTargetCapabilityTest {
     }
 
     @Test
+    void ggufPreservesOpaqueStringExtensionsAsNamespacedMetadata() {
+        var tensor = new TensorDescriptor("weight", "F32", List.of(2L), "unknown", null,
+                null, Map.of("vendor.layout", "row-major"));
+        var source = new ModelDescriptor(ModelIdentity.of("test"), "llama", "safetensors",
+                Map.of("model_type", "llama"), Map.of("vendor.source", "checkpoint"),
+                List.of(tensor));
+
+        var report = new GgufTargetCapability().assess(source);
+
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
+    }
+
+    @Test
     void safetensorsRequiresExplicitDequantizationForGgmlBlockTypes() {
         var report = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("weight", "Q4_K", List.of(256L))));
