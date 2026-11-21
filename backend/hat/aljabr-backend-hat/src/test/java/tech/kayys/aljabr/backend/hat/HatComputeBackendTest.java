@@ -254,6 +254,39 @@ public class HatComputeBackendTest {
 
 
     @Test
+    public void testMultiInputCpuFallbacksConsumeHatOwnedHostStorage() {
+        Tensor layerInput = TensorFactory.of(new float[] { 1.0f, 3.0f }, backend, 1, 2);
+        Tensor layerWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+        Tensor layerBias = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
+        Tensor layerResult = backend.layerNorm(layerInput, new long[] { 2 }, layerWeight, layerBias, 1e-5f);
+        assertInstanceOf(CpuBackend.class, layerResult.backend());
+        assertArrayEquals(new float[] { -1.0f, 1.0f }, layerResult.toFloatArray(), 1e-4f);
+
+        Tensor rmsInput = TensorFactory.of(new float[] { 3.0f, 4.0f }, backend, 1, 2);
+        Tensor rmsWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+        Tensor rmsResult = backend.rmsNorm(rmsInput, rmsWeight, 1e-5f);
+        assertInstanceOf(CpuBackend.class, rmsResult.backend());
+        assertArrayEquals(new float[] { 0.6f, 0.8f }, rmsResult.toFloatArray(), 1e-4f);
+
+        Tensor batchInput = TensorFactory.of(new float[] { 2.0f, 4.0f }, backend, 1, 2);
+        Tensor runningMean = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
+        Tensor runningVariance = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+        Tensor batchResult = backend.batchNorm(
+                batchInput, null, null, runningMean, runningVariance, false, 0.1f, 1e-5f);
+        assertInstanceOf(CpuBackend.class, batchResult.backend());
+        assertArrayEquals(new float[] {
+                (float) (2.0 / Math.sqrt(1.0 + 1e-5)),
+                (float) (4.0 / Math.sqrt(1.0 + 1e-5))
+        }, batchResult.toFloatArray(), 1e-4f);
+
+        Tensor convInput = TensorFactory.of(
+                new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, backend, 1, 1, 2, 2);
+        Tensor convWeight = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1, 1, 1);
+        Tensor convBias = TensorFactory.of(new float[] { 0.0f }, backend, 1);
+        Tensor convResult = backend.conv2d(convInput, convWeight, convBias, 1, 0, 1, 1);
+        assertInstanceOf(CpuBackend.class, convResult.backend());
+        assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f, 4.0f },
+                convResult.toFloatArray(), 1e-4f);
     public void testEmbeddingAndLossFallbacksConsumeHatOwnedOperands() {
         Tensor embeddingWeight = TensorFactory.of(
                 new float[] { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f },
