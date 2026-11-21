@@ -246,8 +246,17 @@ public interface ComputeBackend extends AutoCloseable {
 
     Tensor flatten(Tensor a);
 
+    /**
+     * Inserts a singleton dimension at {@code dim}. Valid axes are in
+     * {@code [-rank - 1, rank]}; negative axes are normalized against the
+     * rank-plus-one output dimensions.
+     */
     Tensor unsqueeze(Tensor a, int dim);
 
+    /**
+     * Removes all singleton dimensions. For compatibility, when every
+     * dimension is removed (including scalar input), the result has shape [1].
+     */
     Tensor squeeze(Tensor a);
 
     Tensor transpose(Tensor a);
