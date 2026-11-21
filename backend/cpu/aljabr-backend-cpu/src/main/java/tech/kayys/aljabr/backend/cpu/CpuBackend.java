@@ -354,12 +354,24 @@ public final class CpuBackend implements ComputeBackend {
                             + a.numel() + ", output=" + outputShape.numel());
         }
 
-        // Share the same backend-neutral storage and give the result its own
-        // ownership reference. This does not require the legacy Buffer API.
+        TensorLayout inputLayout = a.layout();
+        if (!inputLayout.isContiguous()) {
+            throw new UnsupportedOperationException(
+                    "CPU reshape of a non-contiguous tensor requires materialization; "
+                            + "input layout=" + inputLayout);
+        }
+
+        // A contiguous tensor may still be a view with a non-zero storage
+        // offset. Preserve that offset while assigning the output's canonical
+        // row-major strides.
+        TensorLayout contiguousOutput = TensorLayout.contiguous(outputShape);
+        TensorLayout outputLayout = new TensorLayout(
+                outputShape, contiguousOutput.strides(), inputLayout.storageOffset());
         TensorStorage storage = a.storage();
         storage.retain();
         try {
-            return new DefaultTensor(outputShape, a.dtype(), a.device(), storage, this);
+            return new DefaultTensor(
+                    outputShape, a.dtype(), a.device(), storage, this, outputLayout);
         } catch (RuntimeException | Error e) {
             storage.release();
             throw e;
@@ -403,7 +415,7 @@ public final class CpuBackend implements ComputeBackend {
         // strides and advance the storage offset by the requested coordinates.
         // This works for contiguous, offset, and already-strided input tensors.
         TensorLayout outputLayout = new TensorLayout(outShape, inputStrides, outputOffset);
-        HostAccessibleStorage ignored = hostStorage(a); // Reject device-only storage at the CPU boundary.
+        hostStorage(a); // Reject device-only storage at the CPU boundary.
         TensorStorage storage = a.storage();
         storage.retain();
         try {
