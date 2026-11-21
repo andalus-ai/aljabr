@@ -182,6 +182,16 @@ public final class HatComputeProvider implements ComputeProvider {
                 return catSupport(operationId, constraints);
             }
 
+            /*
+             * Capability metadata contract for the two matmul operands:
+             * - dtype / rank describe the left operand.
+             * - rhs_dtype / rhs_rank describe the right operand.
+             *
+             * The caller must populate metadata from both operands. Do not
+             * infer the right operand from the left: mixed-dtype or non-matrix
+             * inputs must never be advertised as native HAT matmul. Missing
+             * metadata remains UNKNOWN so the planner can choose a safe path.
+             */
             if ("tensor.matmul".equals(operationId)) {
                 String leftDtype = constraints.get("dtype");
                 String rightDtype = constraints.get("rhs_dtype");

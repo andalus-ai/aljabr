@@ -2005,35 +2005,71 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor embedding(Tensor weight, Tensor input, long paddingIdx) {
+        Objects.requireNonNull(weight, "weight");
+        Objects.requireNonNull(input, "input");
+        CpuTensorLayoutAccess.requireF32(weight);
+        if (weight.shape().rank() != 2) {
+            throw new IllegalArgumentException("embedding weight must have shape [vocabulary, embedding]");
+        }
+        if (input.dtype() != DType.I32 && input.dtype() != DType.I8 && input.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU embedding indices must use I32, I8, or F32; actual dtype=" + input.dtype());
+        }
         long[] inputDims = input.shape().dims();
         long vocabSize = weight.shape().dim(0);
         long embeddingDim = weight.shape().dim(1);
+        if (vocabSize <= 0 || embeddingDim <= 0) {
+            throw new IllegalArgumentException("embedding vocabulary and embedding dimensions must be positive");
+        }
 
         long[] outputDims = new long[inputDims.length + 1];
         System.arraycopy(inputDims, 0, outputDims, 0, inputDims.length);
         outputDims[inputDims.length] = embeddingDim;
 
         long numTokens = input.numel();
-        HostAccessibleStorage outBuf = allocateOutput(numTokens * embeddingDim * 4);
-        MemorySegment sw = seg(weight);
-        MemorySegment si = seg(input);
-        MemorySegment so = outBuf.segment();
-
-        DType inputDType = input.dtype();
-        for (long i = 0; i < numTokens; i++) {
-            long idx = switch (inputDType) {
-                case I32 -> si.get(ValueLayout.JAVA_INT, i * 4L);
-                case I8 -> si.get(ValueLayout.JAVA_BYTE, i);
-                default -> (long) CpuOps.getF(si, i);
-            };
-            long outOff = i * embeddingDim * 4L;
-            if (idx == paddingIdx || idx < 0 || idx >= vocabSize) {
-                so.asSlice(outOff, embeddingDim * 4L).fill((byte) 0);
-            } else {
-                MemorySegment.copy(sw, idx * embeddingDim * 4L, so, outOff, embeddingDim * 4L);
+        long outputElements = Math.multiplyExact(numTokens, embeddingDim);
+        HostAccessibleStorage outBuf = allocateOutput(
+                Math.multiplyExact(outputElements, (long) Float.BYTES));
+        MemorySegment weightSegment = seg(weight);
+        MemorySegment indexSegment = seg(input);
+        MemorySegment outputSegment = outBuf.segment();
+        TensorLayout weightLayout = weight.layout();
+        TensorLayout indexLayout = input.layout();
+        long[] weightDims = weight.shape().dims();
+        try {
+            for (long token = 0; token < numTokens; token++) {
+                long indexElementOffset = CpuTensorLayoutAccess.logicalElementOffset(
+                        inputDims, indexLayout, token);
+                long indexByteOffset = Math.multiplyExact(indexElementOffset,
+                        input.dtype().blockByteSize());
+                long tokenId = switch (input.dtype()) {
+                    case I32 -> indexSegment.get(ValueLayout.JAVA_INT, indexByteOffset);
+                    case I8 -> indexSegment.get(ValueLayout.JAVA_BYTE, indexByteOffset);
+                    case F32 -> (long) indexSegment.get(ValueLayout.JAVA_FLOAT, indexByteOffset);
+                    default -> throw new UnsupportedOperationException("Unsupported embedding index dtype: " + input.dtype());
+                };
+                long outputOffset = Math.multiplyExact(
+                        Math.multiplyExact(token, embeddingDim), (long) Float.BYTES);
+                if (tokenId == paddingIdx || tokenId < 0 || tokenId >= vocabSize) {
+                    outputSegment.asSlice(outputOffset,
+                            Math.multiplyExact(embeddingDim, (long) Float.BYTES)).fill((byte) 0);
+                    continue;
+                }
+                long weightStart = Math.multiplyExact(tokenId, embeddingDim);
+                for (long column = 0; column < embeddingDim; column++) {
+                    float value = CpuTensorLayoutAccess.readLogical(
+                            weightSegment, weightDims, weightLayout,
+                            Math.addExact(weightStart, column));
+                    outputSegment.set(ValueLayout.JAVA_FLOAT,
+                            Math.multiplyExact(Math.addExact(Math.multiplyExact(token, embeddingDim), column),
+                                    Float.BYTES), value);
+                }
             }
+            return new DefaultTensor(new Shape(outputDims), DType.F32, DeviceType.CPU, outBuf, this);
+        } catch (RuntimeException | Error failure) {
+            outBuf.release();
+            throw failure;
         }
-        return new DefaultTensor(new Shape(outputDims), DType.F32, DeviceType.CPU, outBuf, this);
     }
 
     // ── Misc ──────────────────────────────────────────────────────────────────

@@ -150,6 +150,34 @@ class CpuBackendStorageTest {
         }
         assertEquals(0, leftStorage.references());
         assertEquals(0, rightStorage.references());
+    void embeddingReadsStridedWeightsAndOffsetIntegerIndices() {
+        HostStorage weightStorage = new HostStorage(
+                99f, 1f, 99f, 2f, 99f, 3f, 99f, 4f, 99f, 5f, 99f, 6f);
+        HostStorage indexStorage = new HostStorage(99f, 0f, 99f, 0f);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 99);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 4, 2);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 8, 99);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 12, 0);
+        DefaultTensor weight = new DefaultTensor(
+                new Shape(3, 2), DType.F32, DeviceType.CPU, (TensorStorage) weightStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(3, 2), new long[] {4, 2}, 1));
+        DefaultTensor indices = new DefaultTensor(
+                new Shape(2), DType.I32, DeviceType.CPU, (TensorStorage) indexStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2), new long[] {2}, 1));
+        Tensor result = null;
+        try {
+            result = backend.embedding(weight, indices, -1);
+            assertArrayEquals(new long[] {2, 2}, result.shape().dims());
+            assertArrayEquals(new float[] {5f, 6f, 1f, 2f}, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            indices.release();
+            weight.release();
+        }
+        assertEquals(0, weightStorage.references());
+        assertEquals(0, indexStorage.references());
     }
 
     @Test
