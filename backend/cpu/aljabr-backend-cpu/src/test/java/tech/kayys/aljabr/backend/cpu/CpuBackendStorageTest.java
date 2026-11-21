@@ -91,7 +91,7 @@ class CpuBackendStorageTest {
 
     @Test
     void pointwiseArithmeticReadsNonZeroOffsetAndStridedLayouts() {
-        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 99f, 3f, 4f);
         DefaultTensor input = new DefaultTensor(
                 new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
