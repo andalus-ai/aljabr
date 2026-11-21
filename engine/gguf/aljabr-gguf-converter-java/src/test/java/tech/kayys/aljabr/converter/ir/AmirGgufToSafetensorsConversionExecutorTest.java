@@ -8,6 +8,7 @@ import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
@@ -25,6 +26,12 @@ class AmirGgufToSafetensorsConversionExecutorTest {
 
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void discoversExecutorThroughServiceLoader() {
+        assertInstanceOf(AmirGgufToSafetensorsConversionExecutor.class,
+                ModelConversionExecutors.find("gguf", "safetensors").orElseThrow());
+    }
 
     @Test
     void copiesScalarF32PayloadAndPreservesSourceMetadata() throws Exception {
@@ -47,6 +54,30 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         assertEquals("F32", header.getAsJsonObject("weight").get("dtype").getAsString());
         assertEquals("llama", header.getAsJsonObject("__metadata__")
                 .get("aljabr.source.architecture").getAsString());
+    }
+
+    @Test
+    void reversesGgmlFastestFirstDimensionsWithoutReorderingPayload() throws Exception {
+        byte[] values = ByteBuffer.allocate(24).order(ByteOrder.LITTLE_ENDIAN)
+                .putFloat(1).putFloat(2).putFloat(3).putFloat(4).putFloat(5).putFloat(6).array();
+        Path source = writeContainer(values);
+        var payload = new PayloadReference(source.toUri(), source.getFileName().toString(),
+                8L, values.length, PayloadReference.OffsetBasis.CONTAINER);
+        var tensor = new TensorDescriptor("weight", "F32", List.of(2L, 3L), "unknown", null,
+                payload, Map.of("gguf.dimension-order", "ggml-fastest-first"));
+        var model = new ModelDescriptor(ModelIdentity.of("ordered"), "llama", "gguf", Map.of(),
+                Map.of("gguf.tensor.dimension-order", "ggml-fastest-first"), List.of(tensor));
+        Path output = temporaryDirectory.resolve("ordered.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
+                ConversionRequest.to(output.toUri()));
+
+        JsonObject tensorHeader = header(Files.readAllBytes(output)).getAsJsonObject("weight");
+        assertEquals(List.of(3, 2), tensorHeader.getAsJsonArray("shape").asList().stream()
+                .map(value -> value.getAsInt()).toList());
+        assertArrayEquals(values, java.util.Arrays.copyOfRange(Files.readAllBytes(output),
+                dataStart(Files.readAllBytes(output)), dataStart(Files.readAllBytes(output)) + values.length));
     }
 
     @Test
@@ -104,6 +135,19 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                 new AmirGgufToSafetensorsConversionExecutor().execute(
                         model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
                         ConversionRequest.to(temporaryDirectory.resolve("no-ack.safetensors").toUri())));
+    }
+
+    @Test
+    void refusesToTreatLossyDequantizationAsFullFidelity() throws Exception {
+        byte[] block = new byte[18];
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q4_0", List.of(32L), source, 8L, block.length);
+        var model = model("q4", "llama", List.of(tensor));
+        assertThrows(java.io.IOException.class, () ->
+                new AmirGgufToSafetensorsConversionExecutor().execute(
+                        model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
+                        new ConversionRequest(temporaryDirectory.resolve("incorrect-full.safetensors").toUri(),
+                                true, Map.of())));
     }
 
     @Test

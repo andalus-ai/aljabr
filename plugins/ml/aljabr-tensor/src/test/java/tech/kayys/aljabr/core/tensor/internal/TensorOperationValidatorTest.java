@@ -40,6 +40,67 @@ class TensorOperationValidatorTest {
     }
 
     @Test
+    void flattenProducesOneDimensionalShapeForRegularScalarAndEmptyInputs() {
+        assertThat(TensorOperationValidator.validateFlatten(new Shape(2, 3, 4)).dims())
+                .containsExactly(24);
+        assertThat(TensorOperationValidator.validateFlatten(new Shape()).dims())
+                .containsExactly(1);
+        assertThat(TensorOperationValidator.validateFlatten(new Shape(2, 0, 3)).dims())
+                .containsExactly(0);
+        assertThat(TensorOperationValidator.validateFlatten(new Shape(0)).dims())
+                .containsExactly(0);
+    }
+
+    @Test
+    void flattenRejectsNullShape() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateFlatten(null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("input shape must not be null");
+    }
+
+    void transposeNormalizesNegativeAxesAndSwapsTheRequestedDimensions() {
+        TensorOperationValidator.TransposePlan trailing =
+                TensorOperationValidator.validateTranspose(new Shape(2, 3, 4), -2, -1);
+        assertThat(trailing.axis0()).isEqualTo(1);
+        assertThat(trailing.axis1()).isEqualTo(2);
+        assertThat(trailing.outputShape().dims()).containsExactly(2, 4, 3);
+
+        TensorOperationValidator.TransposePlan nonTerminal =
+                TensorOperationValidator.validateTranspose(new Shape(2, 3, 4), 0, -1);
+        assertThat(nonTerminal.axis0()).isZero();
+        assertThat(nonTerminal.axis1()).isEqualTo(2);
+        assertThat(nonTerminal.outputShape().dims()).containsExactly(4, 3, 2);
+
+        TensorOperationValidator.TransposePlan sameAxis =
+                TensorOperationValidator.validateTranspose(new Shape(2, 3, 4), -1, 2);
+        assertThat(sameAxis.outputShape().dims()).containsExactly(2, 3, 4);
+
+        TensorOperationValidator.TransposePlan defaultPlan =
+                TensorOperationValidator.validateTranspose(new Shape(2, 3, 4));
+        assertThat(defaultPlan.axis0()).isEqualTo(1);
+        assertThat(defaultPlan.axis1()).isEqualTo(2);
+        assertThat(defaultPlan.outputShape().dims()).containsExactly(2, 4, 3);
+    }
+
+    @Test
+    void transposeRejectsScalarAndOutOfRangeAxes() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateTranspose(new Shape()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("transpose requires a tensor with rank >= 2; got 0");
+        assertThatThrownBy(() -> TensorOperationValidator.validateTranspose(new Shape(3)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("transpose requires a tensor with rank >= 2; got 1");
+        assertThatThrownBy(() -> TensorOperationValidator.validateTranspose(new Shape(2, 3), -3, 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("transpose dimensions must be in [-2, 2); got d0=-3, d1=1");
+        assertThatThrownBy(() -> TensorOperationValidator.validateTranspose(new Shape(2, 3), 0, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("transpose dimensions must be in [-2, 2); got d0=0, d1=2");
+        assertThatThrownBy(() -> TensorOperationValidator.validateTranspose(
+                new Shape(2, 3), Integer.MIN_VALUE, 1))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+    @Test
     void unsqueezeNormalizesNegativeAxesAndBuildsExpectedOutputShape() {
         assertThat(TensorOperationValidator.validateUnsqueeze(new Shape(2, 3, 4), 0).outputShape().dims())
                 .containsExactly(1, 2, 3, 4);

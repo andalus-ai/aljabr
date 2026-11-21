@@ -95,7 +95,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             specs.add(new TensorSpec(
                     tensor.name(),
                     encoding.safetensorsDtype(),
-                    tensor.shape(),
+                    safetensorsShape(model, tensor),
                     encoding.outputBytes(tensor),
                     channel -> writePayload(payload, source, tensor, encoding, channel)));
         }
@@ -136,9 +136,12 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        boolean partial = hasUnrepresentableLayers(model) || model.architecture().equalsIgnoreCase("unknown");
+        boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
+                "Q4_0".equalsIgnoreCase(tensor.dataType()) || "Q8_0".equalsIgnoreCase(tensor.dataType()));
+        boolean partial = hasUnrepresentableLayers(model)
+                || model.architecture().equalsIgnoreCase("unknown") || hasLossyQuantization;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("Unrepresented AMIR layers or unknown architecture require a PARTIAL plan");
+            throw new IOException("Dequantization or unrepresented AMIR layers require a PARTIAL plan");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !request.acknowledgePartial()) {
             throw new IOException("GGUF-to-Safetensors conversion is PARTIAL; explicit acknowledgement is required");
@@ -295,6 +298,18 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         if (Thread.currentThread().isInterrupted()) {
             throw new IOException("GGUF-to-Safetensors conversion interrupted");
         }
+    }
+
+    private static List<Long> safetensorsShape(ModelDescriptor model, TensorDescriptor tensor) {
+        boolean ggmlFastestFirst = "ggml-fastest-first".equalsIgnoreCase(
+                tensor.extensions().getOrDefault("gguf.dimension-order",
+                        model.extensions().get("gguf.tensor.dimension-order")));
+        if (!ggmlFastestFirst || tensor.shape().size() < 2) {
+            return tensor.shape();
+        }
+        List<Long> reversed = new ArrayList<>(tensor.shape());
+        java.util.Collections.reverse(reversed);
+        return List.copyOf(reversed);
     }
 
     private static Map<String, String> metadata(ModelDescriptor model) {
