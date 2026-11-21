@@ -132,7 +132,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
         }
 
-        String architecture = metadata.getOrDefault("format", "unknown");
+        String architecture = metadata.getOrDefault("general.architecture", "unknown");
         return new ModelDescriptor(ModelIdentity.of(name), architecture, SAFETENSORS,
                 metadata, Map.of(), tensors);
     }
