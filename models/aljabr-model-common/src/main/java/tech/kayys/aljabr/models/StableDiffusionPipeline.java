@@ -131,7 +131,9 @@ public class StableDiffusionPipeline extends NNModule {
                         progress.accept(stepIndex + 1);
                     }
                 }
-                return vae.decode(latents).squeeze();
+                try (Tensor decoded = vae.decode(latents)) {
+                    return decoded.squeeze();
+                }
             } finally {
                 latents.close();
             }
