@@ -242,6 +242,10 @@ public interface ComputeBackend extends AutoCloseable {
 
     Tensor slice(Tensor a, long[] offsets, long[] sizes);
 
+    /**
+     * Returns equal, non-empty slices along an axis. Negative axes count from
+     * the final dimension; the axis size must be evenly divisible by parts.
+     */
     List<Tensor> split(Tensor a, int axis, int parts);
 
     Tensor flatten(Tensor a);
