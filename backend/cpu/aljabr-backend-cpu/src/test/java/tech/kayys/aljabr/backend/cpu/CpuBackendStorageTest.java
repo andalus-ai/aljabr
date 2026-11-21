@@ -88,6 +88,43 @@ class CpuBackendStorageTest {
         assertEquals(0, storage.references());
     }
 
+
+    @Test
+    void pointwiseArithmeticReadsNonZeroOffsetAndStridedLayouts() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 3, 1 }, 1));
+        Tensor result = null;
+        try {
+            result = backend.add(input, input);
+            assertArrayEquals(new float[] { 2f, 4f, 6f, 8f }, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void unaryActivationReadsTransposedLogicalLayout() {
+        HostStorage storage = new HostStorage(-1f, 2f, -3f, 4f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 0));
+        Tensor result = null;
+        try {
+            result = backend.relu(input);
+            assertArrayEquals(new float[] { 0f, 0f, 2f, 4f }, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
     @Test
     void reshapeSharesNeutralStorageWithIndependentOwnership() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
