@@ -51,9 +51,11 @@ public final class FunctionGemmaToolSchemaValidator {
         }
         if (schema.containsKey("enum")) {
             List<?> allowed = asList(schema.get("enum"), path + ".enum");
-            if (!allowed.contains(value)) errors.add(error(path, "value is not one of the allowed enum values"));
+            if (allowed.stream().noneMatch(candidate -> jsonEquals(candidate, value))) {
+                errors.add(error(path, "value is not one of the allowed enum values"));
+            }
         }
-        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
+        if (schema.containsKey("const") && !jsonEquals(schema.get("const"), value)) {
             errors.add(error(path, "value does not match the required constant"));
         }
 
@@ -80,7 +82,8 @@ public final class FunctionGemmaToolSchemaValidator {
         }
 
         Object additional = schema.get("additionalProperties");
-        if (additional != null && !(additional instanceof Boolean) && !(additional instanceof Map<?, ?>)) {
+        if (schema.containsKey("additionalProperties")
+                && !(additional instanceof Boolean) && !(additional instanceof Map<?, ?>)) {
             throw invalidSchema(path + ".additionalProperties must be a boolean or schema object");
         }
         for (Map.Entry<?, ?> entry : object.entrySet()) {
@@ -240,6 +243,18 @@ public final class FunctionGemmaToolSchemaValidator {
         } catch (NumberFormatException exception) {
             throw invalidSchema(path + " must be a finite number");
         }
+    }
+
+    private static boolean jsonEquals(Object left, Object right) {
+        if (left instanceof Number leftNumber && right instanceof Number rightNumber) {
+            try {
+                return new BigDecimal(leftNumber.toString()).compareTo(
+                        new BigDecimal(rightNumber.toString())) == 0;
+            } catch (NumberFormatException exception) {
+                return false;
+            }
+        }
+        return Objects.equals(left, right);
     }
 
     private static String child(String path, String name) { return path + "." + name; }
