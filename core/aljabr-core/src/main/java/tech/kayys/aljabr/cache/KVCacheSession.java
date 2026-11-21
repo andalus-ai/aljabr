@@ -77,6 +77,38 @@ public final class KVCacheSession {
     }
 
     /**
+     * Reads K data for the in-progress position of a layer.
+     *
+     * <p>Unlike ordinary reads, this permits the range to extend one position
+     * beyond the committed prefix. It is intended for single-sequence decoder
+     * execution after that layer has written the current token's K/V values.
+     * The caller must not use it to expose partially written positions to
+     * another layer, sequence, or thread.</p>
+     */
+    public void readKeyRangeForAttention(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        checkAttentionReadRange(firstPosition, tokenCount);
+        storage.readKeyRange(layer, firstPosition, tokenCount, destination, destinationOffset);
+    }
+
+    /** See {@link #readKeyRangeForAttention(int, int, int, float[], int)}. */
+    public void readValueRangeForAttention(int layer, int firstPosition, int tokenCount,
+            float[] destination, int destinationOffset) {
+        checkAttentionReadRange(firstPosition, tokenCount);
+        storage.readValueRange(layer, firstPosition, tokenCount, destination, destinationOffset);
+    }
+
+    private void checkAttentionReadRange(int firstPosition, int tokenCount) {
+        int visibleLimit = committedLength + 1;
+        if (firstPosition < 0 || tokenCount < 0
+                || firstPosition > visibleLimit
+                || tokenCount > visibleLimit - firstPosition) {
+            throw new IndexOutOfBoundsException(
+                    "Attention read exceeds committed prefix plus current decode position");
+        }
+    }
+
+    /**
      * Publishes positions up to {@code newCommittedLength}.
      *
      * <p>The caller is responsible for ensuring every layer has been written
