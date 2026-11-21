@@ -34,14 +34,39 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
             int imageTokenId,
             int padTokenId,
             List<float[][]> imageFeatures) {
+        float[][] textEmbeddings = embedTextTokens(textBackbone, inputIds, imageTokenId, padTokenId);
+        return replaceImagePlaceholders(textEmbeddings, inputIds, imageTokenId, imageFeatures);
+    }
+
+    /**
+     * Looks up and scales text tokens while safely substituting image
+     * placeholders with an in-vocabulary pad token for the lookup. This can
+     * be called before image inference so malformed text IDs fail fast without
+     * spending time on the vision tower.
+     *
+     * @param textBackbone text embedding owner
+     * @param inputIds token IDs [sequence]
+     * @param imageTokenId configured image placeholder token ID
+     * @param padTokenId in-vocabulary token used for placeholder lookup
+     * @return scaled text embeddings [sequence][textHiddenSize]
+     */
+    public static float[][] embedTextTokens(
+            EmbeddingGemma2TextBackbone textBackbone,
+            int[] inputIds,
+            int imageTokenId,
+            int padTokenId) {
         Objects.requireNonNull(textBackbone, "textBackbone must not be null");
         Objects.requireNonNull(inputIds, "inputIds must not be null");
+        if (imageTokenId < 0 || padTokenId < 0) {
+            throw new IllegalArgumentException("imageTokenId and padTokenId must be non-negative");
+        }
         int[] lookupIds = inputIds.clone();
         for (int index = 0; index < lookupIds.length; index++) {
-            if (lookupIds[index] == imageTokenId) lookupIds[index] = padTokenId;
+            if (lookupIds[index] == imageTokenId) {
+                lookupIds[index] = padTokenId;
+            }
         }
-        float[][] textEmbeddings = textBackbone.embedInputTokens(lookupIds);
-        return replaceImagePlaceholders(textEmbeddings, inputIds, imageTokenId, imageFeatures);
+        return textBackbone.embedInputTokens(lookupIds);
     }
 
     /**

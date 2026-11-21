@@ -1,169 +1,32 @@
-# Aljabr Architecture
+# Aljabr architecture documentation
 
-## Vision: A General-Purpose ML Framework
+> **Authoritative architecture:** [Unified Computational Architecture](docs/architecture/ALJABR_UNIFIED_ARCHITECTURE.md)
 
-Aljabr is the **foundational ML framework** for the Wayang platform — analogous to PyTorch in the Python ecosystem. It provides everything an inference/serving engine needs to be built on top of it, with zero engine-specific assumptions.
+This file is retained as a stable entry point for existing links. Its former module map and SPI-elevation plan described an earlier repository layout and are no longer authoritative. Do not use the historical module names, dependency examples or ownership proposals from older copies of this document to place new code.
 
-```
-┌───────────────────────────────────────────────────────┐
-│                    Wayang Platform                    │ ← Agent orchestration, RAG, MCP
-├───────────────────────────────────────────────────────┤
-│           Aqli / Any Future Serving Engine          │ ← Pure runtime: runners, repos, SDK
-├───────────────────────────────────────────────────────┤
-│                   Aljabr SPI                     │ ← Inference + serving contracts
-│  (ModelRunner, InferenceRequest, PluginSPI, ...)      │
-├───────────────────────────────────────────────────────┤
-│                Aljabr Core                       │ ← Tensors, ops, data types, errors
-├───────────────────────────────────────────────────────┤
-│              Aljabr Backends                     │ ← CPU / CUDA / Metal / ROCm / HAT
-└───────────────────────────────────────────────────────┘
-```
+## Start here
 
-The key design rule: **any compliant serving engine** (Aqli, or a future hypothetical engine) should be implementable using only Aljabr contracts, without touching engine-specific code.
-
----
-
-## Module Groups
-
-### `core/` — Primitives & Contracts
-
-| Module | Purpose | Nature |
-|---|---|---|
-| `aljabr-tensor` | `Tensor`, `DefaultTensor`, `Shape`, `DType`, `DeviceType`, `TensorOps` | Foundation |
-| `aljabr-core` | Root API surface, exposes tensor + spi-model | API umbrella |
-| `aljabr-error-code` | `ErrorCode` enum, error taxonomy | Foundation |
-| `aljabr-nn` | Neural network layer ops (linear, softmax, attention) | Foundation |
-| `aljabr-spi-model` | **Model-level contracts**: `ModelConfig`, `ModelArchitecture`, `ModelRunner`, `MultimodalRequest/Response`, `ModelRegistry`, `ModelRepository`, `RunnerMetadata` | SPI |
-| `aljabr-gguf-api` | GGUF format API/contracts | SPI |
-| `aljabr-gguf-core` | GGUF parsing implementation | Runtime |
-| `aljabr-gguf-converter` | GGUF format converter | Runtime |
-| `aljabr-safetensor-api` | Safetensor format contracts | SPI |
-| `aljabr-safetensor-spi` | Safetensor loader SPI | SPI |
-| `aljabr-safetensor-core` | Safetensor loading implementation | Runtime |
-| `aljabr-rocksdb` | RocksDB KV store binding | Runtime |
-| `aljabr-helixdb` | HelixDB vector store binding | Runtime |
-| `aljabr-3d` | 3D tensor/rendering ops | Optional |
-| `autograd` | Autograd engine (training only — excluded from inference builds) | Training |
-
-### `backend/` — Hardware Compute Backends
-
-All backends implement `ComputeBackend` from `aljabr-tensor`.
-
-| Module | Hardware | Nature |
-|---|---|---|
-| `backend/cpu/aljabr-backend-cpu` | CPU (Java Vector API) | Runtime |
-| `backend/cuda/aljabr-backend-cuda` | NVIDIA CUDA | Runtime |
-| `backend/cuda/aljabr-kernel-cuda` | CUDA kernel implementations | Runtime |
-| `backend/metal/aljabr-backend-metal` | Apple Metal (macOS/iOS) | Runtime |
-| `backend/hat/aljabr-backend-hat` | Oracle Project Babylon HAT | Experimental |
-| `backend/rocm/aljabr-kernel-rocm` | AMD ROCm | Runtime |
-
-**Backend boundary rule**: backends depend only on `core/aljabr-tensor` and `core/aljabr-error-code`. They must never depend on each other.
-
-### `models/` — Model Family Definitions
-
-Pre-built model graph descriptors auto-discovered at build time. Each `aljabr-model-<name>` provides `ModelFamilyDescriptor` + `ModelFamilyPlugin` registrations consumed by `aljabr-spi-model`.
-
----
-
-## The SPI Elevation Plan
-
-Aljabr currently hosts model-level contracts in `aljabr-spi-model`. The next step is to **host all general inference/serving SPIs** here, so any engine (Aqli or otherwise) depends only on Aljabr.
-
-### Contracts to be elevated from Aqli → Aljabr
-
-| Contract | Current location | Target Aljabr module |
-|---|---|---|
-| `InferenceRequest`, `InferenceResponse`, `StreamingResponse` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
-| `InferenceEngine`, `InferencePipeline`, `InferencePhase` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
-| `BatchScheduler`, `BatchConfig`, `BatchStrategy` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
-| `EmbeddingRequest`, `EmbeddingResponse` | `aqli-spi-inference` | `aljabr-spi-inference` (new) |
-| `ModelRunner` (interface) | `aqli-spi-runner` → `aljabr-spi-model` | Already partially there |
-| `RunnerStats`, `RunnerCapabilities`, `RunnerConfiguration` | `aqli-spi-runner` | `aljabr-spi-model` extension |
-| `AqliPlugin` → `AljabrPlugin` | `aqli-spi-plugin` | `aljabr-spi-plugin` (new) |
-| `PluginHealth`, `PluginState`, `PluginRegistry` | `aqli-spi-plugin` | `aljabr-spi-plugin` (new) |
-| `Tokenizer`, `TokenizerPool`, `PreTokenizer` SPI | `aqli-tokenizer-core/spi/` | `aljabr-spi-tokenizer` (new) |
-
-### Target module layout after elevation
-
-```
-aljabr/
-  core/
-    aljabr-tensor/        ← tensors (unchanged)
-    aljabr-spi-model/     ← model configs, ModelRunner, multimodal (existing, extended)
-    aljabr-spi-inference/ ← NEW: InferenceRequest/Response, Engine, Pipeline, Batch, Embedding
-    aljabr-spi-plugin/    ← NEW: Plugin lifecycle SPI
-    aljabr-spi-tokenizer/ ← NEW: Tokenizer contracts
-    aljabr-error-code/    ← errors (unchanged)
-    ...
-  backend/                     ← unchanged
-  models/                      ← unchanged
-```
-
----
-
-## Module Boundary Rules
-
-### Core → Backend direction only
-```
-core/aljabr-tensor   ←── backend/cpu
-                          ←── backend/cuda
-                          ←── backend/metal
-```
-Backends depend on core. Core never depends on backends.
-
-### SPIs are pure contracts
-SPI modules must contain only interfaces, abstract classes, records, enums, and annotations. No I/O, no JNI, no `new ConcreteImpl()`.
-
-### No cross-backend dependencies
-```
-backend/cpu  ✗→  backend/cuda   (forbidden)
-backend/cuda ✗→  backend/metal  (forbidden)
-```
-
-### Published coordinates
-All `core/` and `backend/` modules must declare:
-```kotlin
-group = "tech.kayys.aljabr"
-version = "0.1.0-SNAPSHOT"
-```
-
----
-
-## Enforcement Checklist
-
-Run `scripts/check-boundaries.sh` before merging PRs.
-
-```bash
-# 1. No backend module depends on another backend
-grep -rn 'project(":backend:' --include="*.kts" backend/
-# Expect: no output
-
-# 2. No core module declares a backend package
-grep -rn '^package tech\.kayys\.aljabr\.backend' --include="*.java" core/
-# Expect: no output
-
-# 3. No stale references to deleted modules
-grep -rn 'aljabr-spi-provider\|aljabr-model-runner\|"aljabr-engine"' --include="*.kts" .
-# Expect: no output
-
-# 4. SPI modules contain no concrete implementations
-grep -rn '^public class [A-Z].*implements\|^public class [A-Z].*extends' \
-  core/aljabr-spi-*/src --include="*.java" | grep -v 'Abstract\|Exception\|Error'
-# Review any output: should only be abstract base classes or exceptions
-```
-
----
-
-## Change Guide
-
-| What you want to add | Where it goes |
+| Need | Source of truth |
 |---|---|
-| New tensor primitive or op | `core/aljabr-tensor` |
-| New model config field | `core/aljabr-spi-model` |
-| New inference contract (request/response shape) | `core/aljabr-spi-inference` (new) |
-| New hardware compute backend | `backend/<vendor>/aljabr-backend-<vendor>` |
-| New model format (e.g. GGML) | `core/aljabr-<format>-api` (SPI) + `core/aljabr-<format>-core` (impl) |
-| New model family (e.g. Falcon) | `models/aljabr-model-falcon` |
-| New tokenizer SPI | `core/aljabr-spi-tokenizer` (new) |
-| New tokenizer implementation | Lives in Aqli `runtime/` or a future `aljabr-tokenizer-impls` module |
+| Product scope, ecosystem ownership, layering and module-boundary decisions | [Unified Computational Architecture](docs/architecture/ALJABR_UNIFIED_ARCHITECTURE.md) |
+| Contributor rules, separation of concerns, pragmatic SOLID, canonical ownership and review checklist | [AGENTS.md](AGENTS.md) |
+| Practical implementation, testing and documentation workflow | [Developer Guide](docs/DEVELOPER_GUIDE.md) |
+| Framework-level programming model and computation/execution boundaries | [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) |
+| Provider discovery, compatibility, initialization and configuration ownership | [Backend Ownership ADR](docs/architecture/ADR-0001-BACKEND-OWNERSHIP.md) |
+| Published artifacts, dependency profiles and consumer distribution | [Modular Distribution](docs/architecture/MODULAR_DISTRIBUTION.md) |
+| Current repository/module inventory and implementation status | [Capability Inventory](docs/architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md) |
+
+## Current ownership summary
+
+- **Aljabr** owns Java computational APIs and semantics, reusable tensor/model/format-loading primitives, execution contracts, provider SPIs and provider compatibility/conformance mechanisms.
+- **AQLI** owns inference-serving workflows: serving-time model/session lifecycle, request admission and scheduling policy, generation policy, client-facing streaming/cancellation, serving APIs and deployment operations.
+- **Tafkir** owns training and fine-tuning workflow orchestration, datasets, experiments and training lifecycle; Aljabr supplies reusable computational primitives.
+- Product-specific policy belongs to the consuming product/runtime. Aljabr exposes reusable mechanisms and contracts without becoming an application or deployment control plane.
+
+These are ownership boundaries, not a claim that every capability is already implemented or validated. Check the capability inventory and module documentation before depending on a feature.
+
+## Placement rule
+
+Use the actual Gradle project graph and current source tree as evidence. Do not infer a module path from this document, create a new module to match a diagram, or treat a source package as a stable public API merely because it currently exists. Before moving or introducing a type, inspect its consumers, dependency direction, publication metadata, resources/service descriptors, compatibility requirements and tests.
+
+For a new architectural decision, update the unified architecture or add a focused ADR. Keep this page as a navigation/compatibility entry point; do not duplicate detailed architecture rules here.

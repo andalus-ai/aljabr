@@ -181,6 +181,38 @@ public final class TensorOperationValidator {
         return output;
     }
 
+
+    /**
+     * Validates an equal-sized split and returns the normalized axis, chunk size,
+     * and logical shape of each output. Backends retain responsibility for views,
+     * strides, storage ownership, and device-specific execution.
+     */
+    public static SplitPlan validateSplit(Shape input, int requestedAxis, int parts) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        long normalized = requestedAxis < 0 ? (long) rank + requestedAxis : requestedAxis;
+        if (rank == 0 || normalized < 0 || normalized >= rank) {
+            throw new IllegalArgumentException(
+                    "Split axis " + requestedAxis + " is out of range for tensor rank " + rank);
+        }
+        if (parts <= 0) {
+            throw new IllegalArgumentException("split parts must be positive; got " + parts);
+        }
+        int axis = (int) normalized;
+        long axisSize = input.dim(axis);
+        if (axisSize <= 0 || parts > axisSize || axisSize % parts != 0) {
+            throw new IllegalArgumentException(
+                    "split requires a positive axis size evenly divisible by parts; axis size="
+                            + axisSize + ", parts=" + parts);
+        }
+        long chunkSize = axisSize / parts;
+        long[] outputDimensions = input.dims();
+        outputDimensions[axis] = chunkSize;
+        return new SplitPlan(axis, parts, chunkSize, new Shape(outputDimensions));
+    }
+
+    public record SplitPlan(int axis, int parts, long chunkSize, Shape outputShape) { }
+
     /**
      * Validates flattening the complete logical tensor into a one-dimensional shape.
      * Scalars become a length-one vector and empty tensors remain empty vectors.

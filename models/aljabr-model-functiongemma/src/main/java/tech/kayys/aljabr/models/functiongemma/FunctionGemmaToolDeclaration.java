@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.models.functiongemma;
 
+import tech.kayys.aljabr.core.tool.ToolDeclaration;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,7 +17,7 @@ import java.util.regex.Pattern;
  * <p>The declaration renders the native FunctionGemma developer-turn syntax.
  * It describes a tool only: it does not register, authorize, or execute it.</p>
  */
-public final class FunctionGemmaToolDeclaration {
+public final class FunctionGemmaToolDeclaration implements ToolDeclaration {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
     private static final String ESCAPE = FunctionGemmaTokenizer.ESCAPE;
 
@@ -46,48 +48,7 @@ public final class FunctionGemmaToolDeclaration {
 
     /** Renders one native FunctionGemma declaration without surrounding control tokens. */
     public String render() {
-        parameters.toMap();
-        return "declaration:" + name + "{description:" + escaped(description)
-                + ",parameters:" + renderSchema(parameters) + "}";
-    }
-
-    private static String renderSchema(Schema schema) {
-        List<String> fields = new ArrayList<>();
-        fields.add("type:" + escaped(schema.type.name()));
-        if (schema.description != null) fields.add("description:" + escaped(schema.description));
-        if (!schema.properties.isEmpty()) {
-            List<String> properties = new ArrayList<>();
-            schema.properties.forEach((key, value) -> properties.add(key + ":" + renderSchema(value)));
-            fields.add("properties:{" + String.join(",", properties) + "}");
-        }
-        if (!schema.required.isEmpty()) {
-            fields.add("required:[" + schema.required.stream().map(FunctionGemmaToolDeclaration::escaped)
-                    .reduce((a, b) -> a + "," + b).orElse("") + "]");
-        }
-        if (schema.items != null) fields.add("items:" + renderSchema(schema.items));
-        if (schema.additionalProperties != null) {
-            fields.add("additionalProperties:" + schema.additionalProperties);
-        }
-        if (!schema.enumValues.isEmpty()) {
-            fields.add("enum:[" + schema.enumValues.stream().map(FunctionGemmaToolDeclaration::literal)
-                    .reduce((a, b) -> a + "," + b).orElse("") + "]");
-        }
-        if (schema.hasConstant) fields.add("const:" + literal(schema.constant));
-        if (schema.minimum != null) fields.add("minimum:" + schema.minimum.toPlainString());
-        if (schema.maximum != null) fields.add("maximum:" + schema.maximum.toPlainString());
-        if (schema.minLength != null) fields.add("minLength:" + schema.minLength);
-        if (schema.maxLength != null) fields.add("maxLength:" + schema.maxLength);
-        if (schema.minItems != null) fields.add("minItems:" + schema.minItems);
-        if (schema.maxItems != null) fields.add("maxItems:" + schema.maxItems);
-        if (schema.pattern != null) fields.add("pattern:" + escaped(schema.pattern));
-        return "{" + String.join(",", fields) + "}";
-    }
-
-    private static String literal(Object value) {
-        if (value == null) return "None";
-        if (value instanceof String string) return escaped(string);
-        if (value instanceof Boolean || value instanceof Number) return value.toString();
-        throw new IllegalArgumentException("Schema literals must be strings, numbers, booleans, or null");
+        return new FunctionGemmaToolDeclarationRenderer().render(this);
     }
 
     private static String escaped(String value) {

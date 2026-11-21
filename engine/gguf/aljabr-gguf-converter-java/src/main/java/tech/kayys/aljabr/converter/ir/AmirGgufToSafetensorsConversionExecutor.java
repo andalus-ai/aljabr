@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. Q4_0 and Q8_0 are dequantized to F32. Other quantized
+ * their representation. Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF metadata and opaque AMIR extensions are retained as Safetensors
@@ -95,7 +95,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             specs.add(new TensorSpec(
                     tensor.name(),
                     encoding.safetensorsDtype(),
-                    safetensorsShape(model, tensor),
+                    safetensorsShape(tensor),
                     encoding.outputBytes(tensor),
                     channel -> writePayload(payload, source, tensor, encoding, channel)));
         }
@@ -137,7 +137,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
         boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
-                "Q4_0".equalsIgnoreCase(tensor.dataType()) || "Q8_0".equalsIgnoreCase(tensor.dataType()));
+                isDequantizedType(tensor.dataType()));
         boolean partial = hasUnrepresentableLayers(model)
                 || model.architecture().equalsIgnoreCase("unknown") || hasLossyQuantization;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
@@ -153,10 +153,21 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
-            case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18);
-            case "Q8_0" -> TensorEncoding.dequantized("Q8_0", 34);
+            case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18, 32);
+            case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20, 32);
+            case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22, 32);
+            case "Q5_1" -> TensorEncoding.dequantized("Q5_1", 24, 32);
+            case "Q8_0" -> TensorEncoding.dequantized("Q8_0", 34, 32);
+            case "Q6_K" -> TensorEncoding.dequantized("Q6_K", 210, 256);
             default -> throw new IOException("No verified GGUF-to-Safetensors decoder for dtype '"
                     + tensor.dataType() + "' (tensor " + tensor.name() + ")");
+        };
+    }
+
+    private static boolean isDequantizedType(String dtype) {
+        return switch (dtype.toUpperCase(Locale.ROOT)) {
+            case "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
+            default -> false;
         };
     }
 
@@ -181,9 +192,9 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             for (long dimension : tensor.shape()) {
                 elements = Math.multiplyExact(elements, dimension);
             }
-            if (encoding.dequantized() && elements % 32L != 0L) {
-                throw new IOException("Tensor '" + tensor.name() + "' element count must be divisible by 32 "
-                        + "for " + encoding.ggmlType());
+            if (encoding.dequantized() && elements % encoding.elementsPerBlock() != 0L) {
+                throw new IOException("Tensor '" + tensor.name() + "' element count must be divisible by "
+                        + encoding.elementsPerBlock() + " for " + encoding.ggmlType());
             }
             long expectedInput = encoding.inputBytes(elements);
             long expectedOutput = encoding.outputBytes(elements);
@@ -208,7 +219,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             TensorEncoding encoding, WritableByteChannel output) throws IOException {
         try (FileChannel input = FileChannel.open(source, StandardOpenOption.READ)) {
             if (encoding.dequantized()) {
-                dequantize(input, payload.offset(), tensor.shape(), encoding.ggmlType(), output);
+                dequantize(input, payload.offset(), tensor.shape(), encoding, output);
             } else {
                 copy(input, payload.offset(), payload.length(), output);
             }
@@ -235,12 +246,13 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
     }
 
     private static void dequantize(
-            FileChannel input, long offset, List<Long> shape, String type, WritableByteChannel output)
-            throws IOException {
+            FileChannel input, long offset, List<Long> shape, TensorEncoding encoding,
+            WritableByteChannel output) throws IOException {
+        String type = encoding.ggmlType();
         long elements = 1L;
         for (long dimension : shape) elements = Math.multiplyExact(elements, dimension);
-        int blockBytes = type.equals("Q4_0") ? 18 : 34;
-        int valuesPerBlock = 32;
+        int blockBytes = encoding.scalarBytes();
+        int valuesPerBlock = encoding.elementsPerBlock();
         long blocks = elements / valuesPerBlock;
         byte[] source = new byte[blockBytes * BLOCKS_PER_BATCH];
         ByteBuffer values = ByteBuffer.allocateDirect(valuesPerBlock * Float.BYTES * BLOCKS_PER_BATCH)
@@ -255,26 +267,101 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("Q6_K")) {
+                    dequantizeQ6KBlock(source, base, values, i * valuesPerBlock);
+                    continue;
+                }
                 float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
                 if (type.equals("Q8_0")) {
                     for (int j = 0; j < 32; j++) {
                         values.putFloat(source[base + 2 + j] * scale);
                     }
-                } else {
-                    for (int j = 0; j < 16; j++) {
-                        int packedValue = source[base + 2 + j] & 0xff;
-                        values.putFloat(((packedValue & 0x0f) - 8) * scale);
-                    }
-                    for (int j = 0; j < 16; j++) {
-                        int packedValue = source[base + 2 + j] & 0xff;
-                        values.putFloat(((packedValue >>> 4) - 8) * scale);
-                    }
+                    continue;
+                }
+
+                float minimum = switch (type) {
+                    case "Q4_1", "Q5_1" -> halfToFloat(source[base + 2] & 0xff, source[base + 3] & 0xff);
+                    default -> 0.0f;
+                };
+                int highBitsOffset = type.equals("Q5_0") ? base + 2 : base + 4;
+                int quantizedValuesOffset = switch (type) {
+                    case "Q4_0" -> base + 2;
+                    case "Q4_1" -> base + 4;
+                    case "Q5_0" -> base + 6;
+                    case "Q5_1" -> base + 8;
+                    default -> throw new IOException("Unsupported dequantization type: " + type);
+                };
+                long highBits = type.startsWith("Q5") ? readUInt32LE(source, highBitsOffset) : 0L;
+                for (int j = 0; j < 16; j++) {
+                    int packedValue = source[quantizedValuesOffset + j] & 0xff;
+                    int quantized = packedValue & 0x0f;
+                    if (type.startsWith("Q5")) quantized |= (int) ((highBits >>> j) & 1L) << 4;
+                    values.putFloat(dequantizeValue(type, quantized, scale, minimum));
+                }
+                for (int j = 0; j < 16; j++) {
+                    int packedValue = source[quantizedValuesOffset + j] & 0xff;
+                    int quantized = packedValue >>> 4;
+                    if (type.startsWith("Q5")) quantized |= (int) ((highBits >>> (j + 16)) & 1L) << 4;
+                    values.putFloat(dequantizeValue(type, quantized, scale, minimum));
                 }
             }
-            values.flip();
+            if (type.equals("Q6_K")) {
+                values.position(0);
+                values.limit(count * valuesPerBlock * Float.BYTES);
+            } else {
+                values.flip();
+            }
             writeFully(output, values);
             block += count;
         }
+    }
+
+    /**
+     * GGML block_q6_K layout: ql[128], qh[64], scales[16], fp16 d.
+     * Each 128-value half stores four interleaved 32-value lanes.
+     */
+    private static void dequantizeQ6KBlock(byte[] source, int base, ByteBuffer output, int blockIndex) {
+        float d = halfToFloat(source[base + 208] & 0xff, source[base + 209] & 0xff);
+        int outputBase = blockIndex * 256;
+        for (int half = 0; half < 2; half++) {
+            int qlBase = base + half * 64;
+            int qhBase = base + 128 + half * 32;
+            int scaleBase = base + 192 + half * 8;
+            for (int lane = 0; lane < 32; lane++) {
+                int packedHigh = source[qhBase + lane] & 0xff;
+                int scaleGroup = lane / 16;
+                int low0 = source[qlBase + lane] & 0xff;
+                int low1 = source[qlBase + lane + 32] & 0xff;
+                int q1 = (low0 & 0x0f) | ((packedHigh & 0x03) << 4);
+                int q2 = (low1 & 0x0f) | (((packedHigh >>> 2) & 0x03) << 4);
+                int q3 = (low0 >>> 4) | (((packedHigh >>> 4) & 0x03) << 4);
+                int q4 = (low1 >>> 4) | (((packedHigh >>> 6) & 0x03) << 4);
+                putQ6Value(output, outputBase + lane, d, source[scaleBase + scaleGroup], q1);
+                putQ6Value(output, outputBase + lane + 32, d, source[scaleBase + scaleGroup + 2], q2);
+                putQ6Value(output, outputBase + lane + 64, d, source[scaleBase + scaleGroup + 4], q3);
+                putQ6Value(output, outputBase + lane + 96, d, source[scaleBase + scaleGroup + 6], q4);
+            }
+        }
+    }
+
+    private static void putQ6Value(ByteBuffer output, int index, float d, byte scale, int quantized) {
+        output.putFloat(index * Float.BYTES, d * scale * (quantized - 32));
+    }
+
+    private static float dequantizeValue(String type, int quantized, float scale, float minimum) {
+        return switch (type) {
+            case "Q4_0" -> (quantized - 8) * scale;
+            case "Q4_1", "Q5_1" -> quantized * scale + minimum;
+            case "Q5_0" -> (quantized - 16) * scale;
+            default -> throw new IllegalArgumentException("Unsupported quantization type: " + type);
+        };
+    }
+
+    private static long readUInt32LE(byte[] bytes, int offset) {
+        return (bytes[offset] & 0xffL)
+                | ((bytes[offset + 1] & 0xffL) << 8)
+                | ((bytes[offset + 2] & 0xffL) << 16)
+                | ((bytes[offset + 3] & 0xffL) << 24);
     }
 
     private static float halfToFloat(int low, int high) {
@@ -300,11 +387,16 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
     }
 
-    private static List<Long> safetensorsShape(ModelDescriptor model, TensorDescriptor tensor) {
-        boolean ggmlFastestFirst = "ggml-fastest-first".equalsIgnoreCase(
-                tensor.extensions().getOrDefault("gguf.dimension-order",
-                        model.extensions().get("gguf.tensor.dimension-order")));
-        if (!ggmlFastestFirst || tensor.shape().size() < 2) {
+    /**
+     * GGUF stores dimensions in ggml order (dimension zero is contiguous /
+     * fastest-changing). Safetensors consumers use the conventional outermost-
+     * to-innermost shape order, so the dimensions must always be reversed.
+     *
+     * <p>This is a metadata-only transformation: the payload byte sequence is
+     * intentionally copied unchanged.
+     */
+    private static List<Long> safetensorsShape(TensorDescriptor tensor) {
+        if (tensor.shape().size() < 2) {
             return tensor.shape();
         }
         List<Long> reversed = new ArrayList<>(tensor.shape());
@@ -356,15 +448,16 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
     }
 
-    private record TensorEncoding(String ggmlType, String safetensorsDtype, int scalarBytes, boolean dequantized) {
+    private record TensorEncoding(
+            String ggmlType, String safetensorsDtype, int scalarBytes, boolean dequantized, int elementsPerBlock) {
         static TensorEncoding raw(String dtype, int scalarBytes) {
-            return new TensorEncoding(dtype, dtype, scalarBytes, false);
+            return new TensorEncoding(dtype, dtype, scalarBytes, false, 1);
         }
-        static TensorEncoding dequantized(String type, int blockBytes) {
-            return new TensorEncoding(type, "F32", blockBytes, true);
+        static TensorEncoding dequantized(String type, int blockBytes, int elementsPerBlock) {
+            return new TensorEncoding(type, "F32", blockBytes, true, elementsPerBlock);
         }
         long inputBytes(long elements) {
-            return dequantized ? Math.multiplyExact(elements / 32L, scalarBytes)
+            return dequantized ? Math.multiplyExact(elements / elementsPerBlock, scalarBytes)
                     : Math.multiplyExact(elements, scalarBytes);
         }
         long outputBytes(TensorDescriptor tensor) {

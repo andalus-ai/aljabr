@@ -26,4 +26,15 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+
+    // Forward opt-in parity inputs from Gradle's -D properties into the forked
+    // JUnit worker JVM. Without this, @EnabledIfSystemProperty cannot see them.
+    listOf(
+        "aljabr.embeddinggemma2.tokenizer",
+        "aljabr.embeddinggemma2.tokenizerCorpus"
+    ).forEach { propertyName ->
+        System.getProperty(propertyName)?.let { propertyValue ->
+            systemProperty(propertyName, propertyValue)
+        }
+    }
 }

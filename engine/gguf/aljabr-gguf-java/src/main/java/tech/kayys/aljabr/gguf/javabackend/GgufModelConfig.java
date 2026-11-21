@@ -75,7 +75,8 @@ record GgufModelConfig(
             headDimKV = headDim;
         }
 
-        float finalLogitSoftcap = floatMeta(meta, arch, "final_logit_softcapping", 0f);
+        float finalLogitSoftcap = validateFinalLogitSoftcap(
+                floatMeta(meta, arch, "final_logit_softcapping", 0f));
 
         // Attention scale: prefer metadata key, then query_pre_attn_scalar, else 0 (→ use 1/sqrt(headDim) per layer)
         float attentionScale = floatMeta(meta, arch, "attention.scale",
@@ -172,6 +173,18 @@ record GgufModelConfig(
                 }
             }
         }
+    }
+
+    /**
+     * Validates the optional final-logit softcap metadata. Zero disables
+     * softcapping; enabled values must be finite and strictly positive.
+     */
+    static float validateFinalLogitSoftcap(float softcap) {
+        if (!Float.isFinite(softcap) || softcap < 0.0f) {
+            throw new IllegalArgumentException(
+                    "final_logit_softcapping must be finite and non-negative, got " + softcap);
+        }
+        return softcap;
     }
 
     int nKVHeadsForLayer(int layer) {

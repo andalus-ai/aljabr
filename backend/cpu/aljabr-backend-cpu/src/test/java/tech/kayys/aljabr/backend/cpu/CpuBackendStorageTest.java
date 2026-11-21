@@ -856,4 +856,132 @@ class CpuBackendStorageTest {
         assertEquals(0, weightStorage.references());
     }
 
+
+    @Test
+    void spatialPoolingAndUpsamplingReadNonZeroOffsetTransposedLayouts() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] { 4, 4, 1, 2 }, 1));
+        Tensor maximum = null;
+        Tensor average = null;
+        Tensor upsampled = null;
+        try {
+            maximum = backend.maxPool2d(input, 2, 1, 0);
+            average = backend.adaptiveAvgPool2d(input, 1, 1);
+            upsampled = backend.upsampleNearest2d(input, 4, 4);
+
+            assertArrayEquals(new float[] { 4f }, maximum.toFloatArray(), 0f);
+            assertArrayEquals(new float[] { 2.5f }, average.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {
+                    1f, 1f, 3f, 3f,
+                    1f, 1f, 3f, 3f,
+                    2f, 2f, 4f, 4f,
+                    2f, 2f, 4f, 4f
+            }, upsampled.toFloatArray(), 0f);
+        } finally {
+            if (upsampled != null) upsampled.release();
+            if (average != null) average.release();
+            if (maximum != null) maximum.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void spatialPoolingRejectsInvalidKernelAndOutputDimensions() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 1, 1, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> backend.maxPool2d(input, 0, 1, 0));
+            assertThrows(IllegalArgumentException.class, () -> backend.adaptiveAvgPool2d(input, 0, 1));
+            assertThrows(IllegalArgumentException.class, () -> backend.upsampleNearest2d(input, 1, 0));
+        } finally {
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+
+    @Test
+    void conv2dReadsStridedInputWeightAndBiasWithStorageOffsets() {
+        HostStorage inputStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        HostStorage weightStorage = new HostStorage(99f, 1f, 0f, 0f, 1f);
+        HostStorage biasStorage = new HostStorage(99f, 2f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU, (TensorStorage) inputStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] { 4, 4, 1, 2 }, 1));
+        DefaultTensor weight = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU, (TensorStorage) weightStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] { 4, 4, 1, 2 }, 1));
+        DefaultTensor bias = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.CPU, (TensorStorage) biasStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1), new long[] { 1 }, 1));
+        Tensor result = null;
+        try {
+            result = backend.conv2d(input, weight, bias, 1, 0, 1, 1);
+            assertArrayEquals(new long[] { 1, 1, 1, 1 }, result.shape().dims());
+            assertArrayEquals(new float[] { 7f }, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+            bias.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+        assertEquals(0, biasStorage.references());
+    }
+
+    @Test
+    void conv2dPartitionsInputChannelsForGroupedConvolution() {
+        HostStorage inputStorage = new HostStorage(2f, 3f);
+        HostStorage weightStorage = new HostStorage(4f, 5f);
+        DefaultTensor input = tensor(inputStorage, 1, 2, 1, 1);
+        DefaultTensor weight = tensor(weightStorage, 2, 1, 1, 1);
+        Tensor result = null;
+        try {
+            result = backend.conv2d(input, weight, null, 1, 0, 1, 2);
+            assertArrayEquals(new long[] { 1, 2, 1, 1 }, result.shape().dims());
+            assertArrayEquals(new float[] { 8f, 15f }, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            input.release();
+            weight.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+    }
+
+    @Test
+    void conv2dRejectsInvalidGroupsBiasAndKernelGeometry() {
+        HostStorage inputStorage = new HostStorage(1f, 2f, 3f, 4f);
+        HostStorage weightStorage = new HostStorage(1f, 1f, 1f, 1f);
+        HostStorage biasStorage = new HostStorage(1f, 2f);
+        DefaultTensor input = tensor(inputStorage, 1, 1, 2, 2);
+        DefaultTensor weight = tensor(weightStorage, 1, 1, 2, 2);
+        DefaultTensor bias = tensor(biasStorage, 2);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.conv2d(input, weight, null, 1, 0, 1, 2));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.conv2d(input, weight, bias, 1, 0, 1, 1));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.conv2d(input, weight, null, 0, 0, 1, 1));
+            assertThrows(IllegalArgumentException.class,
+                    () -> backend.conv2d(input, weight, null, 1, 0, 2, 1));
+        } finally {
+            input.release();
+            weight.release();
+            bias.release();
+        }
+        assertEquals(0, inputStorage.references());
+        assertEquals(0, weightStorage.references());
+        assertEquals(0, biasStorage.references());
+    }
+
 }
