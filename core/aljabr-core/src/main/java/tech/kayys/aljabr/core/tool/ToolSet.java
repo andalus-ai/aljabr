@@ -98,7 +98,7 @@ public final class ToolSet {
             List<Object> copy = new ArrayList<>(collection.size());
             int index = 0;
             for (Object item : collection) copy.add(freeze(item, path + "[" + index++ + "]"));
-            return List.copyOf(copy);
+            return Collections.unmodifiableList(copy);
         }
         throw new IllegalArgumentException(path + " contains unsupported schema value: "
                 + value.getClass().getName());
