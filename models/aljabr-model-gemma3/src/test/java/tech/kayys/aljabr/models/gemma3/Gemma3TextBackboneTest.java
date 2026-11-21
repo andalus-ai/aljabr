@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.cache.GrowingHeapKVCacheStorage;
 import tech.kayys.aljabr.cache.KVCacheLayout;
-import tech.kayys.aljabr.cache.KVCacheStorage;
 import tech.kayys.aljabr.spi.model.ModelConfig;
 
 class Gemma3TextBackboneTest {
