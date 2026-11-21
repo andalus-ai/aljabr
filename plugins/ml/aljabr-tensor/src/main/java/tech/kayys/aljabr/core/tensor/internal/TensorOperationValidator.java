@@ -164,6 +164,29 @@ public final class TensorOperationValidator {
         return new BroadcastPlan(output, elements);
     }
 
+
+    /**
+     * Validates a single-axis reduction and returns its normalized axis and output shape.
+     * Mean reductions reject empty axes; sum reductions preserve the additive identity
+     * semantics for empty axes.
+     */
+    public static ReductionPlan validateReduction(Shape input, int requestedAxis, boolean mean) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        int axis = requestedAxis < 0 ? rank + requestedAxis : requestedAxis;
+        if (rank == 0 || axis < 0 || axis >= rank) {
+            throw new IllegalArgumentException(
+                    "Reduction axis " + requestedAxis + " is out of range for tensor rank " + rank);
+        }
+        long reductionSize = input.dim(axis);
+        if (mean && reductionSize == 0) {
+            throw new IllegalArgumentException("Mean is undefined for an empty reduction dimension");
+        }
+        return new ReductionPlan(axis, reductionSize);
+    }
+
+    public record ReductionPlan(int axis, long reductionSize) { }
+
     public record BroadcastPlan(long[] outputDimensions, long outputElements) {
         public BroadcastPlan {
             outputDimensions = outputDimensions.clone();
