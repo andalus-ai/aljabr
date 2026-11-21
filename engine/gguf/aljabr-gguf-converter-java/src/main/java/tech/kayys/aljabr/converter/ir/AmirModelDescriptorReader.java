@@ -128,7 +128,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
                         java.util.Arrays.stream(tensor.shape()).boxed().toList(),
                         "contiguous", null, payload));
             }
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | ArithmeticException e) {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
         }
 
