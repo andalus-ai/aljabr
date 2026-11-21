@@ -11,7 +11,10 @@ java { toolchain { languageVersion.set(JavaLanguageVersion.of(25)) } }
 dependencies {
     api(project(":models:aljabr-model-embedding-gemma2"))
     api(project(":engine:safetensor:aljabr-safetensor-loader"))
+    implementation(project(":spi:aljabr-spi-tokenizer"))
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation("jakarta.inject:jakarta.inject-api:2.0.1")
+    implementation("jakarta.enterprise:jakarta.enterprise.cdi-api")
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
