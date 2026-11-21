@@ -138,6 +138,10 @@ public final class AmirSafetensorsConversionExecutor {
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
+        if (!model.extensions().isEmpty()
+                && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
+            throw new IOException("AMIR extensions cannot be silently omitted; the plan must be PARTIAL");
+        }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !acknowledgePartial) {
             throw new IOException("Conversion plan is PARTIAL; explicit acknowledgement is required: "
                     + plan.compatibility().diagnostics());
