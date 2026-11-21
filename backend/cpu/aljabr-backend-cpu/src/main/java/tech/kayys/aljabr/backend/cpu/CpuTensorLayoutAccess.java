@@ -78,16 +78,33 @@ final class CpuTensorLayoutAccess {
         }
     }
 
-    static float readLogical(
-            MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
+    static long logicalElementOffset(long[] dimensions, TensorLayout layout, long logicalIndex) {
+        Objects.requireNonNull(dimensions, "dimensions");
+        Objects.requireNonNull(layout, "layout");
+        if (logicalIndex < 0) {
+            throw new IndexOutOfBoundsException("logical index must be non-negative");
+        }
         long[] strides = layout.strides();
         long remaining = logicalIndex;
         long elementOffset = layout.storageOffset();
         for (int axis = dimensions.length - 1; axis >= 0; axis--) {
-            long coordinate = remaining % dimensions[axis];
-            remaining /= dimensions[axis];
+            long dimension = dimensions[axis];
+            if (dimension <= 0) {
+                throw new IndexOutOfBoundsException("cannot address an empty tensor dimension");
+            }
+            long coordinate = remaining % dimension;
+            remaining /= dimension;
             elementOffset = Math.addExact(elementOffset, Math.multiplyExact(coordinate, strides[axis]));
         }
+        if (remaining != 0) {
+            throw new IndexOutOfBoundsException("logical index exceeds tensor element count");
+        }
+        return elementOffset;
+    }
+
+    static float readLogical(
+            MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
+        long elementOffset = logicalElementOffset(dimensions, layout, logicalIndex);
         return source.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(elementOffset, Float.BYTES));
     }
 
