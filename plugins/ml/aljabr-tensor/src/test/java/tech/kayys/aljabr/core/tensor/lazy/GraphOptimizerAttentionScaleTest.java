@@ -36,15 +36,37 @@ class GraphOptimizerAttentionScaleTest {
         org.junit.jupiter.api.Assertions.assertSame(OpType.ATTENTION, optimized.getOp());
     }
 
+
+    @Test
+    void doesNotFuseAttentionWhenSoftmaxUsesNonKeyAxis() {
+        GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[] { 0 }, new Object[0],
+                new Shape(4, 4));
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    @Test
+    void doesNotFuseAttentionWhenTransposeDoesNotSwapLastTwoAxes() {
+        Shape batched = new Shape(2, 3, 4, 4);
+        GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[0],
+                new Object[] { 0, 1 }, batched);
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
     private static GraphNode attentionGraph(OpType scaleOperation, float scale) {
-        Shape matrix = new Shape(4, 4);
+        return attentionGraph(scaleOperation, scale, new Object[0], new Object[0], new Shape(4, 4));
+    }
+
+    private static GraphNode attentionGraph(OpType scaleOperation, float scale, Object[] softmaxArguments,
+            Object[] transposeArguments, Shape matrix) {
         GraphNode query = node(OpType.RELU, List.of(), new Object[0], matrix);
         GraphNode key = node(OpType.RELU, List.of(), new Object[0], matrix);
         GraphNode value = node(OpType.RELU, List.of(), new Object[0], matrix);
-        GraphNode transpose = node(OpType.TRANSPOSE, List.of(key), new Object[0], matrix);
+        GraphNode transpose = node(OpType.TRANSPOSE, List.of(key), transposeArguments, matrix);
         GraphNode scores = node(OpType.MATMUL, List.of(query, transpose), new Object[0], matrix);
         GraphNode scaled = node(scaleOperation, List.of(scores), new Object[] { scale }, matrix);
-        GraphNode probabilities = node(OpType.SOFTMAX, List.of(scaled), new Object[0], matrix);
+        GraphNode probabilities = node(OpType.SOFTMAX, List.of(scaled), softmaxArguments, matrix);
         return node(OpType.MATMUL, List.of(probabilities, value), new Object[0], matrix);
     }
 
