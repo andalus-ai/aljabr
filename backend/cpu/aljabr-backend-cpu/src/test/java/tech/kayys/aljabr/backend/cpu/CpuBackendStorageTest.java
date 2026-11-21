@@ -115,6 +115,41 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void broadcastOperationsReadStridedOperandsWithStorageOffsets() {
+        HostStorage leftStorage = new HostStorage(99f, 1f, 99f, 2f);
+        HostStorage rightStorage = new HostStorage(99f, 10f, 20f);
+        DefaultTensor left = new DefaultTensor(
+                new Shape(2, 1), DType.F32, DeviceType.CPU, (TensorStorage) leftStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 1), new long[] {2, 1}, 1));
+        DefaultTensor right = new DefaultTensor(
+                new Shape(1, 2), DType.F32, DeviceType.CPU, (TensorStorage) rightStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 2), new long[] {2, 1}, 1));
+        Tensor added = null;
+        Tensor multiplied = null;
+        Tensor subtracted = null;
+        Tensor divided = null;
+        try {
+            added = backend.add(left, right);
+            multiplied = backend.mul(left, right);
+            subtracted = backend.sub(left, right);
+            divided = backend.div(left, right);
+
+            assertArrayEquals(new float[] {11f, 21f, 12f, 22f}, added.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {10f, 20f, 20f, 40f}, multiplied.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {-9f, -19f, -8f, -18f}, subtracted.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {0.1f, 0.05f, 0.2f, 0.1f}, divided.toFloatArray(), 1e-6f);
+        } finally {
+            if (divided != null) divided.release();
+            if (subtracted != null) subtracted.release();
+            if (multiplied != null) multiplied.release();
+            if (added != null) added.release();
+            left.release();
+            right.release();
+        }
+        assertEquals(0, leftStorage.references());
+        assertEquals(0, rightStorage.references());
     void embeddingReadsStridedWeightsAndOffsetIntegerIndices() {
         HostStorage weightStorage = new HostStorage(
                 99f, 1f, 99f, 2f, 99f, 3f, 99f, 4f, 99f, 5f, 99f, 6f);

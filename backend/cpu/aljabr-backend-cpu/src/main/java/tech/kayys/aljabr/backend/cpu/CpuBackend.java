@@ -214,10 +214,14 @@ public final class CpuBackend implements ComputeBackend {
                 sb *= shapeB[bIdx];
         }
 
-        HostAccessibleStorage o = allocateOutput(numel * 4);
+        CpuTensorLayoutAccess.requireF32(a);
+        CpuTensorLayoutAccess.requireF32(b);
+        HostAccessibleStorage o = allocateOutput(Math.multiplyExact(numel, (long) Float.BYTES));
         MemorySegment segA = seg(a);
         MemorySegment segB = seg(b);
         MemorySegment segO = o.segment();
+        TensorLayout layoutA = a.layout();
+        TensorLayout layoutB = b.layout();
 
         for (long i = 0; i < numel; i++) {
             long flatA = 0;
@@ -226,24 +230,22 @@ public final class CpuBackend implements ComputeBackend {
             for (int d = 0; d < maxRank; d++) {
                 long div = 1;
                 for (int j = d + 1; j < maxRank; j++)
-                    div *= outDims[j];
+                    div = Math.multiplyExact(div, outDims[j]);
                 long idx = remaining / div;
                 remaining %= div;
-                flatA += idx * stridesA[d];
-                flatB += idx * stridesB[d];
+                flatA = Math.addExact(flatA, Math.multiplyExact(idx, stridesA[d]));
+                flatB = Math.addExact(flatB, Math.multiplyExact(idx, stridesB[d]));
             }
-            float valA = segA.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, flatA * 4);
-            float valB = segB.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, flatB * 4);
-            float res = 0;
-            if (op == 0)
-                res = valA + valB;
-            else if (op == 1)
-                res = valA * valB;
-            else if (op == 2)
-                res = valA / valB;
-            else if (op == 3)
-                res = valA - valB;
-            segO.set(java.lang.foreign.ValueLayout.JAVA_FLOAT, i * 4, res);
+            float valA = CpuTensorLayoutAccess.readLogical(segA, shapeA, layoutA, flatA);
+            float valB = CpuTensorLayoutAccess.readLogical(segB, shapeB, layoutB, flatB);
+            float res = switch (op) {
+                case 0 -> valA + valB;
+                case 1 -> valA * valB;
+                case 2 -> valA / valB;
+                case 3 -> valA - valB;
+                default -> throw new IllegalArgumentException("Unsupported broadcast operation: " + op);
+            };
+            segO.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(i, Float.BYTES), res);
         }
         return out(new Shape(outDims), o);
     }
