@@ -35,7 +35,7 @@ class FunctionGemmaToolDeclarationTest {
                         .property("id", FunctionGemmaToolDeclaration.Schema.integer())
                         .required("id"));
         var content = new FunctionGemmaChatTemplate().formatDeveloperContent("Use tools.", tool);
-        assertTrue(content.startsWith("Use tools.\\n" + FunctionGemmaChatTemplate.START_FUNCTION_DECLARATION));
+        assertTrue(content.startsWith("Use tools.\n" + FunctionGemmaChatTemplate.START_FUNCTION_DECLARATION));
         assertTrue(content.contains("declaration:lookup"));
         assertTrue(content.endsWith(FunctionGemmaChatTemplate.END_FUNCTION_DECLARATION));
     }
