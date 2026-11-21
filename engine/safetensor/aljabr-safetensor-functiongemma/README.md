@@ -31,6 +31,7 @@ The model uses the registered FunctionGemma chat template when passed SPI
 messages. Tool declarations should be included in the developer message:
 
 ```java
+FunctionGemmaChatTemplate template = new FunctionGemmaChatTemplate();
 String instructions = template.formatDeveloperContent(
     "You are an assistant that can call functions.",
     List.of(
