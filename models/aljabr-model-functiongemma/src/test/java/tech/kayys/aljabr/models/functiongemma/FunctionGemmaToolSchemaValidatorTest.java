@@ -30,7 +30,7 @@ class FunctionGemmaToolSchemaValidatorTest {
     }
 
     @Test
-    void reportsMissingUnexpectedAndWronglyTypedArguments() {
+    void reportsUnexpectedAndWronglyTypedArguments() {
         Map<String, Object> schema = Map.of(
                 "type", "OBJECT",
                 "required", List.of("query"),
@@ -41,6 +41,13 @@ class FunctionGemmaToolSchemaValidatorTest {
         assertEquals(2, result.errors().size());
         assertTrue(result.errors().stream().anyMatch(e -> e.path().equals("$.query")));
         assertTrue(result.errors().stream().anyMatch(e -> e.path().equals("$.extra")));
+    }
+
+    @Test
+    void reportsMissingRequiredArguments() {
+        var schema = Map.<String, Object>of("type", "OBJECT", "required", List.of("query"));
+        var result = validator.validate(Map.of(), schema);
+        assertEquals("$.query: required property is missing", result.errors().getFirst().toString());
     }
 
     @Test
