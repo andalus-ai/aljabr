@@ -81,11 +81,16 @@ public final class AmirSafetensorsConversionExecutor {
         }
 
         Map<String, String> metadata = new LinkedHashMap<>();
-        model.metadata().forEach((key, value) -> {
+        for (Map.Entry<String, String> entry : model.metadata().entrySet()) {
+            String key = entry.getKey();
             String outputKey = key.startsWith("safetensors.")
                     ? key.substring("safetensors.".length()) : key;
-            metadata.put(outputKey, value);
-        });
+            String previous = metadata.putIfAbsent(outputKey, entry.getValue());
+            if (previous != null && !previous.equals(entry.getValue())) {
+                throw new IOException("Conflicting Safetensors metadata key after namespace mapping: "
+                        + outputKey);
+            }
+        }
 
         Path parent = target.getParent();
         Files.createDirectories(parent);
@@ -121,6 +126,10 @@ public final class AmirSafetensorsConversionExecutor {
         }
         if (!plan.sourceFormat().equalsIgnoreCase(model.sourceFormat())) {
             throw new IOException("Conversion plan source format does not match the AMIR descriptor");
+        }
+        if (!TARGET_FORMAT.equalsIgnoreCase(model.sourceFormat())) {
+            throw new IOException("This first executor only supports Safetensors source models, not '"
+                    + model.sourceFormat() + "'");
         }
         if (!TARGET_FORMAT.equalsIgnoreCase(plan.targetFormat())) {
             throw new IOException("This executor only writes Safetensors, not '" + plan.targetFormat() + "'");
