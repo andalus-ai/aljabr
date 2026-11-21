@@ -62,7 +62,7 @@ class FunctionGemmaToolCallParserTest {
         assertThrows(IllegalArgumentException.class,
                 () -> parser.parseCallBody("call:duplicate{x:1,x:2}"));
         assertThrows(IllegalArgumentException.class,
-                () -> parser.parseCallBody("call:bad-name{x:1}"));
+                () -> parser.parseCallBody("call:bad name{x:1}"));
     }
 
     @Test
