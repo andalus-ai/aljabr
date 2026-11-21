@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.converter.ir;
 
+import tech.kayys.aljabr.converter.java.gguf.GgufReader;
+import tech.kayys.aljabr.gguf.core.GgufModel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
