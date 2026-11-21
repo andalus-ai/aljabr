@@ -2,67 +2,60 @@ package tech.kayys.aljabr.models;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.nn.*;
-import tech.kayys.aljabr.core.nn.*;
-import tech.kayys.aljabr.core.nn.*;
-import tech.kayys.aljabr.core.nn.*;
 
+import java.util.Objects;
+import java.util.Random;
 
 /**
  * Denoising Diffusion Probabilistic Model (DDPM) — learns to reverse a
  * Gaussian noise process to generate samples.
  *
- * <p>
- * Based on <em>"Denoising Diffusion Probabilistic Models"</em>
- * (Ho et al., 2020).
- *
- * <p>
- * Forward process (fixed): {@code q(xₜ|x₀) = N(√ᾱₜ·x₀, (1-ᾱₜ)·I)}
- * <p>
- * Reverse process (learned): {@code p_θ(xₜ₋₁|xₜ) = N(μ_θ(xₜ,t), σₜ²·I)}
- *
- * <h3>Example</h3>
- * 
- * <pre>{@code
- * var ddpm = new DDPM(inputDim = 784, hiddenDim = 256, timesteps = 1000);
- *
- * // Training step
- * Tensor loss = ddpm.trainingLoss(x0);
- *
- * // Sampling (inference)
- * Tensor sample = ddpm.sample(batchSize = 4);
- * }</pre>
+ * <p>Based on "Denoising Diffusion Probabilistic Models" (Ho et al., 2020).
+ * This implementation is a vector-data baseline; image latent diffusion uses
+ * its own spatial denoiser and pipeline contracts.
  */
 public final class DDPM extends NNModule {
 
+    private final int inputDim;
     private final int timesteps;
-    private final float[] alphas; // αₜ = 1 - βₜ
-    private final float[] alphasCumprod; // ᾱₜ = ∏αᵢ
-    private final float[] betas; // noise schedule
+    private final float[] alphas;
+    private final float[] alphasCumprod;
+    private final float[] betas;
 
-    /** U-Net-like denoising network: predicts noise ε from (xₜ, t). */
+    /** Denoiser predicts epsilon from [x_t, normalized timestep]. */
     private final NNModule denoiser;
 
     /**
-     * Creates a DDPM with a linear noise schedule.
+     * Creates a DDPM with a linear beta schedule.
      *
-     * @param inputDim  data dimension (e.g. 784 for MNIST)
+     * @param inputDim data dimension (e.g. 784 for MNIST)
      * @param hiddenDim denoiser hidden dimension
-     * @param timesteps number of diffusion steps T (default 1000)
+     * @param timesteps number of diffusion steps; must be at least two
      */
     public DDPM(int inputDim, int hiddenDim, int timesteps) {
+        if (inputDim <= 0) {
+            throw new IllegalArgumentException("inputDim must be positive");
+        }
+        if (hiddenDim <= 0) {
+            throw new IllegalArgumentException("hiddenDim must be positive");
+        }
+        if (timesteps < 2) {
+            throw new IllegalArgumentException("timesteps must be at least 2");
+        }
+
+        this.inputDim = inputDim;
         this.timesteps = timesteps;
         this.betas = linearSchedule(1e-4f, 0.02f, timesteps);
         this.alphas = new float[timesteps];
         this.alphasCumprod = new float[timesteps];
 
-        float cumprod = 1f;
+        float cumulativeAlpha = 1f;
         for (int t = 0; t < timesteps; t++) {
             alphas[t] = 1f - betas[t];
-            cumprod *= alphas[t];
-            alphasCumprod[t] = cumprod;
+            cumulativeAlpha *= alphas[t];
+            alphasCumprod[t] = cumulativeAlpha;
         }
 
-        // Simple MLP denoiser: [inputDim + 1 (time embedding)] → hiddenDim → inputDim
         this.denoiser = register("denoiser", new Sequential(
                 new Linear(inputDim + 1, hiddenDim), new SiLU(),
                 new Linear(hiddenDim, hiddenDim), new SiLU(),
@@ -70,89 +63,113 @@ public final class DDPM extends NNModule {
     }
 
     /**
-     * Computes the simplified DDPM training loss: MSE between predicted and actual
-     * noise.
+     * Computes the simplified DDPM training loss: MSE between predicted and
+     * sampled noise.
      *
-     * <p>
-     * Algorithm:
-     * <ol>
-     * <li>Sample random timestep t ~ Uniform(0, T)</li>
-     * <li>Sample noise ε ~ N(0, I)</li>
-     * <li>Compute noisy sample: xₜ = √ᾱₜ·x₀ + √(1-ᾱₜ)·ε</li>
-     * <li>Predict noise: ε_θ = denoiser(xₜ, t)</li>
-     * <li>Loss: ||ε - ε_θ||²</li>
-     * </ol>
-     *
-     * @param x0 clean data samples {@code [N, inputDim]}
+     * @param x0 clean data samples with shape [batch, inputDim]
      * @return scalar MSE loss
      */
     public Tensor trainingLoss(Tensor x0) {
-        int N = (int) x0.shape().dim(0);
-        int D = (int) x0.shape().dim(1);
-
-        // Random timesteps
-        int[] ts = new int[N];
-        java.util.Random rng = new java.util.Random();
-        for (int i = 0; i < N; i++)
-            ts[i] = rng.nextInt(timesteps);
-
-        // Sample noise and compute xₜ
-        Tensor noise = Tensor.randn(N, D);
-        float[] x0d = x0.toFloatArray(), nd = noise.toFloatArray();
-        float[] xt = new float[N * D];
-        for (int n = 0; n < N; n++) {
-            float sqrtAlpha = (float) Math.sqrt(alphasCumprod[ts[n]]);
-            float sqrtOneMinusAlpha = (float) Math.sqrt(1f - alphasCumprod[ts[n]]);
-            for (int d = 0; d < D; d++)
-                xt[n * D + d] = sqrtAlpha * x0d[n * D + d] + sqrtOneMinusAlpha * nd[n * D + d];
+        Objects.requireNonNull(x0, "x0 must not be null");
+        if (x0.shape().rank() != 2 || x0.shape().dim(0) <= 0
+                || x0.shape().dim(1) != inputDim) {
+            throw new IllegalArgumentException(
+                    "x0 must have shape [batch, " + inputDim + "]");
         }
 
-        // Concatenate xₜ with normalized time embedding
-        float[] xtWithT = new float[N * (D + 1)];
-        for (int n = 0; n < N; n++) {
-            System.arraycopy(xt, n * D, xtWithT, n * (D + 1), D);
-            xtWithT[n * (D + 1) + D] = ts[n] / (float) timesteps; // normalized t
+        int batchSize = (int) x0.shape().dim(0);
+        int dimension = inputDim;
+
+        int[] sampledTimesteps = new int[batchSize];
+        Random rng = new Random();
+        for (int i = 0; i < batchSize; i++) {
+            sampledTimesteps[i] = rng.nextInt(timesteps);
         }
 
-        Tensor predNoise = denoiser.forward(Tensor.of(xtWithT, N, D + 1));
-        return predNoise.sub(noise).pow(2f).mean();
+        Tensor noise = Tensor.randn(batchSize, dimension);
+        float[] clean = x0.toFloatArray();
+        float[] noiseValues = noise.toFloatArray();
+        float[] noisy = new float[batchSize * dimension];
+
+        for (int n = 0; n < batchSize; n++) {
+            int timestep = sampledTimesteps[n];
+            float signalScale = (float) Math.sqrt(alphasCumprod[timestep]);
+            float noiseScale = (float) Math.sqrt(1f - alphasCumprod[timestep]);
+            for (int d = 0; d < dimension; d++) {
+                int index = n * dimension + d;
+                noisy[index] = signalScale * clean[index] + noiseScale * noiseValues[index];
+            }
+        }
+
+        Tensor modelInput = appendTimestep(noisy, sampledTimesteps, batchSize);
+        Tensor predictedNoise = denoiser.forward(modelInput);
+        return predictedNoise.sub(noise).pow(2f).mean();
     }
 
     /**
-     * Generates samples by running the reverse diffusion process.
+     * Samples a batch using a fresh, non-deterministic seed.
      *
-     * <p>
-     * Starts from pure Gaussian noise and iteratively denoises for T steps.
-     *
-     * @param batchSize number of samples to generate
-     * @return generated samples {@code [batchSize, inputDim]}
+     * @param batchSize number of samples
+     * @return generated samples with shape [batchSize, inputDim]
      */
     public Tensor sample(int batchSize) {
-        int D = (int) 0 - 1;
-        float[] x = new float[batchSize * D];
-        java.util.Random rng = new java.util.Random();
-        for (int i = 0; i < x.length; i++)
-            x[i] = (float) rng.nextGaussian();
+        return sample(batchSize, new Random().nextLong());
+    }
+
+    /**
+     * Samples a batch reproducibly for a fixed model state and seed.
+     *
+     * <p>The same seed produces the same initial Gaussian noise and reverse
+     * process noise. Reproducibility across different compute backends is not
+     * guaranteed because floating-point kernels may differ.
+     *
+     * @param batchSize number of samples
+     * @param seed random seed for all sampling noise
+     * @return generated samples with shape [batchSize, inputDim]
+     */
+    public Tensor sample(int batchSize, long seed) {
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("batchSize must be positive");
+        }
+
+        Random rng = new Random(seed);
+        float[] sample = new float[batchSize * inputDim];
+        for (int i = 0; i < sample.length; i++) {
+            sample[i] = (float) rng.nextGaussian();
+        }
 
         for (int t = timesteps - 1; t >= 0; t--) {
-            float[] xtWithT = new float[batchSize * (D + 1)];
-            for (int n = 0; n < batchSize; n++) {
-                System.arraycopy(x, n * D, xtWithT, n * (D + 1), D);
-                xtWithT[n * (D + 1) + D] = t / (float) timesteps;
-            }
-            float[] predNoise = denoiser.forward(Tensor.of(xtWithT, batchSize, D + 1)).toFloatArray();
+            int[] timestepValues = new int[batchSize];
+            java.util.Arrays.fill(timestepValues, t);
+            Tensor modelInput = appendTimestep(sample, timestepValues, batchSize);
+            float[] predictedNoise = denoiser.forward(modelInput).toFloatArray();
 
-            float alpha = alphas[t], alphaCum = alphasCumprod[t];
+            float alpha = alphas[t];
             float beta = betas[t];
-            float coeff = (1f - alpha) / (float) Math.sqrt(1f - alphaCum);
+            float alphaBar = alphasCumprod[t];
+            float previousAlphaBar = t == 0 ? 1f : alphasCumprod[t - 1];
 
-            for (int i = 0; i < x.length; i++) {
-                x[i] = (1f / (float) Math.sqrt(alpha)) * (x[i] - coeff * predNoise[i]);
-                if (t > 0)
-                    x[i] += (float) Math.sqrt(beta) * (float) rng.nextGaussian();
+            // Posterior mean:
+            // mu_theta = 1/sqrt(alpha_t) *
+            //           (x_t - beta_t/sqrt(1-alphaBar_t) * epsilon_theta)
+            float meanScale = 1f / (float) Math.sqrt(alpha);
+            float noiseScale = beta / (float) Math.sqrt(1f - alphaBar);
+
+            // DDPM posterior variance beta_tilde_t. It is zero at t=0.
+            float posteriorVariance = beta * (1f - previousAlphaBar)
+                    / (1f - alphaBar);
+            float posteriorNoiseScale = (float) Math.sqrt(Math.max(0f, posteriorVariance));
+
+            for (int i = 0; i < sample.length; i++) {
+                float posteriorMean = meanScale * (sample[i] - noiseScale * predictedNoise[i]);
+                sample[i] = posteriorMean;
+                if (t > 0 && posteriorNoiseScale > 0f) {
+                    sample[i] += posteriorNoiseScale * (float) rng.nextGaussian();
+                }
             }
         }
-        return Tensor.of(x, batchSize, D);
+
+        return Tensor.of(sample, batchSize, inputDim);
     }
 
     @Override
@@ -160,10 +177,21 @@ public final class DDPM extends NNModule {
         return trainingLoss(x);
     }
 
-    private static float[] linearSchedule(float start, float end, int T) {
-        float[] b = new float[T];
-        for (int t = 0; t < T; t++)
-            b[t] = start + (end - start) * t / (T - 1);
-        return b;
+    private Tensor appendTimestep(float[] values, int[] timestepValues, int batchSize) {
+        float[] input = new float[batchSize * (inputDim + 1)];
+        for (int n = 0; n < batchSize; n++) {
+            System.arraycopy(values, n * inputDim, input, n * (inputDim + 1), inputDim);
+            input[n * (inputDim + 1) + inputDim] =
+                    timestepValues[n] / (float) timesteps;
+        }
+        return Tensor.of(input, batchSize, inputDim + 1);
+    }
+
+    private static float[] linearSchedule(float start, float end, int count) {
+        float[] schedule = new float[count];
+        for (int t = 0; t < count; t++) {
+            schedule[t] = start + (end - start) * t / (count - 1);
+        }
+        return schedule;
     }
 }
