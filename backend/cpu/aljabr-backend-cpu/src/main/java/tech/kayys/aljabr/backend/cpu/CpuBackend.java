@@ -429,18 +429,39 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public List<Tensor> split(Tensor a, int axis, int parts) {
+        Objects.requireNonNull(a, "input");
+        int rank = a.shape().rank();
+        if (axis < 0 || axis >= rank) {
+            throw new IllegalArgumentException(
+                    "split axis must be in [0, " + rank + "); got " + axis);
+        }
+        if (parts <= 0) {
+            throw new IllegalArgumentException("split parts must be positive; got " + parts);
+        }
         long[] dims = a.shape().dims();
         long totalOnAxis = dims[axis];
+        if (totalOnAxis <= 0 || parts > totalOnAxis || totalOnAxis % parts != 0) {
+            throw new IllegalArgumentException(
+                    "split requires a positive axis size evenly divisible by parts; axis size="
+                            + totalOnAxis + ", parts=" + parts);
+        }
         long chunkSize = totalOnAxis / parts;
         List<Tensor> result = new ArrayList<>(parts);
-        long[] offsets = new long[dims.length];
+        long[] offsets = new long[rank];
         long[] sizes = dims.clone();
         sizes[axis] = chunkSize;
-        for (int p = 0; p < parts; p++) {
-            offsets[axis] = p * chunkSize;
-            result.add(slice(a, offsets.clone(), sizes.clone()));
+        try {
+            for (int p = 0; p < parts; p++) {
+                offsets[axis] = Math.multiplyExact((long) p, chunkSize);
+                result.add(slice(a, offsets.clone(), sizes.clone()));
+            }
+            return result;
+        } catch (RuntimeException | Error failure) {
+            for (Tensor tensor : result) {
+                tensor.close();
+            }
+            throw failure;
         }
-        return result;
     }
 
     @Override
