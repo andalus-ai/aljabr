@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.models.functiongemma;
 
 import tech.kayys.aljabr.core.tool.ToolDeclaration;
+import tech.kayys.aljabr.core.tool.ToolSet;
 import tech.kayys.aljabr.spi.Message;
 import tech.kayys.aljabr.spi.tokenizer.ModelChatTemplate;
 
@@ -53,11 +54,16 @@ public final class FunctionGemmaChatTemplate implements ModelChatTemplate {
 
     /** Formats typed declarations directly into the developer-turn body. */
     public String formatDeveloperContent(String instructions, ToolDeclaration... tools) {
+        return formatDeveloperContent(instructions, ToolSet.of(Objects.requireNonNull(tools, "tools")));
+    }
+
+    /** Formats an immutable, model-independent tool set using FunctionGemma's protocol. */
+    public String formatDeveloperContent(String instructions, ToolSet tools) {
         Objects.requireNonNull(tools, "tools");
         FunctionGemmaToolDeclarationRenderer renderer = new FunctionGemmaToolDeclarationRenderer();
-        List<String> declarations = new java.util.ArrayList<>(tools.length);
-        for (ToolDeclaration tool : tools) {
-            declarations.add(renderer.render(Objects.requireNonNull(tool, "tool")));
+        List<String> declarations = new java.util.ArrayList<>(tools.size());
+        for (ToolDeclaration tool : tools.declarations()) {
+            declarations.add(renderer.render(tool));
         }
         return formatDeveloperContent(instructions, declarations);
     }
