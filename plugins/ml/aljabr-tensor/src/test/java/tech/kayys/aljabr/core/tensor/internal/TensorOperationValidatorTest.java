@@ -14,6 +14,41 @@ import tech.kayys.aljabr.diagnostics.Diagnostic;
 
 class TensorOperationValidatorTest {
 
+
+    @Test
+    void reductionNormalizesNegativeAxisAndPreservesReductionSize() {
+        TensorOperationValidator.ReductionPlan plan = TensorOperationValidator.validateReduction(
+                new Shape(2, 3, 4), -1, false);
+
+        assertThat(plan.axis()).isEqualTo(2);
+        assertThat(plan.reductionSize()).isEqualTo(4);
+    }
+
+    @Test
+    void reductionRejectsOutOfRangeAndScalarAxes() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateReduction(
+                new Shape(2, 3), 2, false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Reduction axis 2 is out of range");
+        assertThatThrownBy(() -> TensorOperationValidator.validateReduction(
+                new Shape(), 0, false))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("tensor rank 0");
+    }
+
+    @Test
+    void meanRejectsEmptyReductionDimensionButSumAllowsIt() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateReduction(
+                new Shape(2, 0, 3), 1, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Mean is undefined for an empty reduction dimension");
+
+        TensorOperationValidator.ReductionPlan sum = TensorOperationValidator.validateReduction(
+                new Shape(2, 0, 3), 1, false);
+        assertThat(sum.axis()).isEqualTo(1);
+        assertThat(sum.reductionSize()).isZero();
+    }
+
     @Test
     void matmulReportsContractedDimensionMismatch() {
         List<Diagnostic> diagnostics = new ArrayList<>();
