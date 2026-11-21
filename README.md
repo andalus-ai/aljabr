@@ -20,7 +20,8 @@ Aljabr must not depend on AQLI. Tafkir integration is optional and must not be r
 
 ## Contents
 
-- [Design goals](#design-goals)\n- [Computational framework scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md)
+- [Design goals](#design-goals)
+- [Computational framework scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md)
 - [Architecture](#architecture)
 - [Requirements](#requirements)
 - [Build from source](#build-from-source)
@@ -40,6 +41,20 @@ Aljabr must not depend on AQLI. Tafkir integration is optional and must not be r
 - **Native interoperability:** use Java Vector API for optional, measured CPU SIMD kernels and FFM for optional native integration. Isolate incubator/native flags and dependencies; do not require them for scalar/core consumers. Do not add JNI dependencies without an explicit architectural decision.
 - **Optional integrations:** native runtimes, accelerator backends, quantization integrations and training-related modules must not make unrelated core capabilities unusable.
 - **Reproducible engineering:** focused tests, clean dependency boundaries, published-artifact checks and performance evidence for optimizations.
+
+## Engineering principles
+
+Aljabr applies seven practical engineering principles across code, modules, documentation and user workflows:
+
+1. **Separation of concerns:** SDK/API, CLI, model and format loading, execution, providers, and product workflows have explicit owners. CLI tools are thin adapters; AQLI owns inference serving and request scheduling; Tafkir owns training workflow orchestration.
+2. **Pragmatic SOLID:** use cohesive responsibilities, narrow contracts and dependency inversion where they reduce coupling. Do not add interfaces or layers without a real substitution, extension or testing need.
+3. **Single source of truth:** each public concept, configuration value, default, capability identifier and semantic rule has one authoritative owner. Adapters translate; they do not fork behavior.
+4. **Correct placement:** APIs, implementations, provider integrations, resources, tests and documentation live with the module and audience that own them.
+5. **Reusable code:** prefer composable components and shared implementations over god classes, utility dumping grounds and framework-specific copies.
+6. **Developer experience:** APIs and modules are discoverable, names and conventions are consistent, examples are runnable, and diagnostics are actionable.
+7. **User experience:** commands and configuration are predictable; execution is observable; errors, fallback, cancellation, resource cleanup and streaming behavior are explicit.
+
+These principles are applied proportionally. See [AGENTS.md](AGENTS.md) for contributor/review rules and the [Developer Guide](docs/DEVELOPER_GUIDE.md) for the implementation workflow.
 
 ## Architecture
 
@@ -161,11 +176,12 @@ Use `./gradlew projects` as the source of truth for the exact current Gradle mod
 
 ## Documentation
 
-- [Developer Guide](docs/DEVELOPER_GUIDE.md) — contributor and extension-author guidance.\n- [Research and Training Readiness](docs/architecture/RESEARCH_TRAINING_READINESS.md) — audit of autograd build visibility, optimizer behavior, and the executable Java training milestone.
+- [Developer Guide](docs/DEVELOPER_GUIDE.md) — contributor and extension-author guidance.
+- [Research and Training Readiness](docs/architecture/RESEARCH_TRAINING_READINESS.md) — audit of autograd build visibility, optimizer behavior, and the executable Java training milestone.
 - [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) — module layers, tensor/model execution sequences and validation.
 - [ADR-0001: Backend Discovery, Configuration, and Profiling Ownership](docs/architecture/ADR-0001-BACKEND-OWNERSHIP.md) — Aljabr/AQLI responsibilities, provider readiness, fallback, profiling and packaging boundaries.
 - [Unified Computational Architecture](docs/architecture/ALJABR_UNIFIED_ARCHITECTURE.md) — authoritative mission, ecosystem boundaries, modularity constraints, public API principles and delivery roadmap.
-- [Unified Computational Architecture](docs/architecture/ALJABR_UNIFIED_ARCHITECTURE.md) — authoritative mission, boundaries, extension strategy and roadmap.\n- [Computational Framework Scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md) — target mathematical, statistical, scientific-computing, ML and NLP capability map and ecosystem ownership boundaries.
+- [Computational Framework Scope](docs/architecture/COMPUTATIONAL_FRAMEWORK_SCOPE.md) — target mathematical, statistical, scientific-computing, ML and NLP capability map and ecosystem ownership boundaries.
 - [Computational Capability Inventory](docs/architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md) — source-level snapshot of existing modules, implementation evidence, gaps and recommended module boundaries.
 - [Modular Distribution Architecture](docs/architecture/MODULAR_DISTRIBUTION.md) — artifact selection, BOM semantics, provider boundaries, runtime packaging and consumer profiles.
 - [Gradle Distribution Audit](docs/architecture/GRADLE_DISTRIBUTION_AUDIT.md) — static audit of project inclusion, compiler flags, Jandex, publication metadata and dependency-resolution policy.

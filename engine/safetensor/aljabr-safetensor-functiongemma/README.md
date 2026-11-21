@@ -28,16 +28,24 @@ not yet an optimized accelerator backend.
 ## Generate from a structured conversation
 
 The model uses the registered FunctionGemma chat template when passed SPI
-messages. Tool declarations should be included in the developer message:
+messages. Tool declarations can be built with the typed Java API and included in the developer message:
 
 ```java
 FunctionGemmaChatTemplate template = new FunctionGemmaChatTemplate();
+var getWeather = FunctionGemmaToolDeclaration.of(
+    "get_weather",
+    "Get current weather.",
+    FunctionGemmaToolDeclaration.Schema.object()
+        .property("location", FunctionGemmaToolDeclaration.Schema.string()
+            .description("City or place").minLength(2))
+        .property("units", FunctionGemmaToolDeclaration.Schema.string()
+            .enumValues("celsius", "fahrenheit"))
+        .required("location")
+        .additionalProperties(false));
+
 String instructions = template.formatDeveloperContent(
     "You are an assistant that can call functions.",
-    List.of(
-        "declaration:get_weather{description:<escape>Get current weather.<escape>,"
-            + "parameters:{properties:{location:{type:<escape>STRING<escape>}},"
-            + "required:[<escape>location<escape>],type:<escape>OBJECT<escape>}}"));
+    getWeather);
 
 var result = model.generate(List.of(
     Message.system(instructions),
@@ -50,8 +58,12 @@ List<FunctionGemmaToolCallParser.FunctionCall> calls = model.parseFunctionCalls(
 The parser extracts one or more native call blocks, including escaped string
 values, booleans, numbers, nulls, nested objects, and arrays. It preserves
 call order. Parsed arguments are untrusted model output: validate them against
-your registered tool schema and authorization policy before dispatch. Aljabr
-does not execute tools from this model adapter.
+your registered tool schema and authorization policy before dispatch. The
+`FunctionGemmaToolSchemaValidator` checks required and optional properties,
+nested objects and arrays, primitive types, enums, constants, numeric bounds,
+string constraints, and unexpected properties when `additionalProperties`
+is false. Its diagnostics identify the failing argument path. Aljabr does not
+execute tools from this model adapter.
 
 For direct prompting, `generate(String, int)` accepts an already formatted
 prompt. The model stops on EOS or the FunctionGemma function-response marker;

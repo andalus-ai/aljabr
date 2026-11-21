@@ -278,8 +278,14 @@ public interface Tensor extends AutoCloseable {
 
     Tensor squeeze();
 
+    /** Swaps the final two dimensions. The tensor must have rank at least two. */
     Tensor transpose();
 
+    /**
+     * Swaps two dimensions. Negative axes count from the final dimension
+     * (for example, {@code -1} is the final axis). Both axes must be in
+     * {@code [-rank, rank)}; using the same axis is a valid no-op.
+     */
     Tensor transpose(int dim0, int dim1);
 
     Tensor softmax(int dim);
@@ -308,6 +314,14 @@ public interface Tensor extends AutoCloseable {
      */
     Tensor sum(int dim, boolean keepDim);
 
+    /**
+     * Splits this tensor into {@code parts} equal, non-empty chunks along {@code axis}.
+     *
+     * <p>Negative axes count from the final dimension ({@code -1} is the last
+     * axis). The axis size must be positive and evenly divisible by the positive
+     * part count; requesting more parts than elements is invalid. The returned
+     * tensors preserve chunk order.</p>
+     */
     java.util.List<Tensor> split(int axis, int parts);
 
     Tensor layerNorm(long[] normalizedShape, Tensor weight, Tensor bias, float eps);
