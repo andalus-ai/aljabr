@@ -1,0 +1,302 @@
+package tech.kayys.aljabr.models.functiongemma;
+
+import tech.kayys.aljabr.core.tool.ToolDeclaration;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Pattern;
+
+/**
+ * Immutable, typed Java representation of a FunctionGemma tool declaration.
+ *
+ * <p>The declaration renders the native FunctionGemma developer-turn syntax.
+ * It describes a tool only: it does not register, authorize, or execute it.</p>
+ */
+public final class FunctionGemmaToolDeclaration implements ToolDeclaration {
+    private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
+    private static final String ESCAPE = FunctionGemmaTokenizer.ESCAPE;
+
+    private final String name;
+    private final String description;
+    private final Schema parameters;
+
+    private FunctionGemmaToolDeclaration(String name, String description, Schema parameters) {
+        this.name = requireIdentifier(name, "tool name");
+        this.description = requireText(description, "tool description");
+        this.parameters = Objects.requireNonNull(parameters, "parameters").copy();
+        if (this.parameters.type != Type.OBJECT) {
+            throw new IllegalArgumentException("Tool parameters must have OBJECT type");
+        }
+    }
+
+    public static FunctionGemmaToolDeclaration of(String name, String description, Schema parameters) {
+        return new FunctionGemmaToolDeclaration(name, description, parameters);
+    }
+
+    public String name() { return name; }
+    public String description() { return description; }
+
+    /** Returns a JSON-Schema-like immutable map suitable for the argument validator. */
+    public Map<String, Object> parameterSchema() {
+        return parameters.toMap();
+    }
+
+    /** Renders one native FunctionGemma declaration without surrounding control tokens. */
+    public String render() {
+        return new FunctionGemmaToolDeclarationRenderer().render(this);
+    }
+
+    private static String escaped(String value) {
+        if (value.contains(ESCAPE)) {
+            throw new IllegalArgumentException("String values must not contain the FunctionGemma escape token");
+        }
+        return ESCAPE + value + ESCAPE;
+    }
+
+    private static String requireIdentifier(String value, String label) {
+        Objects.requireNonNull(value, label);
+        if (!IDENTIFIER.matcher(value).matches()) {
+            throw new IllegalArgumentException(label + " must be a protocol identifier: " + value);
+        }
+        return value;
+    }
+
+    private static String requireText(String value, String label) {
+        Objects.requireNonNull(value, label);
+        if (value.isBlank()) throw new IllegalArgumentException(label + " must not be blank");
+        return value;
+    }
+
+    public enum Type { OBJECT, ARRAY, STRING, INTEGER, NUMBER, BOOLEAN, NULL }
+
+    /** Fluent schema builder for tool parameters and nested properties. */
+    public static final class Schema {
+        private final Type type;
+        private String description;
+        private final Map<String, Schema> properties = new LinkedHashMap<>();
+        private final List<String> required = new ArrayList<>();
+        private Schema items;
+        private Boolean additionalProperties;
+        private final List<Object> enumValues = new ArrayList<>();
+        private Object constant;
+        private boolean hasConstant;
+        private BigDecimal minimum;
+        private BigDecimal maximum;
+        private Integer minLength;
+        private Integer maxLength;
+        private Integer minItems;
+        private Integer maxItems;
+        private String pattern;
+
+        private Schema(Type type) { this.type = Objects.requireNonNull(type, "type"); }
+
+        public static Schema object() { return new Schema(Type.OBJECT); }
+        public static Schema array() { return new Schema(Type.ARRAY); }
+        public static Schema string() { return new Schema(Type.STRING); }
+        public static Schema integer() { return new Schema(Type.INTEGER); }
+        public static Schema number() { return new Schema(Type.NUMBER); }
+        public static Schema bool() { return new Schema(Type.BOOLEAN); }
+        public static Schema nil() { return new Schema(Type.NULL); }
+
+        public Schema description(String value) {
+            this.description = requireText(value, "schema description");
+            return this;
+        }
+
+        public Schema property(String name, Schema schema) {
+            if (type != Type.OBJECT) throw new IllegalStateException("properties are only valid on OBJECT schemas");
+            String key = requireIdentifier(name, "property name");
+            if (properties.putIfAbsent(key, Objects.requireNonNull(schema, "schema")) != null) {
+                throw new IllegalArgumentException("Duplicate property: " + key);
+            }
+            return this;
+        }
+
+        public Schema required(String... names) {
+            if (type != Type.OBJECT) throw new IllegalStateException("required is only valid on OBJECT schemas");
+            for (String name : names) {
+                String key = requireIdentifier(name, "required property");
+                if (!required.contains(key)) required.add(key);
+            }
+            return this;
+        }
+
+        public Schema items(Schema schema) {
+            if (type != Type.ARRAY) throw new IllegalStateException("items is only valid on ARRAY schemas");
+            this.items = Objects.requireNonNull(schema, "schema");
+            return this;
+        }
+
+        public Schema additionalProperties(boolean allowed) {
+            if (type != Type.OBJECT) throw new IllegalStateException("additionalProperties is only valid on OBJECT schemas");
+            this.additionalProperties = allowed;
+            return this;
+        }
+
+        public Schema enumValues(Object... values) {
+            if (values.length == 0) throw new IllegalArgumentException("enum must contain at least one value");
+            enumValues.clear();
+            for (Object value : values) {
+                validateLiteral(value);
+                if (!matchesType(value)) throw new IllegalArgumentException("Enum value does not match schema type " + type);
+                enumValues.add(value);
+            }
+            return this;
+        }
+
+        public Schema constant(Object value) {
+            validateLiteral(value);
+            if (!matchesType(value)) throw new IllegalArgumentException("Constant does not match schema type " + type);
+            this.constant = value;
+            this.hasConstant = true;
+            return this;
+        }
+
+        public Schema minimum(Number value) {
+            requireNumericType("minimum");
+            this.minimum = decimal(value, "minimum");
+            return this;
+        }
+
+        public Schema maximum(Number value) {
+            requireNumericType("maximum");
+            this.maximum = decimal(value, "maximum");
+            return this;
+        }
+
+        public Schema minLength(int value) { requireType(Type.STRING, "minLength"); this.minLength = nonNegative(value, "minLength"); return this; }
+        public Schema maxLength(int value) { requireType(Type.STRING, "maxLength"); this.maxLength = nonNegative(value, "maxLength"); return this; }
+        public Schema minItems(int value) { requireType(Type.ARRAY, "minItems"); this.minItems = nonNegative(value, "minItems"); return this; }
+        public Schema maxItems(int value) { requireType(Type.ARRAY, "maxItems"); this.maxItems = nonNegative(value, "maxItems"); return this; }
+
+        public Schema pattern(String value) {
+            requireType(Type.STRING, "pattern");
+            Objects.requireNonNull(value, "pattern");
+            try {
+                Pattern.compile(value);
+            } catch (java.util.regex.PatternSyntaxException exception) {
+                throw new IllegalArgumentException("Invalid schema pattern", exception);
+            }
+            this.pattern = value;
+            return this;
+        }
+
+        private void requireType(Type expected, String keyword) {
+            if (type != expected) throw new IllegalStateException(keyword + " is only valid on " + expected + " schemas");
+        }
+
+        private void requireNumericType(String keyword) {
+            if (type != Type.INTEGER && type != Type.NUMBER) {
+                throw new IllegalStateException(keyword + " is only valid on INTEGER or NUMBER schemas");
+            }
+        }
+
+        private boolean matchesType(Object value) {
+            if (value == null) return type == Type.NULL;
+            return switch (type) {
+                case OBJECT -> value instanceof Map<?, ?>;
+                case ARRAY -> value instanceof List<?>;
+                case STRING -> value instanceof String;
+                case INTEGER -> value instanceof Number number && isIntegral(number);
+                case NUMBER -> value instanceof Number;
+                case BOOLEAN -> value instanceof Boolean;
+                case NULL -> false;
+            };
+        }
+
+        private static boolean isIntegral(Number value) {
+            try {
+                new BigDecimal(value.toString()).toBigIntegerExact();
+                return true;
+            } catch (NumberFormatException | ArithmeticException exception) {
+                return false;
+            }
+        }
+
+        private Schema copy() {
+            Schema copy = new Schema(type);
+            copy.description = description;
+            properties.forEach((key, value) -> copy.properties.put(key, value.copy()));
+            copy.required.addAll(required);
+            copy.items = items == null ? null : items.copy();
+            copy.additionalProperties = additionalProperties;
+            copy.enumValues.addAll(enumValues);
+            copy.constant = constant;
+            copy.hasConstant = hasConstant;
+            copy.minimum = minimum;
+            copy.maximum = maximum;
+            copy.minLength = minLength;
+            copy.maxLength = maxLength;
+            copy.minItems = minItems;
+            copy.maxItems = maxItems;
+            copy.pattern = pattern;
+            return copy;
+        }
+
+        private Map<String, Object> toMap() {
+            if (minimum != null && maximum != null && minimum.compareTo(maximum) > 0) {
+                throw new IllegalStateException("minimum must not exceed maximum");
+            }
+            if (minLength != null && maxLength != null && minLength > maxLength) {
+                throw new IllegalStateException("minLength must not exceed maxLength");
+            }
+            if (minItems != null && maxItems != null && minItems > maxItems) {
+                throw new IllegalStateException("minItems must not exceed maxItems");
+            }
+            for (String name : required) {
+                if (!properties.containsKey(name)) {
+                    throw new IllegalStateException("Required property is not declared: " + name);
+                }
+            }
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("type", type.name());
+            if (description != null) result.put("description", description);
+            if (!properties.isEmpty()) {
+                Map<String, Object> nested = new LinkedHashMap<>();
+                properties.forEach((key, value) -> nested.put(key, value.toMap()));
+                result.put("properties", Collections.unmodifiableMap(nested));
+            }
+            if (!required.isEmpty()) result.put("required", List.copyOf(required));
+            if (items != null) result.put("items", items.toMap());
+            if (additionalProperties != null) result.put("additionalProperties", additionalProperties);
+            if (!enumValues.isEmpty()) result.put("enum", Collections.unmodifiableList(new ArrayList<>(enumValues)));
+            if (hasConstant) result.put("const", constant);
+            if (minimum != null) result.put("minimum", minimum);
+            if (maximum != null) result.put("maximum", maximum);
+            if (minLength != null) result.put("minLength", minLength);
+            if (maxLength != null) result.put("maxLength", maxLength);
+            if (minItems != null) result.put("minItems", minItems);
+            if (maxItems != null) result.put("maxItems", maxItems);
+            if (pattern != null) result.put("pattern", pattern);
+            return Collections.unmodifiableMap(result);
+        }
+
+        private static void validateLiteral(Object value) {
+            if (value != null && !(value instanceof String) && !(value instanceof Number)
+                    && !(value instanceof Boolean)) {
+                throw new IllegalArgumentException("Schema literals must be strings, numbers, booleans, or null");
+            }
+            if (value instanceof String string) escaped(string);
+            if (value instanceof Number number) decimal(number, "numeric schema literal");
+        }
+
+        private static BigDecimal decimal(Number value, String label) {
+            Objects.requireNonNull(value, label);
+            try {
+                return new BigDecimal(value.toString());
+            } catch (NumberFormatException exception) {
+                throw new IllegalArgumentException(label + " must be finite", exception);
+            }
+        }
+
+        private static int nonNegative(int value, String label) {
+            if (value < 0) throw new IllegalArgumentException(label + " must be non-negative");
+            return value;
+        }
+    }
+}

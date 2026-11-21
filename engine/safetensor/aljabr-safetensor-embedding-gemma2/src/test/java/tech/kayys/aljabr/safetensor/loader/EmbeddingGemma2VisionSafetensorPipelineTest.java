@@ -30,9 +30,10 @@ class EmbeddingGemma2VisionSafetensorPipelineTest {
                 elements = Math.multiplyExact(elements, dimension);
             }
             long byteLength = Math.multiplyExact(elements, (long) Float.BYTES);
+            long endOffset = Math.addExact(offset, byteLength);
             infos.put(entry.getKey(), SafetensorTensorInfo.of(
-                    entry.getKey(), SafetensorDType.F32, toLongs(entry.getValue()), offset, byteLength));
-            offset = Math.addExact(offset, byteLength);
+                    entry.getKey(), SafetensorDType.F32, toLongs(entry.getValue()), offset, endOffset));
+            offset = endOffset;
         }
 
         Arena arena = Arena.ofShared();

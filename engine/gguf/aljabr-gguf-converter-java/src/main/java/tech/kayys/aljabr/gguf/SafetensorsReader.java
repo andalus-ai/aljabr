@@ -116,6 +116,11 @@ public final class SafetensorsReader implements AutoCloseable {
         return tensors;
     }
 
+    /** Absolute byte offset of the first tensor payload byte in the file. */
+    public long dataOffset() {
+        return dataOffset;
+    }
+
     /** Optional global metadata from {@code __metadata__} key. */
     public Map<String, String> globalMeta() {
         return globalMeta;

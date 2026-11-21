@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 public class HatComputeBackendTest {
 
@@ -150,6 +151,31 @@ public class HatComputeBackendTest {
         assertEquals(2, result.shape().dim(1));
         assertArrayEquals(new float[] { 58.0f, 64.0f, 139.0f, 154.0f },
                 result.toFloatArray(), 1e-4f);
+    }
+
+    @Test
+    public void testMatmulConsumesStridedCpuFallbackViews() {
+        try (Tensor parent = TensorFactory.of(new float[] {
+                99.0f, 1.0f, 2.0f, 99.0f,
+                99.0f, 3.0f, 4.0f, 99.0f
+        }, backend, 2, 4);
+                Tensor leftView = backend.slice(parent, new long[] { 0, 1 }, new long[] { 2, 2 });
+                Tensor right = TensorFactory.of(new float[] {
+                        2.0f, 0.0f,
+                        0.0f, 3.0f
+                }, backend, 2, 2);
+                Tensor result = backend.matmul(leftView, right)) {
+            assertInstanceOf(CpuBackend.class, leftView.backend(),
+                    "Slice fallback should retain CPU ownership");
+            assertEquals(1L, leftView.layout().storageOffset(),
+                    "The test input must exercise a non-zero storage offset");
+            assertArrayEquals(new long[] { 4, 1 }, leftView.layout().strides(),
+                    "The test input must exercise a non-contiguous row stride");
+            assertEquals(backend, result.backend(),
+                    "Native HAT matmul should own its result after consuming the CPU view");
+            assertArrayEquals(new float[] { 2.0f, 6.0f, 6.0f, 12.0f },
+                    result.toFloatArray(), 1e-4f);
+        }
     }
 
     @Test
@@ -287,6 +313,9 @@ public class HatComputeBackendTest {
         assertInstanceOf(CpuBackend.class, convResult.backend());
         assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f, 4.0f },
                 convResult.toFloatArray(), 1e-4f);
+    }
+
+    @Test
     public void testEmbeddingAndLossFallbacksConsumeHatOwnedOperands() {
         Tensor embeddingWeight = TensorFactory.of(
                 new float[] { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f },

@@ -44,7 +44,7 @@ class TensorLayoutTest {
     void accountsForStorageOffsetAndStridedReachableRange() {
         TensorLayout layout = new TensorLayout(new Shape(2, 2), new long[] {4, 1}, 3);
 
-        assertEquals(8, layout.requiredStorageElements());
+        assertEquals(9, layout.requiredStorageElements());
         assertFalse(layout.isContiguous());
     }
 

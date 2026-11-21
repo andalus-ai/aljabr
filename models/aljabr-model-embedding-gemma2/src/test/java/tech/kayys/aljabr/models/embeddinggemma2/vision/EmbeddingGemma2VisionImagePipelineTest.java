@@ -44,7 +44,9 @@ class EmbeddingGemma2VisionImagePipelineTest {
         float[][] features = pipeline.encode(whiteImage);
 
         assertEquals(64, features.length);
-        float expected = (float) (1.0 / Math.sqrt(3.0));
+        // Pooling scales by sqrt(4); bridge RMSNorm spans all four vision channels,
+        // of which three are non-zero: 2 / sqrt((3 * 2^2) / 4) = 2 / sqrt(3).
+        float expected = (float) (2.0 / Math.sqrt(3.0));
         for (float[] token : features) {
             assertEquals(3, token.length);
             assertEquals(expected, token[0], 1e-5f);

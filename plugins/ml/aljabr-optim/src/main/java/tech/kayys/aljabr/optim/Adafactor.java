@@ -262,6 +262,7 @@ public final class Adafactor implements Optimizer, AutoCloseable {
         Tensor sum = null;
         Tensor difference = null;
         Tensor absoluteDifference = null;
+        Tensor halfDifferenceResult = null;
         Tensor result = null;
         try {
             squared = update.mul(update);
@@ -274,7 +275,8 @@ public final class Adafactor implements Optimizer, AutoCloseable {
             sum = one.add(ratio);
             difference = one.sub(ratio);
             absoluteDifference = difference.abs();
-            result = sum.sub(absoluteDifference).mul(0.5f);
+            halfDifferenceResult = sum.sub(absoluteDifference);
+            result = halfDifferenceResult.mul(0.5f);
             return result;
         } catch (RuntimeException | Error failure) {
             if (result != null) result.release();
@@ -290,6 +292,7 @@ public final class Adafactor implements Optimizer, AutoCloseable {
             if (sum != null) sum.release();
             if (difference != null) difference.release();
             if (absoluteDifference != null) absoluteDifference.release();
+            if (halfDifferenceResult != null) halfDifferenceResult.release();
         }
     }
 

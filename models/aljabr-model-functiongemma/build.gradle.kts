@@ -18,6 +18,7 @@ repositories {
 }
 
 dependencies {
+    api(project(":core:aljabr-core"))
     api(project(":spi:aljabr-spi-model"))
     api(project(":models:aljabr-model-gemma3"))
     implementation(project(":spi:aljabr-spi-tokenizer"))

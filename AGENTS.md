@@ -11,7 +11,7 @@ The architectural principle is:
 Aljabr owns:
 - Public Java APIs and the developer-facing programming model.
 - Computational semantics: data types, shapes, broadcasting, precision, determinism, memory/resource behavior, concurrency, and errors.
-- Capability identity, metadata, registry contracts, and provider selection policy.
+- Capability identity, metadata, registry contracts, and provider compatibility/selection mechanisms. Aljabr evaluates capabilities and initializes providers; the consuming application/runtime owns product-specific selection policy.
 - Provider and extension SPIs, compatibility rules, validation, and conformance contracts.
 - Reusable mathematical, numerical, statistical, scientific, ML, and deep-learning primitives.
 
@@ -326,3 +326,102 @@ Before adding new public SDK abstractions or reorganizing modules, consult `docs
 ## 18. Developer tooling implementation gate
 
 Use `docs/architecture/DEVELOPER_TOOLING.md` as the source of truth for developer-facing diagnostics, inspection, profiling, memory tracing and numerical validation. Keep diagnostics contracts dependency-light and optional. Measurements must distinguish measured from estimated, host from device, and asynchronous launch from synchronized execution. Never expose tensor contents or sensitive inputs by default. Prefer JFR/JMH and optional ecosystem adapters over custom replacements. Do not introduce a monolithic tooling artifact or couple Aljabr core to AQLI, Tafkir, notebooks, dashboards or exporters.
+
+
+## 19. Seven engineering principles — mandatory design and review rules
+
+Apply these principles proportionally. They are decision rules for reviewing real changes, not a requirement to introduce an interface, module, abstraction or design pattern for every noun.
+
+### 19.1 Separation of concerns and ownership
+
+Every component must have one clear primary responsibility and an identifiable owning layer:
+
+| Concern | Aljabr ownership | Boundary |
+|---|---|---|
+| Public SDK/API | Stable Java types, computational semantics and library contracts | Entry points adapt to the API; they do not fork its semantics |
+| CLI and developer tools | Thin command parsing, validation, presentation and diagnostics | No kernels, model execution engines, provider implementations or duplicated business rules in command handlers |
+| Model construction/loading | Reusable model configuration, architecture composition, format adapters, tokenizer/preprocessor contracts and weight decoding/loading primitives | Keep file-format parsing separate from architecture construction and execution; CLI delegates. AQLI owns serving-time model/session lifecycle and loading orchestration |
+| Execution | Reusable operation/model execution plans, execution contexts and execution primitives | Keep execution mechanics separate from product workflow and deployment lifecycle |
+| Provider/backend integration | Provider SPI, capability declarations, compatibility evaluation, conformance, resource adapters and backend implementations | Aljabr exposes explainable selection/initialization mechanisms; the consuming application/runtime owns product-specific policy. Implementations depend on stable contracts; public APIs do not depend on a concrete backend |
+| Scheduling | Local execution ordering/resource coordination only where it is part of a reusable computation contract | AQLI owns inference-request scheduling, admission, batching policy and serving lifecycle; Aljabr does not own cluster/cloud scheduling |
+| Streaming | Reusable data/operation stream contracts where they are computational primitives | AQLI owns token/response streaming, client backpressure and serving cancellation policy |
+| Configuration | Each setting has one authoritative owner, schema, default and validation point | Aljabr owns provider technical configuration and capability constraints; AQLI owns serving/runtime profiles and provider-selection policy; adapters translate rather than shadow settings |
+
+Do not infer ownership from a package name or current file location. Verify callers, dependencies, lifecycle and consumers before moving code. A CLI command may orchestrate calls, but must not become the owner of the underlying computation. A model loader must not become a model runner, and a model runner must not become a serving runtime.
+
+### 19.2 SOLID, applied pragmatically
+
+- **Single Responsibility:** split a class when it has independent reasons to change, not merely because it has multiple methods.
+- **Open/Closed:** use existing SPIs and composition for genuine extension points; do not make every implementation pluggable by default.
+- **Liskov Substitution:** implementations of a public contract must preserve its documented semantics, errors, lifecycle and resource guarantees.
+- **Interface Segregation:** keep consumer-facing contracts focused; do not force simple consumers to implement unrelated lifecycle, diagnostics or optional capability methods.
+- **Dependency Inversion:** domain/public contracts must not depend on CLI, concrete providers, native runtimes or product-specific orchestration.
+
+Prefer a direct cohesive class over a speculative interface hierarchy. Introduce an abstraction when there are multiple real implementations, a stable extension boundary, a test seam, or a demonstrated reduction in coupling.
+
+### 19.3 Single source of truth
+
+- One canonical public contract for each concept: tensor/storage ownership, model identity/configuration, format metadata, capability IDs, provider lifecycle, execution options, errors and streaming semantics.
+- One authoritative owner for each configuration value, default, precedence rule and validation rule. Document overrides explicitly; do not silently keep parallel copies.
+- Reuse canonical registries, descriptors, parsers, validators and conversion paths. Thin adapters may translate external representations but must delegate to the canonical implementation.
+- Do not duplicate model-family logic in format loaders, CLI commands, backend implementations or downstream products.
+- When two existing abstractions overlap, map their callers and compatibility constraints, choose the canonical direction, and migrate incrementally. Do not add a third abstraction to hide the conflict.
+- Generated metadata and documentation should derive from authoritative declarations where practical; avoid hand-maintained competing capability inventories.
+
+### 19.4 Correct placement
+
+Place code according to responsibility and dependency direction, not convenience or historical accident:
+
+- Public contracts belong in the smallest stable API/SPI artifact that owns them.
+- Provider-specific kernels, native bindings and device resources belong in the provider implementation.
+- Format parsing and format-specific weight decoding belong in format adapters; architecture/model composition belongs in model modules.
+- CLI parsing/presentation belongs in CLI modules; reusable logic belongs in library modules.
+- Tests belong beside the owning module and should distinguish unit, contract/conformance, integration and hardware-specific coverage.
+- Test fixtures belong in the narrowest reusable test-fixture source set; do not make production artifacts depend on test utilities.
+- Documentation belongs with its audience: root guidance for repository-wide rules, module README/AGENTS for local contracts, architecture/ADR documents for cross-module decisions, and user guides for supported workflows.
+- Resources, service descriptors, native binaries and generated sources belong to the module that owns their lifecycle and packaging.
+
+Before moving a type, inspect package/API compatibility, Gradle dependency edges, resource lookup, ServiceLoader metadata, test ownership, published artifact consumers and documentation links.
+
+### 19.5 Reusable, cohesive code
+
+- Prefer composition and small cohesive components over god classes, catch-all managers and utility dumping grounds.
+- Keep pure transformations separate from I/O, mutable state, provider lifecycle and orchestration where doing so improves testability or reuse.
+- Avoid framework-specific copies of generic numerical, tensor, model or format logic. Put shared behavior behind the canonical Aljabr contract and keep framework adapters thin.
+- Do not extract one-use helpers into public APIs without a real reuse or extension case.
+- Avoid both extremes: duplicated implementations and over-generalized frameworks. Reuse should reduce semantic drift, not create indirection without value.
+
+### 19.6 Developer experience
+
+- Make the supported module/API entry point discoverable from README, module docs and runnable examples.
+- Use consistent names for the same concept across packages, CLI options, configuration, diagnostics and documentation.
+- Document prerequisites, dependency coordinates, exact commands, expected output, cleanup and known limitations.
+- Keep public APIs idiomatic and composable; preserve explicit escape hatches behind convenience builders, annotations or fluent APIs.
+- Provide actionable errors with the failed operation, relevant input/capability constraint, selected provider where applicable, and a practical remediation.
+- Make provider selection, copies/transfers, resource use and execution behavior inspectable without requiring provider-specific knowledge.
+- Keep examples runnable against published artifacts; label source-tree-only examples and planned APIs clearly.
+
+### 19.7 User experience and operational predictability
+
+- CLI commands must be predictable, discoverable and consistent. Validate arguments early, provide useful help, stable exit behavior and actionable errors. CLI commands are adapters, not alternate owners of SDK behavior.
+- Configuration must have documented names, types, defaults, precedence and ownership. Reject conflicting or unsupported combinations instead of silently ignoring them.
+- Execution should expose meaningful progress and diagnostics without leaking implementation exceptions or overwhelming normal users.
+- Streaming must define ordering, completion, cancellation, backpressure, partial failure and resource cleanup. Never report successful completion before the stream and owned resources reach their defined terminal state.
+- Provider fallback must be explicit and explainable; never silently violate requested device, precision, determinism, memory or compatibility constraints.
+- Resource ownership and close behavior must be predictable on success, failure and cancellation.
+- Distinguish unsupported, unavailable, incompatible and failed capabilities in user-facing errors.
+
+### 19.8 Review checklist
+
+For a structural, API, execution, provider, CLI or documentation change, reviewers should be able to answer:
+
+1. What responsibility does this change own, and what explicitly remains elsewhere?
+2. Is there already a canonical API, implementation, configuration or descriptor to reuse?
+3. Does the dependency direction remain acyclic and provider/framework neutral?
+4. Is each class, package, module, resource, test and document in its proper home?
+5. Does the design introduce an abstraction only where it earns its cost?
+6. Can a consumer discover, configure, execute, diagnose and clean up the capability?
+7. Are error, cancellation, streaming and fallback behaviors explicit and tested?
+8. Are claims about implementation, validation and support backed by evidence?
+
+If a question is not applicable, say why in the PR rather than adding unnecessary machinery. These principles supplement the existing test, compatibility, provider, memory and hardware-specific rules; they do not override them.

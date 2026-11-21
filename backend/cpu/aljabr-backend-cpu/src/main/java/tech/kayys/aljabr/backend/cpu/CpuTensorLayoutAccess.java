@@ -78,7 +78,7 @@ final class CpuTensorLayoutAccess {
         }
     }
 
-    private static float readLogical(
+    static float readLogical(
             MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
         long[] strides = layout.strides();
         long remaining = logicalIndex;
@@ -91,10 +91,10 @@ final class CpuTensorLayoutAccess {
         return source.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(elementOffset, Float.BYTES));
     }
 
-    private static void requireF32(Tensor tensor) {
+    static void requireF32(Tensor tensor) {
         if (tensor.dtype() != DType.F32) {
             throw new UnsupportedOperationException(
-                    "CPU pointwise operations currently support F32 tensors only; actual dtype=" + tensor.dtype());
+                    "CPU tensor kernels currently support F32 tensors only; actual dtype=" + tensor.dtype());
         }
     }
 }

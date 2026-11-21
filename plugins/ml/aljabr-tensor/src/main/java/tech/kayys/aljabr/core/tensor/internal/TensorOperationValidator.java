@@ -181,6 +181,150 @@ public final class TensorOperationValidator {
         return output;
     }
 
+
+    /**
+     * Validates an equal-sized split and returns the normalized axis, chunk size,
+     * and logical shape of each output. Backends retain responsibility for views,
+     * strides, storage ownership, and device-specific execution.
+     */
+    public static SplitPlan validateSplit(Shape input, int requestedAxis, int parts) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        long normalized = requestedAxis < 0 ? (long) rank + requestedAxis : requestedAxis;
+        if (rank == 0 || normalized < 0 || normalized >= rank) {
+            throw new IllegalArgumentException(
+                    "Split axis " + requestedAxis + " is out of range for tensor rank " + rank);
+        }
+        if (parts <= 0) {
+            throw new IllegalArgumentException("split parts must be positive; got " + parts);
+        }
+        int axis = (int) normalized;
+        long axisSize = input.dim(axis);
+        if (axisSize <= 0 || parts > axisSize || axisSize % parts != 0) {
+            throw new IllegalArgumentException(
+                    "split requires a positive axis size evenly divisible by parts; axis size="
+                            + axisSize + ", parts=" + parts);
+        }
+        long chunkSize = axisSize / parts;
+        long[] outputDimensions = input.dims();
+        outputDimensions[axis] = chunkSize;
+        return new SplitPlan(axis, parts, chunkSize, new Shape(outputDimensions));
+    }
+
+    public record SplitPlan(int axis, int parts, long chunkSize, Shape outputShape) { }
+
+    /**
+     * Validates flattening the complete logical tensor into a one-dimensional shape.
+     * Scalars become a length-one vector and empty tensors remain empty vectors.
+     */
+    public static Shape validateFlatten(Shape input) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        return new Shape(input.numel());
+    }
+
+    /**
+     * Validates the default transpose operation, which swaps the final two axes.
+     */
+    public static TransposePlan validateTranspose(Shape input) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        if (rank < 2) {
+            throw new IllegalArgumentException(
+                    "transpose requires a tensor with rank >= 2; got " + rank);
+        }
+        return validateTranspose(input, rank - 2, rank - 1);
+    }
+
+    /**
+     * Validates two transpose axes and returns their normalized positions and output shape.
+     * Negative axes count from the final dimension; equal axes are a valid no-op.
+     */
+    public static TransposePlan validateTranspose(Shape input, int requestedAxis0, int requestedAxis1) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        long axis0 = requestedAxis0 < 0 ? (long) rank + requestedAxis0 : requestedAxis0;
+        long axis1 = requestedAxis1 < 0 ? (long) rank + requestedAxis1 : requestedAxis1;
+        if (rank == 0 || axis0 < 0 || axis0 >= rank || axis1 < 0 || axis1 >= rank) {
+            throw new IllegalArgumentException(
+                    "transpose dimensions must be in [-" + rank + ", " + rank + "); got d0="
+                            + requestedAxis0 + ", d1=" + requestedAxis1);
+        }
+        int normalizedAxis0 = (int) axis0;
+        int normalizedAxis1 = (int) axis1;
+        long[] outputDimensions = input.dims();
+        long temporary = outputDimensions[normalizedAxis0];
+        outputDimensions[normalizedAxis0] = outputDimensions[normalizedAxis1];
+        outputDimensions[normalizedAxis1] = temporary;
+        return new TransposePlan(normalizedAxis0, normalizedAxis1, new Shape(outputDimensions));
+    }
+
+    public record TransposePlan(int axis0, int axis1, Shape outputShape) { }
+    /**
+     * Validates an unsqueeze axis and returns its normalized position and output shape.
+     * Negative axes are counted from the end of the rank-plus-one output dimensions.
+     */
+    public static UnsqueezePlan validateUnsqueeze(Shape input, int requestedAxis) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        long normalized = requestedAxis < 0 ? (long) rank + 1 + requestedAxis : requestedAxis;
+        if (normalized < 0 || normalized > rank) {
+            throw new IllegalArgumentException(
+                    "unsqueeze axis " + requestedAxis + " is out of range for tensor rank " + rank);
+        }
+        int axis = (int) normalized;
+        long[] outputDimensions = new long[rank + 1];
+        long[] inputDimensions = input.dims();
+        System.arraycopy(inputDimensions, 0, outputDimensions, 0, axis);
+        outputDimensions[axis] = 1;
+        System.arraycopy(inputDimensions, axis, outputDimensions, axis + 1, rank - axis);
+        return new UnsqueezePlan(axis, new Shape(outputDimensions));
+    }
+
+    /**
+     * Returns the shape produced by removing every singleton dimension.
+     * The legacy tensor contract represents an all-singleton (including scalar)
+     * result as a one-element vector rather than a rank-zero scalar.
+     */
+    public static Shape validateSqueeze(Shape input) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        long[] outputDimensions = java.util.Arrays.stream(input.dims())
+                .filter(dimension -> dimension != 1)
+                .toArray();
+        return new Shape(outputDimensions.length == 0 ? new long[] { 1 } : outputDimensions);
+    }
+
+    public record UnsqueezePlan(int axis, Shape outputShape) { }
+
+    /**
+     * Validates slice coordinates and returns the logical output shape.
+     * Storage offsets, strides, device constraints, and ownership remain backend concerns.
+     */
+    public static Shape validateSlice(Shape input, long[] offsets, long[] sizes) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        int rank = input.rank();
+        if (rank == 0) {
+            throw new IllegalArgumentException("Cannot slice a scalar tensor");
+        }
+        if (offsets == null || sizes == null || offsets.length != rank || sizes.length != rank) {
+            throw new IllegalArgumentException(
+                    "Slice offsets and sizes must both have one entry per tensor dimension");
+        }
+
+        Shape output = new Shape(sizes);
+        for (int axis = 0; axis < rank; axis++) {
+            long offset = offsets[axis];
+            long size = sizes[axis];
+            long dimension = input.dim(axis);
+            if (offset < 0 || offset > dimension || size > dimension - offset) {
+                throw new IllegalArgumentException(
+                        "Slice is outside tensor bounds at dimension " + axis
+                                + ": offset=" + offset + ", size=" + size
+                                + ", dimension=" + dimension);
+            }
+        }
+        return output;
+    }
+
     /**
      * Validates a single-axis reduction and returns its normalized axis and output shape.
      * Mean reductions reject empty axes; sum reductions preserve the additive identity
