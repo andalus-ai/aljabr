@@ -435,7 +435,7 @@ public final class CpuBackend implements ComputeBackend {
         long[] dims = a.shape().dims();
         long chunkSize = plan.chunkSize();
         List<Tensor> result = new ArrayList<>(parts);
-        long[] offsets = new long[rank];
+        long[] offsets = new long[dims.length];
         long[] sizes = dims.clone();
         sizes[normalizedAxis] = chunkSize;
         try {
