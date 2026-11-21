@@ -312,6 +312,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public Tensor slice(long[] offsets, long[] sizes) {
+        TensorOperationValidator.validateSlice(shape, offsets, sizes);
         return record(OpType.SLICE, new Tensor[] { this }, new Object[] { offsets.clone(), sizes.clone() }, backend.slice(this, offsets, sizes));
     }
 
