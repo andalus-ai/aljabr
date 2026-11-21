@@ -3,6 +3,7 @@ package tech.kayys.aljabr.converter.ir;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.ModelDescriptorReader;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptorReaders;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 
