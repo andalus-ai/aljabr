@@ -78,12 +78,24 @@ final class CpuTensorLayoutAccess {
         }
     }
 
-    static long logicalElementOffset(long[] dimensions, TensorLayout layout, long logicalIndex) {
-        Objects.requireNonNull(dimensions, "dimensions");
-        Objects.requireNonNull(layout, "layout");
-        if (logicalIndex < 0) {
-            throw new IndexOutOfBoundsException("logical index must be non-negative");
+    static MemorySegment contiguousF32(Tensor tensor) {
+        requireF32(tensor);
+        MemorySegment source = CpuTensorStorageAccess.segment(tensor);
+        TensorLayout layout = tensor.layout();
+        if (layout.isContiguous() && layout.storageOffset() == 0) {
+            return source;
         }
+        long elements = tensor.numel();
+        float[] values = new float[Math.toIntExact(elements)];
+        long[] dimensions = tensor.shape().dims();
+        for (int index = 0; index < values.length; index++) {
+            values[index] = readLogical(source, dimensions, layout, index);
+        }
+        return MemorySegment.ofArray(values);
+    }
+
+    static float readLogical(
+            MemorySegment source, long[] dimensions, TensorLayout layout, long logicalIndex) {
         long[] strides = layout.strides();
         long remaining = logicalIndex;
         long elementOffset = layout.storageOffset();

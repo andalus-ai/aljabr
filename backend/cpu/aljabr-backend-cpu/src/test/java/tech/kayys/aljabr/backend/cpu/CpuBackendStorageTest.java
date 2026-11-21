@@ -985,57 +985,112 @@ class CpuBackendStorageTest {
     }
 
     @Test
-    void crossEntropyAndBinaryCrossEntropyReadStridedOffsetLayouts() {
-        HostStorage predictionStorage = new HostStorage(99f, -1f, -2f, -3f, -4f, -5f, -6f);
-        DefaultTensor predictions = new DefaultTensor(
-                new Shape(2, 3), DType.F32, DeviceType.CPU,
-                (TensorStorage) predictionStorage, backend,
+    void rankTwoAttentionReadsTransposedOffsetQueryKeyAndValueViews() {
+        HostStorage queryStorage = new HostStorage(99f, 0f, 0f, 0f, 0f);
+        DefaultTensor query = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) queryStorage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
-                        new Shape(2, 3), new long[] {1, 2}, 1));
-        HostStorage targetStorage = new HostStorage(0f, 0f, 0f, 0f);
-        targetStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, Float.BYTES, 2);
-        targetStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 3L * Float.BYTES, 1);
-        DefaultTensor targets = new DefaultTensor(
-                new Shape(2), DType.I32, DeviceType.CPU,
-                (TensorStorage) targetStorage, backend,
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        HostStorage keyStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor key = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) keyStorage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
-                        new Shape(2), new long[] {2}, 1));
-        Tensor crossEntropy = null;
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        HostStorage valueStorage = new HostStorage(99f, 2f, 4f, 3f, 5f);
+        DefaultTensor value = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) valueStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        Tensor result = null;
         try {
-            crossEntropy = backend.crossEntropy(predictions, targets);
-            assertArrayEquals(new float[] {4.5f}, crossEntropy.toFloatArray(), 0f);
+            result = backend.attention(query, key, value);
+            assertArrayEquals(new float[] {3f, 4f, 3f, 4f}, result.toFloatArray(), 1e-6f);
         } finally {
-            if (crossEntropy != null) crossEntropy.release();
-            predictions.release();
-            targets.release();
+            if (result != null) result.release();
+            query.release();
+            key.release();
+            value.release();
         }
-        assertEquals(0, predictionStorage.references());
-        assertEquals(0, targetStorage.references());
+        assertEquals(0, queryStorage.references());
+        assertEquals(0, keyStorage.references());
+        assertEquals(0, valueStorage.references());
+    }
 
-        HostStorage probabilityStorage = new HostStorage(99f, 0.25f, 0.5f, 0.75f, 0.5f);
-        DefaultTensor probabilities = new DefaultTensor(
-                new Shape(2, 2), DType.F32, DeviceType.CPU,
-                (TensorStorage) probabilityStorage, backend,
+    @Test
+    void rankFourAttentionReadsOffsetViewsAndPreservesLogicalOutput() {
+        HostStorage queryStorage = new HostStorage(99f, 0f, 0f, 0f, 0f);
+        DefaultTensor query = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) queryStorage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
-                        new Shape(2, 2), new long[] {1, 2}, 1));
-        HostStorage labelsStorage = new HostStorage(99f, 0f, 1f, 1f, 0f);
-        DefaultTensor labels = new DefaultTensor(
-                new Shape(2, 2), DType.F32, DeviceType.CPU,
-                (TensorStorage) labelsStorage, backend,
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        HostStorage keyStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor key = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) keyStorage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
-                        new Shape(2, 2), new long[] {1, 2}, 1));
-        Tensor binaryCrossEntropy = null;
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        HostStorage valueStorage = new HostStorage(99f, 2f, 4f, 3f, 5f);
+        DefaultTensor value = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) valueStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        Tensor result = null;
         try {
-            binaryCrossEntropy = backend.binaryCrossEntropy(probabilities, labels);
-            float expected = (float) ((-2d * Math.log(0.75d) - 2d * Math.log(0.5d)) / 4d);
-            assertArrayEquals(new float[] {expected}, binaryCrossEntropy.toFloatArray(), 1e-6f);
+            result = backend.attention(query, key, value);
+            assertArrayEquals(new float[] {3f, 4f, 3f, 4f}, result.toFloatArray(), 1e-6f);
         } finally {
-            if (binaryCrossEntropy != null) binaryCrossEntropy.release();
-            probabilities.release();
-            labels.release();
+            if (result != null) result.release();
+            query.release();
+            key.release();
+            value.release();
         }
-        assertEquals(0, probabilityStorage.references());
-        assertEquals(0, labelsStorage.references());
+        assertEquals(0, queryStorage.references());
+        assertEquals(0, keyStorage.references());
+        assertEquals(0, valueStorage.references());
+    }
+
+
+    @Test
+    void groupedQueryAttentionReadsStridedOffsetViews() {
+        HostStorage queryStorage = new HostStorage(99f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f);
+        DefaultTensor query = new DefaultTensor(
+                new Shape(1, 2, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) queryStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 2, 2, 2), new long[] {8, 4, 1, 2}, 1));
+        HostStorage keyStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor key = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) keyStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        HostStorage valueStorage = new HostStorage(99f, 2f, 4f, 3f, 5f);
+        DefaultTensor value = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) valueStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        Tensor result = null;
+        try {
+            result = backend.attentionGqa(query, key, value, null, false);
+            assertArrayEquals(new float[] {
+                    3f, 4f, 3f, 4f,
+                    3f, 4f, 3f, 4f
+            }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            query.release();
+            key.release();
+            value.release();
+        }
+        assertEquals(0, queryStorage.references());
+        assertEquals(0, keyStorage.references());
+        assertEquals(0, valueStorage.references());
     }
 
 
