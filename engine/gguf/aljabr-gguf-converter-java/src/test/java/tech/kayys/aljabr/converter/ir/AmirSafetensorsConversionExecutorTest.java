@@ -108,8 +108,31 @@ class AmirSafetensorsConversionExecutorTest {
         assertFalse(Files.exists(output));
 
         var result = executor.execute(model, plan, output, true);
-        assertEquals(List.of("vendor.config"), result.untransferredExtensionKeys());
+        assertEquals(List.of("model:vendor.config"), result.untransferredExtensionKeys());
         assertTrue(Files.exists(output));
+    }
+
+    @Test
+    void tensorExtensionsAlsoRequirePartialFidelityAndAreReported() throws Exception {
+        Path source = writeSource("tensor-extension.safetensors");
+        var payload = new PayloadReference(
+                source.toUri(), source.getFileName().toString(), 0L, 8L,
+                PayloadReference.OffsetBasis.DATA_SECTION);
+        var tensor = new TensorDescriptor(
+                "weight", "F32", List.of(2L), "unknown", null, payload,
+                Map.of("vendor.layout_hint", "blocked"));
+        var model = new ModelDescriptor(
+                ModelIdentity.of("tensor-extension"), "test-architecture", "safetensors",
+                Map.of(), Map.of(), List.of(tensor));
+        var executor = new AmirSafetensorsConversionExecutor();
+        var output = temporaryDirectory.resolve("tensor-extension-output.safetensors");
+
+        assertThrows(java.io.IOException.class, () -> executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false));
+
+        var result = executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL), output, true);
+        assertEquals(List.of("tensor:weight:vendor.layout_hint"), result.untransferredExtensionKeys());
     }
 
     private ModelDescriptor model(Path source, Map<String, String> metadata, Map<String, String> extensions) {
