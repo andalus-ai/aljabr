@@ -491,6 +491,60 @@ class CpuBackendStorageTest {
 
 
     @Test
+    void transposeNormalizesNegativeAxesAndPreservesLogicalValues() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor input = tensor(storage, 2, 3);
+        Tensor trailing = null;
+        Tensor sameAxis = null;
+        try {
+            trailing = input.transpose(-2, -1);
+            sameAxis = input.transpose(-1, 1);
+            assertArrayEquals(new long[] { 3, 2 }, trailing.shape().dims());
+            assertArrayEquals(new float[] { 1f, 4f, 2f, 5f, 3f, 6f }, trailing.toFloatArray(), 0f);
+            assertArrayEquals(new long[] { 2, 3 }, sameAxis.shape().dims());
+            assertArrayEquals(new float[] { 1f, 2f, 3f, 4f, 5f, 6f }, sameAxis.toFloatArray(), 0f);
+        } finally {
+            if (sameAxis != null) sameAxis.release();
+            if (trailing != null) trailing.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+
+        HostStorage nonTerminalStorage = new HostStorage(
+                1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 9f, 10f, 11f, 12f);
+        DefaultTensor nonTerminalInput = tensor(nonTerminalStorage, 2, 2, 3);
+        Tensor nonTerminal = null;
+        Tensor defaultTranspose = null;
+        try {
+            nonTerminal = nonTerminalInput.transpose(0, -1);
+            defaultTranspose = nonTerminalInput.transpose();
+            assertArrayEquals(new long[] { 3, 2, 2 }, nonTerminal.shape().dims());
+            assertArrayEquals(new float[] {
+                    1f, 7f, 4f, 10f, 2f, 8f, 5f, 11f, 3f, 9f, 6f, 12f
+            }, nonTerminal.toFloatArray(), 0f);
+            assertArrayEquals(new long[] { 2, 3, 2 }, defaultTranspose.shape().dims());
+        } finally {
+            if (defaultTranspose != null) defaultTranspose.release();
+            if (nonTerminal != null) nonTerminal.release();
+            nonTerminalInput.release();
+        }
+        assertEquals(0, nonTerminalStorage.references());
+    }
+
+    @Test
+    void transposeRejectsInvalidAxesBeforeAllocatingOutput() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = tensor(storage, 2, 2);
+        try {
+            assertThrows(IllegalArgumentException.class, () -> input.transpose(-3, 1));
+            assertThrows(IllegalArgumentException.class, () -> input.transpose(0, 2));
+            assertEquals(1, storage.references());
+        } finally {
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+    @Test
     void squeezeAndUnsqueezePreserveValuesAndUseSharedShapeContracts() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
         DefaultTensor input = tensor(storage, 2, 2);
