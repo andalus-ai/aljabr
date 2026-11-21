@@ -517,17 +517,9 @@ public final class DefaultTensor implements Tensor {
     @Override
     public java.util.List<Tensor> split(int axis, int parts) {
         ensureOpen();
-        int rank = shape.rank();
-        int normalizedAxis = axis < 0 ? rank + axis : axis;
-        if (normalizedAxis < 0 || normalizedAxis >= rank) {
-            throw new IllegalArgumentException(
-                    "Split axis " + axis + " is out of range for tensor rank " + rank);
-        }
-        if (parts <= 0 || shape.dim(normalizedAxis) % parts != 0) {
-            throw new IllegalArgumentException(
-                    "Split dimension " + shape.dim(normalizedAxis)
-                            + " must be evenly divisible by a positive part count; parts=" + parts);
-        }
+        TensorOperationValidator.SplitPlan plan =
+                TensorOperationValidator.validateSplit(shape, axis, parts);
+        int normalizedAxis = plan.axis();
 
         java.util.List<Tensor> outputs = backend.split(this, normalizedAxis, parts);
         if (!AutogradContext.isRecordingEnabled()
@@ -546,7 +538,7 @@ public final class DefaultTensor implements Tensor {
                     "Autograd recording requires eager DefaultTensor split outputs");
         }
 
-        long chunkSize = shape.dim(normalizedAxis) / parts;
+        long chunkSize = plan.chunkSize();
         try {
             for (int index = 0; index < outputs.size(); index++) {
                 Tensor output = outputs.get(index);
