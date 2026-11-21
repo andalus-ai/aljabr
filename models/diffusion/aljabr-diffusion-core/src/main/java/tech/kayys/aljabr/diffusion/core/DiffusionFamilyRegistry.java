@@ -6,6 +6,8 @@ import tech.kayys.aljabr.diffusion.api.DiffusionModelDescriptor;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
+import java.util.TreeSet;
 import java.util.Objects;
 
 /**
@@ -44,7 +46,7 @@ public final class DiffusionFamilyRegistry {
     }
 
     public Collection<String> familyIds() {
-        return providers.keySet();
+        return List.copyOf(new TreeSet<>(providers.keySet()));
     }
 
     private static String requireFamilyId(String familyId) {
