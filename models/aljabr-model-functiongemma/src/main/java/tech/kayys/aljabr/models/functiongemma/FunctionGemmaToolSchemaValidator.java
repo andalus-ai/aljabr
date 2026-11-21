@@ -1,13 +1,13 @@
 package tech.kayys.aljabr.models.functiongemma;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -16,16 +16,15 @@ import java.util.regex.PatternSyntaxException;
  * tool parameter schema. This class validates data only; it never authorizes
  * or invokes a tool.
  *
- * <p>The supported vocabulary is intentionally small and predictable:
- * type, properties, required, additionalProperties, items, enum, const,
- * minimum/maximum, minLength/maxLength, minItems/maxItems, and pattern.</p>
+ * <p>Supported keywords: type, properties, required, additionalProperties,
+ * items, enum, const, minimum/maximum, minLength/maxLength, minItems/maxItems,
+ * and pattern. Unknown keywords are ignored for forward compatibility.</p>
  */
 public final class FunctionGemmaToolSchemaValidator {
     private static final int MAX_DEPTH = 64;
 
     /** Validates one parsed call against the schema registered for its tool. */
-    public ValidationResult validate(
-            FunctionGemmaToolCallParser.FunctionCall call,
+    public ValidationResult validate(FunctionGemmaToolCallParser.FunctionCall call,
             Map<String, ?> toolSchema) {
         Objects.requireNonNull(call, "call");
         return validate(call.arguments(), toolSchema);
@@ -46,12 +45,11 @@ public final class FunctionGemmaToolSchemaValidator {
             errors.add(error(path, "maximum validation depth exceeded"));
             return;
         }
-        Object type = schema.get("type");
-        if (type != null && !matchesType(value, type)) {
-            errors.add(error(path, "expected " + typeName(type) + " but was " + actualType(value)));
+        if (schema.containsKey("type") && !matchesType(value, schema.get("type"))) {
+            errors.add(error(path, "expected " + typeName(schema.get("type"))
+                    + " but was " + actualType(value)));
             return;
         }
-
         if (schema.containsKey("enum")) {
             List<?> allowed = asList(schema.get("enum"), path + ".enum");
             if (!allowed.contains(value)) errors.add(error(path, "value is not one of the allowed enum values"));
@@ -81,7 +79,11 @@ public final class FunctionGemmaToolSchemaValidator {
             if (!(item instanceof String name)) throw invalidSchema(path + ".required entries must be strings");
             if (!object.containsKey(name)) errors.add(error(child(path, name), "required property is missing"));
         }
+
         Object additional = schema.get("additionalProperties");
+        if (additional != null && !(additional instanceof Boolean) && !(additional instanceof Map<?, ?>)) {
+            throw invalidSchema(path + ".additionalProperties must be a boolean or schema object");
+        }
         for (Map.Entry<?, ?> entry : object.entrySet()) {
             if (!(entry.getKey() instanceof String name)) {
                 errors.add(error(path, "object keys must be strings"));
@@ -113,9 +115,11 @@ public final class FunctionGemmaToolSchemaValidator {
 
     private void validateString(String value, Map<String, ?> schema, String path,
             List<ValidationError> errors) {
-        checkSize(value.length(), schema, "minLength", "maxLength", path, errors);
+        checkSize(value.codePointCount(0, value.length()), schema,
+                "minLength", "maxLength", path, errors);
         Object pattern = schema.get("pattern");
-        if (pattern instanceof String expression) {
+        if (pattern != null) {
+            if (!(pattern instanceof String expression)) throw invalidSchema(path + ".pattern must be a string");
             try {
                 if (!Pattern.compile(expression).matcher(value).find()) {
                     errors.add(error(path, "string does not match required pattern"));
@@ -139,7 +143,7 @@ public final class FunctionGemmaToolSchemaValidator {
         BigDecimal bound = decimal(asNumber(schema.get(key), path + "." + key), path + "." + key);
         int comparison = value.compareTo(bound);
         if ((minimum && comparison < 0) || (!minimum && comparison > 0)) {
-            errors.add(error(path, (minimum ? "must be >= " : "must be <= ") + bound));
+            errors.add(error(path, (minimum ? "must be >= " : "must be <= ") + bound);
         }
     }
 
@@ -157,20 +161,32 @@ public final class FunctionGemmaToolSchemaValidator {
 
     private boolean matchesType(Object value, Object declaredType) {
         if (declaredType instanceof List<?> alternatives) {
+            if (alternatives.isEmpty()) throw invalidSchema("type array must not be empty");
             return alternatives.stream().anyMatch(candidate -> matchesType(value, candidate));
         }
-        if (!(declaredType instanceof String name)) throw invalidSchema("schema type must be a string or array");
+        if (!(declaredType instanceof String name)) {
+            throw invalidSchema("schema type must be a string or non-empty array of strings");
+        }
         return switch (name.toUpperCase()) {
             case "OBJECT" -> value instanceof Map<?, ?>;
             case "ARRAY" -> value instanceof Collection<?>;
             case "STRING" -> value instanceof String;
             case "BOOLEAN" -> value instanceof Boolean;
-            case "INTEGER" -> value instanceof Byte || value instanceof Short || value instanceof Integer
-                    || value instanceof Long || value instanceof java.math.BigInteger;
+            case "INTEGER" -> isInteger(value);
             case "NUMBER" -> value instanceof Number;
             case "NULL" -> value == null;
             default -> throw invalidSchema("unsupported schema type: " + name);
         };
+    }
+
+    private static boolean isInteger(Object value) {
+        if (!(value instanceof Number number)) return false;
+        try {
+            new BigDecimal(number.toString()).toBigIntegerExact();
+            return true;
+        } catch (NumberFormatException | ArithmeticException exception) {
+            return false;
+        }
     }
 
     private static String typeName(Object type) {
@@ -227,9 +243,7 @@ public final class FunctionGemmaToolSchemaValidator {
         }
     }
 
-    private static String child(String path, String name) {
-        return path + "." + name;
-    }
+    private static String child(String path, String name) { return path + "." + name; }
 
     private static ValidationError error(String path, String message) {
         return new ValidationError(path, message);
