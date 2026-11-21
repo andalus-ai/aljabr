@@ -140,3 +140,47 @@ Use actionable Aljabr-owned diagnostics: identify the operation, input shape/dty
 ## 13. Scientific, data and generative examples
 
 Examples should cover numerical/math foundations, linear algebra, statistics, scientific computation, dataset transformations, classical ML, tensors/autograd, neural models, multimodal composition and diffusion/generative workflows as those capabilities become implemented and validated. Clearly label planned versus executable examples. Never present a target API as runnable until its dependency coordinates and example are tested.
+
+## 14. Applying the seven engineering principles
+
+The repository-root [AGENTS.md](../AGENTS.md#19-seven-engineering-principles--mandatory-design-and-review-rules) defines the normative rules. Use this section as the practical workflow when designing or reviewing a change.
+
+### Start with ownership, not a proposed class or module
+
+Trace the feature from its public entry point through configuration, model/format handling, execution, provider integration, resource lifecycle and tests. Identify which layer owns each decision. Keep CLI and other adapters thin; keep reusable computation in library modules; keep AQLI serving policy and Tafkir training workflow outside Aljabr.
+
+A useful ownership test is: *if this interface or workflow changed, which product or layer should be responsible for the change?* If multiple layers independently own the same decision, clarify the contract before adding code.
+
+### Reuse the canonical path
+
+Before implementing behavior, search for existing public types, implementations, registries, descriptors, validators, error types and tests. Prefer one canonical implementation plus narrow adapters over parallel implementations. If a legacy and preferred abstraction overlap, document the migration path and preserve compatibility deliberately; do not silently fork semantics.
+
+Configuration should follow the same rule. Every setting needs one owner, one documented default and validation/precedence behavior. A downstream product may expose a user-friendly profile, but it should translate to the owning library/runtime contract rather than maintain a second competing configuration model.
+
+### Place artifacts by responsibility
+
+Use the smallest owning module that can express the contract without depending on an implementation. Keep implementation, provider/native integration, CLI, test fixture and documentation concerns in their appropriate source sets and artifacts. Check Gradle api versus implementation, runtime dependencies, ServiceLoader resources, native packaging and published metadata before changing module boundaries.
+
+Do not create a new module simply to make the directory tree look cleaner. Split only when an independently consumable capability, dependency boundary, lifecycle, release/support policy or meaningful ownership boundary justifies it.
+
+### Apply SOLID without ceremony
+
+Split classes when responsibilities have independent change drivers. Add interfaces for real substitution, external extension, stable module boundaries or useful test seams—not just to wrap a single implementation. Keep contracts narrow and preserve substitutability for semantics, errors and resource lifecycle. Prefer direct composition when it is clearer than a hierarchy.
+
+### Verify the complete developer and user path
+
+A capability is not complete merely because its implementation compiles. For the scope being changed, verify the relevant path:
+
+1. **Discover:** Can a developer find the API, module, prerequisites and supported status?
+2. **Configure:** Are names, defaults, precedence, validation and ownership consistent?
+3. **Execute:** Does the public API/CLI delegate to the canonical implementation?
+4. **Observe:** Can users understand selected providers, progress, copies/transfers and failures?
+5. **Recover and clean up:** Are unsupported inputs, initialization failure, cancellation, stream termination and resource release well-defined?
+6. **Extend:** Can another module/provider consume the contract without importing implementation internals?
+7. **Validate:** Are focused tests, conformance tests, examples and external-consumer checks appropriate to the claim?
+
+For streaming APIs, test normal completion, empty input, partial output, downstream cancellation, upstream failure, backpressure (where supported), and cleanup. For provider selection, test explicit selection, automatic selection, unavailable/incompatible providers and fallback diagnostics. For CLI changes, test help, invalid arguments, configuration conflicts, exit status and error remediation.
+
+### Document evidence, not aspiration
+
+Architecture documents describe intended boundaries and decisions. Capability inventories describe observed repository state. User guides describe workflows that can actually be followed. Keep these roles distinct, link them rather than copying large competing descriptions, and state whether a claim is target, planned, in progress, implemented, validated, stable or optimized. Record the exact test/platform scope; do not turn an API declaration or successful compilation into a support claim.
