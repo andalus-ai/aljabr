@@ -150,7 +150,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         byte[] block = new byte[22];
         block[1] = 0x3c;
         block[2] = 0x01;
-        block[5] = 0x01;
+        block[4] = 0x01;
         Path source = writeContainer(block);
         var tensor = tensor("weight", "Q5_0", List.of(32L), source, 8L, block.length);
         var model = model("q5_0", "llama", List.of(tensor));
@@ -173,7 +173,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         block[1] = 0x3c;
         block[3] = 0x40;
         block[4] = 0x01;
-        block[7] = 0x01;
+        block[6] = 0x01;
         Path source = writeContainer(block);
         var tensor = tensor("weight", "Q5_1", List.of(32L), source, 8L, block.length);
         var model = model("q5_1", "llama", List.of(tensor));
