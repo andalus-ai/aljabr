@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 public class HatComputeBackendTest {
 
@@ -153,6 +154,31 @@ public class HatComputeBackendTest {
     }
 
     @Test
+    public void testMatmulConsumesStridedCpuFallbackViews() {
+        try (Tensor parent = TensorFactory.of(new float[] {
+                99.0f, 1.0f, 2.0f, 99.0f,
+                99.0f, 3.0f, 4.0f, 99.0f
+        }, backend, 2, 4);
+                Tensor leftView = backend.slice(parent, new long[] { 0, 1 }, new long[] { 2, 2 });
+                Tensor right = TensorFactory.of(new float[] {
+                        2.0f, 0.0f,
+                        0.0f, 3.0f
+                }, backend, 2, 2);
+                Tensor result = backend.matmul(leftView, right)) {
+            assertInstanceOf(CpuBackend.class, leftView.backend(),
+                    "Slice fallback should retain CPU ownership");
+            assertEquals(1L, leftView.layout().storageOffset(),
+                    "The test input must exercise a non-zero storage offset");
+            assertArrayEquals(new long[] { 4, 1 }, leftView.layout().strides(),
+                    "The test input must exercise a non-contiguous row stride");
+            assertEquals(backend, result.backend(),
+                    "Native HAT matmul should own its result after consuming the CPU view");
+            assertArrayEquals(new float[] { 2.0f, 6.0f, 6.0f, 12.0f },
+                    result.toFloatArray(), 1e-4f);
+        }
+    }
+
+    @Test
     public void testMatmulSupportsRepeatedCallsOnSameBackend() {
         Tensor first = backend.matmul(
                 TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, 2, 2),
@@ -251,4 +277,60 @@ public class HatComputeBackendTest {
                 result.toFloatArray(), 1e-5f);
     }
 
+
+
+    @Test
+    public void testMultiInputCpuFallbacksConsumeHatOwnedHostStorage() {
+        Tensor layerInput = TensorFactory.of(new float[] { 1.0f, 3.0f }, backend, 1, 2);
+        Tensor layerWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+        Tensor layerBias = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
+        Tensor layerResult = backend.layerNorm(layerInput, new long[] { 2 }, layerWeight, layerBias, 1e-5f);
+        assertInstanceOf(CpuBackend.class, layerResult.backend());
+        assertArrayEquals(new float[] { -1.0f, 1.0f }, layerResult.toFloatArray(), 1e-4f);
+
+        Tensor rmsInput = TensorFactory.of(new float[] { 3.0f, 4.0f }, backend, 1, 2);
+        Tensor rmsWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+        Tensor rmsResult = backend.rmsNorm(rmsInput, rmsWeight, 1e-5f);
+        assertInstanceOf(CpuBackend.class, rmsResult.backend());
+        assertArrayEquals(new float[] { 0.6f, 0.8f }, rmsResult.toFloatArray(), 1e-4f);
+
+        Tensor batchInput = TensorFactory.of(new float[] { 2.0f, 4.0f }, backend, 1, 2);
+        Tensor runningMean = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
+        Tensor runningVariance = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+        Tensor batchResult = backend.batchNorm(
+                batchInput, null, null, runningMean, runningVariance, false, 0.1f, 1e-5f);
+        assertInstanceOf(CpuBackend.class, batchResult.backend());
+        assertArrayEquals(new float[] {
+                (float) (2.0 / Math.sqrt(1.0 + 1e-5)),
+                (float) (4.0 / Math.sqrt(1.0 + 1e-5))
+        }, batchResult.toFloatArray(), 1e-4f);
+
+        Tensor convInput = TensorFactory.of(
+                new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, backend, 1, 1, 2, 2);
+        Tensor convWeight = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1, 1, 1);
+        Tensor convBias = TensorFactory.of(new float[] { 0.0f }, backend, 1);
+        Tensor convResult = backend.conv2d(convInput, convWeight, convBias, 1, 0, 1, 1);
+        assertInstanceOf(CpuBackend.class, convResult.backend());
+        assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f, 4.0f },
+                convResult.toFloatArray(), 1e-4f);
+    }
+
+    @Test
+    public void testEmbeddingAndLossFallbacksConsumeHatOwnedOperands() {
+        Tensor embeddingWeight = TensorFactory.of(
+                new float[] { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f },
+                backend, 3, 2);
+        Tensor tokenIds = TensorFactory.of(new int[] { 2, 0 }, backend, 2);
+        Tensor embeddingResult = backend.embedding(embeddingWeight, tokenIds, -1);
+        assertInstanceOf(CpuBackend.class, embeddingResult.backend());
+        assertArrayEquals(new float[] { 5.0f, 6.0f, 1.0f, 2.0f },
+                embeddingResult.toFloatArray(), 1e-4f);
+
+        Tensor probabilities = TensorFactory.of(new float[] { 0.25f, 0.75f }, backend, 2);
+        Tensor labels = TensorFactory.of(new float[] { 0.0f, 1.0f }, backend, 2);
+        Tensor loss = backend.binaryCrossEntropy(probabilities, labels);
+        assertInstanceOf(CpuBackend.class, loss.backend());
+        assertEquals((float) (-(Math.log(0.75) + Math.log(0.75)) / 2.0),
+                loss.toFloatArray()[0], 1e-4f);
+    }
 }

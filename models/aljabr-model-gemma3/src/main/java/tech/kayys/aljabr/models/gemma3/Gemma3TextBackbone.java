@@ -1,15 +1,21 @@
 package tech.kayys.aljabr.models.gemma3;
 
+import java.util.Arrays;
 import java.util.Objects;
+import tech.kayys.aljabr.cache.GrowingHeapKVCacheStorage;
+import tech.kayys.aljabr.cache.KVCacheLayout;
+import tech.kayys.aljabr.cache.KVCacheSession;
+import tech.kayys.aljabr.cache.KVCacheStorage;
+import tech.kayys.aljabr.cache.KVCacheStorageFactory;
 import tech.kayys.aljabr.spi.model.ModelConfig;
 
 /**
  * Float32 CPU reference forward path for the Gemma 3 text decoder.
  *
- * <p>This class implements full-sequence causal prefill. It deliberately
- * exposes no KV-cache or incremental decode API yet; those belong in a later
- * execution-session layer. The reference path is useful for correctness tests
- * and as the semantic baseline for optimized Aljabr backends.</p>
+ * <p>This class provides full-sequence causal forward and a float32 incremental
+ * reference decoder. Incremental sessions use Aljabr's shared KV-cache storage
+ * and committed-prefix contract; optimized backends can implement the same
+ * storage abstraction without changing model semantics.</p>
  */
 public final class Gemma3TextBackbone {
     private final ModelConfig config;
@@ -19,9 +25,19 @@ public final class Gemma3TextBackbone {
     private final int kvHeads;
     private final int headDim;
     private final double epsilon;
+    private final KVCacheStorageFactory cacheStorageFactory;
 
     public Gemma3TextBackbone(ModelConfig config, Gemma3TextCheckpointMapper.Weights weights) {
+        this(config, weights, GrowingHeapKVCacheStorage::new);
+    }
+
+    /** Creates a reference decoder with an explicitly selected KV-cache provider. */
+    public Gemma3TextBackbone(
+            ModelConfig config,
+            Gemma3TextCheckpointMapper.Weights weights,
+            KVCacheStorageFactory cacheStorageFactory) {
         this.config = Objects.requireNonNull(config, "config");
+        this.cacheStorageFactory = Objects.requireNonNull(cacheStorageFactory, "cacheStorageFactory");
         this.weights = Objects.requireNonNull(weights, "weights");
         this.hidden = config.hiddenSize();
         this.queryHeads = config.numAttentionHeads();
@@ -90,26 +106,34 @@ public final class Gemma3TextBackbone {
      * are vocabulary logits for the newly appended token.
      */
     public final class DecodeSession implements AutoCloseable {
-        private float[][] keyCache;
-        private float[][] valueCache;
         private final int cacheWidth = Math.multiplyExact(kvHeads, headDim);
         private final int maximumPositions = config.maxPositionEmbeddings();
-        private int cacheCapacity;
-        private int position;
+        private final KVCacheStorage cacheStorage;
+        private final KVCacheSession cacheSession;
         private boolean closed;
 
         private DecodeSession() {
-            cacheCapacity = Math.min(maximumPositions, 16);
-            int cacheElements = Math.multiplyExact(cacheCapacity, cacheWidth);
-            keyCache = new float[weights.layers().size()][cacheElements];
-            valueCache = new float[weights.layers().size()][cacheElements];
+            int[] headsPerLayer = new int[weights.layers().size()];
+            int[] dimensionsPerLayer = new int[weights.layers().size()];
+            Arrays.fill(headsPerLayer, kvHeads);
+            Arrays.fill(dimensionsPerLayer, headDim);
+            KVCacheLayout layout = new KVCacheLayout(
+                    maximumPositions, headsPerLayer, dimensionsPerLayer);
+            cacheStorage = Objects.requireNonNull(
+                    cacheStorageFactory.create(layout), "cacheStorageFactory returned null");
+            if (!hasSameGeometry(cacheStorage.layout(), layout)) {
+                cacheStorage.close();
+                throw new IllegalArgumentException(
+                        "KV cache storage factory returned storage with incompatible geometry");
+            }
+            cacheSession = new KVCacheSession(cacheStorage);
         }
 
         /** Processes a prompt on a fresh session and returns logits for every prompt token. */
         public float[][] prefill(int[] inputIds) {
             ensureOpen();
             Objects.requireNonNull(inputIds, "inputIds");
-            if (position != 0) {
+            if (position() != 0) {
                 throw new IllegalStateException("prefill is only valid on a fresh decode session");
             }
             if (inputIds.length == 0) {
@@ -128,7 +152,7 @@ public final class Gemma3TextBackbone {
             if (tokenId < 0 || tokenId >= config.vocabSize()) {
                 throw new IllegalArgumentException("token ID out of vocabulary range: " + tokenId);
             }
-            if (position >= maximumPositions) {
+            if (position() >= maximumPositions) {
                 throw new IllegalArgumentException("decode exceeds maxPositionEmbeddings");
             }
 
@@ -141,7 +165,7 @@ public final class Gemma3TextBackbone {
 
             for (int layerIndex = 0; layerIndex < weights.layers().size(); layerIndex++) {
                 state = forwardIncrementalLayer(
-                        state, weights.layers().get(layerIndex), layerIndex, position);
+                        state, weights.layers().get(layerIndex), layerIndex, position());
             }
 
             float[][] normalized = rmsNorm(state, weights.finalNorm());
@@ -155,40 +179,27 @@ public final class Gemma3TextBackbone {
                 result[vocab] = softcap > 0.0f
                         ? (float) (Math.tanh(value / softcap) * softcap) : value;
             }
-            position++;
+            cacheSession.commit(position() + 1);
             return result;
         }
 
         /** Number of tokens already processed by this session. */
         public int position() {
             ensureOpen();
-            return position;
+            return cacheSession.committedLength();
         }
 
         @Override
         public void close() {
             if (!closed) {
-                for (float[] layer : keyCache) java.util.Arrays.fill(layer, 0.0f);
-                for (float[] layer : valueCache) java.util.Arrays.fill(layer, 0.0f);
-                position = 0;
+                cacheSession.reset();
+                cacheStorage.close();
                 closed = true;
             }
         }
 
         private void ensureOpen() {
             if (closed) throw new IllegalStateException("decode session is closed");
-        }
-
-        private void ensureCacheCapacity(int requiredPositions) {
-            if (requiredPositions <= cacheCapacity) return;
-            int doubled = cacheCapacity == 0 ? 1 : Math.multiplyExact(cacheCapacity, 2);
-            int nextCapacity = Math.min(maximumPositions, Math.max(requiredPositions, doubled));
-            int nextElements = Math.multiplyExact(nextCapacity, cacheWidth);
-            for (int layer = 0; layer < keyCache.length; layer++) {
-                keyCache[layer] = java.util.Arrays.copyOf(keyCache[layer], nextElements);
-                valueCache[layer] = java.util.Arrays.copyOf(valueCache[layer], nextElements);
-            }
-            cacheCapacity = nextCapacity;
         }
 
         private float[][] forwardIncrementalLayer(
@@ -211,17 +222,13 @@ public final class Gemma3TextBackbone {
                     config.ropeThetaForLayer(layerIndex),
                     config.partialRotaryFactorForLayer(layerIndex));
 
-            ensureCacheCapacity(absolutePosition + 1);
-            int cacheOffset = Math.multiplyExact(absolutePosition, cacheWidth);
-            float[] layerKeys = keyCache[layerIndex];
-            float[] layerValues = valueCache[layerIndex];
+            float[] currentKey = new float[cacheWidth];
+            float[] currentValue = valueFlat[0].clone();
             for (int head = 0; head < kvHeads; head++) {
-                for (int dimension = 0; dimension < headDim; dimension++) {
-                    int cacheIndex = cacheOffset + head * headDim + dimension;
-                    layerKeys[cacheIndex] = key[0][head][dimension];
-                    layerValues[cacheIndex] = valueFlat[0][head * headDim + dimension];
-                }
+                System.arraycopy(key[0][head], 0, currentKey, head * headDim, headDim);
             }
+            cacheSession.write(layerIndex, absolutePosition,
+                    currentKey, 0, currentValue, 0);
 
             float[][][] attended = new float[1][queryHeads][headDim];
             int groups = queryHeads / kvHeads;
@@ -230,16 +237,23 @@ public final class Gemma3TextBackbone {
             double scoreScale = 1.0d / Math.sqrt(config.queryPreAttnScalar());
             Double configuredSoftcap = config.attnLogitSoftcapping();
             double softcap = configuredSoftcap == null ? 0.0d : configuredSoftcap;
+            int visibleTokenCount = absolutePosition - firstVisible + 1;
+            float[] visibleKeys = new float[Math.multiplyExact(visibleTokenCount, cacheWidth)];
+            float[] visibleValues = new float[visibleKeys.length];
+            cacheSession.readKeyRangeForAttention(
+                    layerIndex, firstVisible, visibleTokenCount, visibleKeys, 0);
+            cacheSession.readValueRangeForAttention(
+                    layerIndex, firstVisible, visibleTokenCount, visibleValues, 0);
             for (int head = 0; head < queryHeads; head++) {
                 int kvHead = head / groups;
                 double maximum = Double.NEGATIVE_INFINITY;
-                double[] scores = new double[absolutePosition - firstVisible + 1];
+                double[] scores = new double[visibleTokenCount];
                 for (int source = firstVisible; source <= absolutePosition; source++) {
-                    int sourceOffset = source * cacheWidth + kvHead * headDim;
+                    int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double dot = 0.0d;
                     for (int dimension = 0; dimension < headDim; dimension++) {
                         dot += (double) query[0][head][dimension]
-                                * layerKeys[sourceOffset + dimension];
+                                * visibleKeys[sourceOffset + dimension];
                     }
                     double score = dot * scoreScale;
                     if (softcap > 0.0d) score = Math.tanh(score / softcap) * softcap;
@@ -249,11 +263,11 @@ public final class Gemma3TextBackbone {
                 double denominator = 0.0d;
                 for (double score : scores) denominator += Math.exp(score - maximum);
                 for (int source = firstVisible; source <= absolutePosition; source++) {
-                    int sourceOffset = source * cacheWidth + kvHead * headDim;
+                    int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double probability = Math.exp(scores[source - firstVisible] - maximum) / denominator;
                     for (int dimension = 0; dimension < headDim; dimension++) {
                         attended[0][head][dimension] +=
-                                (float) (probability * layerValues[sourceOffset + dimension]);
+                                (float) (probability * visibleValues[sourceOffset + dimension]);
                     }
                 }
             }
@@ -271,6 +285,20 @@ public final class Gemma3TextBackbone {
             feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
             return add(afterAttention, feedForward);
         }
+    }
+
+    private static boolean hasSameGeometry(KVCacheLayout actual, KVCacheLayout expected) {
+        if (actual.maxSequenceLength() != expected.maxSequenceLength()
+                || actual.layerCount() != expected.layerCount()) {
+            return false;
+        }
+        for (int layer = 0; layer < expected.layerCount(); layer++) {
+            if (actual.kvHeads(layer) != expected.kvHeads(layer)
+                    || actual.headDimension(layer) != expected.headDimension(layer)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public int hiddenSize() { return hidden; }

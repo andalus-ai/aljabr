@@ -42,11 +42,12 @@ class LazyTensorReleaseTest {
         AtomicInteger releases = new AtomicInteger();
         Tensor leaf = trackingTensor(releases);
         LazyTensor lazy = LazyTensor.of(leaf);
+        GraphNode leafNode = lazy.getNode();
 
         lazy.release();
 
         assertEquals(0, releases.get());
-        assertTrue(lazy.getNode().isEvaluated());
+        assertTrue(leafNode.isEvaluated());
     }
 
     private static Tensor trackingTensor(AtomicInteger releases) {

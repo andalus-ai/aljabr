@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.models;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.nn.NNModule;
 import tech.kayys.aljabr.core.nn.TransformerEncoder;
 
@@ -17,7 +18,13 @@ public class CLIP extends NNModule {
     private final int dModel = 768;
 
     public CLIP() {
-        this.encoder = register("encoder", TransformerEncoder.builder()
+        this(null);
+    }
+
+    /** Creates a text encoder whose output tensors are allocated on the selected backend. */
+    public CLIP(ComputeBackend backend) {
+        super(backend);
+        this.encoder = register("encoder", TransformerEncoder.builder(backend)
             .vocabSize(49408) // CLIP vocab size
             .dModel(dModel)
             .nHeads(12)
@@ -47,7 +54,9 @@ public class CLIP extends NNModule {
             data[i] = (rnd.nextFloat() - 0.5f) * 0.02f;
         }
         
-        return Tensor.of(data, 1, maxSeqLen, dModel);
+        return computeBackend() == null
+                ? Tensor.of(data, 1, maxSeqLen, dModel)
+                : Tensor.of(data, computeBackend(), 1, maxSeqLen, dModel);
     }
 
     @Override

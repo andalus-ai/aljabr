@@ -59,7 +59,7 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public Tensor eval() {
+    public synchronized Tensor eval() {
         ensureOpen();
         GraphNode evaluated = executionNode;
         if (evaluated != null && evaluated.isEvaluated()) {
@@ -104,7 +104,7 @@ public class LazyTensor implements Tensor {
      * outlive this lazy wrapper.</p>
      */
     @Override
-    public TensorStorage storage() {
+    public synchronized TensorStorage storage() {
         return eval().storage();
     }
 
@@ -114,7 +114,7 @@ public class LazyTensor implements Tensor {
      * their input when the lazy wrapper is closed.
      */
     @Override
-    public void release() {
+    public synchronized void release() {
         if (!released.compareAndSet(false, true)) {
             return;
         }
@@ -157,7 +157,7 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public float[] toFloatArray() {
+    public synchronized float[] toFloatArray() {
         return eval().toFloatArray();
     }
 
@@ -167,7 +167,7 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public DeviceType device() {
+    public synchronized DeviceType device() {
         GraphNode evaluated = executionNode;
         if (evaluated != null && evaluated.isEvaluated()) {
             return evaluated.getMaterializedData().device();
@@ -184,12 +184,12 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public float item() {
+    public synchronized float item() {
         return eval().item();
     }
 
     @Override
-    public void backward() {
+    public synchronized void backward() {
         ensureOpen();
         if (!node.requiresGrad()) {
             return;
@@ -216,7 +216,7 @@ public class LazyTensor implements Tensor {
     }
 
     @Override
-    public void backward(Tensor outputGradient) {
+    public synchronized void backward(Tensor outputGradient) {
         ensureOpen();
         java.util.Objects.requireNonNull(outputGradient, "outputGradient");
         if (!node.requiresGrad()) {
@@ -231,7 +231,7 @@ public class LazyTensor implements Tensor {
      * Callers must not release it.
      */
     @Override
-    public Tensor grad() {
+    public synchronized Tensor grad() {
         return eval().grad();
     }
 
@@ -240,7 +240,7 @@ public class LazyTensor implements Tensor {
      * {@link Tensor#setGrad(Tensor)} contract.
      */
     @Override
-    public void setGrad(Tensor grad) {
+    public synchronized void setGrad(Tensor grad) {
         eval().setGrad(grad);
     }
 
