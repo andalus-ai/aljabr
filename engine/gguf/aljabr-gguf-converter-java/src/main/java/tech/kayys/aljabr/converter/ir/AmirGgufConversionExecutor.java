@@ -19,6 +19,8 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -143,10 +145,16 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
                 result.put("aljabr.source.extension." + key, GgufMetaValue.ofString(value)));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) ->
-                    result.put("aljabr.source.tensor." + tensor.name() + "." + key,
+                    result.put("aljabr.source.tensor."
+                                    + metadataKeyPart(tensor.name()) + "." + metadataKeyPart(key),
                             GgufMetaValue.ofString(value)));
         }
         return result;
+    }
+
+    private static String metadataKeyPart(String value) {
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
     }
 
     private static List<String> untransferredKeys(ModelDescriptor model) {
