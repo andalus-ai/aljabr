@@ -2841,14 +2841,18 @@ int aljabr_metal_wo_ffn_logits_fused(
   if (pDown == nil)
     return -3;
 
-  // Resolve Logits pipeline
+  // Resolve Logits pipeline. A capped request must use a kernel that
+  // performs the softcap itself; otherwise decline fusion so the ordinary
+  // decode path can apply the cap after projection.
   id<MTLComputePipelineState> pLogits = nil;
   BOOL logits_mr4 = NO;
+  BOOL logits_softcap = NO;
   size_t outWBytes = 0;
   if (typeOutputW == 12) { // Q4_K
     if (cap > 0.0f && pipelines->matvec_tb_q4_k_mr4_softcap != nil) {
       pLogits = pipelines->matvec_tb_q4_k_mr4_softcap;
       logits_mr4 = YES;
+      logits_softcap = YES;
     } else if (pipelines->matvec_tb_q4_k_mr4 != nil) {
       pLogits = pipelines->matvec_tb_q4_k_mr4;
       logits_mr4 = YES;
@@ -2860,6 +2864,7 @@ int aljabr_metal_wo_ffn_logits_fused(
     if (cap > 0.0f && pipelines->matvec_tb_q6_k_mr4_softcap != nil) {
       pLogits = pipelines->matvec_tb_q6_k_mr4_softcap;
       logits_mr4 = YES;
+      logits_softcap = YES;
     } else if (pipelines->matvec_tb_q6_k_mr4 != nil) {
       pLogits = pipelines->matvec_tb_q6_k_mr4;
       logits_mr4 = YES;
@@ -2869,6 +2874,8 @@ int aljabr_metal_wo_ffn_logits_fused(
     outWBytes = (size_t)outputN * outputK / 256 * 210;
   }
   if (pLogits == nil || outWBytes == 0)
+    return -3;
+  if (cap > 0.0f && !logits_softcap)
     return -3;
 
   size_t attnKBytes = (size_t)wO_K * sizeof(float);
