@@ -2,22 +2,24 @@ package tech.kayys.aljabr.spi.model.ir;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Set;
 
 /**
  * Reads model structure and metadata into AMIR without loading tensor payloads.
  *
- * <p>Implementations must keep tensor bytes external and describe them using
+ * <p>Implementations keep tensor bytes external and describe them using
  * {@link PayloadReference}. A returned descriptor therefore remains usable
- * after the reader has closed its parsing resources.
+ * after parsing resources have been closed.
  */
 public interface ModelDescriptorReader {
 
-    /** Stable source-format identifier, such as {@code GGUF} or {@code SAFETENSORS}. */
-    String format();
+    /** Stable source-format identifiers supported by this reader. */
+    Set<String> formats();
 
     /** Whether this reader accepts the supplied source format identifier. */
     default boolean supports(String sourceFormat) {
-        return format().equalsIgnoreCase(sourceFormat);
+        return sourceFormat != null && formats().stream()
+                .anyMatch(format -> format.equalsIgnoreCase(sourceFormat));
     }
 
     /**
