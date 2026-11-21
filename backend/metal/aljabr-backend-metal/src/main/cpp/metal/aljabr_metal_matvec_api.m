@@ -2016,7 +2016,6 @@ static id<MTLBuffer> g_woff_ffn_hb = nil;
 static size_t g_woff_attnFull_cap = 0;
 static size_t g_woff_dim_cap = 0;
 static size_t g_woff_ffn_cap = 0;
-static BOOL g_woff_x_valid = NO;
 
 static id<MTLBuffer> g_woff_nextQ = nil;
 static id<MTLBuffer> g_woff_nextK = nil;
@@ -2389,10 +2388,8 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
   @autoreleasepool {
     // ── Copy inputs to GPU-accessible Shared buffers ───────────────────────
     memcpy([g_woff_attnFull contents], attn_full, attnKBytes);
-    if (!g_woff_x_valid) {
-      memcpy([g_woff_x contents], x, dimBytes);
-      g_woff_x_valid = YES;
-    }
+    // Each invocation owns its residual input; do not carry it across calls.
+    memcpy([g_woff_x contents], x, dimBytes);
     // Copy norm weight data into pre-allocated shared scratch buffers.
     // (Norms are dequantized Java-heap float[] arrays — not in the master Metal
     // model
@@ -2431,7 +2428,6 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     id<MTLBuffer> bufUp = wrap_weight_ptr_offset(upW, upBytes, &upOff);
     id<MTLBuffer> bufDown = wrap_weight_ptr_offset(downW, downBytes, &downOff);
     if (!bufWO || !bufGate || !bufUp || !bufDown) {
-      g_woff_x_valid = NO;
       return -4;
     }
 
@@ -2552,8 +2548,7 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
           (activationKind == 2) ? pipelines->gelu_ffn : pipelines->silu_ffn;
       if (actP == nil) {
         [enc endEncoding];
-        g_woff_x_valid = NO;
-        return -3;
+          return -3;
       }
       [enc setComputePipelineState:actP];
       [enc setBuffer:g_woff_ffn_hb offset:0 atIndex:0];
@@ -2641,16 +2636,12 @@ int aljabr_metal_wo_ffn_next_qkv_fused(
     [cmd waitUntilCompleted];
 
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
-      g_woff_x_valid = NO;
       return -1;
     }
 
-    // Return fully-updated residual x to caller only when finishing the layer
-    // chain
-    if (!hasNext) {
-      memcpy(x, [g_woff_x contents], dimBytes);
-      g_woff_x_valid = NO;
-    }
+    // Return the updated residual after every layer so Java fallback and
+    // interleaved inference sessions observe their own current state.
+    memcpy(x, [g_woff_x contents], dimBytes);
 
     if (hasNext && nextWQ != NULL) {
       memcpy(nextQ, [g_woff_nextQ contents], (size_t)nextN0 * sizeof(float));
@@ -2682,9 +2673,7 @@ int aljabr_metal_wo_ffn_fused(float *x, const float *attn_full, const void *wO,
       NULL, NULL, NULL, NULL, 0, 0, 0, 0, 0, 0);
 }
 
-void aljabr_metal_wo_ffn_reset_x(void) {
-  @synchronized(matvec_scratch_lock()) { g_woff_x_valid = NO; }
-}
+// Compatibility no-op: fused residual state is now scoped to each call.
 
 static id<MTLBuffer> g_woff_logits = nil;
 static size_t g_woff_logits_cap = 0;
@@ -2895,9 +2884,8 @@ int aljabr_metal_wo_ffn_logits_fused(
 
   @autoreleasepool {
     memcpy([g_woff_attnFull contents], attn_full, attnKBytes);
-    if (!g_woff_x_valid) {
-      memcpy([g_woff_x contents], x, dimBytes);
-    }
+    // The final-logits operation also starts from the caller-owned residual.
+    memcpy([g_woff_x contents], x, dimBytes);
     // Copy norm weight data into pre-allocated shared scratch buffers.
     memcpy([g_woff_normW2 contents], ffnNormW, dimBytes);
     id<MTLBuffer> bufFfnNorm = g_woff_normW2;
@@ -3135,7 +3123,6 @@ int aljabr_metal_wo_ffn_logits_fused(
     [cmd waitUntilCompleted];
 
     if ([cmd status] != MTLCommandBufferStatusCompleted) {
-      g_woff_x_valid = NO;
       return -1;
     }
 
@@ -3143,7 +3130,6 @@ int aljabr_metal_wo_ffn_logits_fused(
     if (x != NULL) {
       memcpy(x, [g_woff_x contents], dimBytes);
     }
-    g_woff_x_valid = NO;
     return 0;
   }
   }
