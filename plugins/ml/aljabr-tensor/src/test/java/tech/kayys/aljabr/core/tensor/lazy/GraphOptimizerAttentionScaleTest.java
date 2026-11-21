@@ -55,6 +55,27 @@ class GraphOptimizerAttentionScaleTest {
     }
 
     @Test
+    void keepsSafeChildRewritesWhenCustomScalePreventsAttentionFusion() {
+        Shape shape = new Shape(4, 4);
+        GraphNode queryLeaf = node(OpType.RELU, List.of(), new Object[0], shape);
+        GraphNode query = node(OpType.ADD_SCALAR, List.of(queryLeaf), new Object[] { 0.0f }, shape);
+        GraphNode key = node(OpType.RELU, List.of(), new Object[0], shape);
+        GraphNode value = node(OpType.RELU, List.of(), new Object[0], shape);
+        GraphNode transpose = node(OpType.TRANSPOSE, List.of(key), new Object[0], shape);
+        GraphNode scores = node(OpType.MATMUL, List.of(query, transpose), new Object[0], shape);
+        GraphNode scaled = node(OpType.DIV_SCALAR, List.of(scores), new Object[] { 3.0f }, shape);
+        GraphNode probabilities = node(OpType.SOFTMAX, List.of(scaled), new Object[0], shape);
+        GraphNode root = node(OpType.MATMUL, List.of(probabilities, value), new Object[0], shape);
+
+        GraphNode optimized = GraphOptimizer.optimize(root);
+
+        assertNotSame(root, optimized);
+        GraphNode optimizedQuery = optimized.getInputs().get(0).getInputs().get(0)
+                .getInputs().get(0).getInputs().get(0);
+        assertSame(queryLeaf, optimizedQuery);
+    }
+
+    @Test
     void doesNotFuseRankTwoAttentionWhenKeyAndValueSequenceLengthsDiffer() {
         GraphNode query = node(OpType.RELU, List.of(), new Object[0], new Shape(2, 4));
         GraphNode key = node(OpType.RELU, List.of(), new Object[0], new Shape(3, 4));
