@@ -543,7 +543,7 @@ public final class DefaultTensor implements Tensor {
             for (int index = 0; index < outputs.size(); index++) {
                 Tensor output = outputs.get(index);
                 DefaultTensor eagerOutput = (DefaultTensor) output;
-                long[] offsets = new long[rank];
+                long[] offsets = new long[shape.rank()];
                 long[] sizes = shape.dims();
                 offsets[normalizedAxis] = Math.multiplyExact((long) index, chunkSize);
                 sizes[normalizedAxis] = chunkSize;
