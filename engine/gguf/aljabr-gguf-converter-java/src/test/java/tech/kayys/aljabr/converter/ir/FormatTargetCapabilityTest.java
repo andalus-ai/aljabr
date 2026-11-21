@@ -80,6 +80,15 @@ class FormatTargetCapabilityTest {
         assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
     }
 
+    @Test
+    void nonGgufOpaqueExtensionsRemainPartialWhenNotMappedByExecutor() {
+        var source = new ModelDescriptor(ModelIdentity.of("test"), "llama", "safetensors",
+                Map.of(), Map.of("vendor.extra", "value"), List.of(tensor("weight", "F32", List.of(2L))));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL,
+                new SafetensorsTargetCapability().assess(source).fidelity());
+    }
+
     private static ModelDescriptor model(String architecture, String format, TensorDescriptor tensor) {
         return new ModelDescriptor(ModelIdentity.of("test"), architecture, format,
                 Map.of(), Map.of(), List.of(tensor));
