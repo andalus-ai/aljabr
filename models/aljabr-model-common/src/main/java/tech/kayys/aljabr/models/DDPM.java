@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.models;
 
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.nn.*;
 
 import java.util.Objects;
@@ -32,7 +33,14 @@ public final class DDPM extends NNModule {
      * @param hiddenDim denoiser hidden dimension
      * @param timesteps number of diffusion steps; must be at least two
      */
+    /** @deprecated Select and pass an application-owned compute backend. */
+    @Deprecated(since = "0.2.0", forRemoval = true)
     public DDPM(int inputDim, int hiddenDim, int timesteps) {
+        this(null, inputDim, hiddenDim, timesteps);
+    }
+
+    public DDPM(ComputeBackend backend, int inputDim, int hiddenDim, int timesteps) {
+        super(backend);
         if (inputDim <= 0) {
             throw new IllegalArgumentException("inputDim must be positive");
         }
@@ -56,10 +64,10 @@ public final class DDPM extends NNModule {
             alphasCumprod[t] = cumulativeAlpha;
         }
 
-        this.denoiser = register("denoiser", new Sequential(
-                new Linear(inputDim + 1, hiddenDim), new SiLU(),
-                new Linear(hiddenDim, hiddenDim), new SiLU(),
-                new Linear(hiddenDim, inputDim)));
+        this.denoiser = register("denoiser", new Sequential(backend,
+                new Linear(backend, inputDim + 1, hiddenDim), new SiLU(),
+                new Linear(backend, hiddenDim, hiddenDim), new SiLU(),
+                new Linear(backend, hiddenDim, inputDim)));
     }
 
     /**
@@ -70,7 +78,7 @@ public final class DDPM extends NNModule {
      * @return scalar MSE loss
      */
     public Tensor trainingLoss(Tensor x0) {
-        Objects.requireNonNull(x0, "x0 must not be null");
+        validateInputBackend(x0);
         if (x0.shape().rank() != 2 || x0.shape().dim(0) <= 0
                 || x0.shape().dim(1) != inputDim) {
             throw new IllegalArgumentException(
@@ -86,7 +94,7 @@ public final class DDPM extends NNModule {
             sampledTimesteps[i] = rng.nextInt(timesteps);
         }
 
-        Tensor noise = Tensor.randn(batchSize, dimension);
+        Tensor noise = randomNormal(batchSize, dimension);
         float[] clean = x0.toFloatArray();
         float[] noiseValues = noise.toFloatArray();
         float[] noisy = new float[batchSize * dimension];
@@ -172,7 +180,7 @@ public final class DDPM extends NNModule {
             }
         }
 
-        return Tensor.of(sample, batchSize, inputDim);
+        return tensorOf(sample, batchSize, inputDim);
     }
 
     @Override
@@ -187,7 +195,7 @@ public final class DDPM extends NNModule {
             input[n * (inputDim + 1) + inputDim] =
                     timestepValues[n] / (float) timesteps;
         }
-        return Tensor.of(input, batchSize, inputDim + 1);
+        return tensorOf(input, batchSize, inputDim + 1);
     }
 
     private static float[] linearSchedule(float start, float end, int count) {

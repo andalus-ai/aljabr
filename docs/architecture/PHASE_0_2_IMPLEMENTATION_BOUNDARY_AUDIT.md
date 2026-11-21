@@ -75,7 +75,7 @@ Observed module:
 
 Observed classes include:
 
-- `OpenAiCompatibleResource` — OpenAI-compatible HTTP endpoints and SSE streaming.
+- `InferenceApiResource` — neutral inference HTTP resource exposing chat/completion/model operations and SSE streaming. Its Javadoc and OpenAPI tag explicitly state that the wire contract is OpenAI-compatible; that phrase documents protocol interoperability only and is not part of the Java type name.
 - `EmbeddingsResource` — HTTP embeddings endpoint.
 - `ModelRouterResource` — REST control-plane endpoints for primary/secondary model selection, canary mode and promotion.
 - `RagResource` and `RagPipeline` — document ingest, retrieval and answer-generation workflow API.

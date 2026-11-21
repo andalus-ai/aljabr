@@ -984,4 +984,174 @@ class CpuBackendStorageTest {
         assertEquals(0, biasStorage.references());
     }
 
+    @Test
+    void matmulReadsTransposedAndNonZeroOffsetMatrixViews() {
+        HostStorage leftStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor left = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) leftStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {2, 1}, 1));
+        HostStorage rightStorage = new HostStorage(5f, 6f, 7f, 8f);
+        DefaultTensor right = tensor(rightStorage, 2, 2);
+        Tensor transposed = null;
+        Tensor result = null;
+        try {
+            transposed = backend.transpose(left, 0, 1);
+            result = backend.matmul(transposed, right);
+            assertArrayEquals(new float[] {26f, 30f, 38f, 44f}, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            if (transposed != null) transposed.release();
+            left.release();
+            right.release();
+        }
+        assertEquals(0, leftStorage.references());
+        assertEquals(0, rightStorage.references());
+    void scalarUnaryOperationsAndDropoutReadTransposedOffsetViews() {
+        HostStorage storage = new HostStorage(99f, 1f, 9f, 4f, 16f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        Tensor powered = null;
+        Tensor absolute = null;
+        Tensor squareRoot = null;
+        Tensor sign = null;
+        Tensor dropped = null;
+        try {
+            assertArrayEquals(new float[] {1f, 4f, 9f, 16f}, input.toFloatArray(), 0f);
+            powered = backend.pow(input, 2f);
+            absolute = backend.abs(input);
+            squareRoot = backend.sqrt(input);
+            sign = backend.sign(input);
+            dropped = backend.dropout(input, 0.5f, true);
+
+            assertArrayEquals(new float[] {1f, 16f, 81f, 256f}, powered.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {1f, 4f, 9f, 16f}, absolute.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f}, squareRoot.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {1f, 1f, 1f, 1f}, sign.toFloatArray(), 0f);
+            float[] droppedValues = dropped.toFloatArray();
+            float[] sourceValues = {1f, 4f, 9f, 16f};
+            for (int index = 0; index < droppedValues.length; index++) {
+                assertTrue(droppedValues[index] == 0f
+                        || droppedValues[index] == sourceValues[index] * 2f);
+            }
+        } finally {
+            if (dropped != null) dropped.release();
+            if (sign != null) sign.release();
+            if (squareRoot != null) squareRoot.release();
+            if (absolute != null) absolute.release();
+            if (powered != null) powered.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    void rankTwoAttentionReadsTransposedOffsetQueryKeyAndValueViews() {
+        HostStorage queryStorage = new HostStorage(99f, 0f, 0f, 0f, 0f);
+        DefaultTensor query = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) queryStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        HostStorage keyStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor key = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) keyStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        HostStorage valueStorage = new HostStorage(99f, 2f, 4f, 3f, 5f);
+        DefaultTensor value = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) valueStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {1, 2}, 1));
+        Tensor result = null;
+        try {
+            result = backend.attention(query, key, value);
+            assertArrayEquals(new float[] {3f, 4f, 3f, 4f}, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            query.release();
+            key.release();
+            value.release();
+        }
+        assertEquals(0, queryStorage.references());
+        assertEquals(0, keyStorage.references());
+        assertEquals(0, valueStorage.references());
+    }
+
+    @Test
+    void rankFourAttentionReadsOffsetViewsAndPreservesLogicalOutput() {
+        HostStorage queryStorage = new HostStorage(99f, 0f, 0f, 0f, 0f);
+        DefaultTensor query = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) queryStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        HostStorage keyStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor key = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) keyStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        HostStorage valueStorage = new HostStorage(99f, 2f, 4f, 3f, 5f);
+        DefaultTensor value = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) valueStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        Tensor result = null;
+        try {
+            result = backend.attention(query, key, value);
+            assertArrayEquals(new float[] {3f, 4f, 3f, 4f}, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            query.release();
+            key.release();
+            value.release();
+        }
+        assertEquals(0, queryStorage.references());
+        assertEquals(0, keyStorage.references());
+        assertEquals(0, valueStorage.references());
+    }
+
+
+    @Test
+    void groupedQueryAttentionReadsStridedOffsetViews() {
+        HostStorage queryStorage = new HostStorage(99f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f);
+        DefaultTensor query = new DefaultTensor(
+                new Shape(1, 2, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) queryStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 2, 2, 2), new long[] {8, 4, 1, 2}, 1));
+        HostStorage keyStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor key = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) keyStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        HostStorage valueStorage = new HostStorage(99f, 2f, 4f, 3f, 5f);
+        DefaultTensor value = new DefaultTensor(
+                new Shape(1, 1, 2, 2), DType.F32, DeviceType.CPU,
+                (TensorStorage) valueStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 1, 2, 2), new long[] {4, 4, 1, 2}, 1));
+        Tensor result = null;
+        try {
+            result = backend.attentionGqa(query, key, value, null, false);
+            assertArrayEquals(new float[] {
+                    3f, 4f, 3f, 4f,
+                    3f, 4f, 3f, 4f
+            }, result.toFloatArray(), 1e-6f);
+        } finally {
+            if (result != null) result.release();
+            query.release();
+            key.release();
+            value.release();
+        }
+        assertEquals(0, queryStorage.references());
+        assertEquals(0, keyStorage.references());
+        assertEquals(0, valueStorage.references());
+    }
+
+
 }
