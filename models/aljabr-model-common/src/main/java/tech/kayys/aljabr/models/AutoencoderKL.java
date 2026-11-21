@@ -120,11 +120,14 @@ public final class AutoencoderKL extends NNModule {
             }
             Tensor epsilon = Tensor.of(noise, mean.backend(), shape);
             Tensor standardDeviation = logVariance.mul(0.5f).exp();
+            Tensor scaledNoise = null;
             try {
-                return mean.add(epsilon.mul(standardDeviation));
+                scaledNoise = epsilon.mul(standardDeviation);
+                return mean.add(scaledNoise);
             } finally {
                 epsilon.release();
                 standardDeviation.release();
+                release(scaledNoise);
             }
         }
     }
@@ -229,7 +232,12 @@ public final class AutoencoderKL extends NNModule {
         LatentDistribution posterior = encode(image);
         Tensor latent = null;
         try {
-            latent = posterior.mode().mul(config.scalingFactor());
+            Tensor mode = posterior.mode();
+            try {
+                latent = mode.mul(config.scalingFactor());
+            } finally {
+                mode.release();
+            }
             return decode(latent);
         } finally {
             release(latent);
