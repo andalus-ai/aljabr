@@ -105,7 +105,11 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
                 throw new IOException("Output must not replace a source tensor container: " + source);
             }
             validateTensorPayload(tensor, payload);
-            totalBytes = Math.addExact(totalBytes, payload.length());
+            try {
+                totalBytes = Math.addExact(totalBytes, payload.length());
+            } catch (ArithmeticException overflow) {
+                throw new IOException("Total tensor payload size overflows long", overflow);
+            }
             tensorSpecs.add(new TensorSpec(
                     tensor.name(),
                     tensor.dataType().toUpperCase(Locale.ROOT),
@@ -149,7 +153,7 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
                 tensorSpecs.size(),
                 totalBytes,
                 target,
-                List.copyOf(model.extensions().keySet()),
+                untransferredExtensionKeys(model),
                 plan);
     }
 
@@ -172,14 +176,28 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        if (!model.extensions().isEmpty()
+        if (hasUntransferredExtensions(model)
                 && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("AMIR extensions cannot be silently omitted; the plan must be PARTIAL");
+            throw new IOException("AMIR model or tensor extensions cannot be silently omitted; "
+                    + "the plan must be PARTIAL");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !acknowledgePartial) {
             throw new IOException("Conversion plan is PARTIAL; explicit acknowledgement is required: "
                     + plan.compatibility().diagnostics());
         }
+    }
+
+    private static boolean hasUntransferredExtensions(ModelDescriptor model) {
+        return !model.extensions().isEmpty()
+                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
+    }
+
+    private static List<String> untransferredExtensionKeys(ModelDescriptor model) {
+        List<String> keys = new ArrayList<>();
+        model.extensions().keySet().forEach(key -> keys.add("model:" + key));
+        model.tensors().forEach(tensor -> tensor.extensions().keySet()
+                .forEach(key -> keys.add("tensor:" + tensor.name() + ":" + key)));
+        return List.copyOf(keys);
     }
 
     private static void validateTensorPayload(TensorDescriptor tensor, PayloadReference payload)
