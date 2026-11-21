@@ -288,22 +288,22 @@ public final class CpuBackend implements ComputeBackend {
         MemorySegment output = outBuf.segment();
         output.fill((byte) 0);
 
-        long[] stridesA = batchStrides(shapeA);
-        long[] stridesB = batchStrides(shapeB);
+        TensorLayout layoutA = a.layout();
+        TensorLayout layoutB = b.layout();
+        long[] stridesA = layoutA.strides();
+        long[] stridesB = layoutB.strides();
         long batchCount = 1;
         for (long dimension : outputBatchDims) {
             batchCount = Math.multiplyExact(batchCount, dimension);
         }
-        long leftMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, k), Float.BYTES);
-        long rightMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) k, n), Float.BYTES);
         long outputMatrixBytes = Math.multiplyExact(Math.multiplyExact((long) m, n), Float.BYTES);
         MemorySegment left = seg(a);
         MemorySegment right = seg(b);
 
         for (long batch = 0; batch < batchCount; batch++) {
             long remaining = batch;
-            long leftElementOffset = 0;
-            long rightElementOffset = 0;
+            long leftElementOffset = layoutA.storageOffset();
+            long rightElementOffset = layoutB.storageOffset();
             for (int axis = batchRank - 1; axis >= 0; axis--) {
                 long dimension = outputBatchDims[axis];
                 long coordinate = remaining % dimension;
@@ -320,26 +320,39 @@ public final class CpuBackend implements ComputeBackend {
                 }
             }
 
+            MemorySegment leftMatrix = matrixSegment(
+                    left, leftElementOffset, m, k,
+                    stridesA[batchRankA], stridesA[batchRankA + 1]);
+            MemorySegment rightMatrix = matrixSegment(
+                    right, rightElementOffset, k, n,
+                    stridesB[batchRankB], stridesB[batchRankB + 1]);
             long outputOffset = Math.multiplyExact(batch, outputMatrixBytes);
-            MatmulCpu.matmul(
-                    left.asSlice(Math.multiplyExact(leftElementOffset, Float.BYTES), leftMatrixBytes),
-                    right.asSlice(Math.multiplyExact(rightElementOffset, Float.BYTES), rightMatrixBytes),
-                    output.asSlice(outputOffset, outputMatrixBytes),
-                    m, n, k);
+            MatmulCpu.matmul(leftMatrix, rightMatrix,
+                    output.asSlice(outputOffset, outputMatrixBytes), m, n, k);
         }
         return out(outShape, outBuf);
     }
 
-    /** Returns row-major batch strides in elements, excluding the final matrix dimensions. */
-    private static long[] batchStrides(long[] shape) {
-        int batchRank = shape.length - 2;
-        long[] strides = new long[batchRank];
-        long stride = Math.multiplyExact(shape[batchRank], shape[batchRank + 1]);
-        for (int axis = batchRank - 1; axis >= 0; axis--) {
-            strides[axis] = stride;
-            stride = Math.multiplyExact(stride, shape[axis]);
+    /** Materializes a matrix view only when its inner matrix layout is not row-major contiguous. */
+    private static MemorySegment matrixSegment(
+            MemorySegment storage, long baseOffset, int rows, int columns,
+            long rowStride, long columnStride) {
+        long elements = Math.multiplyExact((long) rows, columns);
+        long bytes = Math.multiplyExact(elements, Float.BYTES);
+        if (columnStride == 1 && rowStride == columns) {
+            return storage.asSlice(Math.multiplyExact(baseOffset, Float.BYTES), bytes);
         }
-        return strides;
+        float[] packed = new float[Math.toIntExact(elements)];
+        for (int row = 0; row < rows; row++) {
+            long rowOffset = Math.addExact(baseOffset, Math.multiplyExact((long) row, rowStride));
+            for (int column = 0; column < columns; column++) {
+                long elementOffset = Math.addExact(rowOffset,
+                        Math.multiplyExact((long) column, columnStride));
+                packed[row * columns + column] =
+                        storage.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(elementOffset, Float.BYTES));
+            }
+        }
+        return MemorySegment.ofArray(packed);
     }
 
     // ── Shape ops ────────────────────────────────────────────────────────────
