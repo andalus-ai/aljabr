@@ -63,9 +63,29 @@ public final class EmbeddingGemma2VisionPooler {
                     maxX = Math.max(maxX, pixelPositionIds[i][0] + 1);
                 }
             }
+            int maxY = 0;
+            int validPatchCount = 0;
+            for (int patch = 0; patch < inputLength; patch++) {
+                if (!paddingPositions[patch]) {
+                    maxY = Math.max(maxY, pixelPositionIds[patch][1] + 1);
+                    validPatchCount++;
+                }
+            }
+            if (maxX <= 0 || maxY <= 0 || maxX % kernel != 0 || maxY % kernel != 0) {
+                throw new IllegalArgumentException(
+                        "valid patch grid dimensions must be divisible by the spatial pooling kernel");
+            }
             int cellsPerRow = maxX / kernel;
             if (cellsPerRow <= 0) {
                 throw new IllegalArgumentException("valid patch positions do not define a pooling grid");
+            }
+            for (int patch = 0; patch < validPatchCount; patch++) {
+                int expectedX = patch % maxX;
+                int expectedY = patch / maxX;
+                if (pixelPositionIds[patch][0] != expectedX || pixelPositionIds[patch][1] != expectedY) {
+                    throw new IllegalArgumentException(
+                            "valid patch positions must form a row-major rectangular grid");
+                }
             }
 
             pooled = new float[outputLength][hiddenSize];
