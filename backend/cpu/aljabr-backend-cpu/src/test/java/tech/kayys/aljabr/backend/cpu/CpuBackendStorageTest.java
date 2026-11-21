@@ -417,4 +417,75 @@ class CpuBackendStorageTest {
         assertEquals(0, storage.references());
     }
 
+
+    @Test
+    void globalReductionsReadStridedAndOffsetTensorLayouts() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        Tensor sum = null;
+        Tensor mean = null;
+        Tensor max = null;
+        try {
+            sum = backend.sum(input);
+            mean = backend.mean(input);
+            max = backend.max(input);
+
+            assertArrayEquals(new float[] { 10f }, sum.toFloatArray(), 0f);
+            assertArrayEquals(new float[] { 2.5f }, mean.toFloatArray(), 0f);
+            assertArrayEquals(new float[] { 4f }, max.toFloatArray(), 0f);
+        } finally {
+            if (sum != null) sum.release();
+            if (mean != null) mean.release();
+            if (max != null) max.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void axisSumReadsTransposedLogicalOrderAndPreservesKeepDim() {
+        HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 0));
+        Tensor sumAxisZero = null;
+        Tensor sumAxisOneKeepDim = null;
+        try {
+            sumAxisZero = backend.sum(input, 0, false);
+            sumAxisOneKeepDim = backend.sum(input, -1, true);
+
+            assertArrayEquals(new float[] { 3f, 7f }, sumAxisZero.toFloatArray(), 0f);
+            assertArrayEquals(new long[] { 2 }, sumAxisZero.shape().dims());
+            assertArrayEquals(new float[] { 4f, 6f }, sumAxisOneKeepDim.toFloatArray(), 0f);
+            assertArrayEquals(new long[] { 2, 1 }, sumAxisOneKeepDim.shape().dims());
+        } finally {
+            if (sumAxisZero != null) sumAxisZero.release();
+            if (sumAxisOneKeepDim != null) sumAxisOneKeepDim.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void axisMeanReadsNonZeroOffsetStridedTensor() {
+        HostStorage storage = new HostStorage(77f, 1f, 2f, 3f, 4f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] { 1, 2 }, 1));
+        Tensor mean = null;
+        try {
+            mean = backend.mean(input, -1, false);
+            assertArrayEquals(new float[] { 2f, 3f }, mean.toFloatArray(), 0f);
+        } finally {
+            if (mean != null) mean.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
 }
