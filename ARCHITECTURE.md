@@ -14,7 +14,7 @@ This file is retained as a stable entry point for existing links. Its former mod
 | Framework-level programming model and computation/execution boundaries | [Framework Architecture](docs/architecture/FRAMEWORK_ARCHITECTURE.md) |
 | Provider discovery, compatibility, initialization and configuration ownership | [Backend Ownership ADR](docs/architecture/ADR-0001-BACKEND-OWNERSHIP.md) |
 | Published artifacts, dependency profiles and consumer distribution | [Modular Distribution](docs/architecture/MODULAR_DISTRIBUTION.md) |
-| Current repository/module inventory and implementation status | [Capability Inventory](docs/architecture/CAPABILITY_INVENTORY.md) |
+| Current repository/module inventory and implementation status | [Capability Inventory](docs/architecture/COMPUTATIONAL_CAPABILITY_INVENTORY.md) |
 
 ## Current ownership summary
 
