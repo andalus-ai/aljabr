@@ -57,13 +57,22 @@ class FormatTargetCapabilityTest {
     }
 
     @Test
-    void q4ZeroAndQ8ZeroAreSupportedWithExplicitLossyDequantization() {
+    void q4AndQ5VariantsAndQ8ZeroAreSupportedWithExplicitLossyDequantization() {
         var q4 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q4", "Q4_0", List.of(32L))));
+        var q4_1 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q4_1", "Q4_1", List.of(32L))));
+        var q5_0 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q5_0", "Q5_0", List.of(32L))));
+        var q5_1 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q5_1", "Q5_1", List.of(32L))));
         var q8 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q8", "Q8_0", List.of(32L))));
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q4.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q4_1.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5_0.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5_1.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q8.fidelity());
         assertEquals("GGML_QUANTIZATION_DEQUANTIZED", q4.diagnostics().getFirst().code());
     }
