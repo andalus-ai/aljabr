@@ -35,6 +35,8 @@ public final class EmbeddingGemma2ModelFamilyPlugin implements ModelFamilyPlugin
                         Map.entry("runner_status", "text_runner_implemented_registration_and_checkpoint_validation_pending"),
                         Map.entry("supported_modalities", "text"),
                         Map.entry("deferred_modalities", "image,audio,video"),
+                        Map.entry("vision_pipeline_status", "implemented_checkpoint_backed_processor_tower_and_text_projection"),
+                        Map.entry("multimodal_runner_status", "pending_prompt_expansion_tokenizer_integration_and_runner_lifecycle"),
                         Map.entry("text_layers", "24"),
                         Map.entry("hidden_size", "512"),
                         Map.entry("intermediate_size", "2048"),
