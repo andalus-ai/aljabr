@@ -484,59 +484,74 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor transpose(Tensor a) {
-        long[] dims = a.shape().dims();
-        int rank = dims.length;
+        Objects.requireNonNull(a, "input");
+        int rank = a.shape().rank();
+        if (rank < 2) {
+            throw new IllegalArgumentException(
+                    "transpose requires a tensor with rank >= 2; got " + rank);
+        }
         return transpose(a, rank - 2, rank - 1);
     }
 
     @Override
     public Tensor transpose(Tensor a, int d0, int d1) {
+        Objects.requireNonNull(a, "input");
+        int rank = a.shape().rank();
+        if (d0 < 0 || d0 >= rank || d1 < 0 || d1 >= rank) {
+            throw new IllegalArgumentException(
+                    "transpose dimensions must be in [0, " + rank + "); got d0="
+                            + d0 + ", d1=" + d1);
+        }
+        if (a.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU transpose currently supports F32 tensors only; actual dtype is " + a.dtype());
+        }
+
         long[] inDims = a.shape().dims();
-        int rank = inDims.length;
         long[] outDims = inDims.clone();
         outDims[d0] = inDims[d1];
         outDims[d1] = inDims[d0];
-
         Shape outShape = new Shape(outDims);
-        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
-
-        // Compute strides for both input and output (row-major)
-        long[] inStrides = new long[rank];
-        long[] outStrides = new long[rank];
-        inStrides[rank - 1] = outStrides[rank - 1] = 1;
-        for (int i = rank - 2; i >= 0; i--) {
-            inStrides[i] = inStrides[i + 1] * inDims[i + 1];
-            outStrides[i] = outStrides[i + 1] * outDims[i + 1];
-        }
-
-        MemorySegment src = seg(a);
-        MemorySegment dst = outBuf.segment();
         long total = outShape.numel();
-        long[] cursor = new long[rank];
-        for (long elem = 0; elem < total; elem++) {
-            long inIdx = 0, outIdx = 0;
-            for (int d = 0; d < rank; d++) {
-                int inD = (d == d0) ? d1 : (d == d1) ? d0 : d;
-                inIdx += cursor[d] * inStrides[inD];
-                outIdx += cursor[d] * outStrides[d];
+        long outputBytes = Math.multiplyExact(total, Float.BYTES);
+        HostAccessibleStorage outBuf = allocateOutput(outputBytes);
+        try {
+            TensorLayout inputLayout = a.layout();
+            long[] inputStrides = inputLayout.strides();
+            long storageOffset = inputLayout.storageOffset();
+            long[] outputStrides = TensorLayout.contiguous(outShape).strides();
+            MemorySegment src = seg(a);
+            MemorySegment dst = outBuf.segment();
+            long[] cursor = new long[rank];
+
+            for (long element = 0; element < total; element++) {
+                long inputIndex = storageOffset;
+                long outputIndex = 0;
+                for (int dimension = 0; dimension < rank; dimension++) {
+                    int inputDimension = dimension == d0 ? d1
+                            : dimension == d1 ? d0 : dimension;
+                    inputIndex = Math.addExact(inputIndex,
+                            Math.multiplyExact(cursor[dimension], inputStrides[inputDimension]));
+                    outputIndex = Math.addExact(outputIndex,
+                            Math.multiplyExact(cursor[dimension], outputStrides[dimension]));
+                }
+                long inputByteOffset = Math.multiplyExact(inputIndex, Float.BYTES);
+                long outputByteOffset = Math.multiplyExact(outputIndex, Float.BYTES);
+                dst.set(ValueLayout.JAVA_FLOAT, outputByteOffset,
+                        src.get(ValueLayout.JAVA_FLOAT, inputByteOffset));
+
+                for (int dimension = rank - 1; dimension >= 0; dimension--) {
+                    if (++cursor[dimension] < outDims[dimension]) {
+                        break;
+                    }
+                    cursor[dimension] = 0;
+                }
             }
-            long memOffset = inIdx * 4L;
-            if (memOffset >= src.byteSize()) {
-                System.err.println("OOB Access! inDims=" + java.util.Arrays.toString(inDims) + ", d0=" + d0 + ", d1="
-                        + d1 + ", outDims=" + java.util.Arrays.toString(outDims) + ", inStrides="
-                        + java.util.Arrays.toString(inStrides) + ", outStrides=" + java.util.Arrays.toString(outStrides)
-                        + ", cursor=" + java.util.Arrays.toString(cursor) + ", inIdx=" + inIdx + ", memOffset="
-                        + memOffset + ", byteSize=" + src.byteSize());
-            }
-            dst.set(ValueLayout.JAVA_FLOAT, outIdx * 4L,
-                    src.get(ValueLayout.JAVA_FLOAT, memOffset));
-            for (int d = rank - 1; d >= 0; d--) {
-                if (++cursor[d] < outDims[d])
-                    break;
-                cursor[d] = 0;
-            }
+            return out(outShape, outBuf);
+        } catch (RuntimeException | Error failure) {
+            outBuf.release();
+            throw failure;
         }
-        return out(outShape, outBuf);
     }
 
     // ── Activations ───────────────────────────────────────────────────────────
@@ -608,35 +623,99 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor softmax(Tensor a) {
+        Objects.requireNonNull(a, "tensor must not be null");
         return softmax(a, a.shape().rank() - 1);
     }
 
     @Override
     public Tensor softmax(Tensor a, int dim) {
-        Shape shape = a.shape();
-        long n = shape.numel();
-        HostAccessibleStorage outBuf = allocateOutput(n * 4);
-        MemorySegment src = seg(a);
-
-        // Flatten to 2D: (batchRows, rowLen) where softmax is over rowLen
-        int rowLen = 1;
-        long[] dims = shape.dims();
-        for (int d = dim; d < dims.length; d++)
-            rowLen *= (int) dims[d];
-        long numRows = n / rowLen;
-
-        for (long r = 0; r < numRows; r++)
-            CpuOps.softmax(src, outBuf.segment(), r * rowLen, rowLen);
-
-        return out(shape, outBuf);
+        return normalizeAlongSuffix(a, dim, false);
     }
 
     @Override
     public Tensor logSoftmax(Tensor a, int dim) {
-        // log(softmax(x)) = x - log(sum(exp(x))) computed stably as:
-        // log_softmax(x) = x - max - log(sum(exp(x - max)))
-        Tensor sm = softmax(a, dim);
-        return log(sm);
+        return normalizeAlongSuffix(a, dim, true);
+    }
+
+    /**
+     * Computes softmax or log-softmax over the flattened suffix beginning at {@code dim}.
+     * This preserves the existing CPU backend axis convention while gathering inputs
+     * through their logical tensor layout.
+     */
+    private Tensor normalizeAlongSuffix(Tensor a, int dim, boolean logarithmic) {
+        Objects.requireNonNull(a, "tensor must not be null");
+        CpuTensorLayoutAccess.requireF32(a);
+        Shape shape = a.shape();
+        long[] dimensions = shape.dims();
+        int rank = dimensions.length;
+        if (rank == 0) {
+            throw new IllegalArgumentException("Normalization axis requires a tensor with rank greater than zero");
+        }
+        int normalizedDim = dim < 0 ? rank + dim : dim;
+        if (normalizedDim < 0 || normalizedDim >= rank) {
+            throw new IllegalArgumentException(
+                    "Normalization axis " + dim + " is out of range for tensor rank " + rank);
+        }
+
+        long rowLength = 1;
+        for (int axis = normalizedDim; axis < rank; axis++) {
+            rowLength = Math.multiplyExact(rowLength, dimensions[axis]);
+        }
+        long rowCount = 1;
+        for (int axis = 0; axis < normalizedDim; axis++) {
+            rowCount = Math.multiplyExact(rowCount, dimensions[axis]);
+        }
+
+        long elements = shape.numel();
+        HostAccessibleStorage output = allocateOutput(
+                Math.multiplyExact(elements, (long) Float.BYTES));
+        if (elements == 0) {
+            return out(shape, output);
+        }
+
+        MemorySegment source = seg(a);
+        MemorySegment destination = output.segment();
+        TensorLayout layout = a.layout();
+        if (!logarithmic && layout.isContiguous() && layout.storageOffset() == 0
+                && rowLength <= Integer.MAX_VALUE) {
+            int contiguousRowLength = Math.toIntExact(rowLength);
+            for (long row = 0; row < rowCount; row++) {
+                CpuOps.softmax(source, destination, Math.multiplyExact(row, rowLength),
+                        contiguousRowLength);
+            }
+            return out(shape, output);
+        }
+
+        for (long row = 0; row < rowCount; row++) {
+            long rowStart = Math.multiplyExact(row, rowLength);
+            float max = Float.NEGATIVE_INFINITY;
+            for (long column = 0; column < rowLength; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                max = Math.max(max, CpuTensorLayoutAccess.readLogical(
+                        source, dimensions, layout, logicalIndex));
+            }
+
+            double exponentialSum = 0d;
+            for (long column = 0; column < rowLength; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                float value = CpuTensorLayoutAccess.readLogical(
+                        source, dimensions, layout, logicalIndex);
+                exponentialSum += Math.exp((double) value - max);
+            }
+            double logNormalizer = Math.log(exponentialSum);
+            float inverseSum = (float) (1d / exponentialSum);
+            for (long column = 0; column < rowLength; column++) {
+                long logicalIndex = Math.addExact(rowStart, column);
+                float value = CpuTensorLayoutAccess.readLogical(
+                        source, dimensions, layout, logicalIndex);
+                float result = logarithmic
+                        ? (float) ((double) value - max - logNormalizer)
+                        : (float) (Math.exp((double) value - max) * inverseSum);
+                destination.set(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(logicalIndex, Float.BYTES), result);
+            }
+        }
+        return out(shape, output);
     }
 
     @Override
