@@ -1746,17 +1746,10 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor upsampleNearest2d(Tensor input, int outputH, int outputW) {
-        if (input.shape().rank() != 4) {
-            throw new IllegalArgumentException("upsampleNearest2d expects NCHW rank-4 input");
-        }
-        if (input.dtype() != DType.F32) {
-            throw new UnsupportedOperationException(
-                    "CPU nearest-neighbor upsampling currently supports F32 tensors only");
-        }
+        requireSpatialInput(input, "upsampleNearest2d");
         if (outputH <= 0 || outputW <= 0) {
             throw new IllegalArgumentException("output height and width must be positive");
         }
-
         long batch = input.shape().dim(0);
         long channels = input.shape().dim(1);
         long inputH = input.shape().dim(2);
@@ -1769,6 +1762,8 @@ public final class CpuBackend implements ComputeBackend {
         HostAccessibleStorage output = allocateOutput(Math.multiplyExact(outputShape.numel(), Float.BYTES));
         MemorySegment source = seg(input);
         MemorySegment destination = output.segment();
+        long[] dimensions = input.shape().dims();
+        TensorLayout layout = input.layout();
 
         for (long n = 0; n < batch; n++) {
             for (long c = 0; c < channels; c++) {
@@ -1776,10 +1771,10 @@ public final class CpuBackend implements ComputeBackend {
                     long ih = Math.min(inputH - 1, (long) oh * inputH / outputH);
                     for (int ow = 0; ow < outputW; ow++) {
                         long iw = Math.min(inputW - 1, (long) ow * inputW / outputW);
-                        long sourceIndex = ((n * channels + c) * inputH + ih) * inputW + iw;
+                        long logicalIndex = ((n * channels + c) * inputH + ih) * inputW + iw;
                         long destinationIndex = ((n * channels + c) * outputH + oh) * outputW + ow;
                         destination.set(ValueLayout.JAVA_FLOAT, destinationIndex * Float.BYTES,
-                                source.get(ValueLayout.JAVA_FLOAT, sourceIndex * Float.BYTES));
+                                CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex));
                     }
                 }
             }
@@ -1787,22 +1782,30 @@ public final class CpuBackend implements ComputeBackend {
         return out(outputShape, output);
     }
 
-    @Override
-    public Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding) {
-        long N = input.shape().dim(0);
-        long C = input.shape().dim(1);
-        long H = input.shape().dim(2);
-        long W = input.shape().dim(3);
-        long outH = (H + 2L * padding - kernelSize) / stride + 1;
-        long outW = (W + 2L * padding - kernelSize) / stride + 1;
+        public Tensor maxPool2d(Tensor input, int kernelSize, int stride, int padding) {
+        requireSpatialInput(input, "maxPool2d");
+        if (kernelSize <= 0 || stride <= 0 || padding < 0) {
+            throw new IllegalArgumentException("kernel size and stride must be positive; padding must be non-negative");
+        }
+        long nSize = input.shape().dim(0);
+        long channels = input.shape().dim(1);
+        long height = input.shape().dim(2);
+        long width = input.shape().dim(3);
+        long outH = (height + 2L * padding - kernelSize) / stride + 1;
+        long outW = (width + 2L * padding - kernelSize) / stride + 1;
+        if (outH <= 0 || outW <= 0) {
+            throw new IllegalArgumentException("pooling kernel produces an empty spatial output");
+        }
 
-        Shape outShape = new Shape(N, C, outH, outW);
-        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
-        MemorySegment si = seg(input);
-        MemorySegment so = outBuf.segment();
+        Shape outputShape = new Shape(nSize, channels, outH, outW);
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(outputShape.numel(), Float.BYTES));
+        MemorySegment source = seg(input);
+        MemorySegment destination = output.segment();
+        long[] dimensions = input.shape().dims();
+        TensorLayout layout = input.layout();
 
-        for (long n = 0; n < N; n++) {
-            for (long c = 0; c < C; c++) {
+        for (long n = 0; n < nSize; n++) {
+            for (long c = 0; c < channels; c++) {
                 for (long oh = 0; oh < outH; oh++) {
                     for (long ow = 0; ow < outW; ow++) {
                         float best = Float.NEGATIVE_INFINITY;
@@ -1810,63 +1813,78 @@ public final class CpuBackend implements ComputeBackend {
                             for (int kw = 0; kw < kernelSize; kw++) {
                                 long ih = oh * stride - padding + kh;
                                 long iw = ow * stride - padding + kw;
-                                if (ih < 0 || ih >= H || iw < 0 || iw >= W)
-                                    continue;
-                                float v = si.get(ValueLayout.JAVA_FLOAT,
-                                        ((n * C + c) * H + ih) * W * 4L + iw * 4L);
-                                if (v > best)
-                                    best = v;
+                                if (ih < 0 || ih >= height || iw < 0 || iw >= width) continue;
+                                long logicalIndex = ((n * channels + c) * height + ih) * width + iw;
+                                float value = CpuTensorLayoutAccess.readLogical(
+                                        source, dimensions, layout, logicalIndex);
+                                if (value > best) best = value;
                             }
                         }
-                        so.set(ValueLayout.JAVA_FLOAT,
-                                ((n * C + c) * outH + oh) * outW * 4L + ow * 4L, best);
+                        long outputIndex = ((n * channels + c) * outH + oh) * outW + ow;
+                        destination.set(ValueLayout.JAVA_FLOAT, outputIndex * Float.BYTES, best);
                     }
                 }
             }
         }
-        return out(outShape, outBuf);
+        return out(outputShape, output);
     }
 
-    @Override
-    public Tensor adaptiveAvgPool2d(Tensor input, int outputH, int outputW) {
-        long N = input.shape().dim(0);
-        long C = input.shape().dim(1);
-        long H = input.shape().dim(2);
-        long W = input.shape().dim(3);
+        public Tensor adaptiveAvgPool2d(Tensor input, int outputH, int outputW) {
+        requireSpatialInput(input, "adaptiveAvgPool2d");
+        if (outputH <= 0 || outputW <= 0) {
+            throw new IllegalArgumentException("output height and width must be positive");
+        }
+        long nSize = input.shape().dim(0);
+        long channels = input.shape().dim(1);
+        long height = input.shape().dim(2);
+        long width = input.shape().dim(3);
+        if (height <= 0 || width <= 0) {
+            throw new IllegalArgumentException("input height and width must be positive");
+        }
 
-        Shape outShape = new Shape(N, C, outputH, outputW);
-        HostAccessibleStorage outBuf = allocateOutput(outShape.numel() * 4);
-        MemorySegment si = seg(input);
-        MemorySegment so = outBuf.segment();
+        Shape outputShape = new Shape(nSize, channels, outputH, outputW);
+        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(outputShape.numel(), Float.BYTES));
+        MemorySegment source = seg(input);
+        MemorySegment destination = output.segment();
+        long[] dimensions = input.shape().dims();
+        TensorLayout layout = input.layout();
 
-        for (long n = 0; n < N; n++) {
-            for (long c = 0; c < C; c++) {
+        for (long n = 0; n < nSize; n++) {
+            for (long c = 0; c < channels; c++) {
                 for (int oh = 0; oh < outputH; oh++) {
                     for (int ow = 0; ow < outputW; ow++) {
-                        long hStart = (long) oh * H / outputH;
-                        long hEnd = (long) (oh + 1) * H / outputH;
-                        long wStart = (long) ow * W / outputW;
-                        long wEnd = (long) (ow + 1) * W / outputW;
-                        float acc = 0f;
-                        long cnt = 0;
+                        long hStart = (long) oh * height / outputH;
+                        long hEnd = (long) (oh + 1) * height / outputH;
+                        long wStart = (long) ow * width / outputW;
+                        long wEnd = (long) (ow + 1) * width / outputW;
+                        double sum = 0d;
+                        long count = 0;
                         for (long ih = hStart; ih < hEnd; ih++) {
                             for (long iw = wStart; iw < wEnd; iw++) {
-                                acc += si.get(ValueLayout.JAVA_FLOAT,
-                                        ((n * C + c) * H + ih) * W * 4L + iw * 4L);
-                                cnt++;
+                                long logicalIndex = ((n * channels + c) * height + ih) * width + iw;
+                                sum += CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex);
+                                count++;
                             }
                         }
-                        so.set(ValueLayout.JAVA_FLOAT,
-                                ((n * C + c) * outputH + oh) * outputW * 4L + ow * 4L,
-                                cnt > 0 ? acc / cnt : 0f);
+                        long outputIndex = ((n * channels + c) * outputH + oh) * outputW + ow;
+                        destination.set(ValueLayout.JAVA_FLOAT, outputIndex * Float.BYTES,
+                                count == 0 ? 0f : (float) (sum / count));
                     }
                 }
             }
         }
-        return out(outShape, outBuf);
+        return out(outputShape, output);
     }
 
-    // ── Embedding ─────────────────────────────────────────────────────────────
+    private static void requireSpatialInput(Tensor input, String operation) {
+        Objects.requireNonNull(input, "input");
+        if (input.shape().rank() != 4) {
+            throw new IllegalArgumentException(operation + " expects NCHW rank-4 input");
+        }
+        CpuTensorLayoutAccess.requireF32(input);
+    }
+
+        // ── Embedding ─────────────────────────────────────────────────────────────
 
     @Override
     public Tensor embedding(Tensor weight, Tensor input, long paddingIdx) {
