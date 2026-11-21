@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. Q2_K, Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF metadata and opaque AMIR extensions are retained as Safetensors
@@ -153,6 +153,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
+            case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
             case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18, 32);
             case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20, 32);
             case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22, 32);
@@ -166,7 +167,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
+            case "Q2_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -267,6 +268,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("Q2_K")) {
+                    dequantizeQ2KBlock(source, base, values, i * valuesPerBlock);
+                    continue;
+                }
                 if (type.equals("Q6_K")) {
                     dequantizeQ6KBlock(source, base, values, i * valuesPerBlock);
                     continue;
@@ -305,7 +310,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     values.putFloat(dequantizeValue(type, quantized, scale, minimum));
                 }
             }
-            if (type.equals("Q6_K")) {
+            if (type.equals("Q2_K") || type.equals("Q6_K")) {
                 values.position(0);
                 values.limit(count * valuesPerBlock * Float.BYTES);
             } else {
@@ -313,6 +318,40 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             }
             writeFully(output, values);
             block += count;
+        }
+    }
+
+    /**
+     * GGML block_q2_K layout: scales[16], qs[64], fp16 d, fp16 dmin.
+     * Four 2-bit planes are unpacked into sequential groups of 32 values.
+     */
+    private static void dequantizeQ2KBlock(byte[] source, int base, ByteBuffer output, int blockIndex) {
+        float d = halfToFloat(source[base + 80] & 0xff, source[base + 81] & 0xff);
+        float min = halfToFloat(source[base + 82] & 0xff, source[base + 83] & 0xff);
+        int outputBase = blockIndex * 256;
+        for (int half = 0; half < 2; half++) {
+            int scaleBase = base + half * 8;
+            int quantizedBase = base + 16 + half * 32;
+            for (int plane = 0; plane < 4; plane++) {
+                int shift = plane * 2;
+                int outputGroup = outputBase + half * 128 + plane * 32;
+                writeQ2KGroup(source, quantizedBase, scaleBase + plane * 2,
+                        shift, d, min, output, outputGroup);
+                writeQ2KGroup(source, quantizedBase + 16, scaleBase + plane * 2 + 1,
+                        shift, d, min, output, outputGroup + 16);
+            }
+        }
+    }
+
+    private static void writeQ2KGroup(
+            byte[] source, int quantizedOffset, int scaleOffset, int shift,
+            float d, float min, ByteBuffer output, int outputOffset) {
+        int scale = source[scaleOffset] & 0xff;
+        float dl = d * (scale & 0x0f);
+        float ml = min * (scale >>> 4);
+        for (int i = 0; i < 16; i++) {
+            int quantized = ((source[quantizedOffset + i] & 0xff) >>> shift) & 0x03;
+            output.putFloat((outputOffset + i) * Float.BYTES, dl * quantized - ml);
         }
     }
 
