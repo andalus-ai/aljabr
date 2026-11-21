@@ -136,9 +136,12 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        boolean partial = hasUnrepresentableLayers(model) || model.architecture().equalsIgnoreCase("unknown");
+        boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
+                "Q4_0".equalsIgnoreCase(tensor.dataType()) || "Q8_0".equalsIgnoreCase(tensor.dataType()));
+        boolean partial = hasUnrepresentableLayers(model)
+                || model.architecture().equalsIgnoreCase("unknown") || hasLossyQuantization;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("Unrepresented AMIR layers or unknown architecture require a PARTIAL plan");
+            throw new IOException("Dequantization or unrepresented AMIR layers require a PARTIAL plan");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !request.acknowledgePartial()) {
             throw new IOException("GGUF-to-Safetensors conversion is PARTIAL; explicit acknowledgement is required");
