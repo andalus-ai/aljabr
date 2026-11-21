@@ -984,4 +984,30 @@ class CpuBackendStorageTest {
         assertEquals(0, biasStorage.references());
     }
 
+    @Test
+    void matmulReadsTransposedAndNonZeroOffsetMatrixViews() {
+        HostStorage leftStorage = new HostStorage(99f, 1f, 2f, 3f, 4f);
+        DefaultTensor left = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) leftStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {2, 1}, 1));
+        HostStorage rightStorage = new HostStorage(5f, 6f, 7f, 8f);
+        DefaultTensor right = tensor(rightStorage, 2, 2);
+        Tensor transposed = null;
+        Tensor result = null;
+        try {
+            transposed = backend.transpose(left, 0, 1);
+            result = backend.matmul(transposed, right);
+            assertArrayEquals(new float[] {26f, 30f, 38f, 44f}, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            if (transposed != null) transposed.release();
+            left.release();
+            right.release();
+        }
+        assertEquals(0, leftStorage.references());
+        assertEquals(0, rightStorage.references());
+    }
+
+
 }
