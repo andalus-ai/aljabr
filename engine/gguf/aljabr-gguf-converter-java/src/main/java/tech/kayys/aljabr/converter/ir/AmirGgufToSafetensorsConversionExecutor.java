@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. Q4_0, Q4_1, Q5_0, Q5_1, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF metadata and opaque AMIR extensions are retained as Safetensors
@@ -153,11 +153,12 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
-            case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18);
-            case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20);
-            case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22);
-            case "Q5_1" -> TensorEncoding.dequantized("Q5_1", 24);
-            case "Q8_0" -> TensorEncoding.dequantized("Q8_0", 34);
+            case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18, 32);
+            case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20, 32);
+            case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22, 32);
+            case "Q5_1" -> TensorEncoding.dequantized("Q5_1", 24, 32);
+            case "Q8_0" -> TensorEncoding.dequantized("Q8_0", 34, 32);
+            case "Q6_K" -> TensorEncoding.dequantized("Q6_K", 210, 256);
             default -> throw new IOException("No verified GGUF-to-Safetensors decoder for dtype '"
                     + tensor.dataType() + "' (tensor " + tensor.name() + ")");
         };
@@ -165,7 +166,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q8_0" -> true;
+            case "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -191,7 +192,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             for (long dimension : tensor.shape()) {
                 elements = Math.multiplyExact(elements, dimension);
             }
-            if (encoding.dequantized() && elements % 32L != 0L) {
+            if (encoding.dequantized() && elements % encoding.elementsPerBlock() != 0L) {
                 throw new IOException("Tensor '" + tensor.name() + "' element count must be divisible by 32 "
                         + "for " + encoding.ggmlType());
             }
@@ -218,7 +219,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             TensorEncoding encoding, WritableByteChannel output) throws IOException {
         try (FileChannel input = FileChannel.open(source, StandardOpenOption.READ)) {
             if (encoding.dequantized()) {
-                dequantize(input, payload.offset(), tensor.shape(), encoding.ggmlType(), output);
+                dequantize(input, payload.offset(), tensor.shape(), encoding, output);
             } else {
                 copy(input, payload.offset(), payload.length(), output);
             }
@@ -245,19 +246,13 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
     }
 
     private static void dequantize(
-            FileChannel input, long offset, List<Long> shape, String type, WritableByteChannel output)
-            throws IOException {
+            FileChannel input, long offset, List<Long> shape, TensorEncoding encoding,
+            WritableByteChannel output) throws IOException {
+        String type = encoding.ggmlType();
         long elements = 1L;
         for (long dimension : shape) elements = Math.multiplyExact(elements, dimension);
-        int blockBytes = switch (type) {
-            case "Q4_0" -> 18;
-            case "Q4_1" -> 20;
-            case "Q5_0" -> 22;
-            case "Q5_1" -> 24;
-            case "Q8_0" -> 34;
-            default -> throw new IOException("Unsupported dequantization type: " + type);
-        };
-        int valuesPerBlock = 32;
+        int blockBytes = encoding.scalarBytes();
+        int valuesPerBlock = encoding.elementsPerBlock();
         long blocks = elements / valuesPerBlock;
         byte[] source = new byte[blockBytes * BLOCKS_PER_BATCH];
         ByteBuffer values = ByteBuffer.allocateDirect(valuesPerBlock * Float.BYTES * BLOCKS_PER_BATCH)
@@ -272,6 +267,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("Q6_K")) {
+                    dequantizeQ6KBlock(source, base, values, i * valuesPerBlock);
+                    continue;
+                }
                 float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
                 if (type.equals("Q8_0")) {
                     for (int j = 0; j < 32; j++) {
@@ -306,10 +305,47 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     values.putFloat(dequantizeValue(type, quantized, scale, minimum));
                 }
             }
-            values.flip();
+            if (type.equals("Q6_K")) {
+                values.position(0);
+                values.limit(count * valuesPerBlock * Float.BYTES);
+            } else {
+                values.flip();
+            }
             writeFully(output, values);
             block += count;
         }
+    }
+
+    /**
+     * GGML block_q6_K layout: ql[128], qh[64], scales[16], fp16 d.
+     * Each 128-value half stores four interleaved 32-value lanes.
+     */
+    private static void dequantizeQ6KBlock(byte[] source, int base, ByteBuffer output, int blockIndex) {
+        float d = halfToFloat(source[base + 208] & 0xff, source[base + 209] & 0xff);
+        int outputBase = blockIndex * 256;
+        for (int half = 0; half < 2; half++) {
+            int qlBase = base + half * 64;
+            int qhBase = base + 128 + half * 32;
+            int scaleBase = base + 192 + half * 8;
+            for (int lane = 0; lane < 32; lane++) {
+                int packedHigh = source[qhBase + lane] & 0xff;
+                int scaleGroup = lane / 16;
+                int low0 = source[qlBase + lane] & 0xff;
+                int low1 = source[qlBase + lane + 32] & 0xff;
+                int q1 = (low0 & 0x0f) | ((packedHigh & 0x03) << 4);
+                int q2 = (low1 & 0x0f) | (((packedHigh >>> 2) & 0x03) << 4);
+                int q3 = (low0 >>> 4) | (((packedHigh >>> 4) & 0x03) << 4);
+                int q4 = (low1 >>> 4) | (((packedHigh >>> 6) & 0x03) << 4);
+                putQ6Value(output, outputBase + lane, d, source[scaleBase + scaleGroup], q1);
+                putQ6Value(output, outputBase + lane + 32, d, source[scaleBase + scaleGroup + 2], q2);
+                putQ6Value(output, outputBase + lane + 64, d, source[scaleBase + scaleGroup + 4], q3);
+                putQ6Value(output, outputBase + lane + 96, d, source[scaleBase + scaleGroup + 6], q4);
+            }
+        }
+    }
+
+    private static void putQ6Value(ByteBuffer output, int index, float d, byte scale, int quantized) {
+        output.putFloat(index * Float.BYTES, d * scale * (quantized - 32));
     }
 
     private static float dequantizeValue(String type, int quantized, float scale, float minimum) {
@@ -412,15 +448,16 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
     }
 
-    private record TensorEncoding(String ggmlType, String safetensorsDtype, int scalarBytes, boolean dequantized) {
+    private record TensorEncoding(
+            String ggmlType, String safetensorsDtype, int scalarBytes, boolean dequantized, int elementsPerBlock) {
         static TensorEncoding raw(String dtype, int scalarBytes) {
-            return new TensorEncoding(dtype, dtype, scalarBytes, false);
+            return new TensorEncoding(dtype, dtype, scalarBytes, false, 1);
         }
-        static TensorEncoding dequantized(String type, int blockBytes) {
-            return new TensorEncoding(type, "F32", blockBytes, true);
+        static TensorEncoding dequantized(String type, int blockBytes, int elementsPerBlock) {
+            return new TensorEncoding(type, "F32", blockBytes, true, elementsPerBlock);
         }
         long inputBytes(long elements) {
-            return dequantized ? Math.multiplyExact(elements / 32L, scalarBytes)
+            return dequantized ? Math.multiplyExact(elements / elementsPerBlock, scalarBytes)
                     : Math.multiplyExact(elements, scalarBytes);
         }
         long outputBytes(TensorDescriptor tensor) {
