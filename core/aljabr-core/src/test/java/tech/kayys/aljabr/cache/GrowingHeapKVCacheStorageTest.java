@@ -83,6 +83,32 @@ class GrowingHeapKVCacheStorageTest {
         }
     }
 
+
+    @Test
+    void worksWithCommittedSequenceSession() {
+        GrowingHeapKVCacheStorage storage = new GrowingHeapKVCacheStorage(
+                KVCacheLayout.uniform(1, 32, 1, 2), 0);
+        KVCacheSession session = new KVCacheSession(storage);
+        float[] key = {1, 2};
+        float[] value = {3, 4};
+
+        session.write(0, 0, key, 0, value, 0);
+        session.write(0, 1, key, 0, value, 0);
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> session.readKey(0, 0, new float[2], 0));
+
+        session.commit(2);
+        float[] actual = new float[2];
+        session.readValue(0, 1, actual, 0);
+        assertArrayEquals(value, actual);
+
+        session.truncate(1);
+        assertEquals(1, session.committedLength());
+        assertThrows(IndexOutOfBoundsException.class,
+                () -> session.readKey(0, 1, new float[2], 0));
+        storage.close();
+    }
+
     @Test
     void closeReleasesBackingArraysAndRejectsFurtherAccess() {
         GrowingHeapKVCacheStorage storage = new GrowingHeapKVCacheStorage(
