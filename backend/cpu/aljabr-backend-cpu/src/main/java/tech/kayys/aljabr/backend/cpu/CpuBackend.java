@@ -943,12 +943,6 @@ public final class CpuBackend implements ComputeBackend {
         }
         validateBatchNormVector(runningMean, channels, "runningMean");
         validateBatchNormVector(runningVar, channels, "runningVar");
-        if (samplesPerChannel == 0 && (training || runningMean == null)) {
-            if (input.numel() == 0) {
-                return out(input.shape(), allocateOutput(0));
-            }
-        }
-
         long elements = input.numel();
         HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, (long) Float.BYTES));
         if (elements == 0) return out(input.shape(), output);
@@ -987,6 +981,10 @@ public final class CpuBackend implements ComputeBackend {
                     long parameterOffset = Math.multiplyExact(channel, Float.BYTES);
                     float oldMean = means.get(ValueLayout.JAVA_FLOAT, parameterOffset);
                     float oldVariance = variances.get(ValueLayout.JAVA_FLOAT, parameterOffset);
+                    if (!Float.isFinite(oldMean) || !Float.isFinite(oldVariance) || oldVariance < 0f) {
+                        throw new IllegalArgumentException(
+                                "BatchNorm running statistics must be finite and variance non-negative");
+                    }
                     means.set(ValueLayout.JAVA_FLOAT, parameterOffset,
                             (float) ((1d - momentum) * oldMean + momentum * mean));
                     variances.set(ValueLayout.JAVA_FLOAT, parameterOffset,
