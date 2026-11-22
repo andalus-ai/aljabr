@@ -65,6 +65,8 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         Map<String, GgufMetaValue> metadata = metadata(model);
         List<StreamingGgufWriter.TensorPayload> tensors = new ArrayList<>(model.tensors().size());
         long payloadBytes = 0L;
+        AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
+                putUnique(result, key, GgufMetaValue.ofString(value)));
         for (TensorDescriptor tensor : model.tensors()) {
             PayloadReference payload = tensor.payload();
             if (payload == null) {
