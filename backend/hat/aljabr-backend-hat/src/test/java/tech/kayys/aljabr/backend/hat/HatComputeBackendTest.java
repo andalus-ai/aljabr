@@ -78,7 +78,9 @@ public class HatComputeBackendTest {
                     "HAT results must retain the explicitly selected backend");
             for (float v : result.toFloatArray()) assertEquals(12.0f, v, 1e-4);
         }
-    }    @Test
+    }
+
+    @Test
     public void testCpuFallbackCanConsumeHatOwnedMatmulResult() {
         try (Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, 2, 2);
                 Tensor right = TensorFactory.of(new float[] { 5, 6, 7, 8 }, 2, 2);
@@ -90,7 +92,9 @@ public class HatComputeBackendTest {
             assertArrayEquals(new float[] { 38, 44, 86, 100 },
                     fallbackResult.toFloatArray(), 1e-4f);
         }
-    }    @Test
+    }
+
+    @Test
     public void testHatMatmulCanConsumeCpuFallbackResult() {
         try (Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, 2, 2);
                 Tensor right = TensorFactory.of(new float[] { 5, 6, 7, 8 }, 2, 2);
@@ -102,7 +106,9 @@ public class HatComputeBackendTest {
             assertEquals(backend, hatResult.backend());
             assertArrayEquals(new float[] { 6, 8, 10, 12 }, hatResult.toFloatArray(), 1e-4f);
         }
-    }    @Test
+    }
+
+    @Test
     public void testMatmulSupportsRectangularRowMajorMatrices() {
         try (Tensor a = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, 2, 3);
                 Tensor b = TensorFactory.of(new float[] { 7, 8, 9, 10, 11, 12 }, 3, 2);
@@ -111,7 +117,9 @@ public class HatComputeBackendTest {
             assertEquals(2, result.shape().dim(1));
             assertArrayEquals(new float[] { 58, 64, 139, 154 }, result.toFloatArray(), 1e-4f);
         }
-    }    @Test
+    }
+
+    @Test
     public void testMatmulConsumesStridedCpuFallbackViews() {
         try (Tensor parent = TensorFactory.of(new float[] {
                 99.0f, 1.0f, 2.0f, 99.0f,
@@ -225,7 +233,9 @@ public class HatComputeBackendTest {
             assertArrayEquals(new float[] { 19, 22, 43, 50 }, first.toFloatArray(), 1e-4f);
             assertArrayEquals(new float[] { 6, 0, 0, 8 }, second.toFloatArray(), 1e-4f);
         }
-    }    @Test
+    }
+
+    @Test
     public void testMatmulSupportsDifferentShapesAcrossCalls() {
         try (Tensor firstLeft = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, 2, 3);
                 Tensor firstRight = TensorFactory.of(new float[] { 7, 8, 9, 10, 11, 12 }, 3, 2);
@@ -237,7 +247,9 @@ public class HatComputeBackendTest {
             assertArrayEquals(new float[] { 58, 64, 139, 154 }, first.toFloatArray(), 1e-4f);
             assertArrayEquals(new float[] { 92, 106, 120 }, second.toFloatArray(), 1e-4f);
         }
-    }    @Test
+    }
+
+    @Test
     public void testMatmulSerializesConcurrentCallsOnSharedBackend() throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(4);
         try {
@@ -271,12 +283,16 @@ public class HatComputeBackendTest {
         try (Tensor a = TensorFactory.ones(2, 3); Tensor b = TensorFactory.ones(4, 2)) {
             assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
         }
-    }    @Test
+    }
+
+    @Test
     public void testMatmulRejectsNonMatrixInputs() {
         try (Tensor a = TensorFactory.ones(3); Tensor b = TensorFactory.ones(3, 2)) {
             assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
         }
-    }    @Test
+    }
+
+    @Test
     public void testRoPECpuFallbackStagesHatOwnedInput() {
         Tensor input = TensorFactory.of(
                 new float[] { 1.0f, 0.0f }, backend, 1, 1, 1, 2);
