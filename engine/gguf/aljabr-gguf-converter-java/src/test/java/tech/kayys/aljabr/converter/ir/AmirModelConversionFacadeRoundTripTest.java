@@ -53,6 +53,8 @@ class AmirModelConversionFacadeRoundTripTest {
                 reverse.model().tensors().get(0).extensions().get("vendor.key/雪"));
         assertEquals(expectedTensorType(),
                 reverse.model().tensors().get(0).tensorType().orElseThrow());
+        assertTrue(reverse.model().metadata().keySet().stream()
+                .noneMatch(AmirTensorTypeCodec::isEncodedKey));
         var reverseResult = facade.execute(reverse, ConversionRequest.to(restored.toUri()));
         assertEquals(1, reverseResult.tensorCount());
         assertEquals(expectedPayload.length, reverseResult.payloadBytes());
