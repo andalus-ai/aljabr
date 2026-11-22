@@ -473,6 +473,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
         model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
         model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
+        model.extensions().keySet().stream()
+                .filter(key -> key.startsWith("gguf.metadata."))
+                .sorted()
+                .forEach(key -> keys.add("model:typed-metadata:" + key.substring("gguf.metadata.".length())));
         return List.copyOf(keys);
     }
 
