@@ -37,6 +37,19 @@ class CpuIndexSelectTest {
     }
 
     @Test
+    void preservesI32ValuesAndNonContiguousLogicalOrder() {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor input = TensorFactory.of(new int[] {1, 2, 3, 4, 5, 6}, backend, 2, 3);
+                Tensor transposed = input.transpose(0, 1);
+                Tensor indices = TensorFactory.of(new int[] {2, 0}, backend, 2);
+                Tensor selected = transposed.indexSelect(0, indices)) {
+            assertEquals(DType.I32, selected.dtype());
+            assertArrayEquals(new long[] {2, 2}, selected.shape().dims());
+            assertArrayEquals(new int[] {3, 6, 1, 4}, selected.toIntArray());
+        }
+    }
+
+    @Test
     void emptyIndicesProduceAnEmptySelectedAxis() {
         try (CpuBackend backend = new CpuBackend();
                 Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4, 5, 6}, backend, 2, 3);
