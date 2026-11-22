@@ -241,3 +241,66 @@ A tooling capability is ready for stable use only when:
 ## 10. First implementation recommendation
 
 Start with **Phase 0 followed by a minimal JDK-only diagnostics API**, but first inspect existing core error/diagnostic abstractions and dependency metadata. Do not immediately refactor `ModelProfiler` or move legacy metrics classes: they may have consumers and compatibility constraints. The first code PR should add the smallest stable contract and one integration point, then grow by evidence.
+
+
+## 11. Auditability and execution evidence
+
+Observability answers what happened and how the framework behaved. Auditability preserves structured evidence of consequential framework decisions and lifecycle transitions. They are related but must remain distinct from ordinary logs, metrics, traces and profiling samples.
+
+### 11.1 Audit event contract
+
+Define an immutable, versioned audit-event contract with at least:
+- event/schema version and stable event type;
+- event timestamp plus explicit clock/time semantics;
+- source/actor classification (caller, Aljabr framework, provider/extension);
+- action, target/resource identity and outcome;
+- operation, parent and correlation identifiers where available;
+- safe, typed context attributes and optional reason/remediation codes.
+
+Audit events should cover meaningful transitions such as provider discovery/initialization/shutdown, compatibility evaluation and fallback, model/format validation decisions, resource lifecycle failures, explicit configuration changes applied by framework APIs, and conformance/validation outcomes. Avoid emitting a record for every low-level arithmetic instruction.
+
+The sink is caller-selected and optional. Aljabr must not silently persist audit history, create a database, or claim compliance, tamper-proof storage, non-repudiation or retention guarantees. Those properties require an explicit sink and product-level security/retention policy. Delivery guarantees (best effort, synchronous, buffered) and overflow behavior must be documented per sink.
+
+### 11.2 Privacy and security
+
+- Default to metadata-only records. Never include tensor values, prompts, user payloads, model weights, credentials, secrets or arbitrary configuration dumps.
+- Use typed allowlisted attributes rather than arbitrary object serialization or toString() output.
+- Apply redaction before export, not only in a presentation layer.
+- Make sensitive capture explicit, narrowly scoped and documented; ensure disabled capture is the default.
+- Bound buffers and cardinality. Define backpressure/drop behavior; never block a compute hot path indefinitely on an exporter.
+- Treat provider-supplied diagnostic text and attributes as untrusted input. Sanitize control characters and prevent secret leakage through exception messages.
+
+### 11.3 Correlation and causal context
+
+Use explicit immutable execution/correlation context with parent-child relationships across nested operations. Context propagation into asynchronous work must be deliberate and documented; do not depend on an implicit thread-local that breaks across executors or virtual threads. Correlation identifiers are opaque and must not embed user data.
+
+### 11.4 Evidence provenance
+
+Reports must carry enough provenance to interpret findings:
+- software/build revision, JDK/runtime and relevant API/schema versions;
+- provider identity/version and device/host details when applicable;
+- model/format identity as safe metadata, not weight contents;
+- operation/input metadata, seed and determinism constraints when relevant;
+- measurement unit, clock, scope, sample count and synchronization policy;
+- whether each value is measured, estimated, sampled, derived or unavailable.
+
+Correctness evidence, performance evidence and operational audit are separate report sections. A successful benchmark is not proof of numerical correctness; a provider declaration is not proof of compatibility; a passing unit test is not proof of hardware validation.
+
+## 12. Implementation slices and release gates
+
+Keep the implementation incremental and evidence-driven:
+
+1. **Inventory:** locate existing exception, validation, provider-selection, profiling, metrics, memory and model-loading hooks; map their modules, dependencies and consumers before introducing new public types.
+2. **Foundation:** add the smallest dependency-light diagnostics/event contracts, stable codes, typed safe context, no-op sink, explicit scope/correlation and deterministic console rendering.
+3. **High-value integration:** instrument shape/dtype/layout validation, provider compatibility/fallback, and resource-lifecycle failures first. Add tests at the owning module boundaries.
+4. **Audit sink:** add caller-supplied audit sink semantics, bounded delivery and failure policy. Do not introduce implicit persistence.
+5. **Numerics and memory:** add optional numerical assertions and storage lifecycle/copy/transfer events, with explicit synchronization and measured/estimated semantics.
+6. **Profiling:** add operation/model scopes and distributions; correct legacy heuristic profiler reports only after consumer and compatibility audit.
+7. **Exporters:** add JFR and deterministic JSON first; add OpenTelemetry/Micrometer/SLF4J adapters only for concrete consumers.
+8. **External usability:** provide examples and consumer tests against published artifacts; ensure diagnostics can be used without AQLI, Tafkir, native providers or dashboards.
+
+Stable release requires tests for immutability, schema compatibility, privacy/redaction, boundedness, concurrency/correlation, no-op overhead, exception and cleanup paths, exporter failure behavior, and supported dependency profiles. Hardware/device measurements additionally require hardware-specific evidence. Until these gates pass, mark the implementation in progress or experimental rather than stable.
+
+## 13. Implementation status
+
+This document defines the target contract and implementation gates. It is not evidence that the APIs, event sinks, exporters or integrations already exist. Track each deliverable separately as planned, in progress, implemented, validated, stable or optimized, and link status to source/tests and the exact validation environment.
