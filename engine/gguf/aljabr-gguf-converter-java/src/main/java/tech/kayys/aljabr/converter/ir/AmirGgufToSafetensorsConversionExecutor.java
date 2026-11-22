@@ -8,6 +8,7 @@ import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutor;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -138,13 +139,11 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
         boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
                 isDequantizedType(tensor.dataType()));
-        boolean hasFlattenedTypedMetadata = !model.typedMetadata().isEmpty()
-                || model.extensions().keySet().stream().anyMatch(key -> key.startsWith("gguf.metadata."));
         boolean partial = hasUnrepresentableLayers(model)
                 || model.architecture().equalsIgnoreCase("unknown")
-                || hasLossyQuantization || hasFlattenedTypedMetadata;
+                || hasLossyQuantization;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("Dequantization, flattened typed metadata, or unrepresented AMIR layers require a PARTIAL plan");
+            throw new IOException("Dequantization or unrepresented AMIR layers require a PARTIAL plan");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !request.acknowledgePartial()) {
             throw new IOException("GGUF-to-Safetensors conversion is PARTIAL; explicit acknowledgement is required");
@@ -562,6 +561,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 values.put("aljabr.source.metadata." + key, value));
         model.extensions().forEach((key, value) ->
                 values.put("aljabr.source.extension." + key, value));
+        values.putAll(AmirTypedMetadataCodec.encode(model.typedMetadata()));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) -> values.put(
                     "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value));
@@ -584,12 +584,6 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
         model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
         model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
-        model.typedMetadata().keySet().stream().sorted()
-                .forEach(key -> keys.add("model:typed-metadata:" + key));
-        model.extensions().keySet().stream()
-                .filter(key -> key.startsWith("gguf.metadata."))
-                .sorted()
-                .forEach(key -> keys.add("model:typed-metadata:" + key.substring("gguf.metadata.".length())));
         return List.copyOf(keys);
     }
 
