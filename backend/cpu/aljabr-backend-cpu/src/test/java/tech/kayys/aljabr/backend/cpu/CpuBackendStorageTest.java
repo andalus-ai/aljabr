@@ -1333,4 +1333,35 @@ class CpuBackendStorageTest {
         assertEquals(0, storage.references());
     }
 
+
+    @Test
+    void indexSelectReadsOffsetAndStridedSourceAndIndicesInLogicalOrder() {
+        HostStorage sourceStorage = new HostStorage(99f, 1f, 4f, 2f, 5f, 3f, 6f);
+        HostStorage indexStorage = new HostStorage(99f, 0f, 99f, 0f);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 99);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 4, 2);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 8, 99);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 12, 0);
+        DefaultTensor source = new DefaultTensor(
+                new Shape(2, 3), DType.F32, DeviceType.CPU, (TensorStorage) sourceStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 3), new long[] {1, 2}, 1));
+        DefaultTensor indices = new DefaultTensor(
+                new Shape(2), DType.I32, DeviceType.CPU, (TensorStorage) indexStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2), new long[] {2}, 1));
+        Tensor selected = null;
+        try {
+            selected = backend.indexSelect(source, 1, indices);
+            assertArrayEquals(new long[] {2, 2}, selected.shape().dims());
+            assertArrayEquals(new float[] {3f, 1f, 6f, 4f}, selected.toFloatArray(), 0f);
+        } finally {
+            if (selected != null) selected.release();
+            indices.release();
+            source.release();
+        }
+        assertEquals(0, sourceStorage.references());
+        assertEquals(0, indexStorage.references());
+    }
+
 }
