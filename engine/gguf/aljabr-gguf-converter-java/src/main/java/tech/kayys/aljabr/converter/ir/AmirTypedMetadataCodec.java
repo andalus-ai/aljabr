@@ -19,7 +19,7 @@ import java.util.Map;
  */
 final class AmirTypedMetadataCodec {
 
-    static final String PREFIX = "aljabr.amir.typed-metadata.";
+    static final String PREFIX = "aljabr.amir.typed-metadata.v1.";
 
     private AmirTypedMetadataCodec() {
     }
@@ -35,7 +35,14 @@ final class AmirTypedMetadataCodec {
         metadata.forEach((key, value) -> {
             if (key.startsWith(PREFIX)) {
                 String originalKey = keyFrom(key);
-                if (decoded.putIfAbsent(originalKey, decodeValue(value)) != null) {
+                final MetadataValue decodedValue;
+                try {
+                    decodedValue = decodeValue(value);
+                } catch (RuntimeException invalid) {
+                    throw new IllegalArgumentException(
+                            "Invalid AMIR typed metadata value for key: " + originalKey, invalid);
+                }
+                if (decoded.putIfAbsent(originalKey, decodedValue) != null) {
                     throw new IllegalArgumentException("Duplicate typed metadata key: " + originalKey);
                 }
             }
