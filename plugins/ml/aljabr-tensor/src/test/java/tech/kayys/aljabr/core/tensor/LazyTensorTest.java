@@ -592,6 +592,19 @@ public class LazyTensorTest {
         Tensor activationResult = lazy1.relu();
         assertFalse(((LazyTensor) activationResult).getNode().hasBackwardFunction());
 
+        Tensor indexValues = new DummyTensor(2) {
+            @Override
+            public DType dtype() {
+                return DType.I32;
+            }
+        };
+        Tensor selected = lazy1.indexSelect(0, indexValues);
+        assertTrue(selected instanceof LazyTensor);
+        GraphNode selectedNode = ((LazyTensor) selected).getNode();
+        assertEquals(OpType.INDEX_SELECT, selectedNode.getOp());
+        assertEquals(new Shape(2, 2), selectedNode.getOutputShape());
+        assertEquals(2, selectedNode.getInputs().size());
+
         Tensor result = lazy1.matmul(t2);
 
         // Assert that result is lazy and not yet evaluated
