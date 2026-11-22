@@ -130,6 +130,55 @@ Observed file: `backend/cpu/aljabr-backend-cpu/src/main/java/tech/kayys/aljabr/b
 
 File size alone does not prove a Single Responsibility violation. Inspect its operation families, storage access, dispatch, parallel execution, fallback, and resource lifecycle responsibilities before splitting. Extract only cohesive implementation units with real independent change drivers and focused tests; do not create a generic utility package or speculative interface hierarchy.
 
+
+### F-005 follow-up — Downstream ownership and migration disposition
+
+A follow-up comparison against the AQLI repository establishes that these resources should not be moved into a new Aljabr REST/integration module merely to preserve their current packaging.
+
+**Confirmed AQLI overlap**
+
+- AQLI already owns the REST adapter module at `framework/api/aqli-api`, with Quarkus REST, CDI, OpenAPI and REST-assured/JUnit test dependencies.
+- It already implements `ChatCompletionsResource` at `framework/api/aqli-api/src/main/java/tech/kayys/aqli/server/api/v1/ChatCompletionsResource.java`, including non-streaming and SSE chat completion paths.
+- It already implements `EmbeddingsResource` at `framework/api/aqli-api/src/main/java/tech/kayys/aqli/server/api/v1/EmbeddingsResource.java`.
+- It also owns general completion, model, job, health and administrative REST resources in the same API module.
+- AQLI's `aqli-api/build.gradle.kts` explicitly excludes both `aqli-safetensor-api` and `aljabr-safetensor-api`, so the old Safetensors REST artifact is not part of the canonical AQLI API dependency graph.
+- AQLI's API module has a test source tree. Its `ServerApiTest` exercises the chat completion endpoint (including successful responses, streaming and invalid requests) and embeddings endpoint (including successful response shape and invalid requests) over HTTP; mapper, request-header, model-operation and streaming tests provide additional coverage. The tests are consolidated in the server API integration suite rather than separate resource-named test classes, so do not mistake the absence of those class names for absence of endpoint coverage.
+
+**Current Safetensors API artifact shape**
+
+- `aljabr-safetensor-api` has no `src/test` tree and no `src/main/resources` tree in the audited baseline.
+- Its Gradle build directly declares Quarkus REST, Jackson REST, JAX-RS, CDI, MicroProfile Config/OpenAPI and Mutiny dependencies.
+- It publishes only to `mavenLocal()` in the inspected build configuration.
+- The REST classes contain runtime registries, reflection-based service lookup, endpoint DTOs and workflow/control-plane behavior. They are not format parsing, tensor, model-loading or weight-layout contracts.
+- The resource classes expose method-level `@Path` annotations but no class-level `@Path` annotations in the audited sources. Treat actual Quarkus/JAX-RS discovery as unverified until an integration test proves registration; do not assume these endpoints are active merely because the classes compile.
+
+**Disposition by responsibility**
+
+| Existing type | Canonical owner / action |
+|---|---|
+| `InferenceApiResource` | Retire from Aljabr. AQLI's `ChatCompletionsResource` is already the canonical serving adapter. Keep protocol interoperability documented on the AQLI endpoint, not encoded as a product name in Aljabr types. |
+| `EmbeddingsResource` | Retire from Aljabr. AQLI already owns the endpoint and maps requests through its SDK embedding capability. Keep reusable embedding computation/model support in Aljabr. |
+| `ModelRouterResource` | Serving/deployment control plane belongs to AQLI. Do not move its REST class into Aljabr. Audit AQLI routing policy and API coverage before deciding whether an endpoint is still needed. |
+| `RagResource` and `RagPipeline` | Remove from the Safetensors format boundary. Retrieval, indexing, collection management and RAG workflow belong in a dedicated downstream knowledge/search product or integration. Aljabr may provide embedding/model execution primitives, but should not own the retrieval workflow or HTTP API. |
+| `AudioResource` | HTTP transport and model alias registry belong downstream. AQLI already has audio runtime and audio capability SPI modules, but this resource should not be copied until the AQLI SDK/application layer has the required transcription and speech capabilities. The current TTS method is explicitly a placeholder and must not be promoted as a working endpoint. |
+| `QuantizationResource` and its DTOs | Keep quantization algorithms and transport-neutral configuration/results in Aljabr where they are reusable compute/model transformation capabilities. Put any HTTP/admin adapter in AQLI or a downstream application. Do not retain JAX-RS DTOs in the Safetensors API artifact. |
+
+**Migration decision**
+
+Do not create `integration/aljabr-safetensor-rest` or another Aljabr REST artifact. It would preserve the wrong ownership boundary and duplicate AQLI's existing transport adapter. The target state is:
+
+1. Aljabr retains Safetensors parsing, tensor/weight mapping, model execution and quantization primitives.
+2. AQLI owns inference, embedding, audio and model-management transport adapters where the corresponding SDK/application capabilities exist.
+3. Retrieval/RAG HTTP workflows are owned by the downstream knowledge/search runtime, not by a tensor-format module.
+4. The old `aljabr-safetensor-api` artifact is deprecated and then removed after a final external consumer and release-compatibility check. Keep the coordinate only for a bounded transition if a real external consumer is found; do not add a permanent empty compatibility module by default.
+
+**Next implementation sequence**
+
+- Add resource-level API conformance tests in AQLI for chat completion and embeddings before deleting the duplicate implementations.
+- Verify whether any external consumer outside the inspected Andalus organization depends on `aljabr-safetensor-api`; the organization search found no references, but that is not proof about all published consumers.
+- Audit the Aljabr quantization engine/API independently to ensure the useful compute contract is retained when its REST wrapper is retired.
+- Then remove the REST/workflow classes and their Quarkus/JAX-RS dependency set from the Safetensors artifact in a focused removal PR. Do not migrate placeholder or untested endpoint behavior as part of that removal.
+
 ## 3. Priority order
 
 | Priority | Finding | Next evidence/action |
