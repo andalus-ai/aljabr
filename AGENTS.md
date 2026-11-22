@@ -517,3 +517,12 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - GGUF synchronous inference emits one `gguf.infer` lifecycle scope with an opaque generated correlation ID and backend identity. Do not attach prompts, request messages, user/session IDs, model paths or arbitrary request metadata to the event context.
 - Keep execution-observer failures isolated from inference and expose an engine-level failure count. Do not silently turn observer failures into inference failures.
 - Streaming lifecycle scopes must be added only with correct subscription, cancellation, failure and termination semantics; do not close a stream scope when the `Multi` is merely constructed.
+
+
+#### Reactive streaming lifecycle requirements
+
+- For Mutiny streams, create lifecycle scopes inside a deferred subscription supplier, never while constructing the `Multi`.
+- Distinguish normal completion (SUCCEEDED), upstream failure (FAILED), and downstream cancellation (ABANDONED). Always release active-execution accounting exactly once on termination.
+- Keep stream execution cold/deferred where the backend contract is cold. Do not share one `ExecutionScope` across multiple subscribers; each subscription gets its own correlation ID and lifecycle.
+- Count observer failures after terminal callbacks have run. Runtime observer failures must not replace stream items, completion, failure or cancellation semantics.
+- Test that no STARTED event occurs before subscription, plus success, failure, cancellation, context-aware delegation, and no-op observer behavior.

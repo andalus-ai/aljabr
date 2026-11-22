@@ -23,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+import java.util.function.Supplier;
 
 /**
  * ServiceLoader-based GGUF inference engine implementing {@link InferenceEngine}.
@@ -224,13 +225,15 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             activeCount.incrementAndGet();
             totalCount.incrementAndGet();
             try {
-                return backendFor(modelId).stream(request)
-                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+                GgufBackend backend = backendFor(modelId);
+                return observeStream(backend, () -> backend.stream(request));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Multi.createFrom().failure(error);
+            } catch (Error fatal) {
+                activeCount.decrementAndGet();
+                throw fatal;
             }
         });
     }
@@ -243,15 +246,70 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             activeCount.incrementAndGet();
             totalCount.incrementAndGet();
             try {
-                return backendFor(modelId).stream(request, context)
-                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+                GgufBackend backend = backendFor(modelId);
+                return observeStream(backend, () -> backend.stream(request, context));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Multi.createFrom().failure(error);
             }
         });
+    }
+
+    /**
+     * Attaches one lifecycle scope to each stream subscription. The supplier is
+     * invoked from the deferred subscription path, never when the Multi is
+     * assembled. Completion, failure and cancellation have distinct outcomes.
+     */
+    private Multi<StreamingInferenceChunk> observeStream(
+            GgufBackend backend,
+            Supplier<Multi<StreamingInferenceChunk>> streamSupplier) {
+        ExecutionScope scope = null;
+        if (executionObserver != ExecutionObserver.NOOP) {
+            DiagnosticContext context = DiagnosticContext.builder()
+                    .correlationId(UUID.randomUUID().toString())
+                    .operation("gguf.stream")
+                    .component("gguf")
+                    .provider(backend.name())
+                    .build();
+            scope = ExecutionScope.start(context, executionObserver);
+        }
+        final ExecutionScope activeScope = scope;
+        try {
+            Multi<StreamingInferenceChunk> stream =
+                    Objects.requireNonNull(streamSupplier.get(), "backend stream");
+            if (activeScope == null) {
+                return stream
+                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+            }
+            return stream
+                    .onFailure().invoke(failure -> {
+                        failedCount.incrementAndGet();
+                        activeScope.fail(failure);
+                    })
+                    .onCompletion().invoke(activeScope::succeed)
+                    .onCancellation().invoke(activeScope::close)
+                    .onTermination().invoke(() -> {
+                        if (activeScope.observerFailure().isPresent()) {
+                            executionObserverFailureCount.incrementAndGet();
+                        }
+                        activeCount.decrementAndGet();
+                    });
+        } catch (RuntimeException failure) {
+            failedCount.incrementAndGet();
+            try {
+                if (activeScope != null) {
+                    activeScope.fail(failure);
+                    if (activeScope.observerFailure().isPresent()) {
+                        executionObserverFailureCount.incrementAndGet();
+                    }
+                }
+            } finally {
+                activeCount.decrementAndGet();
+            }
+            return Multi.createFrom().failure(failure);
+        }
     }
 
     @Override

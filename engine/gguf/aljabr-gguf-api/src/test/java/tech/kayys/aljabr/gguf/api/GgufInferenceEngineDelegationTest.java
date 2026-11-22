@@ -2,10 +2,13 @@ package tech.kayys.aljabr.gguf.api;
 
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.subscription.Cancellable;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.cache.HeapKVCacheStorage;
 import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.execution.ModelExecutionContext;
+import tech.kayys.aljabr.diagnostics.ExecutionEvent;
+import tech.kayys.aljabr.diagnostics.ExecutionObserver;
 import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
 import tech.kayys.aljabr.spi.embedding.EmbeddingResponse;
 import tech.kayys.aljabr.spi.inference.InferenceRequest;
@@ -18,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,6 +47,91 @@ class GgufInferenceEngineDelegationTest {
             assertEquals(2, chunks.size());
             assertEquals("hello", chunks.get(0).delta());
             assertTrue(chunks.get(1).finished());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void streamingEmitsStartedAndSucceededOnlyAfterSubscription() throws Exception {
+        Path model = Files.createTempFile("gguf-stream-lifecycle", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean streamCreated = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Multi<StreamingInferenceChunk> stream(InferenceRequest request) {
+                streamCreated.set(true);
+                return Multi.createFrom().item(
+                        StreamingInferenceChunk.finalChunk(request.getRequestId(), 0, "done"));
+            }
+        };
+
+        try (GgufInferenceEngine engine = engine(model, backend, events::add)) {
+            Multi<StreamingInferenceChunk> stream = engine.streamExecute("model", request());
+            assertTrue(events.isEmpty(), "lifecycle must not start while the Multi is only assembled");
+            assertFalse(streamCreated.get());
+
+            stream.collect().asList().await().indefinitely();
+
+            assertTrue(streamCreated.get());
+            assertEquals(2, events.size());
+            assertEquals(ExecutionEvent.Type.STARTED, events.get(0).type());
+            assertEquals(ExecutionEvent.Type.SUCCEEDED, events.get(1).type());
+            assertEquals("gguf.stream", events.get(1).context().operation());
+            assertEquals("test", events.get(1).context().provider());
+            assertTrue(events.get(1).elapsedNanos() >= 0);
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void streamingFailureEmitsFailedAndDoesNotCaptureFailureMessage() throws Exception {
+        Path model = Files.createTempFile("gguf-stream-failure", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Multi<StreamingInferenceChunk> stream(InferenceRequest request) {
+                return Multi.createFrom().failure(new IllegalStateException("private failure detail"));
+            }
+        };
+
+        try (GgufInferenceEngine engine = engine(model, backend, events::add)) {
+            assertThrows(IllegalStateException.class,
+                    () -> engine.streamExecute("model", request()).collect().asList().await().indefinitely());
+
+            assertEquals(2, events.size());
+            assertEquals(ExecutionEvent.Type.STARTED, events.get(0).type());
+            assertEquals(ExecutionEvent.Type.FAILED, events.get(1).type());
+            assertEquals("java.lang.IllegalStateException", events.get(1).failureType());
+            assertFalse(events.get(1).context().attributes().values().stream()
+                    .anyMatch(value -> value.contains("private failure detail")));
+            assertEquals(1, engine.getStats().failedInferences());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void streamCancellationEmitsAbandoned() throws Exception {
+        Path model = Files.createTempFile("gguf-stream-cancel", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Multi<StreamingInferenceChunk> stream(InferenceRequest request) {
+                return Multi.createFrom().emitter(emitter -> { });
+            }
+        };
+
+        try (GgufInferenceEngine engine = engine(model, backend, events::add)) {
+            Cancellable subscription = engine.streamExecute("model", request())
+                    .subscribe().with(item -> { }, failure -> fail(failure));
+            subscription.cancel();
+
+            assertEquals(2, events.size());
+            assertEquals(ExecutionEvent.Type.STARTED, events.get(0).type());
+            assertEquals(ExecutionEvent.Type.ABANDONED, events.get(1).type());
+            assertTrue(events.get(1).elapsedNanos() >= 0);
         } finally {
             Files.deleteIfExists(model);
         }
@@ -149,6 +238,11 @@ class GgufInferenceEngineDelegationTest {
     }
 
     private static GgufInferenceEngine engine(Path model, GgufBackend backend) throws Exception {
+        return engine(model, backend, ExecutionObserver.NOOP);
+    }
+
+    private static GgufInferenceEngine engine(
+            Path model, GgufBackend backend, ExecutionObserver observer) throws Exception {
         GgufBackendProvider provider = new GgufBackendProvider() {
             @Override public String id() { return "test"; }
             @Override public boolean isAvailable() { return true; }
@@ -159,7 +253,8 @@ class GgufInferenceEngineDelegationTest {
                 return backend;
             }
         };
-        GgufInferenceEngine engine = new GgufInferenceEngine(List.of(provider));
+        GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, observer);
         engine.loadModel("model", model, Map.of("gguf.backend", "test"));
         return engine;
     }
