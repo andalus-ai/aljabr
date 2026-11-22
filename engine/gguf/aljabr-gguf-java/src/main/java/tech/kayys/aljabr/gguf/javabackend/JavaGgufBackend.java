@@ -154,7 +154,7 @@ final class JavaGgufBackend implements GgufBackend {
     }
 
     @Override
-    public InferenceResponse execute(InferenceRequest request) {
+    public synchronized InferenceResponse execute(InferenceRequest request) {
         try {
             String prompt = extractPrompt(request);
             if (prompt == null || prompt.isBlank()) {
@@ -178,6 +178,7 @@ final class JavaGgufBackend implements GgufBackend {
 
             long startNanos = System.nanoTime();
             KVCache cache;
+            GgufDecodeSession decodeSession;
             Sampler sampler = new Sampler(
                     sampling.temperature(), sampling.topK(), sampling.topP(), sampling.repeatPenalty());
 
@@ -224,6 +225,7 @@ final class JavaGgufBackend implements GgufBackend {
                         System.arraycopy(hit.v[l], 0, cache.vLayer(l), 0, count);
                     }
                     cache.advance(tokenIds.length);
+                    decodeSession = new GgufDecodeSession(cache);
                     // If the Metal-side KV buffers already hold the correct prefix
                     // data for this exact prompt (positions 0..T-1 are valid from the
                     // previous prefill/decode and were never overwritten), skip the
@@ -248,7 +250,8 @@ final class JavaGgufBackend implements GgufBackend {
                     metalKvPrefixValid = false; // Metal state unknown until prefill completes
                     cache = sharedCache;
                     cache.resetFast();
-                    logits = decodeStep.prefill(tokenIds, cache);
+                    decodeSession = new GgufDecodeSession(cache);
+                    logits = decodeStep.prefill(tokenIds, decodeSession);
                     pos = tokenIds.length;
                     prefillMs = Math.max(1, System.currentTimeMillis() - t0);
                     // Prefill just wrote positions 0..T-1 into Metal KV buffers.
@@ -286,6 +289,7 @@ final class JavaGgufBackend implements GgufBackend {
             } else {
                 cache = sharedCache;
                 cache.resetFast();
+                decodeSession = new GgufDecodeSession(cache);
             }
 
             InferenceResponse.FinishReason finishReason = InferenceResponse.FinishReason.LENGTH;
@@ -293,7 +297,6 @@ final class JavaGgufBackend implements GgufBackend {
                 System.err.println("[java-engine] Generating tokens...");
             }
             long genStart = System.currentTimeMillis();
-            boolean isGreedy = (sampling.temperature() <= 0.0f);
             int nextToken = -1;
             boolean hasNextToken = false;
 
@@ -318,19 +321,10 @@ final class JavaGgufBackend implements GgufBackend {
                     break;
                 }
 
-                // The native argmax path does not apply Sampler's repetition penalty.
-                // Keep greedy requests with a configured penalty on the regular sampler path.
-                if (canUseMetalGreedy(isGreedy, sampling.repeatPenalty(), decodeStep.canUseMetalGreedy())) {
-                    int greedyNext = decodeStep.forwardGreedy(nextToken, pos, cache);
-                    if (greedyNext >= 0) {
-                        nextToken = greedyNext;
-                        hasNextToken = true;
-                        pos++;
-                        continue;
-                    }
-                }
-
-                logits = decodeStep.forward(nextToken, pos, cache, true);
+                // The request-scoped host session is the authoritative sequence state.
+                // Native greedy decode is bypassed until native KV state participates
+                // in the same session lifecycle.
+                logits = decodeStep.forward(nextToken, pos, decodeSession, true);
                 pos++;
             }
             long genElapsed = System.currentTimeMillis() - genStart;
