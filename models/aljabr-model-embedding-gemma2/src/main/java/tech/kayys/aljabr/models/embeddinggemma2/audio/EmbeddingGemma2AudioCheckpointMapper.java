@@ -30,6 +30,10 @@ public final class EmbeddingGemma2AudioCheckpointMapper {
             Map<String, CheckpointTensor> tensors) {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(tensors, "tensors must not be null");
+        if (config.subsamplingConvolutionChannels().size() != 2) {
+            throw new IllegalArgumentException(
+                    "Gemma4 audio checkpoint mapping requires exactly two subsampling convolution channel sizes");
+        }
         Mapping mapping = new Mapping(tensors);
 
         int firstChannels = config.subsamplingConvolutionChannels().get(0);
