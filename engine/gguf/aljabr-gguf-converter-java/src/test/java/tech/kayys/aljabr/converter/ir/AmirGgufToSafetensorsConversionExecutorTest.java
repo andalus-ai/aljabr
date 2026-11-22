@@ -297,6 +297,38 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ4NLBlockUsingCanonicalNonlinearLookupTable() throws Exception {
+        byte[] block = new byte[18];
+        block[1] = 0x3c; // fp16 d = 1
+        for (int i = 0; i < 16; i++) {
+            block[2 + i] = (byte) (((i + 8) & 0x0f) << 4 | i);
+        }
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ4_NL", List.of(32L), source, 8L, block.length);
+        var model = model("iq4_nl", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq4_nl.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 32 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        float[] codebook = {-127.0f, -104.0f, -83.0f, -65.0f, -49.0f, -35.0f, -22.0f, -10.0f,
+                1.0f, 13.0f, 25.0f, 38.0f, 53.0f, 69.0f, 89.0f, 113.0f};
+        for (int i = 0; i < 16; i++) {
+            assertEquals(codebook[i], values.getFloat(i * Float.BYTES), 0.0f);
+            assertEquals(codebook[(i + 8) & 0x0f],
+                    values.getFloat((i + 16) * Float.BYTES), 0.0f);
+        }
+    }
+
+    @Test
     void dequantizesQ4KBlockUsingPackedSixBitScalesAndMinimaAndNibbleGroups() throws Exception {
         byte[] block = new byte[144];
         block[1] = 0x3c; // fp16 d = 1
@@ -444,9 +476,9 @@ class AmirGgufToSafetensorsConversionExecutorTest {
 
     @Test
     void rejectsUnsupportedQuantizationWithoutCreatingOutput() throws Exception {
-        byte[] payload = new byte[84];
+        byte[] payload = new byte[66];
         Path source = writeContainer(payload);
-        var tensor = tensor("weight", "IQ4_NL", List.of(256L), source, 8L, payload.length);
+        var tensor = tensor("weight", "IQ2_XXS", List.of(256L), source, 8L, payload.length);
         var model = model("unsupported_quantization", "llama", List.of(tensor));
         Path output = temporaryDirectory.resolve("unsupported.safetensors");
         assertThrows(java.io.IOException.class, () ->
