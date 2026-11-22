@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.gguf.api;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.diagnostics.ExecutionEvent;
 import tech.kayys.aljabr.diagnostics.ProviderDecisionEvent;
 import tech.kayys.aljabr.spi.exception.InferenceException;
 import tech.kayys.aljabr.spi.inference.InferenceRequest;
@@ -104,6 +105,35 @@ class GgufInferenceEngineProviderSelectionTest {
 
             assertEquals("ready", selected.name());
             assertEquals(1, engine.providerObserverFailureCount());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void inferenceExecutionEmitsLifecycleFailureWithoutRequestPayload() throws Exception {
+        Path model = Files.createTempFile("selection", ".gguf");
+        List<ExecutionEvent> events = new ArrayList<>();
+        GgufBackendProvider ready = provider("java", 1, true, new AtomicBoolean());
+
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(ready), event -> { }, events::add)) {
+            engine.loadModel("model", model, Map.of());
+            InferenceRequest request = InferenceRequest.builder()
+                    .model("model")
+                    .prompt("private prompt must not be captured")
+                    .build();
+
+            assertThrows(InferenceException.class, () -> engine.execute("model", request));
+            assertEquals(2, events.size());
+            assertEquals(ExecutionEvent.Type.STARTED, events.get(0).type());
+            assertEquals(ExecutionEvent.Type.FAILED, events.get(1).type());
+            assertEquals("gguf.infer", events.get(1).context().operation());
+            assertEquals("java", events.get(1).context().provider());
+            assertEquals("java.lang.UnsupportedOperationException", events.get(1).failureType());
+            assertFalse(events.get(1).context().attributes().values().stream()
+                    .anyMatch(value -> value.contains("private prompt")));
+            assertTrue(events.get(1).elapsedNanos() >= 0);
         } finally {
             Files.deleteIfExists(model);
         }
