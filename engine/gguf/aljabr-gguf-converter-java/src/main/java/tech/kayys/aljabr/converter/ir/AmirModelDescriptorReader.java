@@ -95,10 +95,11 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
                     ? renderGgufMetadata(rawTypedMetadata.get(key)) : renderMetadata(value);
             metadata.put(key, rendered);
         });
-        AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(metadata, tensors);
+        List<TensorDescriptor> typedTensors = AmirTensorTypeCodec.restore(metadata, tensors);
+        AmirSourceMetadataCodec.Decoded sourceAttributes =
+                AmirSourceMetadataCodec.decode(metadata, typedTensors);
         metadata = new LinkedHashMap<>(sourceAttributes.metadata());
-        tensors = new ArrayList<>(AmirTensorTypeCodec.restore(metadata, sourceAttributes.tensors()));
-        metadata = new LinkedHashMap<>(AmirTensorTypeCodec.withoutEncodedValues(metadata));
+        tensors = new ArrayList<>(sourceAttributes.tensors());
         String architecture = metadata.getOrDefault("general.architecture", "unknown");
         Map<String, MetadataValue> typedMetadata = new LinkedHashMap<>();
         rawTypedMetadata.forEach((key, value) -> {
@@ -145,10 +146,11 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
         }
 
-        AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(storedMetadata, tensors);
+        List<TensorDescriptor> typedTensors = AmirTensorTypeCodec.restore(storedMetadata, tensors);
+        AmirSourceMetadataCodec.Decoded sourceAttributes =
+                AmirSourceMetadataCodec.decode(storedMetadata, typedTensors);
         metadata = new LinkedHashMap<>(sourceAttributes.metadata());
-        tensors = new ArrayList<>(AmirTensorTypeCodec.restore(storedMetadata, sourceAttributes.tensors()));
-        metadata = new LinkedHashMap<>(AmirTensorTypeCodec.withoutEncodedValues(metadata));
+        tensors = new ArrayList<>(sourceAttributes.tensors());
         String architecture = metadata.getOrDefault("general.architecture",
                 metadata.getOrDefault("aljabr.source.architecture", "unknown"));
         return new ModelDescriptor(ModelIdentity.of(name), architecture, SAFETENSORS,
