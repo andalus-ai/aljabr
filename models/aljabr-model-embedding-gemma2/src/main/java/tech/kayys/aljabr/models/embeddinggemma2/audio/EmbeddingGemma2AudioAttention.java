@@ -29,7 +29,6 @@ public final class EmbeddingGemma2AudioAttention {
     private final float invalidLogit;
     private final boolean useClippedLinears;
     private final Weights weights;
-    private final float[][] relativePositions;
     private final float[][] relativeKeys;
 
     public EmbeddingGemma2AudioAttention(EmbeddingGemma2AudioConfig config, Weights weights) {
@@ -59,8 +58,8 @@ public final class EmbeddingGemma2AudioAttention {
             throw new IllegalArgumentException("audio attention context size must be even");
         }
         validateWeights();
-        this.relativePositions = new EmbeddingGemma2AudioRelativePositionEncoding(config).compute();
-        this.relativeKeys = linear(relativePositions, weights.relativeKeyProjection(), null);
+        float[][] relativePositions = new EmbeddingGemma2AudioRelativePositionEncoding(config).compute();
+        this.relativeKeys = linear(relativePositions, weights.relativeKeyProjection());
     }
 
     /**
@@ -200,7 +199,7 @@ public final class EmbeddingGemma2AudioAttention {
         return output;
     }
 
-    private float[][] linear(float[][] input, float[][] kernel, ClipRange range) {
+    private float[][] linear(float[][] input, float[][] kernel) {
         float[][] output = new float[input.length][kernel.length];
         for (int t = 0; t < input.length; t++) {
             for (int o = 0; o < kernel.length; o++) {
