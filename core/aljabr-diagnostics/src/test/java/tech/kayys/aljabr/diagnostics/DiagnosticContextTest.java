@@ -48,6 +48,8 @@ class DiagnosticContextTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DiagnosticContext.builder().attribute("bad key", "value"));
         assertThrows(IllegalArgumentException.class,
+                () -> DiagnosticContext.builder().attribute("correlation.id", "spoofed"));
+        assertThrows(IllegalArgumentException.class,
                 () -> DiagnosticContext.builder().attribute("payload", "x".repeat(513)));
         assertThrows(IllegalArgumentException.class,
                 () -> DiagnosticContext.builder().correlationId("x".repeat(129)));
