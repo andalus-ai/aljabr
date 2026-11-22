@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SafetensorsTargetCapabilityTest {
 
     @Test
-    void marksFlattenedTypedGgufMetadataAsPartialFidelity() {
+    void preservesTypedMetadataThroughSafetensorsMetadataEnvelope() {
         var model = new ModelDescriptor(
                 ModelIdentity.of("typed-metadata"),
                 "llama",
@@ -27,8 +27,8 @@ class SafetensorsTargetCapabilityTest {
 
         CompatibilityReport report = new SafetensorsTargetCapability().assess(model);
 
-        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
-        assertTrue(report.diagnostics().stream().anyMatch(d ->
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
+        assertTrue(report.diagnostics().stream().noneMatch(d ->
                 d.code().equals("GGUF_TYPED_METADATA_FLATTENED")));
     }
 }
