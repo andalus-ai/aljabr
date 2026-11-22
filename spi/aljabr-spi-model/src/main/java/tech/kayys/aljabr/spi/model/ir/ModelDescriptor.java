@@ -38,7 +38,8 @@ public record ModelDescriptor(
         Optional<ArchitectureDescriptor> architectureDescriptor,
         Optional<GraphCollection> graphCollection,
         Optional<AssetCollection> assetCollection,
-        Optional<ComponentCollection> componentCollection) {
+        Optional<ComponentCollection> componentCollection,
+        Map<String, MetadataValue> typedMetadata) {
 
     /** Compatibility constructor retaining the graph-era descriptor shape. */
     public ModelDescriptor(
@@ -48,7 +49,7 @@ public record ModelDescriptor(
             Optional<ArchitectureDescriptor> architectureDescriptor,
             Optional<GraphCollection> graphCollection) {
         this(identity, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor, graphCollection, Optional.empty(), Optional.empty());
+                architectureDescriptor, graphCollection, Optional.empty(), Optional.empty(), Map.of());
     }
 
     /** Compatibility constructor retaining the typed-architecture descriptor shape. */
@@ -58,7 +59,7 @@ public record ModelDescriptor(
             List<TensorDescriptor> tensors,
             Optional<ArchitectureDescriptor> architectureDescriptor) {
         this(identity, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor, Optional.empty(), Optional.empty(), Optional.empty());
+                architectureDescriptor, Optional.empty(), Optional.empty(), Optional.empty(), Map.of());
     }
 
     /** Compatibility constructor for the original metadata-only descriptor. */
@@ -67,7 +68,20 @@ public record ModelDescriptor(
             Map<String, String> metadata, Map<String, String> extensions,
             List<TensorDescriptor> tensors) {
         this(identity, architecture, sourceFormat, metadata, extensions, tensors,
-                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Map.of());
+    }
+
+    /** Compatibility constructor for the pre-typed-metadata canonical descriptor. */
+    public ModelDescriptor(
+            ModelIdentity identity, String architecture, String sourceFormat,
+            Map<String, String> metadata, Map<String, String> extensions,
+            List<TensorDescriptor> tensors,
+            Optional<ArchitectureDescriptor> architectureDescriptor,
+            Optional<GraphCollection> graphCollection,
+            Optional<AssetCollection> assetCollection,
+            Optional<ComponentCollection> componentCollection) {
+        this(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, graphCollection, assetCollection, componentCollection, Map.of());
     }
 
     public ModelDescriptor {
@@ -82,6 +96,7 @@ public record ModelDescriptor(
         graphCollection = Objects.requireNonNull(graphCollection, "graphCollection must not be null");
         assetCollection = Objects.requireNonNull(assetCollection, "assetCollection must not be null");
         componentCollection = Objects.requireNonNull(componentCollection, "componentCollection must not be null");
+        typedMetadata = immutableTypedMap(typedMetadata);
 
         if (architectureDescriptor.isPresent()
                 && !architecture.equals(architectureDescriptor.orElseThrow().id())) {
@@ -142,35 +157,50 @@ public record ModelDescriptor(
     /** Returns a descriptor with the same content and a different identity. */
     public ModelDescriptor withIdentity(ModelIdentity replacement) {
         return new ModelDescriptor(replacement, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor, graphCollection, assetCollection, componentCollection);
+                architectureDescriptor, graphCollection, assetCollection, componentCollection, typedMetadata);
     }
 
     /** Returns a descriptor enriched with typed architecture information. */
     public ModelDescriptor withArchitectureDescriptor(ArchitectureDescriptor replacement) {
         Objects.requireNonNull(replacement, "replacement must not be null");
         return new ModelDescriptor(identity, replacement.id(), sourceFormat, metadata, extensions, tensors,
-                Optional.of(replacement), graphCollection, assetCollection, componentCollection);
+                Optional.of(replacement), graphCollection, assetCollection, componentCollection, typedMetadata);
     }
 
     /** Returns a descriptor enriched with its computation graph collection. */
     public ModelDescriptor withGraphCollection(GraphCollection replacement) {
         Objects.requireNonNull(replacement, "replacement must not be null");
         return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor, Optional.of(replacement), assetCollection, componentCollection);
+                architectureDescriptor, Optional.of(replacement), assetCollection, componentCollection, typedMetadata);
     }
 
     /** Returns a descriptor enriched with external asset references. */
     public ModelDescriptor withAssetCollection(AssetCollection replacement) {
         Objects.requireNonNull(replacement, "replacement must not be null");
         return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor, graphCollection, Optional.of(replacement), componentCollection);
+                architectureDescriptor, graphCollection, Optional.of(replacement), componentCollection, typedMetadata);
     }
 
     /** Returns a descriptor enriched with tokenizer and modality components. */
     public ModelDescriptor withComponentCollection(ComponentCollection replacement) {
         Objects.requireNonNull(replacement, "replacement must not be null");
         return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
-                architectureDescriptor, graphCollection, assetCollection, Optional.of(replacement));
+                architectureDescriptor, graphCollection, assetCollection, Optional.of(replacement), typedMetadata);
+    }
+
+    /** Returns a descriptor enriched with source-typed metadata values. */
+    public ModelDescriptor withTypedMetadata(Map<String, MetadataValue> replacement) {
+        return new ModelDescriptor(identity, architecture, sourceFormat, metadata, extensions, tensors,
+                architectureDescriptor, graphCollection, assetCollection, componentCollection, replacement);
+    }
+
+    private static Map<String, MetadataValue> immutableTypedMap(Map<String, MetadataValue> values) {
+        Objects.requireNonNull(values, "typedMetadata must not be null");
+        if (values.entrySet().stream().anyMatch(entry ->
+                entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null)) {
+            throw new IllegalArgumentException("typedMetadata must contain non-blank keys and non-null values");
+        }
+        return Collections.unmodifiableMap(new LinkedHashMap<>(values));
     }
 
     private static String requireText(String value, String name) {

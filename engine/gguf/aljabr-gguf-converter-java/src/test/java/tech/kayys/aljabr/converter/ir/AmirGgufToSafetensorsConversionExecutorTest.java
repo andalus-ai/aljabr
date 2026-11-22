@@ -10,6 +10,7 @@ import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
+import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -423,8 +424,9 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         Path source = writeContainer(values);
         var tensor = tensor("weight", "F32", List.of(1L), source, 8L, values.length);
         var model = new ModelDescriptor(ModelIdentity.of("typed-metadata"), "llama", "gguf",
-                Map.of("general.architecture", "llama"),
-                Map.of("gguf.metadata.general.alignment", "32"), List.of(tensor));
+                Map.of("general.architecture", "llama"), Map.of(), List.of(tensor))
+                .withTypedMetadata(Map.of("general.alignment",
+                        new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 32L)));
         Path output = temporaryDirectory.resolve("typed-metadata.safetensors");
         var executor = new AmirGgufToSafetensorsConversionExecutor();
 
