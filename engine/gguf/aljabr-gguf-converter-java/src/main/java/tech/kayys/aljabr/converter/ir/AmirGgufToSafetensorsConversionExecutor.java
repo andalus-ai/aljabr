@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. Q2_K, Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF metadata and opaque AMIR extensions are retained as Safetensors
@@ -158,6 +158,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
             case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
             case "Q3_K" -> TensorEncoding.dequantized("Q3_K", 110, 256);
+            case "Q4_K" -> TensorEncoding.dequantized("Q4_K", 144, 256);
             case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18, 32);
             case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20, 32);
             case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22, 32);
@@ -171,7 +172,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "Q2_K", "Q3_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
+            case "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -280,6 +281,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     dequantizeQ3KBlock(source, base, values, i * valuesPerBlock);
                     continue;
                 }
+                if (type.equals("Q4_K")) {
+                    dequantizeQ4KBlock(source, base, values, i * valuesPerBlock);
+                    continue;
+                }
                 if (type.equals("Q6_K")) {
                     dequantizeQ6KBlock(source, base, values, i * valuesPerBlock);
                     continue;
@@ -318,7 +323,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     values.putFloat(dequantizeValue(type, quantized, scale, minimum));
                 }
             }
-            if (type.equals("Q2_K") || type.equals("Q3_K") || type.equals("Q6_K")) {
+            if (type.equals("Q2_K") || type.equals("Q3_K") || type.equals("Q4_K") || type.equals("Q6_K")) {
                 values.position(0);
                 values.limit(count * valuesPerBlock * Float.BYTES);
             } else {
@@ -409,6 +414,56 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             scales[i + 12] = ((packedHigh >>> 4) & 0x0f) | (((packedTop >>> 6) & 0x03) << 4);
         }
         return scales;
+    }
+
+    /**
+     * GGML block_q4_K layout: fp16 d, fp16 dmin, scales[12], qs[128].
+     * Eight 32-value groups use unsigned 4-bit values and independent 6-bit
+     * scale/minimum factors. GGML emits each pair of groups from low/high nibbles.
+     */
+    private static void dequantizeQ4KBlock(byte[] source, int base, ByteBuffer output, int blockIndex) {
+        float d = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        float dmin = halfToFloat(source[base + 2] & 0xff, source[base + 3] & 0xff);
+        int[] scales = new int[8];
+        int[] mins = new int[8];
+        unpackQ4KScalesAndMins(source, base + 4, scales, mins);
+
+        int outputBase = blockIndex * 256;
+        int quantizedBase = base + 16;
+        for (int iteration = 0; iteration < 4; iteration++) {
+            int firstGroup = iteration * 2;
+            float firstScale = d * scales[firstGroup];
+            float firstMin = dmin * mins[firstGroup];
+            float secondScale = d * scales[firstGroup + 1];
+            float secondMin = dmin * mins[firstGroup + 1];
+            int quantizedOffset = quantizedBase + iteration * 32;
+            int outputOffset = outputBase + iteration * 64;
+
+            for (int i = 0; i < 32; i++) {
+                int packed = source[quantizedOffset + i] & 0xff;
+                output.putFloat((outputOffset + i) * Float.BYTES,
+                        firstScale * (packed & 0x0f) - firstMin);
+                output.putFloat((outputOffset + 32 + i) * Float.BYTES,
+                        secondScale * (packed >>> 4) - secondMin);
+            }
+        }
+    }
+
+    /**
+     * Unpacks GGML get_scale_min_k4's eight 6-bit scales and eight 6-bit minima.
+     */
+    private static void unpackQ4KScalesAndMins(
+            byte[] source, int offset, int[] scales, int[] mins) {
+        for (int i = 0; i < 4; i++) {
+            int scaleLow = source[offset + i] & 0xff;
+            int minLow = source[offset + i + 4] & 0xff;
+            int packedHigh = source[offset + i + 8] & 0xff;
+
+            scales[i] = scaleLow & 0x3f;
+            mins[i] = minLow & 0x3f;
+            scales[i + 4] = (packedHigh & 0x0f) | ((scaleLow >>> 6) << 4);
+            mins[i + 4] = ((packedHigh >>> 4) & 0x0f) | ((minLow >>> 6) << 4);
+        }
     }
 
     /**
