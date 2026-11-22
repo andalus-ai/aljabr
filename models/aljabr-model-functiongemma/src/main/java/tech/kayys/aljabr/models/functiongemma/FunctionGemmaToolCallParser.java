@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.models.functiongemma;
 
+import tech.kayys.aljabr.core.tool.ToolCall;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -16,15 +18,14 @@ import java.util.Objects;
  * Escape markers delimit string values, so commas and braces inside strings
  * do not interfere with the outer argument grammar.</p>
  *
- * <p>This parser only extracts model output. It never invokes a tool or
- * treats parsed arguments as trusted input.</p>
+ * <p>This parser only extracts untrusted model output. It never invokes a tool.</p>
  */
 public final class FunctionGemmaToolCallParser {
     private static final String START = FunctionGemmaTokenizer.START_FUNCTION_CALL;
     private static final String END = FunctionGemmaTokenizer.END_FUNCTION_CALL;
     private static final String ESCAPE = FunctionGemmaTokenizer.ESCAPE;
 
-    /** Parses every complete function call in a model output, preserving output order. */
+    /** Parses every complete FunctionGemma call, preserving output order. */
     public List<FunctionCall> parse(String output) {
         Objects.requireNonNull(output, "output");
         List<FunctionCall> calls = new ArrayList<>();
@@ -41,10 +42,24 @@ public final class FunctionGemmaToolCallParser {
         return List.copyOf(calls);
     }
 
+    /**
+     * Parses calls directly into the model-independent core representation.
+     * The returned calls remain untrusted data and require runtime authorization.
+     */
+    public List<ToolCall> parseToolCalls(String output) {
+        return parse(output).stream().map(FunctionGemmaToolCallParser::toToolCall).toList();
+    }
+
     /** Parses one call body without surrounding control tokens. */
     public FunctionCall parseCallBody(String body) {
         Objects.requireNonNull(body, "body");
         return parseCallBody(body, 0);
+    }
+
+    /** Converts the legacy FunctionGemma-specific representation to the core contract. */
+    public static ToolCall toToolCall(FunctionCall call) {
+        Objects.requireNonNull(call, "call");
+        return new ToolCall(call.name(), call.arguments());
     }
 
     private FunctionCall parseCallBody(String body, int offset) {
@@ -170,7 +185,10 @@ public final class FunctionGemmaToolCallParser {
         return new IllegalArgumentException("Malformed FunctionGemma call at offset " + offset + ": " + message);
     }
 
-    /** Immutable, untrusted function call extracted from model output. */
+    /**
+     * Backward-compatible FunctionGemma representation. Prefer {@link ToolCall}
+     * for APIs shared across model adapters.
+     */
     public record FunctionCall(String name, Map<String, Object> arguments) {
         public FunctionCall {
             Objects.requireNonNull(name, "name");
