@@ -138,8 +138,11 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
         boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
                 isDequantizedType(tensor.dataType()));
+        boolean hasFlattenedTypedMetadata = model.extensions().keySet().stream()
+                .anyMatch(key -> key.startsWith("gguf.metadata."));
         boolean partial = hasUnrepresentableLayers(model)
-                || model.architecture().equalsIgnoreCase("unknown") || hasLossyQuantization;
+                || model.architecture().equalsIgnoreCase("unknown")
+                || hasLossyQuantization || hasFlattenedTypedMetadata;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
             throw new IOException("Dequantization or unrepresented AMIR layers require a PARTIAL plan");
         }
