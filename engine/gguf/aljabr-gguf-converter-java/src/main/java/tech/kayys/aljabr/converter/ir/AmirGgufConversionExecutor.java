@@ -8,6 +8,7 @@ import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutor;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -96,7 +97,8 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
                     payload.length()));
         }
 
-        StreamingGgufWriter.WriteResult written = StreamingGgufWriter.write(target, metadata, tensors);
+        StreamingGgufWriter.WriteResult written = StreamingGgufWriter.write(
+                target, metadata, tensors, ggufAlignment(model));
         return new ConversionExecutionResult(
                 model.sourceFormat(),
                 TARGET_FORMAT,
@@ -136,10 +138,29 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         }
     }
 
+    private static int ggufAlignment(ModelDescriptor model) throws IOException {
+        MetadataValue value = model.typedMetadata().get("general.alignment");
+        if (value == null) return 32;
+        if (!(value instanceof MetadataValue.Scalar scalar)
+                || scalar.kind() != MetadataValue.Kind.UINT32) {
+            throw new IOException("GGUF general.alignment must be a UINT32 scalar");
+        }
+        long alignment = (Long) scalar.value();
+        if (alignment > Integer.MAX_VALUE) {
+            throw new IOException("GGUF general.alignment exceeds the supported integer range: " + alignment);
+        }
+        return (int) alignment;
+    }
+
     private static Map<String, GgufMetaValue> metadata(ModelDescriptor model) {
         Map<String, GgufMetaValue> result = new LinkedHashMap<>();
         result.put("general.architecture", GgufMetaValue.ofString(model.architecture()));
         result.put("general.name", GgufMetaValue.ofString(model.identity().id()));
+        model.typedMetadata().forEach((key, value) -> {
+            if (!key.equals("general.architecture") && !key.equals("general.alignment")) {
+                result.put(key, toGgufMetadata(value));
+            }
+        });
         model.metadata().forEach((key, value) ->
                 result.put("aljabr.source.metadata." + key, GgufMetaValue.ofString(value)));
         model.extensions().forEach((key, value) ->
@@ -151,6 +172,33 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
                             GgufMetaValue.ofString(value)));
         }
         return result;
+    }
+
+
+    private static GgufMetaValue toGgufMetadata(MetadataValue value) {
+        if (value instanceof MetadataValue.Array array) {
+            return new GgufMetaValue.ArrayVal(
+                    tech.kayys.aljabr.gguf.core.GgufMetaType.valueOf(array.elementKind().name()),
+                    array.values().stream().map(AmirGgufConversionExecutor::toGgufScalar).toList());
+        }
+        return toGgufScalar((MetadataValue.Scalar) value);
+    }
+
+    private static GgufMetaValue toGgufScalar(MetadataValue.Scalar value) {
+        return switch (value.kind()) {
+            case UINT8 -> new GgufMetaValue.UInt8Val((short) ((Long) value.value()).longValue());
+            case INT8 -> new GgufMetaValue.Int8Val((byte) ((Integer) value.value()).intValue());
+            case UINT16 -> new GgufMetaValue.UInt16Val((int) ((Long) value.value()).longValue());
+            case INT16 -> new GgufMetaValue.Int16Val((short) ((Integer) value.value()).intValue());
+            case UINT32 -> new GgufMetaValue.UInt32Val((Long) value.value());
+            case INT32 -> new GgufMetaValue.Int32Val((Integer) value.value());
+            case FLOAT32 -> new GgufMetaValue.Float32Val((Float) value.value());
+            case BOOL -> new GgufMetaValue.BoolVal((Boolean) value.value());
+            case STRING -> new GgufMetaValue.StringVal((String) value.value());
+            case UINT64 -> new GgufMetaValue.UInt64Val((Long) value.value());
+            case INT64 -> new GgufMetaValue.Int64Val((Long) value.value());
+            case FLOAT64 -> new GgufMetaValue.Float64Val((Double) value.value());
+        };
     }
 
     private static String metadataKeyPart(String value) {

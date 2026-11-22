@@ -1,6 +1,8 @@
 package tech.kayys.aljabr.gguf.loader;
 
 import tech.kayys.aljabr.gguf.core.GgmlType;
+import tech.kayys.aljabr.gguf.core.GgufMetaType;
+import tech.kayys.aljabr.gguf.core.GgufMetaValue;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -31,10 +33,13 @@ public final class GGUFParser {
 
         // 2. Metadata KV
         Map<String, Object> metadata = new HashMap<>();
+        Map<String, GgufMetaValue> typedMetadata = new HashMap<>();
         for (int i = 0; i < nKv; i++) {
             String key = c.str();
             int typeId = c.i32();
-            metadata.put(key, readValue(c, typeId));
+            GgufMetaValue value = readTypedValue(c, typeId);
+            typedMetadata.put(key, value);
+            metadata.put(key, toLegacyValue(value));
         }
 
         // 3. Tensor Info
@@ -61,38 +66,62 @@ public final class GGUFParser {
         long padding = (alignment - (pos % alignment)) % alignment;
         long dataStart = pos + padding;
 
-        return new GGUFModel(version, metadata, tensors, dataStart, seg, arena);
+        return new GGUFModel(version, metadata, typedMetadata, tensors, dataStart, seg, arena);
     }
 
-    private Object readValue(GGUFReader.Cursor c, int typeId) {
-        return switch (typeId) {
-            case 0 -> (int) c.i8() & 0xFF; // UINT8
-            case 1 -> (int) c.i8();        // INT8
-            case 2 -> c.u16();             // UINT16
-            case 3 -> (int) c.i16();       // INT16
-            case 4 -> c.u32();             // UINT32
-            case 5 -> c.i32();             // INT32
-            case 6 -> c.f32();             // FLOAT32
-            case 7 -> c.i8() != 0;         // BOOL
-            case 8 -> c.str();             // STRING
-            case 9 -> readArray(c);        // ARRAY
-            case 10 -> c.i64();            // UINT64
-            case 11 -> c.i64();            // INT64
-            case 12 -> c.f64();            // FLOAT64
-            default -> throw new UnsupportedOperationException("Unsupported GGUF KV type: " + typeId + " at pos " + c.position());
+    private GgufMetaValue readTypedValue(GGUFReader.Cursor c, int typeId) {
+        return switch (GgufMetaType.fromId(typeId)) {
+            case UINT8 -> new GgufMetaValue.UInt8Val((short) (c.i8() & 0xff));
+            case INT8 -> new GgufMetaValue.Int8Val(c.i8());
+            case UINT16 -> new GgufMetaValue.UInt16Val(c.u16());
+            case INT16 -> new GgufMetaValue.Int16Val(c.i16());
+            case UINT32 -> new GgufMetaValue.UInt32Val(c.u32());
+            case INT32 -> new GgufMetaValue.Int32Val(c.i32());
+            case FLOAT32 -> new GgufMetaValue.Float32Val(c.f32());
+            case BOOL -> new GgufMetaValue.BoolVal(c.i8() != 0);
+            case STRING -> new GgufMetaValue.StringVal(c.str());
+            case ARRAY -> readArray(c);
+            case UINT64 -> new GgufMetaValue.UInt64Val(c.i64());
+            case INT64 -> new GgufMetaValue.Int64Val(c.i64());
+            case FLOAT64 -> new GgufMetaValue.Float64Val(c.f64());
         };
     }
 
-    private List<Object> readArray(GGUFReader.Cursor c) {
-        int typeId = c.i32();
-        long len = c.i64();
-        List<Object> list = new ArrayList<>((int) len);
-        for (int i = 0; i < len; i++) {
-            list.add(readValue(c, typeId));
+    private GgufMetaValue.ArrayVal readArray(GGUFReader.Cursor c) {
+        GgufMetaType elementType = GgufMetaType.fromId(c.i32());
+        if (elementType == GgufMetaType.ARRAY) {
+            throw new UnsupportedOperationException("Nested GGUF metadata arrays are not supported");
         }
-        return list;
+        long length = c.i64();
+        if (length < 0 || length > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Invalid GGUF metadata array length: " + length);
+        }
+        List<GgufMetaValue> values = new ArrayList<>((int) length);
+        for (int i = 0; i < length; i++) {
+            values.add(readTypedValue(c, elementType.id));
+        }
+        return new GgufMetaValue.ArrayVal(elementType, values);
     }
-    
+
+    private Object toLegacyValue(GgufMetaValue value) {
+        return switch (value) {
+            case GgufMetaValue.UInt8Val v -> (int) v.value();
+            case GgufMetaValue.Int8Val v -> (int) v.value();
+            case GgufMetaValue.UInt16Val v -> v.value();
+            case GgufMetaValue.Int16Val v -> (int) v.value();
+            case GgufMetaValue.UInt32Val v -> v.value();
+            case GgufMetaValue.Int32Val v -> v.value();
+            case GgufMetaValue.Float32Val v -> v.value();
+            case GgufMetaValue.BoolVal v -> v.value();
+            case GgufMetaValue.StringVal v -> v.value();
+            case GgufMetaValue.UInt64Val v -> v.value();
+            case GgufMetaValue.Int64Val v -> v.value();
+            case GgufMetaValue.Float64Val v -> v.value();
+            case GgufMetaValue.ArrayVal v -> v.elements().stream()
+                    .map(this::toLegacyValue).toList();
+        };
+    }
+
     private long calculateTensorSize(long numElements, int typeId) {
         try {
             return GgmlType.fromId(typeId).bytesFor(numElements);

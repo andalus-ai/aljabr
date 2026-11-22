@@ -33,7 +33,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            if (Set.of("Q2_K", "Q3_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0").contains(type)) {
+            if (Set.of("Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0").contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.WARNING,
                         "GGML_QUANTIZATION_DEQUANTIZED",
@@ -49,14 +49,14 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             }
         }
 
-        boolean hasTypedGgufMetadata = source.extensions().keySet().stream()
-                .anyMatch(key -> key.startsWith("gguf.metadata."));
+        boolean hasTypedGgufMetadata = !source.typedMetadata().isEmpty()
+                || source.extensions().keySet().stream().anyMatch(key -> key.startsWith("gguf.metadata."));
         if (hasTypedGgufMetadata) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
                     "GGUF_TYPED_METADATA_FLATTENED",
-                    "Non-string GGUF metadata values are rendered as strings in AMIR and cannot retain "
-                            + "their original GGUF scalar or array types in Safetensors metadata."));
+                    "Typed GGUF metadata values are retained in AMIR but Safetensors metadata only stores strings, "
+                            + "so their original scalar or array types cannot be represented in the target."));
             partial = true;
         }
 
