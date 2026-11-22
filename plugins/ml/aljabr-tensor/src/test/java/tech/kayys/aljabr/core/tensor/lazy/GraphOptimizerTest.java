@@ -31,6 +31,24 @@ class GraphOptimizerTest {
     }
 
     @Test
+    void preservesFloatingPointAddZeroToRetainIeeeSemantics() {
+        GraphNode input = new GraphNode(OpType.RELU, List.of(), new Object[0], SHAPE, DType.F32);
+        GraphNode addZero = new GraphNode(OpType.ADD_SCALAR, List.of(input),
+                new Object[] { 0.0f }, SHAPE, DType.F32);
+
+        assertSame(addZero, GraphOptimizer.optimize(addZero));
+    }
+
+    @Test
+    void removesIntegerAddZeroIdentity() {
+        GraphNode input = new GraphNode(OpType.RELU, List.of(), new Object[0], SHAPE, DType.I32);
+        GraphNode addZero = new GraphNode(OpType.ADD_SCALAR, List.of(input),
+                new Object[] { 0.0f }, SHAPE, DType.I32);
+
+        assertSame(input, GraphOptimizer.optimize(addZero));
+    }
+
+    @Test
     void doesNotRemoveZeroScalarOperationWithExplicitBackwardRule() {
         GraphNode input = differentiableLeaf();
         BackwardFunction backward = (output, gradient, inputs, arguments) -> new Tensor[] { null };
