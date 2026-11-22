@@ -25,10 +25,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * RAG pipeline REST interface — ingest, query, and manage document collections.
  * Uses reflection to access RagPipeline to avoid circular dependencies.
  * @author bhangun
+  * @deprecated This RAG HTTP workflow adapter is being retired from Aljabr. Retrieval, collection management and orchestration belong in a downstream knowledge/search runtime.
  */
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @Tag(name = "RAG", description = "Retrieval-Augmented Generation pipeline")
+@Deprecated(forRemoval = true)
 public class RagResource {
 
     private static final org.jboss.logging.Logger log = org.jboss.logging.Logger.getLogger(RagResource.class);
