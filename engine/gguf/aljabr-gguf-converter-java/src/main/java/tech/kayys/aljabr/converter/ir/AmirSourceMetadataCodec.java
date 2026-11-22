@@ -25,7 +25,9 @@ final class AmirSourceMetadataCodec {
         for (TensorDescriptor tensor : tensors) tensorsByName.put(tensor.name(), tensor);
 
         stored.forEach((key, value) -> {
-            if (key.startsWith(METADATA_PREFIX)) {
+            if (AmirTensorTypeCodec.isEncodedKey(key)) {
+                return;
+            } else if (key.startsWith(METADATA_PREFIX)) {
                 putUnique(metadata, key.substring(METADATA_PREFIX.length()), value, "source metadata");
             } else if (key.startsWith(EXTENSION_PREFIX)) {
                 putUnique(extensions, key.substring(EXTENSION_PREFIX.length()), value, "source extension");
@@ -52,7 +54,8 @@ final class AmirSourceMetadataCodec {
             restored.add(new TensorDescriptor(tensor.name(), tensor.dataType(), tensor.shape(),
                     tensor.layout(), tensor.quantization(), tensor.payload(), merged, tensor.tensorType()));
         }
-        return new Decoded(Map.copyOf(metadata), Map.copyOf(extensions), List.copyOf(restored));
+        List<TensorDescriptor> withTypedInformation = AmirTensorTypeCodec.restore(stored, restored);
+        return new Decoded(Map.copyOf(metadata), Map.copyOf(extensions), withTypedInformation);
     }
 
     private static String decodePart(String encoded, String sourceKey) {
