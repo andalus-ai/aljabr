@@ -57,6 +57,6 @@ class ToolCallParserRegistryTest {
         assertTrue(registry.isEmpty());
         assertTrue(registry.find("unknown").isEmpty());
         assertThrows(IllegalArgumentException.class, () -> registry.require("unknown"));
-        assertThrows(NullPointerException.class, () -> registry.find(null));
+        assertThrows(NullPointerException.class, () -> registry.find((String) null));
     }
 }
