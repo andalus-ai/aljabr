@@ -102,6 +102,17 @@ public interface Tensor extends AutoCloseable {
 
     Tensor slice(long[] offsets, long[] sizes);
 
+    /**
+     * Selects entries along one axis using a rank-one I32 index tensor.
+     * Index order and duplicates are preserved; indices must be in
+     * {@code [0, shape().dim(axis))}. Negative axes count from the end.
+     *
+     * <p>The initial CPU implementation supports F32 source tensors. The
+     * operation is currently forward-only; differentiable use is rejected
+     * while the scatter-add VJP is being implemented.</p>
+     */
+    Tensor indexSelect(int axis, Tensor indices);
+
     Tensor pow(float exponent);
 
     Tensor mean();
