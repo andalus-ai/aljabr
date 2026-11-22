@@ -142,7 +142,7 @@ A follow-up comparison against the AQLI repository establishes that these resour
 - It already implements `EmbeddingsResource` at `framework/api/aqli-api/src/main/java/tech/kayys/aqli/server/api/v1/EmbeddingsResource.java`.
 - It also owns general completion, model, job, health and administrative REST resources in the same API module.
 - AQLI's `aqli-api/build.gradle.kts` explicitly excludes both `aqli-safetensor-api` and `aljabr-safetensor-api`, so the old Safetensors REST artifact is not part of the canonical AQLI API dependency graph.
-- AQLI's API module has a test source tree and tests for API mapping, request headers, model operations and streaming support. There are not yet dedicated resource-level tests named for `ChatCompletionsResource` or `EmbeddingsResource`; add conformance tests there rather than reviving the duplicate Aljabr resources.
+- AQLI's API module has a test source tree. Its `ServerApiTest` exercises the chat completion endpoint (including successful responses, streaming and invalid requests) and embeddings endpoint (including successful response shape and invalid requests) over HTTP; mapper, request-header, model-operation and streaming tests provide additional coverage. The tests are consolidated in the server API integration suite rather than separate resource-named test classes, so do not mistake the absence of those class names for absence of endpoint coverage.
 
 **Current Safetensors API artifact shape**
 
