@@ -125,6 +125,8 @@ class AmirGgufConversionExecutorTest {
         var typed = Map.<String, MetadataValue>of(
                 "general.quantization_version",
                 new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 42L),
+                "general.alignment",
+                new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 64L),
                 "tokenizer.ggml.tokens",
                 new MetadataValue.Array(MetadataValue.Kind.STRING, List.of(
                         MetadataValue.string("alpha"), MetadataValue.string("beta"))));
@@ -142,6 +144,10 @@ class AmirGgufConversionExecutorTest {
             var version = assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt32Val.class,
                     parsed.typedMetadata().get("general.quantization_version"));
             assertEquals(42L, version.value());
+            var alignment = assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt32Val.class,
+                    parsed.typedMetadata().get("general.alignment"));
+            assertEquals(64L, alignment.value());
+            assertEquals(0L, parsed.dataStart() % 64L);
             var tokens = assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.ArrayVal.class,
                     parsed.typedMetadata().get("tokenizer.ggml.tokens"));
             assertEquals(tech.kayys.aljabr.gguf.core.GgufMetaType.STRING, tokens.elementType());
