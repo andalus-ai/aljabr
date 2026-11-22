@@ -65,16 +65,17 @@ public final class EmbeddingGemma2AudioFeedForward {
     }
 
     private float[][][] linear(float[][][] input, LinearWeights linear, float clipping) {
-        float[][][] output = new float[input.length][input[0].length][linear.kernel().length];
+        float[][] kernel = linear.kernel();
+        float[][][] output = new float[input.length][input[0].length][kernel.length];
         ClipRange range = linear.clipRange();
         for (int b = 0; b < input.length; b++) {
             for (int t = 0; t < input[b].length; t++) {
-                for (int o = 0; o < linear.kernel().length; o++) {
+                for (int o = 0; o < kernel.length; o++) {
                     float sum = 0f;
                     for (int i = 0; i < input[b][t].length; i++) {
                         float value = clamp(input[b][t][i], range.inputMin(), range.inputMax());
                         value = clamp(value, clipping);
-                        sum += value * linear.kernel()[o][i];
+                        sum += value * kernel[o][i];
                     }
                     output[b][t][o] = clamp(clamp(sum, range.outputMin(), range.outputMax()), clipping);
                 }
