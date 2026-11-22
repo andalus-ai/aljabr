@@ -34,9 +34,10 @@ import java.util.Objects;
  * Safetensors. Tensor payloads are copied directly from their referenced
  * source ranges in bounded chunks; no tensor is materialized as a heap array.
  *
- * <p>Opaque AMIR extensions cannot be represented in a Safetensors file.
- * A PARTIAL plan therefore requires explicit acknowledgement, and the result
- * reports exactly which extension keys were not transferred.
+ * <p>Opaque AMIR extensions and model-level graph, asset, and component
+ * collections are not yet represented in a Safetensors file. A PARTIAL plan
+ * therefore requires explicit acknowledgement, and the result reports each
+ * category of model data that was not transferred.
  */
 public final class AmirSafetensorsConversionExecutor implements ModelConversionExecutor {
 
@@ -195,7 +196,7 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        if (hasUntransferredExtensions(model)
+        if (hasUntransferredData(model)
                 && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
             throw new IOException("AMIR model or tensor extensions cannot be silently omitted; "
                     + "the plan must be PARTIAL");
@@ -206,7 +207,7 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         }
     }
 
-    private static boolean hasUntransferredExtensions(ModelDescriptor model) {
+    private static boolean hasUntransferredData(ModelDescriptor model) {
         return !model.extensions().isEmpty()
                 || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty())
                 || model.graphCollection().isPresent()
