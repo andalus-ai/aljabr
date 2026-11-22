@@ -37,6 +37,7 @@ import jdk.incubator.code.Reflect;
 public class HatComputeBackend implements ComputeBackend {
     private static final Logger LOG = Logger.getLogger(HatComputeBackend.class);
     private final CpuBackend cpuFallback;
+    private final boolean ownsCpuFallback;
 
     /*
      * HAT's Java multi-threaded backend reuses mutable dispatch state, and
@@ -47,19 +48,41 @@ public class HatComputeBackend implements ComputeBackend {
     private final Object hatExecutionLock = new Object();
     private hat.Accelerator accelerator;
 
+    /**
+     * Creates a HAT backend with a CPU fallback owned by this backend.
+     */
     public HatComputeBackend() {
-        this(new CpuBackend());
+        this(new CpuBackend(), true);
     }
 
     /**
-     * Creates a HAT backend using the supplied, explicitly owned CPU fallback.
-     * Provider sessions may expose this same fallback instance under its own
-     * backend id so operation-support metadata resolves to an actual backend.
+     * Creates a HAT backend using a caller-owned CPU fallback.
+     *
+     * <p>The caller remains responsible for closing the supplied fallback.
+     * Provider sessions may expose the same instance under its own backend id
+     * and close both session-owned backends independently.</p>
      */
     public HatComputeBackend(CpuBackend cpuFallback) {
+        this(cpuFallback, false);
+    }
+
+    private HatComputeBackend(CpuBackend cpuFallback, boolean ownsCpuFallback) {
         LOG.info("Initializing HAT Compute Backend...");
         this.cpuFallback = java.util.Objects.requireNonNull(cpuFallback, "cpuFallback");
+        this.ownsCpuFallback = ownsCpuFallback;
         LOG.info("HAT Compute Backend initialized successfully with CPU fallback.");
+    }
+
+    /**
+     * Releases resources owned by this backend. The Babylon Accelerator has no
+     * upstream close contract; an internally-created CPU fallback is still
+     * closed here. Injected fallbacks remain owned by their caller.
+     */
+    @Override
+    public void close() {
+        if (ownsCpuFallback) {
+            cpuFallback.close();
+        }
     }
 
     private UnsupportedOperationException unimplemented(String op) {
