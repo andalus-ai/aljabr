@@ -356,13 +356,16 @@ var context = DiagnosticContext.builder()
         .provider("cpu")
         .build();
 
-try (var scope = ExecutionScope.start(context, observer)) {
+var scope = ExecutionScope.start(context, observer);
+try {
     var result = left.matmul(right);
     scope.succeed();
     return result;
 } catch (RuntimeException failure) {
-    // If the failure must be observed, call scope.fail(failure) before rethrowing
+    scope.fail(failure);
     throw failure;
+} finally {
+    scope.close();
 }
 ```
 
