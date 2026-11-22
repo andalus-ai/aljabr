@@ -8,6 +8,7 @@ import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
 import tech.kayys.aljabr.spi.model.ir.MetadataValue;
@@ -427,19 +428,24 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                 Map.of("general.architecture", "llama"), Map.of(), List.of(tensor))
                 .withTypedMetadata(Map.of("general.alignment",
                         new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 32L)));
+        Map<String, MetadataValue> typed = Map.of(
+                "general.alignment", new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 32L),
+                "general.quantization_version", new MetadataValue.Scalar(MetadataValue.Kind.UINT64, -1L),
+                "general.use_mmap", new MetadataValue.Scalar(MetadataValue.Kind.BOOL, true),
+                "general.scale", new MetadataValue.Scalar(MetadataValue.Kind.FLOAT64, Double.NaN),
+                "tokenizer.ggml.tokens", new MetadataValue.Array(MetadataValue.Kind.STRING, List.of(
+                        MetadataValue.string("alpha"), MetadataValue.string("beta"))));
+        model = model.withTypedMetadata(typed);
         Path output = temporaryDirectory.resolve("typed-metadata.safetensors");
-        var executor = new AmirGgufToSafetensorsConversionExecutor();
 
-        assertThrows(java.io.IOException.class, () -> executor.execute(
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
                 model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
-                new ConversionRequest(output.toUri(), true, Map.of())));
-        assertFalse(Files.exists(output));
+                new ConversionRequest(output.toUri(), false, Map.of()));
 
-        var result = executor.execute(
-                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
-                new ConversionRequest(output.toUri(), true, Map.of()));
-
-        assertTrue(result.untransferredMetadataKeys().contains("model:typed-metadata:general.alignment"));
+        assertTrue(result.untransferredMetadataKeys().isEmpty());
+        ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
+        assertEquals(typed, restored.typedMetadata());
+        assertEquals("llama", restored.metadata().get("general.architecture"));
     }
 
     private Path writeContainer(byte[] payload) throws Exception {
