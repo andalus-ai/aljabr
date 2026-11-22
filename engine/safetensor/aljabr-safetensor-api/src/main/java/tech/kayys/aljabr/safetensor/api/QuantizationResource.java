@@ -30,7 +30,7 @@ import java.util.concurrent.CompletableFuture;
  * Uses reflection/Object to avoid circular dependencies with Quantization
  * module.
  * @author bhangun
-  * @deprecated This HTTP adapter is being retired from Aljabr. Quantization algorithms and transport-neutral configuration remain Aljabr capabilities; expose administration through a downstream runtime if needed.
+ * @deprecated This HTTP adapter is being retired from Aljabr. Quantization algorithms and transport-neutral configuration remain Aljabr capabilities; expose administration through a downstream runtime if needed.
  */
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
