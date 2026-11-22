@@ -46,13 +46,13 @@ class DiagnosticContextTest {
     @Test
     void rejectsUnboundedOrMalformedAttributes() {
         assertThrows(IllegalArgumentException.class,
-                () -> DiagnosticContext.builder().attribute("bad key", "value"));
+                () -> DiagnosticContext.builder().attribute("bad key", "value").build());
         assertThrows(IllegalArgumentException.class,
-                () -> DiagnosticContext.builder().attribute("correlation.id", "spoofed"));
+                () -> DiagnosticContext.builder().attribute("correlation.id", "spoofed").build());
         assertThrows(IllegalArgumentException.class,
-                () -> DiagnosticContext.builder().attribute("payload", "x".repeat(513)));
+                () -> DiagnosticContext.builder().attribute("payload", "x".repeat(513)).build());
         assertThrows(IllegalArgumentException.class,
-                () -> DiagnosticContext.builder().correlationId("x".repeat(129)));
+                () -> DiagnosticContext.builder().correlationId("x".repeat(129)).build());
 
         DiagnosticContext.Builder builder = DiagnosticContext.builder();
         for (int i = 0; i < DiagnosticContext.MAX_ATTRIBUTES; i++) {

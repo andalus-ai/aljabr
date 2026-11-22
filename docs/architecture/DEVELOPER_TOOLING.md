@@ -329,3 +329,81 @@ The first implementation increment extends the existing `core:aljabr-diagnostics
 ### Validation status
 
 Source and unit tests have been added. CI/build execution is still required before this increment can be marked validated. The next slice should add explicit diagnostic scopes and lifecycle events only after reviewing the actual operation/provider integration points.
+
+
+## 15. Execution lifecycle scopes — implementation slice 2
+
+The second increment adds explicit, synchronous execution lifecycle observation to the existing JDK-only diagnostics artifact.
+
+### Implemented contracts
+
+- `ExecutionEvent` is an immutable lifecycle record with STARTED, SUCCEEDED, FAILED and ABANDONED transitions.
+- `ExecutionObserver` is a minimal synchronous callback contract with a shared no-op implementation.
+- `ExecutionScope` requires explicit correlation and operation metadata, emits STARTED immediately, and emits exactly one terminal event.
+- Closing an unfinished scope emits ABANDONED. Closing a completed scope is safe and does not emit a duplicate event.
+- Durations use monotonic nanoseconds; event timestamps use wall-clock instants. These clocks must not be conflated.
+- Failure events contain the exception class name only. Exception messages and stack traces are not copied into lifecycle events.
+- Runtime exceptions thrown by an observer are isolated from computation and retained for inspection through `ExecutionScope.observerFailure()`. Fatal JVM errors are not intercepted.
+
+### Usage
+
+```java
+var context = DiagnosticContext.builder()
+        .correlationId("trace-123")
+        .parentId("model-forward-7")
+        .operation("tensor.matmul")
+        .component("tensor")
+        .provider("cpu")
+        .build();
+
+var scope = ExecutionScope.start(context, observer);
+try {
+    var result = left.matmul(right);
+    scope.succeed();
+    return result;
+} catch (RuntimeException failure) {
+    scope.fail(failure);
+    throw failure;
+} finally {
+    scope.close();
+}
+```
+
+When a computation can fail, the scope should be retained outside the try body or use a small helper so the failure path calls `fail(Throwable)` before rethrowing. A plain close without an explicit terminal call is intentionally reported as ABANDONED, not silently treated as success.
+
+### Boundaries and remaining work
+
+- No implicit ThreadLocal, async propagation, executor, queue, background worker or persistence is introduced. Nested/asynchronous callers construct child contexts explicitly.
+- These events are lifecycle observations, not diagnostic findings, immutable audit facts or metric samples. Those require separate contracts and delivery guarantees.
+- Observer callbacks run synchronously and should be fast/non-blocking. Runtime exceptions are available through the scope accessor; fatal errors propagate.
+- This slice does not yet instrument tensor/provider/resource implementations. Integration points must be selected and tested at their owning module boundaries.
+- Unit tests cover transition order, failure metadata privacy, abandoned close, observer failure isolation, required context and duplicate completion.
+
+### Validation status
+
+The first CI run exposed a test assertion that constructed an invalid context without calling `build()`; this assertion has been corrected. The same run also exposed a separate CPU backend compile failure at `CpuBackend.java:470` (`@Override` does not match a supertype), which is outside this diagnostics change and must be investigated independently. The lifecycle slice remains in progress until the new branch's targeted tests and CI complete successfully.
+
+
+## 16. GGUF execution lifecycle integration — implementation slice 3
+
+The next increment connects the generic lifecycle contract to one real model execution boundary: synchronous GGUF inference.
+
+### Implemented integration
+
+- `GgufInferenceEngine` accepts an optional `ExecutionObserver` through an additive constructor overload. Existing constructors remain source-compatible and use `ExecutionObserver.NOOP`.
+- Synchronous `execute(...)` and context-aware `execute(..., ModelExecutionContext)` create a single `gguf.infer` scope around the backend call.
+- The context uses an opaque generated correlation ID and the selected backend name. Request prompts, messages, user/session identifiers, model paths and arbitrary request metadata are not copied into lifecycle context.
+- Backend success emits SUCCEEDED; runtime failure or fatal error emits FAILED with exception class identity only. The engine preserves its existing inference exception behavior and counters.
+- Observer runtime failures remain isolated from inference and are reflected in `executionObserverFailureCount()`.
+- Tests cover failure event ordering, safe context metadata and observer-failure isolation.
+
+### Deliberate limits
+
+- This integration covers synchronous inference only. Streaming scopes require lifecycle handling at subscription time and correct terminal handling for completion, failure and cancellation; instrumenting `Multi` construction would produce misleading durations.
+- Embedding, model load/unload, provider discovery outside GGUF, tensor primitives, resource allocation and kernel-level profiling remain separate integration points.
+- The default observer is a no-op. No logging backend, exporter, persistence, background thread or global observer is introduced.
+- A generated correlation ID starts a local observation; applications needing end-to-end correlation should add a separately reviewed explicit context propagation API rather than relying on hidden thread-local state.
+
+### Validation status
+
+Tests have been added but require CI execution. The current full CI job is blocked at the unrelated existing CPU compilation error in `CpuBackend.java:470`; this does not establish that the GGUF tests passed. The lifecycle integration remains in progress until targeted tests and CI complete successfully.
