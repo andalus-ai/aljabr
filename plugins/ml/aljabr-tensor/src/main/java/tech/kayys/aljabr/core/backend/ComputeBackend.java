@@ -254,6 +254,12 @@ public interface ComputeBackend extends AutoCloseable {
                 "Indexed addition is not supported by backend " + getClass().getName());
     }
 
+    /** Axis-wise indexed addition; repeated indices must accumulate. */
+    default Tensor indexAdd(Tensor input, int axis, Tensor indices, Tensor source) {
+        throw new UnsupportedOperationException(
+                "Indexed addition is not supported by backend " + getClass().getName());
+    }
+
     /**
      * Returns equal, non-empty slices along an axis. Negative axes count from
      * the final dimension; the axis size must be evenly divisible by parts.
