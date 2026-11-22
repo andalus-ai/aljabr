@@ -297,6 +297,40 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ3SBlockUsingGridHighBitsPackedSignsAndGroupScales() throws Exception {
+        byte[] block = new byte[110];
+        block[1] = 0x3c; // fp16 scale = 1
+        block[2] = 1; // grid index 1: [3, 1, 1, 1]
+        block[3] = 0; // grid index 0: [1, 1, 1, 1]
+        block[66] = 1; // high bit selects grid index 256 for first grid in second 32-value half
+        block[74] = 1; // parity-expanded sign mask 0x81: first and eighth values negative
+        block[106] = 0x10; // first group scale = 1, second group scale = 3
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ3_S", List.of(256L), source, 8L, block.length);
+        var model = model("iq3_s", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq3_s.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        // The first eight values exercise the first grid, sign parity, and ordering.
+        float[] expected = {-3.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, -1.0f};
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], values.getFloat(i * Float.BYTES), 0.0f);
+        }
+        // The next 32-value group uses the second packed scale nibble (3x).
+        assertEquals(3.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+    }
+
+    @Test
     void dequantizesIQ4NLBlockUsingCanonicalNonlinearLookupTable() throws Exception {
         byte[] block = new byte[18];
         block[1] = 0x3c; // fp16 d = 1
