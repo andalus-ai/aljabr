@@ -2,6 +2,7 @@ package tech.kayys.aljabr.core.tool;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -64,8 +65,9 @@ public final class ToolCallParserRegistry {
 
     /** Returns registered protocol identifiers in registration order. */
     public Set<String> protocolIds() {
-        return parsers.keySet().stream().map(ToolCallProtocolDescriptor::id)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        parsers.keySet().forEach(protocol -> ids.add(protocol.id()));
+        return Collections.unmodifiableSet(ids);
     }
 
     public int size() {
