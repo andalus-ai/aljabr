@@ -53,6 +53,29 @@ public record Diagnostic(
         this(code, severity, category, message, context, Instant.now());
     }
 
+    /** Creates a diagnostic with explicitly selected, bounded execution context. */
+    public Diagnostic(
+            String code,
+            DiagnosticSeverity severity,
+            String category,
+            String message,
+            DiagnosticContext context) {
+        this(code, severity, category, message,
+                Objects.requireNonNull(context, "context").asMap(), Instant.now());
+    }
+
+    /** Creates a diagnostic with explicit context and observation timestamp. */
+    public Diagnostic(
+            String code,
+            DiagnosticSeverity severity,
+            String category,
+            String message,
+            DiagnosticContext context,
+            Instant occurredAt) {
+        this(code, severity, category, message,
+                Objects.requireNonNull(context, "context").asMap(), occurredAt);
+    }
+
     /** Creates a diagnostic without additional context. */
     public Diagnostic(String code, DiagnosticSeverity severity, String category, String message) {
         this(code, severity, category, message, Map.of(), Instant.now());
