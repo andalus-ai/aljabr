@@ -526,3 +526,12 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Keep stream execution cold/deferred where the backend contract is cold. Do not share one `ExecutionScope` across multiple subscribers; each subscription gets its own correlation ID and lifecycle.
 - Count observer failures after terminal callbacks have run. Runtime observer failures must not replace stream items, completion, failure or cancellation semantics.
 - Test that no STARTED event occurs before subscription, plus success, failure, cancellation, context-aware delegation, and no-op observer behavior.
+
+#### GGUF model lifecycle requirements
+
+- Observe successful backend creation and model unload/cleanup through explicit execution scopes named `gguf.model.load` and `gguf.model.unload`.
+- Resolve provider selection first; the load scope identifies the selected provider and measures backend creation/initialization plus registration. Provider-selection decisions remain separate provider-decision events.
+- Unload scopes identify the backend being closed. Engine shutdown must retain per-model cleanup visibility rather than collapsing multiple backend releases into one ambiguous event.
+- Keep model IDs, filesystem paths, model metadata/configuration maps, prompts and weight details out of lifecycle context by default. Use opaque generated correlation IDs and provider identity only.
+- Preserve backend exceptions and cleanup semantics. Observer RuntimeExceptions must never change load, unload or close behavior; fatal JVM errors must propagate.
+- Test load success/failure, unload success/cleanup, privacy, observer-disabled behavior and observer-failure isolation.

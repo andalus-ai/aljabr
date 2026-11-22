@@ -237,6 +237,88 @@ class GgufInferenceEngineDelegationTest {
         }
     }
 
+    @Test
+    void modelLoadEmitsLifecycleEventsWithoutModelPathMetadata() throws Exception {
+        Path model = Files.createTempFile("gguf-model-load", ".gguf");
+        List<ExecutionEvent> events = new java.util.ArrayList<>();
+        GgufBackend backend = new TestBackend();
+        GgufBackendProvider provider = provider((path, config) -> backend);
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            assertSame(backend, engine.loadModel("model", model, Map.of("gguf.backend", "test")));
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.SUCCEEDED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals("gguf.model.load", events.get(0).context().operation());
+            assertEquals("test", events.get(0).context().provider());
+            assertNotNull(events.get(0).context().correlationId());
+            assertTrue(events.get(0).context().attributes().isEmpty());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void modelLoadFailureEmitsFailedWithoutExceptionMessage() throws Exception {
+        Path model = Files.createTempFile("gguf-model-load-failure", ".gguf");
+        List<ExecutionEvent> events = new java.util.ArrayList<>();
+        GgufBackendProvider provider = provider((path, config) -> {
+            throw new IllegalStateException("private model initialization detail");
+        });
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> engine.loadModel("model", model, Map.of("gguf.backend", "test")));
+            assertEquals("private model initialization detail", failure.getMessage());
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.FAILED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals(IllegalStateException.class.getName(), events.get(1).failureType());
+            assertTrue(events.get(1).context().attributes().isEmpty());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void modelUnloadEmitsLifecycleEventsAndClosesBackend() throws Exception {
+        Path model = Files.createTempFile("gguf-model-unload", ".gguf");
+        List<ExecutionEvent> events = new java.util.ArrayList<>();
+        AtomicBoolean closed = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override public void close() { closed.set(true); }
+        };
+        GgufBackendProvider provider = provider((path, config) -> backend);
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            engine.loadModel("model", model, Map.of("gguf.backend", "test"));
+            events.clear();
+            engine.unloadModel("model");
+            assertTrue(closed.get());
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.SUCCEEDED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals("gguf.model.unload", events.get(0).context().operation());
+            assertEquals("test", events.get(0).context().provider());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    private static GgufBackendProvider provider(BackendFactory factory) {
+        return new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) {
+                return GgufBackendCapability.ready("test", Set.of(), Map.of());
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) throws Exception {
+                return factory.create(path, config);
+            }
+        };
+    }
+
+    @FunctionalInterface
+    private interface BackendFactory {
+        GgufBackend create(Path path, Map<String, Object> config) throws Exception;
+    }
     private static GgufInferenceEngine engine(Path model, GgufBackend backend) throws Exception {
         return engine(model, backend, ExecutionObserver.NOOP);
     }

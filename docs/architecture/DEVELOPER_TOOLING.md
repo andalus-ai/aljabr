@@ -431,3 +431,25 @@ The streaming integration applies the same lifecycle contract to Mutiny `Multi` 
 ### Validation status
 
 Source and tests have been added. CI must validate the Mutiny event hooks and cancellation behavior before this slice can be marked validated. No local build or hardware test is claimed.
+
+## 18. GGUF model lifecycle observation — implementation slice 5
+
+The fifth integration slice observes backend creation and cleanup at the model lifecycle boundary.
+
+### Implemented behavior
+
+- A successful provider selection is followed by a `gguf.model.load` execution scope around backend creation and registration. The selected provider ID is attached as the provider identity.
+- `unloadModel` emits `gguf.model.unload` around backend close. Engine close emits an unload scope for each backend rather than hiding all cleanup behind one engine-level event.
+- Load failures and cleanup failures emit FAILED with exception class identity only. Original exceptions retain their existing propagation behavior.
+- The no-op observer path calls the backend action directly without creating context or scope objects.
+- Observer RuntimeExceptions remain isolated by `ExecutionScope` and contribute to the existing execution observer failure count.
+
+### Deliberate limits
+
+- Provider selection/probing remains represented by the separate provider-decision observer. The load scope measures backend creation and registration after a provider has been selected.
+- Model IDs, paths, model metadata, arbitrary configuration, prompts and weight contents are not copied into lifecycle context.
+- This is lifecycle observation, not durable audit persistence or proof of model provenance. Format validation and tensor mapping diagnostics remain separate work.
+
+### Validation status
+
+Tests cover successful load, failed load metadata privacy, and unload behavior. They require CI execution; the current full build is known to be blocked by the unrelated CPU backend compile error at `CpuBackend.java:470`, so no passing validation is claimed for this slice.

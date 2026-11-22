@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.function.Supplier;
+import java.util.concurrent.Callable;
 
 /**
  * ServiceLoader-based GGUF inference engine implementing {@link InferenceEngine}.
@@ -93,9 +94,51 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     public synchronized GgufBackend loadModel(String modelId, Path modelPath, Map<String, Object> config) throws Exception {
         GgufBackendSelection selection = GgufBackendSelection.resolve(config);
         GgufBackendProvider provider = selectProvider(modelPath, selection);
-        GgufBackend backend = provider.create(modelPath, config);
-        backends.put(modelId, backend);
-        return backend;
+        return observeLifecycle("gguf.model.load", provider.id(), () -> {
+            GgufBackend backend = provider.create(modelPath, config);
+            backends.put(modelId, backend);
+            return backend;
+        });
+    }
+
+    private <T> T observeLifecycle(String operation, String provider, Callable<T> action) throws Exception {
+        if (executionObserver == ExecutionObserver.NOOP) {
+            return action.call();
+        }
+        DiagnosticContext context = DiagnosticContext.builder()
+                .correlationId(UUID.randomUUID().toString())
+                .operation(operation)
+                .component("gguf")
+                .provider(provider)
+                .build();
+        ExecutionScope scope = ExecutionScope.start(context, executionObserver);
+        try (scope) {
+            try {
+                T result = action.call();
+                scope.succeed();
+                return result;
+            } catch (Exception | Error failure) {
+                scope.fail(failure);
+                throw failure;
+            }
+        } finally {
+            if (scope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
+            }
+        }
+    }
+
+    private void observeLifecycleUnchecked(String operation, String provider, Runnable action) {
+        try {
+            observeLifecycle(operation, provider, () -> {
+                action.run();
+                return null;
+            });
+        } catch (RuntimeException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new IllegalStateException("GGUF lifecycle operation failed: " + operation, failure);
+        }
     }
 
     /** Number of provider-observer runtime failures isolated by this engine. */
@@ -111,7 +154,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     public synchronized void unloadModel(String modelId) {
         GgufBackend removed = backends.remove(modelId);
         if (removed != null) {
-            removed.close();
+            observeLifecycleUnchecked("gguf.model.unload", removed.name(), removed::close);
         }
     }
 
@@ -368,7 +411,8 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
 
     @Override
     public void close() {
-        backends.values().forEach(GgufBackend::close);
+        backends.values().forEach(backend ->
+                observeLifecycleUnchecked("gguf.model.unload", backend.name(), backend::close));
         backends.clear();
         initialized = false;
     }
