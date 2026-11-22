@@ -121,6 +121,42 @@ class EmbeddingGemma2VisionImagePipelineTest {
         assertTrue(result.get(0) != result.get(1));
     }
 
+    @Test
+    void preservesEachImagesFeaturesWhenMixedAspectRatioBatchOrderChanges() {
+        var spec = new EmbeddingGemma2VisionCheckpointMapper.VisionSpec(
+                4, 4, 1, 1, 1, 4, 1, 32, false);
+        var pipeline = EmbeddingGemma2VisionImagePipeline.fromCheckpoint(
+                spec, nonZeroCheckpoint(), 3, 1e-6f, 1e-6f, 100d, 70, 2);
+
+        var square = EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(
+                4, 4, solidRgb(4, 4, (byte) 255));
+        var landscape = EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(
+                8, 4, solidRgb(8, 4, (byte) 64));
+
+        float[][] squareAlone = pipeline.encode(square);
+        float[][] landscapeAlone = pipeline.encode(landscape);
+        List<float[][]> squareFirst = pipeline.encodeBatch(List.of(square, landscape));
+        List<float[][]> landscapeFirst = pipeline.encodeBatch(List.of(landscape, square));
+
+        assertEquals(64, squareAlone.length);
+        assertEquals(55, landscapeAlone.length);
+        assertMatrixEquals(squareAlone, squareFirst.get(0));
+        assertMatrixEquals(landscapeAlone, squareFirst.get(1));
+        assertMatrixEquals(landscapeAlone, landscapeFirst.get(0));
+        assertMatrixEquals(squareAlone, landscapeFirst.get(1));
+    }
+
+    private static void assertMatrixEquals(float[][] expected, float[][] actual) {
+        assertEquals(expected.length, actual.length, "token count");
+        for (int token = 0; token < expected.length; token++) {
+            assertEquals(expected[token].length, actual[token].length, "hidden size at token " + token);
+            for (int dimension = 0; dimension < expected[token].length; dimension++) {
+                assertEquals(expected[token][dimension], actual[token][dimension], 0f,
+                        "token " + token + ", dimension " + dimension);
+            }
+        }
+    }
+
     private static Map<String, CheckpointTensor> tinyCheckpoint() {
         Map<String, CheckpointTensor> tensors = new HashMap<>();
         put(tensors, "vision_tower.patch_embedder.input_proj.weight", 4, 3);
