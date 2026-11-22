@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.models.functiongemma;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.core.tool.ToolCall;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -49,6 +50,29 @@ class FunctionGemmaToolCallParserTest {
     }
 
     @Test
+    void parsesDirectlyIntoCoreToolCallContract() {
+        String output = "<start_function_call>call:lookup{filter:{tags:[<escape>java<escape>]},limit:5}<end_function_call>";
+        List<ToolCall> calls = parser.parseToolCalls(output);
+        assertEquals(1, calls.size());
+        assertEquals("lookup", calls.getFirst().name());
+        assertEquals(5L, calls.getFirst().arguments().get("limit"));
+        Map<?, ?> filter = (Map<?, ?>) calls.getFirst().arguments().get("filter");
+        assertEquals(List.of("java"), filter.get("tags"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> ((List<Object>) filter.get("tags")).add("unsafe"));
+    }
+
+    @Test
+    void convertsLegacyCallToDeeplyImmutableCoreCall() {
+        var mutable = new java.util.ArrayList<>(List.of("one"));
+        var legacy = new FunctionGemmaToolCallParser.FunctionCall("lookup",
+                Map.of("filter", Map.of("tags", mutable)));
+        ToolCall core = FunctionGemmaToolCallParser.toToolCall(legacy);
+        mutable.add("two");
+        assertEquals(List.of("one"), ((Map<?, ?>) core.arguments().get("filter")).get("tags"));
+    }
+
+    @Test
     void preservesUnescapedIsoTimestampAsString() {
         var call = parser.parseCallBody(
                 "call:create_event{datetime:2026-11-21T15:00:00,title:<escape>Planning<escape>}");
@@ -68,5 +92,6 @@ class FunctionGemmaToolCallParserTest {
     @Test
     void returnsEmptyListWhenOutputContainsNoFunctionCalls() {
         assertTrue(parser.parse("I can answer that directly.").isEmpty());
+        assertTrue(parser.parseToolCalls("I can answer that directly.").isEmpty());
     }
 }
