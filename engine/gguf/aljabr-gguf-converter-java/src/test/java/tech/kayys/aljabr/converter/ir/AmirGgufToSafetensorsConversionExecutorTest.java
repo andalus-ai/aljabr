@@ -329,6 +329,51 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ4XSBlockUsingPackedSixBitGroupScalesAndNonlinearCodebook() throws Exception {
+        byte[] block = new byte[136];
+        block[1] = 0x3c; // fp16 super-block scale = 1
+        block[2] = (byte) 0xaa; // upper two scale bits: 2 for all eight groups
+        block[3] = (byte) 0xaa;
+
+        for (int group = 0; group < 8; group++) {
+            int lowScale = group + 1;
+            int scaleOffset = 4 + group / 2;
+            block[scaleOffset] |= (byte) (lowScale << (4 * (group & 1)));
+            for (int i = 0; i < 16; i++) {
+                block[8 + group * 16 + i] = (byte) ((15 - i) << 4 | i);
+            }
+        }
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ4_XS", List.of(256L), source, 8L, block.length);
+        var model = model("iq4_xs", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq4_xs.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        float[] codebook = {-127.0f, -104.0f, -83.0f, -65.0f, -49.0f, -35.0f, -22.0f, -10.0f,
+                1.0f, 13.0f, 25.0f, 38.0f, 53.0f, 69.0f, 89.0f, 113.0f};
+        for (int group = 0; group < 8; group++) {
+            float groupScale = group + 1.0f;
+            int outputOffset = group * 32;
+            for (int i = 0; i < 16; i++) {
+                assertEquals(groupScale * codebook[i],
+                        values.getFloat((outputOffset + i) * Float.BYTES), 0.0f);
+                assertEquals(groupScale * codebook[15 - i],
+                        values.getFloat((outputOffset + 16 + i) * Float.BYTES), 0.0f);
+            }
+        }
+    }
+
+    @Test
     void dequantizesQ4KBlockUsingPackedSixBitScalesAndMinimaAndNibbleGroups() throws Exception {
         byte[] block = new byte[144];
         block[1] = 0x3c; // fp16 d = 1
