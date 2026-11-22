@@ -693,7 +693,6 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static List<String> untransferredKeys(ModelDescriptor model) {
         List<String> keys = new ArrayList<>();
-        model.architectureDescriptor().ifPresent(ignored -> keys.add("model:architectureDescriptor"));
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
         model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
         model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
