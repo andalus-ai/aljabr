@@ -38,9 +38,10 @@ import java.util.Objects;
  * their representation. Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
- * <p>GGUF metadata and opaque AMIR extensions are retained as Safetensors
- * string metadata under an Aljabr namespace. Typed graph, asset, and component
- * layers are not representable in the Safetensors file and are reported.
+ * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
+ * Safetensors metadata envelope. Opaque AMIR extensions are retained as
+ * namespaced strings. Typed graph, asset, and component layers are not
+ * representable in the Safetensors file and are reported.
  */
 public final class AmirGgufToSafetensorsConversionExecutor implements ModelConversionExecutor {
 
@@ -138,13 +139,13 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
         boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
                 isDequantizedType(tensor.dataType()));
-        boolean hasFlattenedTypedMetadata = !model.typedMetadata().isEmpty()
-                || model.extensions().keySet().stream().anyMatch(key -> key.startsWith("gguf.metadata."));
+        boolean hasFlattenedLegacyMetadata = model.extensions().keySet().stream()
+                .anyMatch(key -> key.startsWith("gguf.metadata."));
         boolean partial = hasUnrepresentableLayers(model)
                 || model.architecture().equalsIgnoreCase("unknown")
-                || hasLossyQuantization || hasFlattenedTypedMetadata;
+                || hasLossyQuantization || hasFlattenedLegacyMetadata;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("Dequantization, flattened typed metadata, or unrepresented AMIR layers require a PARTIAL plan");
+            throw new IOException("Dequantization, legacy flattened metadata, or unrepresented AMIR layers require a PARTIAL plan");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !request.acknowledgePartial()) {
             throw new IOException("GGUF-to-Safetensors conversion is PARTIAL; explicit acknowledgement is required");
@@ -606,6 +607,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 values.put("aljabr.source.metadata." + key, value));
         model.extensions().forEach((key, value) ->
                 values.put("aljabr.source.extension." + key, value));
+        values.putAll(AmirTypedMetadataCodec.encode(model.typedMetadata()));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) -> values.put(
                     "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value));
@@ -628,12 +630,11 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
         model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
         model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
-        model.typedMetadata().keySet().stream().sorted()
-                .forEach(key -> keys.add("model:typed-metadata:" + key));
         model.extensions().keySet().stream()
                 .filter(key -> key.startsWith("gguf.metadata."))
                 .sorted()
-                .forEach(key -> keys.add("model:typed-metadata:" + key.substring("gguf.metadata.".length())));
+                .forEach(key -> keys.add("model:legacy-typed-metadata:"
+                        + key.substring("gguf.metadata.".length())));
         return List.copyOf(keys);
     }
 

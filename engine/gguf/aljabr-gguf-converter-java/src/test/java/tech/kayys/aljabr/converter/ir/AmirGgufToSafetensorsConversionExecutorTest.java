@@ -8,9 +8,9 @@ import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
-import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -458,7 +458,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
 
 
     @Test
-    void reportsFlattenedTypedGgufMetadataAsUntransferred() throws Exception {
+    void roundTripsTypedGgufMetadataThroughSafetensorsEnvelope() throws Exception {
         byte[] values = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(1.0f).array();
         Path source = writeContainer(values);
         var tensor = tensor("weight", "F32", List.of(1L), source, 8L, values.length);
@@ -466,19 +466,42 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                 Map.of("general.architecture", "llama"), Map.of(), List.of(tensor))
                 .withTypedMetadata(Map.of("general.alignment",
                         new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 32L)));
+        Map<String, MetadataValue> typed = Map.of(
+                "general.alignment", new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 32L),
+                "general.quantization_version", new MetadataValue.Scalar(MetadataValue.Kind.UINT64, -1L),
+                "general.use_mmap", new MetadataValue.Scalar(MetadataValue.Kind.BOOL, true),
+                "general.scale", new MetadataValue.Scalar(MetadataValue.Kind.FLOAT64, Double.NaN),
+                "tokenizer.ggml.tokens", new MetadataValue.Array(MetadataValue.Kind.STRING, List.of(
+                        MetadataValue.string("alpha"), MetadataValue.string("beta"))));
+        model = model.withTypedMetadata(typed);
         Path output = temporaryDirectory.resolve("typed-metadata.safetensors");
-        var executor = new AmirGgufToSafetensorsConversionExecutor();
 
-        assertThrows(java.io.IOException.class, () -> executor.execute(
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
                 model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
-                new ConversionRequest(output.toUri(), true, Map.of())));
-        assertFalse(Files.exists(output));
+                new ConversionRequest(output.toUri(), false, Map.of()));
 
-        var result = executor.execute(
-                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
-                new ConversionRequest(output.toUri(), true, Map.of()));
+        assertTrue(result.untransferredMetadataKeys().isEmpty());
+        ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
+        assertEquals(typed, restored.typedMetadata());
+        assertEquals("llama", restored.architecture());
+        assertEquals("llama", restored.metadata().get("aljabr.source.metadata.general.architecture"));
 
-        assertTrue(result.untransferredMetadataKeys().contains("model:typed-metadata:general.alignment"));
+        Path ggufOutput = temporaryDirectory.resolve("typed-metadata-roundtrip.gguf");
+        var ggufPlan = new ConversionPlan(restored.identity(), "safetensors", "gguf",
+                new CompatibilityReport(CompatibilityReport.ConversionFidelity.FULL, List.of()));
+        new AmirGgufConversionExecutor().execute(restored, ggufPlan,
+                ConversionRequest.to(ggufOutput.toUri()));
+        try (var ggufReader = new tech.kayys.aljabr.gguf.loader.GGUFReader(ggufOutput)) {
+            var parsed = new tech.kayys.aljabr.gguf.loader.GGUFParser()
+                    .parse(ggufReader.segment(), ggufReader.arena());
+            assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt32Val.class,
+                    parsed.typedMetadata().get("general.alignment"));
+            assertEquals(-1L, assertInstanceOf(
+                    tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt64Val.class,
+                    parsed.typedMetadata().get("general.quantization_version")).value());
+            assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.ArrayVal.class,
+                    parsed.typedMetadata().get("tokenizer.ggml.tokens"));
+        }
     }
 
     private Path writeContainer(byte[] payload) throws Exception {

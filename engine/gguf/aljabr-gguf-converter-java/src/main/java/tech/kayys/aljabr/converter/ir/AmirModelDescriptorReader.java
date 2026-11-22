@@ -108,11 +108,14 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
 
     private ModelDescriptor readSafetensors(Path file, String name) throws IOException {
         Map<String, String> metadata;
+        Map<String, MetadataValue> typedMetadata;
         List<TensorDescriptor> tensors = new ArrayList<>();
         long fileSize = Files.size(file);
 
         try (SafetensorsReader reader = new SafetensorsReader(file)) {
-            metadata = new LinkedHashMap<>(reader.globalMeta());
+            Map<String, String> storedMetadata = new LinkedHashMap<>(reader.globalMeta());
+            typedMetadata = AmirTypedMetadataCodec.decode(storedMetadata);
+            metadata = new LinkedHashMap<>(AmirTypedMetadataCodec.withoutEncodedValues(storedMetadata));
             for (SafetensorsReader.TensorEntry tensor : reader.tensors().values()) {
                 SafetensorDType type = SafetensorDType.fromJson(tensor.dtype());
                 long length = tensor.byteSize();
@@ -138,9 +141,10 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
         }
 
-        String architecture = metadata.getOrDefault("general.architecture", "unknown");
+        String architecture = metadata.getOrDefault("general.architecture",
+                metadata.getOrDefault("aljabr.source.architecture", "unknown"));
         return new ModelDescriptor(ModelIdentity.of(name), architecture, SAFETENSORS,
-                metadata, Map.of(), tensors);
+                metadata, Map.of(), tensors).withTypedMetadata(typedMetadata);
     }
 
     private static Path requireFile(Path source) throws IOException {
