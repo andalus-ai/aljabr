@@ -56,6 +56,8 @@ final class AmirArchitectureDescriptorCodec {
     static ArchitectureDescriptor decode(String encoded) {
         try {
             JsonObject root = JsonParser.parseString(encoded).getAsJsonObject();
+            requireOnlyKeys(root, Set.of("id", "familyId", "familyKind", "properties",
+                    "configurationExtensions", "capabilities", "extensions"));
             String id = requiredString(root, "id");
             ArchitectureFamily family = new ArchitectureFamily(
                     requiredString(root, "familyId"),
@@ -115,6 +117,7 @@ final class AmirArchitectureDescriptorCodec {
 
     private static ConfigurationValue decodeValue(JsonElement element) {
         JsonObject value = element.getAsJsonObject();
+        requireOnlyKeys(value, Set.of("type", "value"));
         return switch (requiredString(value, "type")) {
             case "string" -> new ConfigurationValue.StringValue(requiredString(value, "value"));
             case "integer" -> new ConfigurationValue.IntegerValue(
@@ -139,13 +142,24 @@ final class AmirArchitectureDescriptorCodec {
 
     private static Map<String, String> decodeStringMap(JsonObject object) {
         Map<String, String> values = new LinkedHashMap<>();
-        object.entrySet().forEach(entry -> values.put(entry.getKey(), entry.getValue().getAsString()));
+        object.entrySet().forEach(entry -> {
+            JsonElement value = entry.getValue();
+            if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+                throw new IllegalArgumentException("Architecture extension values must be strings");
+            }
+            values.put(entry.getKey(), value.getAsString());
+        });
         return values;
     }
 
     private static List<String> stringList(JsonArray values) {
         List<String> result = new ArrayList<>(values.size());
-        values.forEach(value -> result.add(value.getAsString()));
+        values.forEach(value -> {
+            if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+                throw new IllegalArgumentException("Expected a string in architecture configuration list");
+            }
+            result.add(value.getAsString());
+        });
         return result;
     }
 
@@ -153,6 +167,12 @@ final class AmirArchitectureDescriptorCodec {
         List<Long> result = new ArrayList<>(values.size());
         values.forEach(value -> result.add(Long.parseLong(value.getAsString())));
         return result;
+    }
+
+    private static void requireOnlyKeys(JsonObject object, Set<String> allowed) {
+        if (!allowed.containsAll(object.keySet()) || object.size() != allowed.size()) {
+            throw new IllegalArgumentException("Unexpected or missing field in AMIR architecture envelope");
+        }
     }
 
     private static String requiredString(JsonObject object, String key) {
