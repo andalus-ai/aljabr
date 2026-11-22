@@ -87,6 +87,7 @@ public final class EmbeddingGemma2AudioLightConv1d {
     private float[][][] causalDepthwiseConvolution(float[][][] input) {
         float[][][] output = new float[input.length][input[0].length][hiddenSize];
         int leftPadding = kernelSize - 1;
+        float[][] kernels = weights.depthwiseKernel();
         for (int b = 0; b < input.length; b++) {
             for (int t = 0; t < input[b].length; t++) {
                 for (int h = 0; h < hiddenSize; h++) {
@@ -94,7 +95,7 @@ public final class EmbeddingGemma2AudioLightConv1d {
                     for (int k = 0; k < kernelSize; k++) {
                         int sourceTime = t + k - leftPadding;
                         if (sourceTime >= 0) {
-                            sum += input[b][sourceTime][h] * weights.depthwiseKernel()[h][k];
+                            sum += input[b][sourceTime][h] * kernels[h][k];
                         }
                     }
                     output[b][t][h] = sum;
