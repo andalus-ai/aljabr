@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * OpenAI-compatible audio transcription API using Whisper.
  * Uses reflection to access WhisperEngine to avoid circular dependencies.
  * @author bhangun
-  * @deprecated This audio HTTP adapter is being retired from the Safetensors API artifact. Audio serving transport belongs downstream; audio model execution capabilities remain reusable.
+ * @deprecated This audio HTTP adapter is being retired from the Safetensors API artifact. Audio serving transport belongs downstream; audio model execution capabilities remain reusable.
  */
 @Tag(name = "Audio", description = "Speech-to-text and text-to-speech via Whisper")
 @Deprecated(forRemoval = true)
