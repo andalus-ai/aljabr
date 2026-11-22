@@ -150,6 +150,9 @@ class CpuBackendStorageTest {
         }
         assertEquals(0, leftStorage.references());
         assertEquals(0, rightStorage.references());
+    }
+
+    @Test
     void embeddingReadsStridedWeightsAndOffsetIntegerIndices() {
         HostStorage weightStorage = new HostStorage(
                 99f, 1f, 99f, 2f, 99f, 3f, 99f, 4f, 99f, 5f, 99f, 6f);
