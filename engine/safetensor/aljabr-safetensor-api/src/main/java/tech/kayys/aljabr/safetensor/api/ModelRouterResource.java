@@ -22,7 +22,7 @@ import java.util.Map;
  * REST control plane for A/B model routing.
  * Uses reflection to access ModelRouter to avoid circular dependencies in Maven.
  * @author bhangun
-  * @deprecated This serving/deployment control-plane adapter is being retired from Aljabr. Runtime model-routing policy and its HTTP surface belong in AQLI.
+ * @deprecated This serving/deployment control-plane adapter is being retired from Aljabr. Runtime model-routing policy and its HTTP surface belong in AQLI.
  */
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
