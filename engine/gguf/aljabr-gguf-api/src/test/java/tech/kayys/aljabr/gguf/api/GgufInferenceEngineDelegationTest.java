@@ -341,6 +341,60 @@ class GgufInferenceEngineDelegationTest {
     }
 
     @Test
+    void providerProbeEmitsIndependentLifecycleEvents() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-probe", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackend backend = new TestBackend();
+        GgufBackendProvider provider = provider((path, config) -> backend);
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            assertSame(backend, engine.loadModel("model", model, Map.of()));
+            assertEquals(List.of(
+                            "gguf.provider.probe:STARTED",
+                            "gguf.provider.probe:SUCCEEDED",
+                            "gguf.model.load:STARTED",
+                            "gguf.model.load:SUCCEEDED"),
+                    events.stream().map(event -> event.context().operation() + ":" + event.type()).toList());
+            assertEquals("test", events.get(0).context().provider());
+            assertTrue(events.get(0).context().attributes().isEmpty());
+            assertNotNull(events.get(0).context().correlationId());
+            assertTrue(events.get(1).elapsedNanos() >= 0);
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void providerProbeFailureEmitsFailedWithoutCapturingPathOrMessage() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-probe-failure", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) throws Exception {
+                throw new IllegalStateException("private probe detail");
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                return new TestBackend();
+            }
+        };
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            assertThrows(tech.kayys.aljabr.spi.exception.InferenceException.class,
+                    () -> engine.loadModel("model", model, Map.of()));
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.FAILED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals("gguf.provider.probe", events.get(1).context().operation());
+            assertEquals(IllegalStateException.class.getName(), events.get(1).failureType());
+            assertTrue(events.get(1).context().attributes().isEmpty());
+            assertFalse(events.toString().contains(model.toString()));
+            assertFalse(events.toString().contains("private probe detail"));
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
     void modelLoadEmitsLifecycleEventsWithoutModelPathMetadata() throws Exception {
         Path model = Files.createTempFile("gguf-model-load", ".gguf");
         List<ExecutionEvent> events = new java.util.ArrayList<>();
