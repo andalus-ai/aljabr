@@ -140,6 +140,28 @@ class GgufInferenceEngineProviderSelectionTest {
     }
 
     @Test
+    void executionObserverFailureIsIsolatedAndCounted() throws Exception {
+        Path model = Files.createTempFile("selection", ".gguf");
+        GgufBackendProvider ready = provider("java", 1, true, new AtomicBoolean());
+
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(ready), event -> { }, event -> {
+                    throw new IllegalStateException("observer failed");
+                })) {
+            engine.loadModel("model", model, Map.of());
+            InferenceRequest request = InferenceRequest.builder()
+                    .model("model")
+                    .prompt("safe test prompt")
+                    .build();
+
+            assertThrows(InferenceException.class, () -> engine.execute("model", request));
+            assertEquals(1, engine.executionObserverFailureCount());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
     void explicitUnavailableProviderIsReportedAsUnavailable() throws Exception {
         Path model = Files.createTempFile("selection", ".gguf");
         List<ProviderDecisionEvent> events = new ArrayList<>();
