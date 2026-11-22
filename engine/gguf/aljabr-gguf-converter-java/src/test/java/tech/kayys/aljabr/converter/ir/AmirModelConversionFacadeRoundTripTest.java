@@ -79,6 +79,23 @@ class AmirModelConversionFacadeRoundTripTest {
     }
 
     @Test
+    void safetensorsToSafetensorsPreservesTypedTensorInformation() throws Exception {
+        byte[] payload = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+                .putFloat(4.0f).putFloat(5.0f).array();
+        Path source = writeSafetensors("typed-source.safetensors", payload, false);
+        Path output = temporaryDirectory.resolve("typed-copy.safetensors");
+        ModelConversionFacade facade = facade();
+
+        var prepared = facade.prepare(source, "safetensors", "safetensors");
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL,
+                prepared.plan().compatibility().fidelity());
+        facade.execute(prepared, ConversionRequest.to(output.toUri()));
+
+        var restored = new AmirModelDescriptorReader().read(output);
+        assertEquals(expectedTensorType(), restored.tensors().get(0).tensorType().orElseThrow());
+    }
+
+    @Test
     void unsupportedTargetIsReportedBeforeAnyOutputIsCreated() throws Exception {
         byte[] payload = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(3.0f).array();
         Path source = writeSafetensors("unsupported.safetensors", payload);
@@ -111,6 +128,10 @@ class AmirModelConversionFacadeRoundTripTest {
     }
 
     private Path writeSafetensors(String name, byte[] payload) throws Exception {
+        return writeSafetensors(name, payload, true);
+    }
+
+    private Path writeSafetensors(String name, byte[] payload, boolean includeOpaqueExtensions) throws Exception {
         JsonObject tensor = new JsonObject();
         tensor.addProperty("dtype", "F32");
         var shape = new com.google.gson.JsonArray();
@@ -123,12 +144,14 @@ class AmirModelConversionFacadeRoundTripTest {
 
         JsonObject metadata = new JsonObject();
         metadata.addProperty("general.architecture", "llama");
-        metadata.addProperty("aljabr.source.metadata.vendor.metadata/key", "original-value");
-        String tensorName = java.util.Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("weight".getBytes(StandardCharsets.UTF_8));
-        String extensionName = java.util.Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("vendor.key/雪".getBytes(StandardCharsets.UTF_8));
-        metadata.addProperty("aljabr.source.tensor." + tensorName + "." + extensionName, "extension-value");
+        if (includeOpaqueExtensions) {
+            metadata.addProperty("aljabr.source.metadata.vendor.metadata/key", "original-value");
+            String tensorName = java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString("weight".getBytes(StandardCharsets.UTF_8));
+            String extensionName = java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString("vendor.key/雪".getBytes(StandardCharsets.UTF_8));
+            metadata.addProperty("aljabr.source.tensor." + tensorName + "." + extensionName, "extension-value");
+        }
         AmirTensorTypeCodec.encode(List.of(TensorDescriptor.typed(
                 "weight", expectedTensorType(), null, Map.of())))
                 .forEach(metadata::addProperty);
