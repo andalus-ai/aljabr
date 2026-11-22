@@ -40,8 +40,7 @@ public final class EmbeddingGemma2AudioSafetensorLoader {
         Objects.requireNonNull(checkpoint, "checkpoint must not be null");
         Objects.requireNonNull(config, "config must not be null");
         try (SafetensorShardLoader.SafetensorShardSession session = shardLoader.open(checkpoint)) {
-            return new EmbeddingGemma2AudioEncoder(
-                    config, EmbeddingGemma2AudioCheckpointMapper.map(config, mapWeights(session, config)));
+            return new EmbeddingGemma2AudioEncoder(config, mapWeights(session, config));
         }
     }
 
