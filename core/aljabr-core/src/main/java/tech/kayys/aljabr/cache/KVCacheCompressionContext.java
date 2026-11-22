@@ -6,8 +6,10 @@ import java.util.Objects;
  * Immutable logical geometry and location for one KV-cache compression block.
  *
  * <p>The values describe a contiguous, position-major block for one layer and
- * one tensor kind. The codec may use the location for deterministic transforms
- * or diagnostics, but decoding must not depend on mutable session state.</p>
+ * one tensor kind. Within each position, KV heads are concatenated and each
+ * head contains {@code headDimension} elements. The codec may use the location
+ * for deterministic transforms or diagnostics, but decoding must not depend
+ * on mutable session state.</p>
  *
  * @param layer transformer layer index
  * @param firstPosition first sequence position represented by the block
