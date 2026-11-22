@@ -508,3 +508,12 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Context propagation is explicit across nested and asynchronous work. Do not add ThreadLocal propagation, background dispatch, implicit buffers or persistence.
 - Lifecycle events are observations, not diagnostics, audit facts or metric samples. Add separate contracts only when their semantics and delivery guarantees are defined.
 - Test start/terminal ordering, abandoned scopes, observer failure isolation, privacy, duplicate completion and context requirements. Keep observer-disabled paths cheap.
+
+
+#### Execution-boundary integration requirements
+
+- Instrument model-level execution boundaries before adding instrumentation to tensor primitives or kernels. Never emit one lifecycle event per token, tensor element or kernel launch unless a separately measured profiling mode explicitly requests it.
+- The GGUF inference API accepts an explicit `ExecutionObserver`; its default is the shared no-op observer. Preserve existing constructors and keep observer injection caller-controlled.
+- GGUF synchronous inference emits one `gguf.infer` lifecycle scope with an opaque generated correlation ID and backend identity. Do not attach prompts, request messages, user/session IDs, model paths or arbitrary request metadata to the event context.
+- Keep execution-observer failures isolated from inference and expose an engine-level failure count. Do not silently turn observer failures into inference failures.
+- Streaming lifecycle scopes must be added only with correct subscription, cancellation, failure and termination semantics; do not close a stream scope when the `Multi` is merely constructed.
