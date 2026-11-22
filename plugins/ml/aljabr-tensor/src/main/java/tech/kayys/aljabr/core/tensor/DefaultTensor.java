@@ -311,6 +311,26 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
+    public Tensor indexSelect(int axis, Tensor indices) {
+        ensureOpen();
+        Objects.requireNonNull(indices, "indices");
+        TensorOperationValidator.IndexSelectPlan plan =
+                TensorOperationValidator.validateIndexSelect(shape, indices.shape(), axis);
+        if (indices.dtype() != DType.I32) {
+            throw new IllegalArgumentException(
+                    "index-select indices must use I32; actual dtype=" + indices.dtype());
+        }
+        if (indices.requiresGrad()) {
+            throw new IllegalArgumentException("index-select indices cannot require gradients");
+        }
+        if (AutogradContext.isRecordingEnabled() && requiresGrad()) {
+            throw new UnsupportedOperationException(
+                    "indexSelect autograd is not available until scatter-add VJP support is implemented");
+        }
+        return backend.indexSelect(this, plan.axis(), indices);
+    }
+
+    @Override
     public Tensor slice(long[] offsets, long[] sizes) {
         TensorOperationValidator.validateSlice(shape, offsets, sizes);
         return record(OpType.SLICE, new Tensor[] { this }, new Object[] { offsets.clone(), sizes.clone() }, backend.slice(this, offsets, sizes));
