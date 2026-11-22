@@ -671,6 +671,9 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed metadata"));
         AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed tensor metadata"));
+        model.architectureDescriptor().ifPresent(descriptor ->
+                AmirSourceMetadataCodec.putUnique(values, AmirArchitectureDescriptorCodec.KEY,
+                        AmirArchitectureDescriptorCodec.encode(descriptor), "Safetensors architecture descriptor"));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) -> AmirSourceMetadataCodec.putUnique(values,
                     "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value,
@@ -684,13 +687,12 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
     }
 
     private static boolean hasUnrepresentableLayers(ModelDescriptor model) {
-        return model.architectureDescriptor().isPresent() || model.graphCollection().isPresent()
+        return model.graphCollection().isPresent()
                 || model.assetCollection().isPresent() || model.componentCollection().isPresent();
     }
 
     private static List<String> untransferredKeys(ModelDescriptor model) {
         List<String> keys = new ArrayList<>();
-        model.architectureDescriptor().ifPresent(ignored -> keys.add("model:architectureDescriptor"));
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
         model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
         model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));

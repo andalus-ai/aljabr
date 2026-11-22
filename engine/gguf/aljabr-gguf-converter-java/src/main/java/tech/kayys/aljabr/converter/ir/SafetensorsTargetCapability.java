@@ -77,13 +77,13 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             partial = true;
         }
 
-        if (source.architectureDescriptor().isPresent() || source.graphCollection().isPresent()
+        if (source.graphCollection().isPresent()
                 || source.assetCollection().isPresent() || source.componentCollection().isPresent()) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
                     "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
-                    "Safetensors stores tensor data and string metadata only; typed architecture, graph, "
-                            + "asset, and component layers are not encoded."));
+                    "Safetensors preserves the typed architecture descriptor, but cannot encode computation "
+                            + "graphs, assets, or components."));
             partial = true;
         }
 

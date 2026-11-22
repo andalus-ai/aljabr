@@ -138,6 +138,9 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
                 putUniqueMetadata(metadata, key, value));
         AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
                 putUniqueMetadata(metadata, key, value));
+        model.architectureDescriptor().ifPresent(descriptor ->
+                putUniqueMetadata(metadata, AmirArchitectureDescriptorCodec.KEY,
+                        AmirArchitectureDescriptorCodec.encode(descriptor)));
 
         Path parent = target.getParent();
         Files.createDirectories(parent);
