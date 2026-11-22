@@ -113,6 +113,10 @@ public interface Tensor extends AutoCloseable {
      */
     Tensor indexSelect(int axis, Tensor indices);
 
+    /** Adds source slices at rank-one I32 indices; repeated indices accumulate. */
+    Tensor indexAdd(int axis, Tensor indices, Tensor source);
+
+
     Tensor pow(float exponent);
 
     Tensor mean();
