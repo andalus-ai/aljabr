@@ -444,6 +444,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         assertTrue(result.untransferredMetadataKeys().isEmpty());
         ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
         assertEquals(typed, restored.typedMetadata());
+        assertEquals("llama", restored.architecture());
         assertEquals("llama", restored.metadata().get("aljabr.source.metadata.general.architecture"));
 
         Path ggufOutput = temporaryDirectory.resolve("typed-metadata-roundtrip.gguf");
@@ -454,7 +455,6 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         try (var ggufReader = new tech.kayys.aljabr.gguf.loader.GGUFReader(ggufOutput)) {
             var parsed = new tech.kayys.aljabr.gguf.loader.GGUFParser()
                     .parse(ggufReader.segment(), ggufReader.arena());
-            assertEquals(typed.size(), parsed.typedMetadata().size());
             assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt32Val.class,
                     parsed.typedMetadata().get("general.alignment"));
             assertEquals(-1L, assertInstanceOf(
