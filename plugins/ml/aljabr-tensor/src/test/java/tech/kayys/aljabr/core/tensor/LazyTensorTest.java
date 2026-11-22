@@ -152,6 +152,11 @@ public class LazyTensorTest {
             }
 
             @Override
+            public Tensor indexSelect(int axis, Tensor indices) {
+                return null;
+            }
+
+            @Override
             public Tensor slice(long[] offsets, long[] sizes) {
                 return null;
             }
