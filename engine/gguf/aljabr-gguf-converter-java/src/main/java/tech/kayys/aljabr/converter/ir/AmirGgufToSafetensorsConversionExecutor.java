@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF metadata and opaque AMIR extensions are retained as Safetensors
@@ -159,6 +159,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
             case "Q3_K" -> TensorEncoding.dequantized("Q3_K", 110, 256);
             case "Q4_K" -> TensorEncoding.dequantized("Q4_K", 144, 256);
+            case "Q5_K" -> TensorEncoding.dequantized("Q5_K", 176, 256);
             case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18, 32);
             case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20, 32);
             case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22, 32);
@@ -172,7 +173,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
+            case "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -285,6 +286,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     dequantizeQ4KBlock(source, base, values, i * valuesPerBlock);
                     continue;
                 }
+                if (type.equals("Q5_K")) {
+                    dequantizeQ5KBlock(source, base, values, i * valuesPerBlock);
+                    continue;
+                }
                 if (type.equals("Q6_K")) {
                     dequantizeQ6KBlock(source, base, values, i * valuesPerBlock);
                     continue;
@@ -323,7 +328,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     values.putFloat(dequantizeValue(type, quantized, scale, minimum));
                 }
             }
-            if (type.equals("Q2_K") || type.equals("Q3_K") || type.equals("Q4_K") || type.equals("Q6_K")) {
+            if (type.equals("Q2_K") || type.equals("Q3_K") || type.equals("Q4_K") || type.equals("Q5_K") || type.equals("Q6_K")) {
                 values.position(0);
                 values.limit(count * valuesPerBlock * Float.BYTES);
             } else {
@@ -463,6 +468,45 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             mins[i] = minLow & 0x3f;
             scales[i + 4] = (packedHigh & 0x0f) | ((scaleLow >>> 6) << 4);
             mins[i + 4] = ((packedHigh >>> 4) & 0x0f) | ((minLow >>> 6) << 4);
+        }
+    }
+
+    /**
+     * GGML block_q5_K layout: fp16 d, fp16 dmin, scales[12], qh[32], qs[128].
+     * The high-bit plane is shared by four 64-value segments; each segment
+     * selects a different two-bit pair from each qh byte.
+     */
+    private static void dequantizeQ5KBlock(byte[] source, int base, ByteBuffer output, int blockIndex) {
+        float d = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        float dmin = halfToFloat(source[base + 2] & 0xff, source[base + 3] & 0xff);
+        int[] scales = new int[8];
+        int[] mins = new int[8];
+        unpackQ4KScalesAndMins(source, base + 4, scales, mins);
+
+        int highBitsOffset = base + 16;
+        int quantizedOffset = base + 48;
+        int outputBase = blockIndex * 256;
+        for (int segment = 0; segment < 4; segment++) {
+            int lowMask = 1 << (segment * 2);
+            int highMask = 2 << (segment * 2);
+            int firstGroup = segment * 2;
+            float firstScale = d * scales[firstGroup];
+            float firstMin = dmin * mins[firstGroup];
+            float secondScale = d * scales[firstGroup + 1];
+            float secondMin = dmin * mins[firstGroup + 1];
+            int qOffset = quantizedOffset + segment * 32;
+            int outputOffset = outputBase + segment * 64;
+
+            for (int i = 0; i < 32; i++) {
+                int packed = source[qOffset + i] & 0xff;
+                int high = source[highBitsOffset + i] & 0xff;
+                int lowValue = (packed & 0x0f) | ((high & lowMask) != 0 ? 16 : 0);
+                int highValue = (packed >>> 4) | ((high & highMask) != 0 ? 16 : 0);
+                output.putFloat((outputOffset + i) * Float.BYTES,
+                        firstScale * lowValue - firstMin);
+                output.putFloat((outputOffset + 32 + i) * Float.BYTES,
+                        secondScale * highValue - secondMin);
+            }
         }
     }
 

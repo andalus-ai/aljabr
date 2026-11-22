@@ -40,12 +40,12 @@ class FormatTargetCapabilityTest {
     }
 
     @Test
-    void safetensorsRequiresExplicitDequantizationForGgmlBlockTypes() {
+    void safetensorsClassifiesSupportedGgmlBlockTypesAsPartialDequantization() {
         var report = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("weight", "Q4_K", List.of(256L))));
 
-        assertEquals(CompatibilityReport.ConversionFidelity.UNSUPPORTED, report.fidelity());
-        assertEquals("SAFETENSORS_DTYPE_UNSUPPORTED", report.diagnostics().getFirst().code());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
+        assertEquals("GGML_QUANTIZATION_DEQUANTIZED", report.diagnostics().getFirst().code());
     }
 
     @Test
@@ -74,6 +74,8 @@ class FormatTargetCapabilityTest {
                 tensor("q3", "Q3_K", List.of(256L))));
         var q4k = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q4k", "Q4_K", List.of(256L))));
+        var q5k = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q5k", "Q5_K", List.of(256L))));
         var q8 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q8", "Q8_0", List.of(32L))));
 
@@ -85,6 +87,7 @@ class FormatTargetCapabilityTest {
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q2.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q3.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q4k.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5k.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q8.fidelity());
         assertEquals("GGML_QUANTIZATION_DEQUANTIZED", q4.diagnostics().getFirst().code());
     }
