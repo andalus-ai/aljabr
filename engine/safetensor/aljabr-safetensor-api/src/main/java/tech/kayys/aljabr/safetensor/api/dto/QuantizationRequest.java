@@ -16,7 +16,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *
  * @author bhangun
  * @version 1.0.0
+ * @deprecated This HTTP request DTO is being retired with the Safetensors REST adapter. Use Aljabr's transport-neutral quantization configuration API.
  */
+@Deprecated(forRemoval = true)
 public class QuantizationRequest {
 
     /**
