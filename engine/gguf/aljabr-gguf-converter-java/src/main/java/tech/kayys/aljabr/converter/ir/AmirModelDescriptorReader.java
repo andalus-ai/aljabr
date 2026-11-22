@@ -95,6 +95,9 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
                     ? renderGgufMetadata(rawTypedMetadata.get(key)) : renderMetadata(value);
             metadata.put(key, rendered);
         });
+        AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(metadata, tensors);
+        metadata = new LinkedHashMap<>(sourceAttributes.metadata());
+        tensors = new ArrayList<>(sourceAttributes.tensors());
         String architecture = metadata.getOrDefault("general.architecture", "unknown");
         Map<String, MetadataValue> typedMetadata = new LinkedHashMap<>();
         rawTypedMetadata.forEach((key, value) -> {
@@ -103,7 +106,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             }
         });
         return new ModelDescriptor(ModelIdentity.of(name), architecture, GGUF,
-                metadata, Map.of(), tensors).withTypedMetadata(typedMetadata);
+                metadata, sourceAttributes.extensions(), tensors).withTypedMetadata(typedMetadata);
     }
 
     private ModelDescriptor readSafetensors(Path file, String name) throws IOException {
@@ -141,10 +144,13 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
         }
 
+        AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(storedMetadata, tensors);
+        metadata = new LinkedHashMap<>(sourceAttributes.metadata());
+        tensors = new ArrayList<>(sourceAttributes.tensors());
         String architecture = metadata.getOrDefault("general.architecture",
                 metadata.getOrDefault("aljabr.source.architecture", "unknown"));
         return new ModelDescriptor(ModelIdentity.of(name), architecture, SAFETENSORS,
-                metadata, Map.of(), tensors).withTypedMetadata(typedMetadata);
+                metadata, sourceAttributes.extensions(), tensors).withTypedMetadata(typedMetadata);
     }
 
     private static Path requireFile(Path source) throws IOException {
