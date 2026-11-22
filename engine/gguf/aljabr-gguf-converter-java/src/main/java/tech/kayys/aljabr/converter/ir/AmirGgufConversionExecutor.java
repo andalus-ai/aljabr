@@ -97,7 +97,8 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
                     payload.length()));
         }
 
-        StreamingGgufWriter.WriteResult written = StreamingGgufWriter.write(target, metadata, tensors);
+        StreamingGgufWriter.WriteResult written = StreamingGgufWriter.write(
+                target, metadata, tensors, ggufAlignment(model));
         return new ConversionExecutionResult(
                 model.sourceFormat(),
                 TARGET_FORMAT,
@@ -135,6 +136,20 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
             throw new IOException("GGUF conversion is PARTIAL; explicit acknowledgement is required: "
                     + plan.compatibility().diagnostics());
         }
+    }
+
+    private static int ggufAlignment(ModelDescriptor model) throws IOException {
+        MetadataValue value = model.typedMetadata().get("general.alignment");
+        if (value == null) return 32;
+        if (!(value instanceof MetadataValue.Scalar scalar)
+                || scalar.kind() != MetadataValue.Kind.UINT32) {
+            throw new IOException("GGUF general.alignment must be a UINT32 scalar");
+        }
+        long alignment = (Long) scalar.value();
+        if (alignment > Integer.MAX_VALUE) {
+            throw new IOException("GGUF general.alignment exceeds the supported integer range: " + alignment);
+        }
+        return (int) alignment;
     }
 
     private static Map<String, GgufMetaValue> metadata(ModelDescriptor model) {
