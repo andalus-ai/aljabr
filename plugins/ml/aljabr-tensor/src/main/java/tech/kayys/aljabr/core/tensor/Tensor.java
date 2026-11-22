@@ -121,7 +121,9 @@ public interface Tensor extends AutoCloseable {
      * Repeated indices accumulate rather than overwrite. The operation
      * returns a new tensor and does not mutate its inputs.
      */
-    Tensor indexAdd(int axis, Tensor indices, Tensor source);
+    default Tensor indexAdd(int axis, Tensor indices, Tensor source) {
+        return backend().indexAdd(this, axis, indices, source);
+    }
 
     Tensor pow(float exponent);
 
