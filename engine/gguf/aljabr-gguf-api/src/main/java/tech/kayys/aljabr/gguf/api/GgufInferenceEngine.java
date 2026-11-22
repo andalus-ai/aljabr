@@ -4,6 +4,9 @@ import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
 import tech.kayys.aljabr.execution.ModelExecutionContext;
+import tech.kayys.aljabr.diagnostics.DiagnosticContext;
+import tech.kayys.aljabr.diagnostics.ExecutionObserver;
+import tech.kayys.aljabr.diagnostics.ExecutionScope;
 import tech.kayys.aljabr.diagnostics.ProviderDecisionEvent;
 import tech.kayys.aljabr.diagnostics.ProviderDecisionObserver;
 import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
@@ -37,6 +40,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     private final Map<String, GgufBackend> backends = new ConcurrentHashMap<>();
     private final List<GgufBackendProvider> providers;
     private final ProviderDecisionObserver decisionObserver;
+    private final ExecutionObserver executionObserver;
     private final AtomicLong activeCount = new AtomicLong(0);
     private final AtomicLong totalCount = new AtomicLong(0);
     private final AtomicLong failedCount = new AtomicLong(0);
@@ -48,7 +52,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     }
 
     public GgufInferenceEngine(List<GgufBackendProvider> providers) {
-        this(providers, ProviderDecisionObserver.NOOP);
+        this(providers, ProviderDecisionObserver.NOOP, ExecutionObserver.NOOP);
     }
 
     /**
@@ -58,10 +62,22 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     public GgufInferenceEngine(
             List<GgufBackendProvider> providers,
             ProviderDecisionObserver decisionObserver) {
+        this(providers, decisionObserver, ExecutionObserver.NOOP);
+    }
+
+    /**
+     * Creates an engine with explicit provider-decision and execution observers.
+     * Both observers are optional; runtime observer failures never alter inference.
+     */
+    public GgufInferenceEngine(
+            List<GgufBackendProvider> providers,
+            ProviderDecisionObserver decisionObserver,
+            ExecutionObserver executionObserver) {
         List<GgufBackendProvider> sorted = new ArrayList<>(providers);
         sorted.sort(Comparator.comparingInt(GgufBackendProvider::priority).reversed());
         this.providers = List.copyOf(sorted);
         this.decisionObserver = Objects.requireNonNull(decisionObserver, "decisionObserver");
+        this.executionObserver = Objects.requireNonNull(executionObserver, "executionObserver");
         this.initialized = true;
     }
 
@@ -109,7 +125,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         activeCount.incrementAndGet();
         totalCount.incrementAndGet();
         try {
-            return backendFor(modelId).execute(request);
+            return executeObserved(backendFor(modelId), request, null);
         } catch (Exception error) {
             failedCount.incrementAndGet();
             if (error instanceof InferenceException inferenceException) {
@@ -125,6 +141,30 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         return execute(request.getModel(), request);
     }
 
+    private InferenceResponse executeObserved(
+            GgufBackend backend,
+            InferenceRequest request,
+            ModelExecutionContext modelContext) {
+        DiagnosticContext context = DiagnosticContext.builder()
+                .correlationId(UUID.randomUUID().toString())
+                .operation("gguf.infer")
+                .component("gguf")
+                .provider(backend.name())
+                .build();
+        try (ExecutionScope scope = ExecutionScope.start(context, executionObserver)) {
+            try {
+                InferenceResponse response = modelContext == null
+                        ? backend.execute(request)
+                        : backend.execute(request, modelContext);
+                scope.succeed();
+                return response;
+            } catch (RuntimeException | Error failure) {
+                scope.fail(failure);
+                throw failure;
+            }
+        }
+    }
+
     /**
      * Execute a request with its model execution context.
      *
@@ -137,7 +177,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         activeCount.incrementAndGet();
         totalCount.incrementAndGet();
         try {
-            return backendFor(modelId).execute(request, context);
+            return executeObserved(backendFor(modelId), request, context);
         } catch (Exception error) {
             failedCount.incrementAndGet();
             if (error instanceof InferenceException inferenceException) {
