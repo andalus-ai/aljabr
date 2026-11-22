@@ -27,6 +27,7 @@ public enum OpType {
     INDEX_SELECT,
     INDEX_ADD,
     INDEX_ADD,
+    INDEX_ADD,
     CAT,
     SPLIT,
     FLATTEN,
