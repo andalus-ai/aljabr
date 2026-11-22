@@ -3,6 +3,8 @@ package tech.kayys.aljabr.core.tensor.lazy;
 import java.util.HashMap;
 import java.util.Map;
 
+import tech.kayys.aljabr.core.tensor.DType;
+
 /**
  * Optimizes a computation DAG by applying fusion and rewrite rules.
  *
@@ -145,10 +147,8 @@ public class GraphOptimizer {
                 || normalizedFirst == rank - 1 && normalizedSecond == rank - 2;
     }
 
-    private static boolean isIntegralDType(tech.kayys.aljabr.core.tensor.DType dtype) {
-        return dtype == tech.kayys.aljabr.core.tensor.DType.I32
-                || dtype == tech.kayys.aljabr.core.tensor.DType.I8
-                || dtype == tech.kayys.aljabr.core.tensor.DType.INT8;
+    private static boolean isIntegralDType(DType dtype) {
+        return dtype == DType.I32 || dtype == DType.I8 || dtype == DType.INT8;
     }
 
     private static GraphNode optimizeNode(GraphNode node, Map<GraphNode, GraphNode> memo) {
@@ -161,7 +161,8 @@ public class GraphOptimizer {
                 .map(input -> optimizeNode(input, memo))
                 .toList();
 
-        // ADD_SCALAR(x, 0) -> x is safe only when the graph has no gradient path.
+        // Integer ADD_SCALAR(x, 0) -> x is safe only when no gradient path is present.
+        // Floating-point addition is retained because IEEE-754 signed-zero and NaN semantics matter.
         if (node.getOp() == OpType.ADD_SCALAR
                 && !node.requiresGrad()
                 && newInputs.size() == 1
@@ -169,7 +170,7 @@ public class GraphOptimizer {
                 && isIntegralDType(node.getOutputDType())
                 && node.getArgs().length == 1
                 && node.getArgs()[0] instanceof Number number
-                && number.floatValue() == 0.0f) {
+                && number.doubleValue() == 0.0d) {
             memo.put(node, newInputs.get(0));
             return newInputs.get(0);
         }
