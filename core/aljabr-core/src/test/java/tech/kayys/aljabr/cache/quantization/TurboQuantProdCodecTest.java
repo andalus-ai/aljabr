@@ -31,8 +31,13 @@ class TurboQuantProdCodecTest {
         for (float value : decoded) {
             assertTrue(Float.isFinite(value));
         }
-        assertFalse(java.util.Arrays.equals(source, decoded),
-                "QJL reconstruction is an estimator, not lossless compression");
+
+        TurboQuantMseCodec mseCodec = new TurboQuantMseCodec(codec.bits() - 1, codec.seed());
+        KVCacheEncodedBlock mseBlock = mseCodec.encode(source, 0, context);
+        float[] mseOnly = new float[source.length];
+        mseCodec.decode(mseBlock, mseOnly, 0, context);
+        assertFalse(java.util.Arrays.equals(mseOnly, decoded),
+                "Prod decoding must include the QJL residual correction");
     }
 
     @Test
