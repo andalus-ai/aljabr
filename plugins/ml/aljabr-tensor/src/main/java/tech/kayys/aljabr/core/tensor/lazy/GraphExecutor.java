@@ -333,6 +333,10 @@ public class GraphExecutor {
             case SLICE -> backend.slice(inputs.get(0).getMaterializedData(), (long[]) args[0], (long[]) args[1]);
             case INDEX_SELECT -> backend.indexSelect(inputs.get(0).getMaterializedData(), (int) args[0],
                     inputs.get(1).getMaterializedData());
+            case INDEX_ADD -> backend.indexAdd(inputs.get(0).getMaterializedData(), (int) args[0],
+                    inputs.get(1).getMaterializedData(), inputs.get(2).getMaterializedData());
+            case INDEX_ADD -> backend.indexAdd(inputs.get(0).getMaterializedData(), (int) args[0],
+                    inputs.get(1).getMaterializedData(), inputs.get(2).getMaterializedData());
             case CAT -> backend.cat(inputs.stream().map(GraphNode::getMaterializedData).toList(),
                     (int) args[0]);
             case FLATTEN -> backend.flatten(inputs.get(0).getMaterializedData());

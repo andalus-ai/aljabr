@@ -33,6 +33,16 @@ public final class EulerSigmaStepExecutor implements SigmaStepExecutor {
                             + " does not match step prediction type " + context.predictionType());
         }
 
+        if (!sample.shape().equals(modelOutput.shape())) {
+            throw new IllegalArgumentException(
+                    "Model output shape " + modelOutput.shape()
+                            + " does not match sample shape " + sample.shape());
+        }
+        if (sample.backend() != modelOutput.backend()) {
+            throw new IllegalArgumentException(
+                    "Sample and model output must use the same compute backend");
+        }
+
         float deltaSigma = (float) context.deltaSigma();
         if (!Float.isFinite(deltaSigma)) {
             throw new IllegalArgumentException(
@@ -48,6 +58,10 @@ public final class EulerSigmaStepExecutor implements SigmaStepExecutor {
                 throw new IllegalArgumentException(
                         "Derivative shape " + derivative.shape()
                                 + " does not match sample shape " + sample.shape());
+            }
+            if (sample.backend() != derivative.backend()) {
+                throw new IllegalArgumentException(
+                        "Derivative must use the same compute backend as the sample");
             }
             try (Tensor scaledDerivative = derivative.mul(deltaSigma)) {
                 return sample.add(scaledDerivative);

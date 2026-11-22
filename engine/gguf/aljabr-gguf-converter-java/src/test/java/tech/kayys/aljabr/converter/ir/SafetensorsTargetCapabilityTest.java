@@ -5,6 +5,7 @@ import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
 import tech.kayys.aljabr.spi.model.ir.MetadataValue;
+import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,25 @@ class SafetensorsTargetCapabilityTest {
         assertTrue(report.diagnostics().stream().noneMatch(d ->
                 d.code().equals("GGUF_TYPED_METADATA_FLATTENED")));
     }
+    @Test
+    void treatsModelAndTensorStringExtensionsAsPreservedByEnvelope() {
+        var tensor = new TensorDescriptor("weight", "F32", List.of(2L),
+                "contiguous", null, null, Map.of("vendor.attribute", "value"));
+        var model = new ModelDescriptor(
+                ModelIdentity.of("opaque-extensions"),
+                "llama",
+                "safetensors",
+                Map.of("general.architecture", "llama"),
+                Map.of("vendor.model.attribute", "model-value"),
+                List.of(tensor));
+
+        CompatibilityReport report = new SafetensorsTargetCapability().assess(model);
+
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
+        assertTrue(report.diagnostics().stream().noneMatch(d ->
+                d.code().equals("OPAQUE_METADATA_REQUIRES_MAPPING")));
+    }
+
     @Test
     void marksLegacyFlattenedGgufMetadataAsPartial() {
         var model = new ModelDescriptor(

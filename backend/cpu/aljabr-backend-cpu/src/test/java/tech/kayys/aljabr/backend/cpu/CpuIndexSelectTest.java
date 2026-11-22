@@ -72,12 +72,16 @@ class CpuIndexSelectTest {
     }
 
     @Test
-    void rejectsDifferentiableUseUntilScatterAddVjpIsAvailable() {
+    void differentiableSelectionAccumulatesRepeatedIndexGradients() {
         try (CpuBackend backend = new CpuBackend();
                 Tensor input = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 2, 2);
-                Tensor indices = TensorFactory.of(new int[] {1}, backend, 1)) {
+                Tensor indices = TensorFactory.of(new int[] {1, 1}, backend, 2)) {
             input.setRequiresGrad(true);
-            assertThrows(UnsupportedOperationException.class, () -> input.indexSelect(1, indices));
+            try (Tensor selected = input.indexSelect(1, indices);
+                    Tensor seed = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 2, 2)) {
+                selected.backward(seed);
+                assertArrayEquals(new float[] {0, 3, 0, 7}, input.grad().toFloatArray(), 1.0e-6f);
+            }
         }
     }
 }

@@ -55,7 +55,8 @@ final class AmirSourceMetadataCodec {
             restored.add(new TensorDescriptor(tensor.name(), tensor.dataType(), tensor.shape(),
                     tensor.layout(), tensor.quantization(), tensor.payload(), merged, tensor.tensorType()));
         }
-        return new Decoded(Map.copyOf(metadata), Map.copyOf(extensions), List.copyOf(restored));
+        List<TensorDescriptor> withTypedInformation = AmirTensorTypeCodec.restore(stored, restored);
+        return new Decoded(Map.copyOf(metadata), Map.copyOf(extensions), withTypedInformation);
     }
 
     private static String decodePart(String encoded, String sourceKey) {

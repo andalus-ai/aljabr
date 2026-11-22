@@ -44,117 +44,71 @@ public class HatComputeBackendTest {
 
     @Test
     public void testFallbackAdd() {
-        // Create simple 2x2 tensors using the factory (which may or may not map to HAT
-        // yet depending on the registry,
-        // but we can test the backend directly for its fallback behavior).
-        Tensor a = TensorFactory.full(2.0f, 2, 2);
-        Tensor b = TensorFactory.full(3.0f, 2, 2);
-
-        // Use our HAT backend directly to invoke the add
-        Tensor result = backend.add(a, b);
-
-        assertNotNull(result);
-        assertEquals(4, backend.numel(result));
-        assertInstanceOf(CpuBackend.class, result.backend(),
-                "Operations without a HAT kernel must retain CPU fallback ownership");
-        assertEquals(tech.kayys.aljabr.core.tensor.DeviceType.CPU, result.device(),
-                "CPU fallback results must report the device that executed the operation");
-
-        // Verify values via array copy (CPU mode mapping)
-        float[] out = result.toFloatArray();
-        for (float v : out) {
-            assertEquals(5.0f, v, 1e-4);
+        try (Tensor a = TensorFactory.full(2.0f, 2, 2);
+                Tensor b = TensorFactory.full(3.0f, 2, 2);
+                Tensor result = backend.add(a, b)) {
+            assertNotNull(result);
+            assertEquals(4, backend.numel(result));
+            assertInstanceOf(CpuBackend.class, result.backend(),
+                    "Operations without a HAT kernel must retain CPU fallback ownership");
+            assertEquals(tech.kayys.aljabr.core.tensor.DeviceType.CPU, result.device(),
+                    "CPU fallback results must report the device that executed the operation");
+            for (float value : result.toFloatArray()) {
+                assertEquals(5.0f, value, 1e-4);
+            }
         }
     }
 
     @Test
     public void testFallbackMatMul() {
-        Tensor a = TensorFactory.full(2.0f, 2, 2); // 2x2 matrix of 2s
-        Tensor b = TensorFactory.full(3.0f, 2, 2); // 2x2 matrix of 3s
-
-        Tensor result = backend.matmul(a, b);
-
-        assertNotNull(result);
-        assertEquals(4, backend.numel(result));
-        assertEquals(backend, result.backend(), "HAT results must retain the explicitly selected backend");
-
-        // Matrix multiply of [[2,2],[2,2]] x [[3,3],[3,3]] = [[12,12],[12,12]]
-        float[] out = result.toFloatArray();
-        for (float v : out) {
-            assertEquals(12.0f, v, 1e-4);
+        try (Tensor a = TensorFactory.full(2.0f, 2, 2);
+                Tensor b = TensorFactory.full(3.0f, 2, 2);
+                Tensor result = backend.matmul(a, b)) {
+            assertNotNull(result);
+            assertEquals(4, backend.numel(result));
+            assertEquals(backend, result.backend(),
+                    "HAT results must retain the explicitly selected backend");
+            for (float v : result.toFloatArray()) assertEquals(12.0f, v, 1e-4);
         }
     }
+
     @Test
     public void testCpuFallbackCanConsumeHatOwnedMatmulResult() {
-        Tensor left = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, 2, 2);
-        Tensor right = TensorFactory.of(new float[] { 5.0f, 6.0f, 7.0f, 8.0f }, 2, 2);
-
-        Tensor hatResult = backend.matmul(left, right);
-        assertEquals(backend, hatResult.backend());
-
-        Tensor fallbackResult = backend.add(hatResult, hatResult);
-
-        assertInstanceOf(CpuBackend.class, fallbackResult.backend(),
-                "CPU fallback must return a CPU-owned tensor when consuming HAT-owned host storage");
-        assertEquals(tech.kayys.aljabr.core.tensor.DeviceType.CPU, fallbackResult.device());
-        assertArrayEquals(new float[] { 38.0f, 44.0f, 86.0f, 100.0f },
-                fallbackResult.toFloatArray(), 1e-4f);
+        try (Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, 2, 2);
+                Tensor right = TensorFactory.of(new float[] { 5, 6, 7, 8 }, 2, 2);
+                Tensor hatResult = backend.matmul(left, right);
+                Tensor fallbackResult = backend.add(hatResult, hatResult)) {
+            assertEquals(backend, hatResult.backend());
+            assertInstanceOf(CpuBackend.class, fallbackResult.backend());
+            assertEquals(tech.kayys.aljabr.core.tensor.DeviceType.CPU, fallbackResult.device());
+            assertArrayEquals(new float[] { 38, 44, 86, 100 },
+                    fallbackResult.toFloatArray(), 1e-4f);
+        }
     }
 
     @Test
     public void testHatMatmulCanConsumeCpuFallbackResult() {
-        Tensor left = TensorFactory.of(new float[] {
-                1.0f, 2.0f,
-                3.0f, 4.0f
-        }, 2, 2);
-        Tensor right = TensorFactory.of(new float[] {
-                5.0f, 6.0f,
-                7.0f, 8.0f
-        }, 2, 2);
-
-        Tensor cpuResult = backend.add(left, right);
-
-        assertInstanceOf(CpuBackend.class, cpuResult.backend(),
-                "Fallback input must remain CPU-owned before HAT dispatch");
-        assertEquals(tech.kayys.aljabr.core.tensor.DType.F32, cpuResult.dtype());
-        assertEquals(2, cpuResult.shape().dim(0));
-        assertEquals(2, cpuResult.shape().dim(1));
-        assertArrayEquals(new float[] { 6.0f, 8.0f, 10.0f, 12.0f },
-                cpuResult.toFloatArray(), 1e-4f);
-
-        Tensor identity = TensorFactory.of(new float[] {
-                1.0f, 0.0f,
-                0.0f, 1.0f
-        }, 2, 2);
-        Tensor hatResult = backend.matmul(cpuResult, identity);
-
-        assertEquals(backend, hatResult.backend(),
-                "Native HAT dispatch must own its result after consuming CPU storage");
-        assertEquals(tech.kayys.aljabr.core.tensor.DType.F32, hatResult.dtype());
-        assertEquals(2, hatResult.shape().dim(0));
-        assertEquals(2, hatResult.shape().dim(1));
-        assertArrayEquals(new float[] { 6.0f, 8.0f, 10.0f, 12.0f },
-                hatResult.toFloatArray(), 1e-4f);
+        try (Tensor left = TensorFactory.of(new float[] { 1, 2, 3, 4 }, 2, 2);
+                Tensor right = TensorFactory.of(new float[] { 5, 6, 7, 8 }, 2, 2);
+                Tensor cpuResult = backend.add(left, right);
+                Tensor identity = TensorFactory.of(new float[] { 1, 0, 0, 1 }, 2, 2);
+                Tensor hatResult = backend.matmul(cpuResult, identity)) {
+            assertInstanceOf(CpuBackend.class, cpuResult.backend());
+            assertArrayEquals(new float[] { 6, 8, 10, 12 }, cpuResult.toFloatArray(), 1e-4f);
+            assertEquals(backend, hatResult.backend());
+            assertArrayEquals(new float[] { 6, 8, 10, 12 }, hatResult.toFloatArray(), 1e-4f);
+        }
     }
 
     @Test
     public void testMatmulSupportsRectangularRowMajorMatrices() {
-        Tensor a = TensorFactory.of(new float[] {
-                1.0f, 2.0f, 3.0f,
-                4.0f, 5.0f, 6.0f
-        }, 2, 3);
-        Tensor b = TensorFactory.of(new float[] {
-                7.0f, 8.0f,
-                9.0f, 10.0f,
-                11.0f, 12.0f
-        }, 3, 2);
-
-        Tensor result = backend.matmul(a, b);
-
-        assertEquals(2, result.shape().dim(0));
-        assertEquals(2, result.shape().dim(1));
-        assertArrayEquals(new float[] { 58.0f, 64.0f, 139.0f, 154.0f },
-                result.toFloatArray(), 1e-4f);
+        try (Tensor a = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, 2, 3);
+                Tensor b = TensorFactory.of(new float[] { 7, 8, 9, 10, 11, 12 }, 3, 2);
+                Tensor result = backend.matmul(a, b)) {
+            assertEquals(2, result.shape().dim(0));
+            assertEquals(2, result.shape().dim(1));
+            assertArrayEquals(new float[] { 58, 64, 139, 154 }, result.toFloatArray(), 1e-4f);
+        }
     }
 
     @Test
@@ -262,44 +216,29 @@ public class HatComputeBackendTest {
 
     @Test
     public void testMatmulSupportsRepeatedCallsOnSameBackend() {
-        Tensor first = backend.matmul(
-                TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, 2, 2),
-                TensorFactory.of(new float[] { 5.0f, 6.0f, 7.0f, 8.0f }, 2, 2));
-        Tensor second = backend.matmul(
-                TensorFactory.of(new float[] { 2.0f, 0.0f, 0.0f, 2.0f }, 2, 2),
-                TensorFactory.of(new float[] { 3.0f, 0.0f, 0.0f, 4.0f }, 2, 2));
-
-        assertArrayEquals(new float[] { 19.0f, 22.0f, 43.0f, 50.0f },
-                first.toFloatArray(), 1e-4f);
-        assertArrayEquals(new float[] { 6.0f, 0.0f, 0.0f, 8.0f },
-                second.toFloatArray(), 1e-4f);
+        try (Tensor firstLeft = TensorFactory.of(new float[] { 1, 2, 3, 4 }, 2, 2);
+                Tensor firstRight = TensorFactory.of(new float[] { 5, 6, 7, 8 }, 2, 2);
+                Tensor first = backend.matmul(firstLeft, firstRight);
+                Tensor secondLeft = TensorFactory.of(new float[] { 2, 0, 0, 2 }, 2, 2);
+                Tensor secondRight = TensorFactory.of(new float[] { 3, 0, 0, 4 }, 2, 2);
+                Tensor second = backend.matmul(secondLeft, secondRight)) {
+            assertArrayEquals(new float[] { 19, 22, 43, 50 }, first.toFloatArray(), 1e-4f);
+            assertArrayEquals(new float[] { 6, 0, 0, 8 }, second.toFloatArray(), 1e-4f);
+        }
     }
 
     @Test
     public void testMatmulSupportsDifferentShapesAcrossCalls() {
-        Tensor first = backend.matmul(
-                TensorFactory.of(new float[] {
-                        1.0f, 2.0f, 3.0f,
-                        4.0f, 5.0f, 6.0f
-                }, 2, 3),
-                TensorFactory.of(new float[] {
-                        7.0f, 8.0f,
-                        9.0f, 10.0f,
-                        11.0f, 12.0f
-                }, 3, 2));
-        Tensor second = backend.matmul(
-                TensorFactory.of(new float[] { 2.0f, 3.0f, 4.0f, 5.0f }, 1, 4),
-                TensorFactory.of(new float[] {
-                        1.0f, 2.0f, 3.0f,
-                        4.0f, 5.0f, 6.0f,
-                        7.0f, 8.0f, 9.0f,
-                        10.0f, 11.0f, 12.0f
-                }, 4, 3));
-
-        assertArrayEquals(new float[] { 58.0f, 64.0f, 139.0f, 154.0f },
-                first.toFloatArray(), 1e-4f);
-        assertArrayEquals(new float[] { 92.0f, 106.0f, 120.0f },
-                second.toFloatArray(), 1e-4f);
+        try (Tensor firstLeft = TensorFactory.of(new float[] { 1, 2, 3, 4, 5, 6 }, 2, 3);
+                Tensor firstRight = TensorFactory.of(new float[] { 7, 8, 9, 10, 11, 12 }, 3, 2);
+                Tensor first = backend.matmul(firstLeft, firstRight);
+                Tensor secondLeft = TensorFactory.of(new float[] { 2, 3, 4, 5 }, 1, 4);
+                Tensor secondRight = TensorFactory.of(
+                        new float[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }, 4, 3);
+                Tensor second = backend.matmul(secondLeft, secondRight)) {
+            assertArrayEquals(new float[] { 58, 64, 139, 154 }, first.toFloatArray(), 1e-4f);
+            assertArrayEquals(new float[] { 92, 106, 120 }, second.toFloatArray(), 1e-4f);
+        }
     }
 
     @Test
@@ -333,88 +272,92 @@ public class HatComputeBackendTest {
 
     @Test
     public void testMatmulRejectsIncompatibleReductionDimensions() {
-        Tensor a = TensorFactory.ones(2, 3);
-        Tensor b = TensorFactory.ones(4, 2);
-
-        assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
+        try (Tensor a = TensorFactory.ones(2, 3); Tensor b = TensorFactory.ones(4, 2)) {
+            assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
+        }
     }
 
     @Test
     public void testMatmulRejectsNonMatrixInputs() {
-        Tensor a = TensorFactory.ones(3);
-        Tensor b = TensorFactory.ones(3, 2);
-
-        assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
+        try (Tensor a = TensorFactory.ones(3); Tensor b = TensorFactory.ones(3, 2)) {
+            assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
+        }
     }
 
     @Test
     public void testRoPECpuFallbackStagesHatOwnedInput() {
-        Tensor input = TensorFactory.of(
-                new float[] { 1.0f, 0.0f }, backend, 1, 1, 1, 2);
-
-        Tensor result = backend.applyRoPE(input, 1, 10_000.0f, false);
-
-        assertEquals(CpuBackend.class, result.backend().getClass(),
-                "CPU RoPE fallback must return a CPU-owned result");
-        assertArrayEquals(
-                new float[] { (float) Math.cos(1.0), (float) Math.sin(1.0) },
-                result.toFloatArray(), 1e-5f);
+        try (Tensor input = TensorFactory.of(
+                        new float[] { 1.0f, 0.0f }, backend, 1, 1, 1, 2);
+                Tensor result = backend.applyRoPE(input, 1, 10_000.0f, false)) {
+            assertEquals(CpuBackend.class, result.backend().getClass(),
+                    "CPU RoPE fallback must return a CPU-owned result");
+            assertArrayEquals(
+                    new float[] { (float) Math.cos(1.0), (float) Math.sin(1.0) },
+                    result.toFloatArray(), 1e-5f);
+        }
     }
 
 
 
     @Test
     public void testMultiInputCpuFallbacksConsumeHatOwnedHostStorage() {
-        Tensor layerInput = TensorFactory.of(new float[] { 1.0f, 3.0f }, backend, 1, 2);
-        Tensor layerWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
-        Tensor layerBias = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
-        Tensor layerResult = backend.layerNorm(layerInput, new long[] { 2 }, layerWeight, layerBias, 1e-5f);
-        assertInstanceOf(CpuBackend.class, layerResult.backend());
-        assertArrayEquals(new float[] { -1.0f, 1.0f }, layerResult.toFloatArray(), 1e-4f);
+        try (Tensor layerInput = TensorFactory.of(new float[] { 1.0f, 3.0f }, backend, 1, 2);
+                Tensor layerWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+                Tensor layerBias = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
+                Tensor layerResult = backend.layerNorm(
+                        layerInput, new long[] { 2 }, layerWeight, layerBias, 1e-5f)) {
+            assertInstanceOf(CpuBackend.class, layerResult.backend());
+            assertArrayEquals(new float[] { -1.0f, 1.0f }, layerResult.toFloatArray(), 1e-4f);
+        }
 
-        Tensor rmsInput = TensorFactory.of(new float[] { 3.0f, 4.0f }, backend, 1, 2);
-        Tensor rmsWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
-        Tensor rmsResult = backend.rmsNorm(rmsInput, rmsWeight, 1e-5f);
-        assertInstanceOf(CpuBackend.class, rmsResult.backend());
-        assertArrayEquals(new float[] { 0.6f, 0.8f }, rmsResult.toFloatArray(), 1e-4f);
+        try (Tensor rmsInput = TensorFactory.of(new float[] { 3.0f, 4.0f }, backend, 1, 2);
+                Tensor rmsWeight = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+                Tensor rmsResult = backend.rmsNorm(rmsInput, rmsWeight, 1e-5f)) {
+            assertInstanceOf(CpuBackend.class, rmsResult.backend());
+            assertArrayEquals(new float[] { 0.6f, 0.8f }, rmsResult.toFloatArray(), 1e-4f);
+        }
 
-        Tensor batchInput = TensorFactory.of(new float[] { 2.0f, 4.0f }, backend, 1, 2);
-        Tensor runningMean = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
-        Tensor runningVariance = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
-        Tensor batchResult = backend.batchNorm(
-                batchInput, null, null, runningMean, runningVariance, false, 0.1f, 1e-5f);
-        assertInstanceOf(CpuBackend.class, batchResult.backend());
-        assertArrayEquals(new float[] {
-                (float) (2.0 / Math.sqrt(1.0 + 1e-5)),
-                (float) (4.0 / Math.sqrt(1.0 + 1e-5))
-        }, batchResult.toFloatArray(), 1e-4f);
+        try (Tensor batchInput = TensorFactory.of(new float[] { 2.0f, 4.0f }, backend, 1, 2);
+                Tensor runningMean = TensorFactory.of(new float[] { 0.0f, 0.0f }, backend, 2);
+                Tensor runningVariance = TensorFactory.of(new float[] { 1.0f, 1.0f }, backend, 2);
+                Tensor batchResult = backend.batchNorm(
+                        batchInput, null, null, runningMean, runningVariance, false, 0.1f, 1e-5f)) {
+            assertInstanceOf(CpuBackend.class, batchResult.backend());
+            assertArrayEquals(new float[] {
+                    (float) (2.0 / Math.sqrt(1.0 + 1e-5)),
+                    (float) (4.0 / Math.sqrt(1.0 + 1e-5))
+            }, batchResult.toFloatArray(), 1e-4f);
+        }
 
-        Tensor convInput = TensorFactory.of(
-                new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, backend, 1, 1, 2, 2);
-        Tensor convWeight = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1, 1, 1);
-        Tensor convBias = TensorFactory.of(new float[] { 0.0f }, backend, 1);
-        Tensor convResult = backend.conv2d(convInput, convWeight, convBias, 1, 0, 1, 1);
-        assertInstanceOf(CpuBackend.class, convResult.backend());
-        assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f, 4.0f },
-                convResult.toFloatArray(), 1e-4f);
+        try (Tensor convInput = TensorFactory.of(
+                        new float[] { 1.0f, 2.0f, 3.0f, 4.0f }, backend, 1, 1, 2, 2);
+                Tensor convWeight = TensorFactory.of(new float[] { 1.0f }, backend, 1, 1, 1, 1);
+                Tensor convBias = TensorFactory.of(new float[] { 0.0f }, backend, 1);
+                Tensor convResult = backend.conv2d(convInput, convWeight, convBias, 1, 0, 1, 1)) {
+            assertInstanceOf(CpuBackend.class, convResult.backend());
+            assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f, 4.0f },
+                    convResult.toFloatArray(), 1e-4f);
+        }
     }
 
     @Test
     public void testEmbeddingAndLossFallbacksConsumeHatOwnedOperands() {
-        Tensor embeddingWeight = TensorFactory.of(
-                new float[] { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f },
-                backend, 3, 2);
-        Tensor tokenIds = TensorFactory.of(new int[] { 2, 0 }, backend, 2);
-        Tensor embeddingResult = backend.embedding(embeddingWeight, tokenIds, -1);
-        assertInstanceOf(CpuBackend.class, embeddingResult.backend());
-        assertArrayEquals(new float[] { 5.0f, 6.0f, 1.0f, 2.0f },
-                embeddingResult.toFloatArray(), 1e-4f);
+        try (Tensor embeddingWeight = TensorFactory.of(
+                        new float[] { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f },
+                        backend, 3, 2);
+                Tensor tokenIds = TensorFactory.of(new int[] { 2, 0 }, backend, 2);
+                Tensor embeddingResult = backend.embedding(embeddingWeight, tokenIds, -1)) {
+            assertInstanceOf(CpuBackend.class, embeddingResult.backend());
+            assertArrayEquals(new float[] { 5.0f, 6.0f, 1.0f, 2.0f },
+                    embeddingResult.toFloatArray(), 1e-4f);
+        }
 
-        Tensor probabilities = TensorFactory.of(new float[] { 0.25f, 0.75f }, backend, 2);
-        Tensor labels = TensorFactory.of(new float[] { 0.0f, 1.0f }, backend, 2);
-        Tensor loss = backend.binaryCrossEntropy(probabilities, labels);
-        assertInstanceOf(CpuBackend.class, loss.backend());
-        assertEquals((float) (-(Math.log(0.75) + Math.log(0.75)) / 2.0),
-                loss.toFloatArray()[0], 1e-4f);
+        try (Tensor probabilities = TensorFactory.of(new float[] { 0.25f, 0.75f }, backend, 2);
+                Tensor labels = TensorFactory.of(new float[] { 0.0f, 1.0f }, backend, 2);
+                Tensor loss = backend.binaryCrossEntropy(probabilities, labels)) {
+            assertInstanceOf(CpuBackend.class, loss.backend());
+            assertEquals((float) (-(Math.log(0.75) + Math.log(0.75)) / 2.0),
+                    loss.toFloatArray()[0], 1e-4f);
+        }
     }
 }

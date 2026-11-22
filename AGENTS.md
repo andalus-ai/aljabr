@@ -425,3 +425,143 @@ For a structural, API, execution, provider, CLI or documentation change, reviewe
 8. Are claims about implementation, validation and support backed by evidence?
 
 If a question is not applicable, say why in the PR rather than adding unnecessary machinery. These principles supplement the existing test, compatibility, provider, memory and hardware-specific rules; they do not override them.
+
+
+## 20. Diagnostics, observability, and auditability — mandatory framework capability
+
+Treat diagnostics, observability, and auditability as a first-class Aljabr capability across numerical, tensor, model, format, memory, execution, and provider layers. This is not permission to add logging calls indiscriminately or to build a serving control plane.
+
+### Ownership and boundaries
+
+- Aljabr owns framework-level diagnostic semantics, stable diagnostic codes, computational execution events, provider decision explanations, resource/memory lifecycle observations, numerical validation findings, and reproducible execution evidence.
+- AQLI owns request/serving telemetry, admission and scheduling decisions, deployment/operational audit, service-level objectives, and production request correlation. Aljabr may accept an explicit correlation context and emit framework events, but must not own AQLI policy or depend on AQLI.
+- Tafkir owns experiment/training workflow history and dataset/training lifecycle audit. Aljabr emits reusable computation and optimizer events only where those are genuine framework primitives.
+- Farabi and presentation products own research governance, analytics interpretation, dashboards and visualization. Aljabr supplies structured evidence, not a dashboard or governance workflow.
+- Keep the diagnostics API JDK-only or dependent on the smallest existing stable API. Logging, metrics, tracing, JFR, OpenTelemetry, Micrometer, JSON/CSV exporters and UI integrations are optional adapters.
+- Never require a global singleton, background thread, network exporter, file output, dashboard, agent, or instrumentation dependency for ordinary tensor/model consumers. The disabled/no-op path must be cheap and allocation-conscious.
+
+### Required observability signals
+
+Every relevant capability should expose appropriate, bounded, opt-in signals for:
+- **Execution:** operation/model scope start, completion, failure, duration, execution identity, and parent/correlation IDs.
+- **Provider decisions:** requested constraints, candidate providers, compatibility/rejection reasons, selected provider, fallback path and initialization outcome. Never silently fall back across an explicit user constraint.
+- **Numerics:** shape/dtype/layout validation, non-finite/overflow findings, tolerance/parity results and gradient-check outcomes. Value scans that can synchronize or copy device data must be explicit.
+- **Memory and ownership:** allocation/release, retain/borrow/view, copy/materialization, pool reuse, host/device transfer, failure and lifecycle violations, with bytes and storage identity only when known.
+- **Performance:** operation/provider/kernel timing, counters and distributions with clock source, warmup policy, sample count, synchronization policy, and host/device attribution.
+- **Model and format loading:** format/version metadata validation, tensor mapping/shape mismatches, missing/unexpected weights, conversion decisions and unsupported architecture/operation reasons. Do not expose weight contents.
+- **Capability/provider lifecycle:** discovery, declared/installed/available/compatible/validated state transitions, initialization, shutdown and cleanup failures.
+
+Do not instrument every hot-path operation unconditionally. Define explicit scopes, sampling, filters and bounded buffers; ensure event ordering and context propagation are documented for concurrent/asynchronous work.
+
+### Structured diagnostic and audit records
+
+- Diagnostics are immutable structured records with stable code, schema version, severity, category, operation/component, concise message, explanation, remediation, timestamp/clock semantics, correlation/parent IDs and typed context.
+- Include relevant input metadata (shape, dtype, layout, device, operation and provider) only when available. Mark missing values as unavailable; never guess.
+- Preserve the original cause for programmatic debugging while keeping public exception and diagnostic contracts provider-neutral.
+- Distinguish diagnostic findings from audit events and measurements: a warning is not an audit record; a timing sample is not proof of correctness; a provider declaration is not validation evidence.
+- Audit events are append-only facts about framework-relevant decisions and lifecycle transitions. Each event identifies actor/source (framework, caller, provider), action, target/resource, outcome, timestamp, correlation ID and schema version. Include before/after values only for safe configuration metadata and only when policy permits.
+- Audit history must be bounded/retention-controlled by the consuming application or exporter. Do not silently persist records, create a hidden database, or claim tamper-proof/non-repudiation guarantees. Cryptographic integrity, retention, access control and compliance policy belong to an explicitly selected audit sink/product.
+- Never capture tensor values, prompts, user data, credentials, secrets, raw model weights, or arbitrary configuration payloads by default. Redaction and allowlisting are mandatory at export boundaries. Sensitive capture requires explicit opt-in and a documented scope.
+- Keep event/diagnostic schemas versioned and deterministic. JSON/CSV/JFR exporters must preserve units, provenance and measured/estimated/unavailable status.
+
+### Evidence and provenance rules
+
+- Every measurement must say measured, estimated, sampled, derived or unavailable; identify host/device, clock, unit, scope (inclusive/exclusive), and synchronization semantics.
+- Distinguish wall time, CPU time, asynchronous launch latency and synchronized device execution time. Never compare them as equivalent.
+- Memory reports must distinguish logical tensor bytes, physical allocation bytes, retained/peak bytes and estimates. Never label an estimate as measured usage.
+- Provider/model compatibility and validation reports must include the tested API/provider/model/format versions and relevant environment constraints.
+- Numerical audit reports should record reference implementation, seed/determinism conditions, tolerance, comparison count, mismatch count and max absolute/relative error where applicable.
+- Performance reports should record build/runtime/JDK, provider/device, shape/dtype, warmup, sample count, statistic and benchmark method. JMH remains the preferred JVM microbenchmark harness.
+- Do not call an execution reproducible unless inputs/configuration, seeds, provider, versions and relevant nondeterminism constraints are captured sufficiently to reproduce it.
+
+### Review and acceptance gate
+
+For any new or changed public operation, model, format, memory path or provider:
+1. Identify the relevant diagnostic/error codes and failure context.
+2. Explain provider selection, fallback and unsupported-capability outcomes.
+3. Cover resource allocation/ownership/cleanup and failure/cancellation paths.
+4. Add opt-in observability at meaningful boundaries without hidden hot-path cost.
+5. Add audit events for consequential framework decisions and lifecycle transitions where evidence is needed.
+6. Test disabled/no-op behavior, event ordering/correlation, boundedness, redaction, exception paths and concurrency as applicable.
+7. Document what is measured versus estimated and which exporter/adapters are optional.
+8. State exactly which tests were run; source presence or compilation is not validation.
+
+A feature is not observability-ready merely because it logs an exception or exposes a metrics counter. It must be diagnosable, explainable, privacy-safe, bounded, testable and useful without coupling core computation to a product runtime.
+
+
+### 20.1 Existing diagnostics foundation — reuse before extending
+
+The canonical starting point is `core:aljabr-diagnostics`. Extend its existing `Diagnostic`, `DiagnosticSeverity`, `DiagnosticSink` and `DiagnosticFormatter` contracts; do not create a competing diagnostics artifact or duplicate the existing API.
+
+New integrations should prefer `DiagnosticContext` and `Diagnostic.withContext(...)` for bounded correlation/parent IDs and explicit operation/component/provider metadata. Keep existing map-based constructors source-compatible. Use `DiagnosticSink.noop()` (the shared `DiagnosticSink.NOOP`) for disabled diagnostics. Do not introduce implicit ThreadLocal context propagation or capture unreviewed payloads as context attributes.
+
+
+### 20.2 Explicit execution lifecycle scopes
+
+The diagnostics foundation now includes explicit execution lifecycle contracts in `core:aljabr-diagnostics`:
+
+- Use `ExecutionScope.start(context, observer)` around meaningful computation boundaries. The context must explicitly provide a correlation ID and operation; pass parent IDs when creating child scopes.
+- Emit STARTED followed by exactly one terminal event: SUCCEEDED, FAILED or ABANDONED. Closing an unfinished scope records ABANDONED; closing a completed scope is harmless.
+- Use monotonic elapsed nanoseconds for duration. Wall-clock timestamps identify event occurrence only; do not derive elapsed time from wall-clock subtraction.
+- Failure events expose exception class identity only. Do not export exception messages or stack traces through lifecycle context by default.
+- Observer callbacks are synchronous and should be fast/non-blocking. Runtime exceptions are isolated and retained on the scope through `observerFailure()`; fatal errors are not swallowed.
+- Context propagation is explicit across nested and asynchronous work. Do not add ThreadLocal propagation, background dispatch, implicit buffers or persistence.
+- Lifecycle events are observations, not diagnostics, audit facts or metric samples. Add separate contracts only when their semantics and delivery guarantees are defined.
+- Test start/terminal ordering, abandoned scopes, observer failure isolation, privacy, duplicate completion and context requirements. Keep observer-disabled paths cheap.
+
+
+#### Execution-boundary integration requirements
+
+- Instrument model-level execution boundaries before adding instrumentation to tensor primitives or kernels. Never emit one lifecycle event per token, tensor element or kernel launch unless a separately measured profiling mode explicitly requests it.
+- The GGUF inference API accepts an explicit `ExecutionObserver`; its default is the shared no-op observer. Preserve existing constructors and keep observer injection caller-controlled.
+- GGUF synchronous inference emits one `gguf.infer` lifecycle scope with an opaque generated correlation ID and backend identity. Do not attach prompts, request messages, user/session IDs, model paths or arbitrary request metadata to the event context.
+- Keep execution-observer failures isolated from inference and expose an engine-level failure count. Do not silently turn observer failures into inference failures.
+- Streaming lifecycle scopes must be added only with correct subscription, cancellation, failure and termination semantics; do not close a stream scope when the `Multi` is merely constructed.
+
+
+#### Reactive streaming lifecycle requirements
+
+- For Mutiny streams, create lifecycle scopes inside a deferred subscription supplier, never while constructing the `Multi`.
+- Distinguish normal completion (SUCCEEDED), upstream failure (FAILED), and downstream cancellation (ABANDONED). Always release active-execution accounting exactly once on termination.
+- Keep stream execution cold/deferred where the backend contract is cold. Do not share one `ExecutionScope` across multiple subscribers; each subscription gets its own correlation ID and lifecycle.
+- Count observer failures after terminal callbacks have run. Runtime observer failures must not replace stream items, completion, failure or cancellation semantics.
+- Test that no STARTED event occurs before subscription, plus success, failure, cancellation, context-aware delegation, and no-op observer behavior.
+
+#### GGUF model lifecycle requirements
+
+- Observe successful backend creation and model unload/cleanup through explicit execution scopes named `gguf.model.load` and `gguf.model.unload`.
+- Resolve provider selection first; the load scope identifies the selected provider and measures backend creation/initialization plus registration. Provider-selection decisions remain separate provider-decision events.
+- Unload scopes identify the backend being closed. Engine shutdown must retain per-model cleanup visibility rather than collapsing multiple backend releases into one ambiguous event.
+- Keep model IDs, filesystem paths, model metadata/configuration maps, prompts and weight details out of lifecycle context by default. Use opaque generated correlation IDs and provider identity only.
+- Preserve backend exceptions and cleanup semantics. Observer RuntimeExceptions must never change load, unload or close behavior; fatal JVM errors must propagate.
+- Test load success/failure, unload success/cleanup, privacy, observer-disabled behavior and observer-failure isolation.
+
+#### GGUF embedding lifecycle requirements
+
+- Observe GGUF embedding execution with an explicit `gguf.embed` scope created inside the deferred `Uni` subscription supplier, not while the `Uni` is assembled.
+- Emit STARTED per subscription; map item emission to SUCCEEDED, upstream failure to FAILED and downstream cancellation to ABANDONED.
+- Release active-execution accounting exactly once for success, failure, cancellation and synchronous backend-construction failure.
+- Keep input text, request IDs, model IDs, paths, arbitrary request parameters and embedding vectors out of lifecycle context. Provider identity and generated correlation ID are sufficient.
+- Runtime observer failures must not change the embedding result or failure. Fatal JVM errors propagate and must not leak active counts.
+- Test deferred invocation, success, failure, cancellation, observer failure isolation and no-op behavior.
+
+
+#### GGUF provider probe lifecycle requirements
+
+- In AUTO provider selection, observe each available provider's model-readiness probe with a separate `gguf.provider.probe` execution scope. The scope measures only the probe call, not the subsequent selection decision or backend construction.
+- Keep provider decision outcomes on `ProviderDecisionObserver`; do not duplicate SELECTED, NOT_READY, UNAVAILABLE or PROBE_FAILED decisions as lifecycle attributes.
+- Explicit provider selection intentionally bypasses readiness probing and must not emit a probe scope.
+- Keep model paths, model IDs, probe details, capability maps and provider exception messages out of lifecycle context. Use an opaque correlation ID and provider identity only.
+- Preserve AUTO fallback behavior: a failed probe emits FAILED, then selection may continue to the next candidate. Fatal JVM errors propagate after the scope is failed.
+- Preserve a direct no-op path with no scope/context allocation. Isolate observer RuntimeExceptions and count them through the existing execution-observer failure counter.
+- Test successful probes, failed probes, fallback/decision separation, privacy, explicit-selection bypass and no-op behavior.
+
+
+#### GGUF engine shutdown cleanup requirements
+
+- Engine shutdown must attempt to close every backend captured at the start of shutdown, even when an earlier backend's `close()` throws.
+- Detach the backend registry and mark the engine uninitialized before invoking backend cleanup so repeated shutdown is idempotent and attempted backends are not closed twice.
+- Preserve the first backend cleanup failure as the primary thrown failure and attach subsequent cleanup failures as suppressed exceptions. RuntimeExceptions and fatal Errors must retain their original type.
+- Emit one `gguf.model.unload` lifecycle scope per backend when execution observation is enabled; one failed unload must not suppress later unload attempts or their events.
+- Preserve the direct no-op observer path while applying the same all-backends cleanup guarantee.
+- Test multiple backends, a failure before a successful close, lifecycle terminal outcomes, repeated close, and no-op observer behavior.
