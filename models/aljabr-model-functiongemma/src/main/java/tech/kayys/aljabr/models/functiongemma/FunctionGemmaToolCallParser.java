@@ -1,6 +1,8 @@
 package tech.kayys.aljabr.models.functiongemma;
 
 import tech.kayys.aljabr.core.tool.ToolCall;
+import tech.kayys.aljabr.core.tool.ToolCallParseDiagnostic;
+import tech.kayys.aljabr.core.tool.ToolCallParseResult;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -48,6 +50,48 @@ public final class FunctionGemmaToolCallParser {
      */
     public List<ToolCall> parseToolCalls(String output) {
         return parse(output).stream().map(FunctionGemmaToolCallParser::toToolCall).toList();
+    }
+
+    /**
+     * Parses as many complete calls as possible and reports malformed or
+     * incomplete segments without discarding calls already extracted.
+     *
+     * <p>Diagnostic codes are stable identifiers for this adapter. Offsets
+     * refer to the original output string.</p>
+     */
+    public ToolCallParseResult parseResult(String output) {
+        Objects.requireNonNull(output, "output");
+        List<ToolCall> calls = new ArrayList<>();
+        List<ToolCallParseDiagnostic> diagnostics = new ArrayList<>();
+        int cursor = 0;
+        while (true) {
+            int start = output.indexOf(START, cursor);
+            if (start < 0) break;
+            int bodyStart = start + START.length();
+            int end = output.indexOf(END, bodyStart);
+            if (end < 0) {
+                int nextStart = output.indexOf(START, bodyStart);
+                diagnostics.add(new ToolCallParseDiagnostic(
+                        "UNTERMINATED_CALL",
+                        ToolCallParseDiagnostic.Severity.ERROR,
+                        "FunctionGemma call has no matching end marker",
+                        start));
+                if (nextStart < 0) break;
+                cursor = nextStart;
+                continue;
+            }
+            try {
+                calls.add(toToolCall(parseCallBody(output.substring(bodyStart, end), start)));
+            } catch (IllegalArgumentException exception) {
+                diagnostics.add(new ToolCallParseDiagnostic(
+                        "MALFORMED_CALL",
+                        ToolCallParseDiagnostic.Severity.ERROR,
+                        exception.getMessage() == null ? "Malformed FunctionGemma call" : exception.getMessage(),
+                        start));
+            }
+            cursor = end + END.length();
+        }
+        return new ToolCallParseResult(calls, diagnostics);
     }
 
     /** Parses one call body without surrounding control tokens. */
