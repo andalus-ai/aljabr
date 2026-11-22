@@ -1,6 +1,8 @@
 package tech.kayys.aljabr.models.functiongemma;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.core.tool.ToolCall;
+import tech.kayys.aljabr.core.tool.ToolDeclaration;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -86,11 +88,27 @@ class FunctionGemmaToolSchemaValidatorTest {
     }
 
     @Test
-    void acceptsParsedFunctionCallDirectly() {
+    void acceptsParsedFunctionCallThroughCompatibilityFacade() {
         var call = new FunctionGemmaToolCallParser.FunctionCall("lookup", Map.of("id", 7L));
         var schema = Map.<String, Object>of("type", "OBJECT", "required", List.of("id"),
                 "properties", Map.of("id", Map.of("type", "INTEGER", "const", 7)));
         assertTrue(validator.validate(call, schema).valid());
+    }
+
+    @Test
+    void delegatesCoreToolCallAndDeclarationValidation() {
+        ToolDeclaration declaration = new ToolDeclaration() {
+            @Override public String name() { return "lookup"; }
+            @Override public String description() { return "Look up a record"; }
+            @Override public Map<String, Object> parameterSchema() {
+                return Map.of("type", "OBJECT", "required", List.of("id"),
+                        "properties", Map.of("id", Map.of("type", "INTEGER")));
+            }
+        };
+        assertTrue(validator.validate(new ToolCall("lookup", Map.of("id", 7)), declaration).valid());
+        var mismatch = validator.validate(new ToolCall("delete", Map.of("id", 7)), declaration);
+        assertFalse(mismatch.valid());
+        assertTrue(mismatch.errors().stream().anyMatch(error -> error.path().equals("$tool")));
     }
 
     @Test
