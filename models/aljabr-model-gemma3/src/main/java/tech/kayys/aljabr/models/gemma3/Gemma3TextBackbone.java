@@ -139,6 +139,16 @@ public final class Gemma3TextBackbone {
             if (inputIds.length == 0) {
                 throw new IllegalArgumentException("inputIds must not be empty");
             }
+            if (inputIds.length > maximumPositions) {
+                throw new IllegalArgumentException("input sequence exceeds maxPositionEmbeddings");
+            }
+            for (int index = 0; index < inputIds.length; index++) {
+                int tokenId = inputIds[index];
+                if (tokenId < 0 || tokenId >= config.vocabSize()) {
+                    throw new IllegalArgumentException(
+                            "token ID out of vocabulary range at index " + index + ": " + tokenId);
+                }
+            }
             float[][] result = new float[inputIds.length][];
             for (int index = 0; index < inputIds.length; index++) {
                 result[index] = decode(inputIds[index]);
