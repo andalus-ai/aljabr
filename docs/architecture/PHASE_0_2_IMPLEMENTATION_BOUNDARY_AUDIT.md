@@ -148,7 +148,7 @@ A follow-up comparison against the AQLI repository establishes that these resour
 
 - `aljabr-safetensor-api` has no `src/test` tree and no `src/main/resources` tree in the audited baseline.
 - Its Gradle build directly declares Quarkus REST, Jackson REST, JAX-RS, CDI, MicroProfile Config/OpenAPI and Mutiny dependencies.
-- It publishes only to `mavenLocal()` in the inspected build configuration.
+- Its module-local `publishing` block declares `mavenLocal()`. **Correction from the 2026-11-22 root-build audit:** the root `build.gradle.kts` also configures a `GitHubPackages` Maven repository for every subproject when both `GITHUB_TOKEN` and an actor/username are available. Therefore, this artifact is not proven to be Maven-Local-only; publication to GitHub Packages is conditionally enabled by the shared convention.
 - The REST classes contain runtime registries, reflection-based service lookup, endpoint DTOs and workflow/control-plane behavior. They are not format parsing, tensor, model-loading or weight-layout contracts.
 - The resource classes expose method-level `@Path` annotations but no class-level `@Path` annotations in the audited sources. Treat actual Quarkus/JAX-RS discovery as unverified until an integration test proves registration; do not assume these endpoints are active merely because the classes compile.
 
@@ -207,3 +207,16 @@ Do not create `integration/aljabr-safetensor-rest` or another Aljabr REST artifa
 - Gradle dependency edges and published POM/module metadata support the intended boundaries.
 - Tests cover provider discovery, resource lifecycle, streaming termination/cancellation and relevant fallback/error paths.
 - Each implementation PR changes one coherent boundary and includes evidence from focused tests or clearly records why hardware validation is deferred.
+
+
+### F-005 publication compatibility correction — 2026-11-22
+
+The earlier statement that the Safetensors API artifact publishes only to Maven Local was incomplete. The module's own build file declares a Maven Local repository, but the root build's shared `afterEvaluate` publishing convention additionally configures a `GitHubPackages` Maven repository whenever both a GitHub token and actor/username are supplied. Since that convention applies to subprojects, the artifact may have been published to GitHub Packages.
+
+Consequences:
+
+- Do not infer that the artifact has no external consumers from the module-local publishing block.
+- Before deleting the artifact or removing its compatibility coordinate, inspect package publication/release history and available package metadata, then check the supported package visibility and downstream dependency graph.
+- The absence of references in the accessible Andalus repositories is useful internal evidence, but it does not establish that no external repository or consumer depends on the package.
+- Keep the source deprecation in place while this release-compatibility check is completed. The quantization module is being decoupled separately so reusable compute capabilities no longer require the REST artifact.
+

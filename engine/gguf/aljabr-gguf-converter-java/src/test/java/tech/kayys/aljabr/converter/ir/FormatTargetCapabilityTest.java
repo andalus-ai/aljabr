@@ -24,7 +24,7 @@ class FormatTargetCapabilityTest {
     @Test
     void ggufRejectsQuantizedTensorWithInvalidBlockElementCount() {
         var report = new GgufTargetCapability().assess(model("llama", "safetensors",
-                tensor("weight", "Q4_K", List.of(15L, 15L))));
+                tensor("weight", "IQ4_NL", List.of(15L, 15L))));
 
         assertEquals(CompatibilityReport.ConversionFidelity.UNSUPPORTED, report.fidelity());
         assertEquals("GGUF_QUANTIZATION_BLOCK_MISMATCH", report.diagnostics().getFirst().code());
@@ -72,6 +72,8 @@ class FormatTargetCapabilityTest {
                 tensor("q2", "Q2_K", List.of(256L))));
         var q3 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q3", "Q3_K", List.of(256L))));
+        var q4k = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q4k", "Q4_K", List.of(256L))));
         var q8 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q8", "Q8_0", List.of(32L))));
 
@@ -82,6 +84,7 @@ class FormatTargetCapabilityTest {
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q6.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q2.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q3.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q4k.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q8.fidelity());
         assertEquals("GGML_QUANTIZATION_DEQUANTIZED", q4.diagnostics().getFirst().code());
     }
