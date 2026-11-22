@@ -50,7 +50,7 @@ class EmbeddingGemma2AudioFeedForwardTest {
                 boundedExpand, base.contract(), base.preNormScale(), base.postNormScale());
         float[][][] output = new EmbeddingGemma2AudioFeedForward(config(), bounded)
                 .compute(new float[][][] {{{1,1,1,1,1,1,1,1}}});
-        assertArrayEquals(new float[8], output[0][0], 1e-6f);
+        assertArrayEquals(new float[]{1,1,1,1,1,1,1,1}, output[0][0], 1e-6f);
     }
 
     @Test
