@@ -40,6 +40,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     private final AtomicLong activeCount = new AtomicLong(0);
     private final AtomicLong totalCount = new AtomicLong(0);
     private final AtomicLong failedCount = new AtomicLong(0);
+    private final AtomicLong decisionObserverFailureCount = new AtomicLong(0);
     private volatile boolean initialized = false;
 
     public GgufInferenceEngine() {
@@ -77,6 +78,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         GgufBackend backend = provider.create(modelPath, config);
         backends.put(modelId, backend);
         return backend;
+    }
+
+    /** Number of provider-observer runtime failures isolated by this engine. */
+    public long providerObserverFailureCount() {
+        return decisionObserverFailureCount.get();
     }
 
     public synchronized void unloadModel(String modelId) {
@@ -320,7 +326,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                                 : capability.reason();
                 readiness.add(provider.id() + ": " + reason);
                 observe(provider, ProviderDecisionEvent.Decision.NOT_READY,
-                        reason, ProviderDecisionEvent.SelectionMode.AUTO);
+                        "provider is not generation-ready", ProviderDecisionEvent.SelectionMode.AUTO);
                 skipped++;
             } catch (Exception error) {
                 readiness.add(provider.id() + ": probe failed (" + error.getClass().getSimpleName() + ")");
@@ -359,6 +365,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                     providerId, decision, reason, priority, mode, java.time.Instant.now()));
         } catch (RuntimeException ignored) {
             // Provider diagnostics must never change backend selection behavior.
+            decisionObserverFailureCount.incrementAndGet();
         }
     }
 
