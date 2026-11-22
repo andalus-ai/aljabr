@@ -62,7 +62,7 @@ class TurboQuantIndexBitPackingTest {
     @Test
     void rejectsIncorrectPayloadLengthAndNonCanonicalPadding() {
         assertThrows(IllegalArgumentException.class,
-                () -> TurboQuantIndexBitPacking.unpack(new byte[]{0}, 2, 4));
+                () -> TurboQuantIndexBitPacking.unpack(new byte[0], 2, 4));
         assertThrows(IllegalArgumentException.class,
                 () -> TurboQuantIndexBitPacking.unpack(new byte[]{(byte) 0x80}, 1, 1));
         assertThrows(IllegalArgumentException.class,

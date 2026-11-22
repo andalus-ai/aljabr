@@ -15,6 +15,10 @@ import java.util.Objects;
  */
 public final class TurboQuantIndexBitPacking {
 
+    // HotSpot and other JVMs reserve a few header/alignment words beyond the
+    // largest representable int array length.
+    private static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+
     private TurboQuantIndexBitPacking() {
     }
 
@@ -104,7 +108,7 @@ public final class TurboQuantIndexBitPacking {
             throw new IllegalArgumentException("elementCount must not be negative");
         }
         long byteCount = (((long) elementCount * bits) + 7) >>> 3;
-        if (byteCount > Integer.MAX_VALUE) {
+        if (byteCount > MAX_ARRAY_SIZE) {
             throw new IllegalArgumentException("packed payload exceeds maximum Java array size");
         }
         return (int) byteCount;
