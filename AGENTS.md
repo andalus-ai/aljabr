@@ -487,3 +487,10 @@ For any new or changed public operation, model, format, memory path or provider:
 8. State exactly which tests were run; source presence or compilation is not validation.
 
 A feature is not observability-ready merely because it logs an exception or exposes a metrics counter. It must be diagnosable, explainable, privacy-safe, bounded, testable and useful without coupling core computation to a product runtime.
+
+
+### 20.1 Existing diagnostics foundation — reuse before extending
+
+The canonical starting point is `core:aljabr-diagnostics`. Extend its existing `Diagnostic`, `DiagnosticSeverity`, `DiagnosticSink` and `DiagnosticFormatter` contracts; do not create a competing diagnostics artifact or duplicate the existing API.
+
+New integrations should prefer `DiagnosticContext` and `Diagnostic.withContext(...)` for bounded correlation/parent IDs and explicit operation/component/provider metadata. Keep existing map-based constructors source-compatible. Use `DiagnosticSink.noop()` (the shared `DiagnosticSink.NOOP`) for disabled diagnostics. Do not introduce implicit ThreadLocal context propagation or capture unreviewed payloads as context attributes.
