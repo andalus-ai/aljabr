@@ -529,6 +529,101 @@ class GgufInferenceEngineDelegationTest {
         }
     }
 
+    @Test
+    void closeAttemptsEveryBackendAndPreservesFailuresAndUnloadEvents() throws Exception {
+        Path firstModel = Files.createTempFile("gguf-close-first", ".gguf");
+        Path secondModel = Files.createTempFile("gguf-close-second", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean firstClosed = new AtomicBoolean();
+        AtomicBoolean secondClosed = new AtomicBoolean();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) {
+                return GgufBackendCapability.ready("test", Set.of(), Map.of());
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                if (path.equals(firstModel)) {
+                    return new TestBackend() {
+                        @Override public String name() { return "first"; }
+                        @Override public void close() {
+                            firstClosed.set(true);
+                            throw new IllegalStateException("first close failed");
+                        }
+                    };
+                }
+                return new TestBackend() {
+                    @Override public String name() { return "second"; }
+                    @Override public void close() { secondClosed.set(true); }
+                };
+            }
+        };
+        GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add);
+        try {
+            engine.loadModel("first", firstModel, Map.of("gguf.backend", "test"));
+            engine.loadModel("second", secondModel, Map.of("gguf.backend", "test"));
+
+            IllegalStateException failure = assertThrows(IllegalStateException.class, engine::close);
+
+            assertEquals("first close failed", failure.getMessage());
+            assertTrue(firstClosed.get());
+            assertTrue(secondClosed.get(), "a failing backend must not prevent later backend cleanup");
+            assertEquals(4, events.size(), "both unload scopes must emit STARTED and a terminal event");
+            assertEquals(2, events.stream()
+                    .filter(event -> event.context().operation().equals("gguf.model.unload")
+                            && event.type() == ExecutionEvent.Type.STARTED).count());
+            assertEquals(1, events.stream()
+                    .filter(event -> event.context().operation().equals("gguf.model.unload")
+                            && event.type() == ExecutionEvent.Type.FAILED).count());
+            assertEquals(1, events.stream()
+                    .filter(event -> event.context().operation().equals("gguf.model.unload")
+                            && event.type() == ExecutionEvent.Type.SUCCEEDED).count());
+            assertEquals(0, engine.getStats().activeInferences());
+            assertThrows(InferenceException.class, () -> engine.execute("first", request()));
+            assertDoesNotThrow(engine::close, "a second close must be harmless after cleanup was attempted");
+        } finally {
+            Files.deleteIfExists(firstModel);
+            Files.deleteIfExists(secondModel);
+        }
+    }
+
+    @Test
+    void closeWithoutObserverStillClosesRemainingBackendsAfterFailure() throws Exception {
+        Path firstModel = Files.createTempFile("gguf-close-noop-first", ".gguf");
+        Path secondModel = Files.createTempFile("gguf-close-noop-second", ".gguf");
+        AtomicBoolean secondClosed = new AtomicBoolean();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) {
+                return GgufBackendCapability.ready("test", Set.of(), Map.of());
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                if (path.equals(firstModel)) {
+                    return new TestBackend() {
+                        @Override public void close() { throw new IllegalArgumentException("close failure"); }
+                    };
+                }
+                return new TestBackend() {
+                    @Override public void close() { secondClosed.set(true); }
+                };
+            }
+        };
+        GgufInferenceEngine engine = new GgufInferenceEngine(List.of(provider));
+        try {
+            engine.loadModel("first", firstModel, Map.of("gguf.backend", "test"));
+            engine.loadModel("second", secondModel, Map.of("gguf.backend", "test"));
+
+            assertThrows(IllegalArgumentException.class, engine::close);
+            assertTrue(secondClosed.get());
+            assertDoesNotThrow(engine::close);
+        } finally {
+            Files.deleteIfExists(firstModel);
+            Files.deleteIfExists(secondModel);
+        }
+    }
+
     private static GgufBackendProvider provider(BackendFactory factory) {
         return new GgufBackendProvider() {
             @Override public String id() { return "test"; }
