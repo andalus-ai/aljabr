@@ -63,36 +63,37 @@ public final class EmbeddingGemma2VisionPooler {
                     maxX = Math.max(maxX, pixelPositionIds[i][0] + 1);
                 }
             }
-            int maxY = 0;
-            int validPatchCount = 0;
-            for (int patch = 0; patch < inputLength; patch++) {
-                if (!paddingPositions[patch]) {
-                    maxY = Math.max(maxY, pixelPositionIds[patch][1] + 1);
-                    validPatchCount++;
-                }
+            if (maxX <= 0 || inputLength % maxX != 0) {
+                throw new IllegalArgumentException("patch positions do not define a rectangular row-major grid");
             }
-            if (maxX <= 0 || maxY <= 0 || maxX % kernel != 0 || maxY % kernel != 0) {
+            int gridHeight = inputLength / maxX;
+            if (maxX % kernel != 0 || gridHeight % kernel != 0) {
                 throw new IllegalArgumentException(
-                        "valid patch grid dimensions must be divisible by the spatial pooling kernel");
+                        "patch grid dimensions must be divisible by the spatial pooling kernel");
             }
             int cellsPerRow = maxX / kernel;
             if (cellsPerRow <= 0) {
                 throw new IllegalArgumentException("valid patch positions do not define a pooling grid");
             }
-            for (int patch = 0; patch < validPatchCount; patch++) {
-                int expectedX = patch % maxX;
-                int expectedY = patch / maxX;
-                if (pixelPositionIds[patch][0] != expectedX || pixelPositionIds[patch][1] != expectedY) {
-                    throw new IllegalArgumentException(
-                            "valid patch positions must form a row-major rectangular grid");
+            for (int patch = 0; patch < inputLength; patch++) {
+                if (!paddingPositions[patch]) {
+                    int expectedX = patch % maxX;
+                    int expectedY = patch / maxX;
+                    if (pixelPositionIds[patch][0] != expectedX
+                            || pixelPositionIds[patch][1] != expectedY) {
+                        throw new IllegalArgumentException(
+                                "valid patch positions must form a row-major rectangular grid");
+                    }
                 }
             }
 
             pooled = new float[outputLength][hiddenSize];
             boolean[] hasValidPatch = new boolean[outputLength];
             for (int patch = 0; patch < inputLength; patch++) {
-                int x = Math.max(0, pixelPositionIds[patch][0]);
-                int y = Math.max(0, pixelPositionIds[patch][1]);
+                // Padding entries use the flattened patch slot to retain their
+                // place in the fixed-size spatial grid despite the (-1,-1) sentinel.
+                int x = patch % maxX;
+                int y = patch / maxX;
                 int cell = (x / kernel) + cellsPerRow * (y / kernel);
                 if (cell < 0 || cell >= outputLength) {
                     throw new IllegalArgumentException(

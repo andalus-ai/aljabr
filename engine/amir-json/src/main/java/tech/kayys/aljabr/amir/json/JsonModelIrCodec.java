@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.StreamWriteFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import java.io.IOException;
@@ -62,12 +63,17 @@ public final class JsonModelIrCodec implements ModelIrCodec {
     @Override
     public ModelIrDocument read(InputStream input) throws IOException {
         Objects.requireNonNull(input, "input must not be null");
-        ModelIrDocument document = mapper.readValue(input, ModelIrDocument.class);
-        if (document == null) {
+        JsonNode root = mapper.readTree(input);
+        if (root == null || root.isNull()) {
             throw new IOException("AMIR JSON document must not be null");
         }
-        ModelIrSchemaVersion.CURRENT.requireCompatibleWith(document.schemaVersion());
-        return document;
+        JsonNode versionNode = root.get("schemaVersion");
+        if (versionNode == null || versionNode.isNull()) {
+            throw new IOException("AMIR JSON document must declare schemaVersion");
+        }
+        ModelIrSchemaVersion schemaVersion = mapper.treeToValue(versionNode, ModelIrSchemaVersion.class);
+        ModelIrSchemaVersion.CURRENT.requireCompatibleWith(schemaVersion);
+        return mapper.treeToValue(root, ModelIrDocument.class);
     }
 
     @Override

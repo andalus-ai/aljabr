@@ -33,7 +33,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            if (Set.of("IQ4_NL", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
+            if (Set.of("IQ3_S", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.WARNING,
                         "GGML_QUANTIZATION_DEQUANTIZED",
@@ -59,16 +59,6 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             partial = true;
         }
 
-        boolean hasOpaqueExtensions = !source.extensions().isEmpty()
-                || source.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
-        if (hasOpaqueExtensions && !"gguf".equalsIgnoreCase(source.sourceFormat())) {
-            diagnostics.add(new CompatibilityReport.Diagnostic(
-                    CompatibilityReport.Severity.INFO,
-                    "OPAQUE_METADATA_REQUIRES_MAPPING",
-                    "This conversion path does not preserve all opaque source extensions."));
-            partial = true;
-        }
-
         if ("unknown".equalsIgnoreCase(source.architecture())) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
@@ -77,13 +67,13 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             partial = true;
         }
 
-        if (source.architectureDescriptor().isPresent() || source.graphCollection().isPresent()
+        if (source.graphCollection().isPresent()
                 || source.assetCollection().isPresent() || source.componentCollection().isPresent()) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
                     "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
-                    "Safetensors stores tensor data and string metadata only; typed architecture, graph, "
-                            + "asset, and component layers are not encoded."));
+                    "Safetensors preserves the typed architecture descriptor, but cannot encode computation "
+                            + "graphs, assets, or components."));
             partial = true;
         }
 

@@ -248,10 +248,22 @@ public interface ComputeBackend extends AutoCloseable {
                 "Index selection is not supported by backend " + getClass().getName());
     }
 
-    /** Axis-wise indexed addition; repeated indices must accumulate. */
+    /**
+     * Adds values from {@code source} into {@code input} at the axis positions
+     * specified by {@code indices}. The operation returns a new tensor and
+     * does not mutate either input tensor. Backends may override this method
+     * with a native implementation; the default fails explicitly when the
+     * operation is unsupported.
+     *
+     * @param input destination values to copy before applying additions
+     * @param axis axis indexed by {@code indices}
+     * @param indices one-dimensional integer indices along {@code axis}
+     * @param source values to add at the indexed positions
+     * @return a new tensor containing the accumulated values
+     */
     default Tensor indexAdd(Tensor input, int axis, Tensor indices, Tensor source) {
         throw new UnsupportedOperationException(
-                "Indexed addition is not supported by backend " + getClass().getName());
+                "Index addition is not supported by backend " + getClass().getName());
     }
 
     /** Axis-wise indexed addition; repeated indices must accumulate. */

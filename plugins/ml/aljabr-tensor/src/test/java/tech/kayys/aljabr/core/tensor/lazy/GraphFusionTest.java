@@ -344,6 +344,11 @@ class MockTensor implements Tensor {
     }
 
     @Override
+    public Tensor indexSelect(int axis, Tensor indices) {
+        return null;
+    }
+
+    @Override
     public Tensor add(Tensor other) {
         return null;
     }

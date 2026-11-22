@@ -563,4 +563,54 @@ class DefaultTensorAutogradTest {
     }
 
 
+
+    @Test
+    void eagerIndexSelectBackwardAccumulatesRepeatedIndexContributions() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(new float[] { 10.0f, 20.0f, 30.0f }, backend, 3);
+        input.setRequiresGrad(true);
+        Tensor indices = TensorFactory.of(new int[] { 2, 0, 2 }, backend, 3);
+        Tensor selected = input.indexSelect(0, indices);
+        Tensor seed = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f }, backend, 3);
+
+        try {
+            selected.backward(seed);
+            assertArrayEquals(new float[] { 2.0f, 0.0f, 4.0f },
+                    input.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            selected.release();
+            indices.release();
+            input.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void eagerIndexAddBackwardRoutesGradientsToDestinationAndSource() {
+        CpuBackend backend = new CpuBackend();
+        Tensor destination = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f }, backend, 3);
+        Tensor source = TensorFactory.of(new float[] { 4.0f, 5.0f }, backend, 2);
+        destination.setRequiresGrad(true);
+        source.setRequiresGrad(true);
+        Tensor indices = TensorFactory.of(new int[] { 1, 1 }, backend, 2);
+        Tensor output = destination.indexAdd(0, indices, source);
+        Tensor seed = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f }, backend, 3);
+
+        try {
+            assertArrayEquals(new float[] { 1.0f, 11.0f, 3.0f }, output.toFloatArray(), 1.0e-6f);
+            output.backward(seed);
+            assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f },
+                    destination.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 2.0f, 2.0f },
+                    source.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            output.release();
+            indices.release();
+            source.release();
+            destination.release();
+            backend.close();
+        }
+    }
 }

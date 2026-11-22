@@ -4,6 +4,7 @@ import tech.kayys.aljabr.core.tool.ToolCall;
 import tech.kayys.aljabr.core.tool.ToolCallParseDiagnostic;
 import tech.kayys.aljabr.core.tool.ToolCallParseResult;
 import tech.kayys.aljabr.core.tool.ToolCallParser;
+import tech.kayys.aljabr.core.tool.ToolCallProtocolDescriptor;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -24,6 +25,10 @@ import java.util.Objects;
  * <p>This parser only extracts untrusted model output. It never invokes a tool.</p>
  */
 public final class FunctionGemmaToolCallParser implements ToolCallParser {
+    /** Protocol identifier applications can use to register this parser. */
+    public static final ToolCallProtocolDescriptor PROTOCOL =
+            ToolCallProtocolDescriptor.of("functiongemma-native");
+
     private static final String START = FunctionGemmaTokenizer.START_FUNCTION_CALL;
     private static final String END = FunctionGemmaTokenizer.END_FUNCTION_CALL;
     private static final String ESCAPE = FunctionGemmaTokenizer.ESCAPE;

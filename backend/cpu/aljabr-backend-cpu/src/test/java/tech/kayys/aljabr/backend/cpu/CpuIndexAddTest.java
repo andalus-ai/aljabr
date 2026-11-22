@@ -46,19 +46,31 @@ class CpuIndexAddTest {
     }
 
     @Test
-    void rejectsInvalidIndicesAndIncompatibleShapes() {
+    void rejectsNegativeAndOutOfRangeIndicesAndMismatchedSourceShape() {
         try (CpuBackend backend = new CpuBackend();
                 Tensor destination = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 2, 2);
                 Tensor tooLarge = TensorFactory.of(new int[] {2}, backend, 1);
                 Tensor negative = TensorFactory.of(new int[] {-1}, backend, 1);
                 Tensor validIndices = TensorFactory.of(new int[] {0}, backend, 1);
-                Tensor wrongSource = TensorFactory.of(new float[] {1, 2}, backend, 2, 1)) {
+                Tensor validSource = TensorFactory.of(new float[] {10, 20}, backend, 2, 1);
+                Tensor wrongSource = TensorFactory.of(new float[] {10, 20, 30, 40}, backend, 2, 2)) {
             assertThrows(IndexOutOfBoundsException.class,
-                    () -> destination.indexAdd(1, tooLarge, wrongSource));
+                    () -> destination.indexAdd(1, tooLarge, validSource));
             assertThrows(IndexOutOfBoundsException.class,
-                    () -> destination.indexAdd(1, negative, wrongSource));
+                    () -> destination.indexAdd(1, negative, validSource));
             assertThrows(IllegalArgumentException.class,
                     () -> destination.indexAdd(1, validIndices, wrongSource));
+        }
+    }
+
+    @Test
+    void rejectsNonVectorIndices() {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor destination = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 2, 2);
+                Tensor matrixIndices = TensorFactory.of(new int[] {0}, backend, 1, 1);
+                Tensor source = TensorFactory.of(new float[] {10, 20}, backend, 2, 1)) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> destination.indexAdd(1, matrixIndices, source));
         }
     }
 }
