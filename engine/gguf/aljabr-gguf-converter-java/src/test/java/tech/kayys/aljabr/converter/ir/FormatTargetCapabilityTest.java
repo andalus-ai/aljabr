@@ -70,6 +70,8 @@ class FormatTargetCapabilityTest {
                 tensor("q6", "Q6_K", List.of(256L))));
         var q2 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q2", "Q2_K", List.of(256L))));
+        var q3 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q3", "Q3_K", List.of(256L))));
         var q8 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q8", "Q8_0", List.of(32L))));
 
@@ -79,6 +81,7 @@ class FormatTargetCapabilityTest {
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5_1.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q6.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q2.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q3.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q8.fidelity());
         assertEquals("GGML_QUANTIZATION_DEQUANTIZED", q4.diagnostics().getFirst().code());
     }
