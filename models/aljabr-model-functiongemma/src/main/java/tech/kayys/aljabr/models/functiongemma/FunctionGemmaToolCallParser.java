@@ -69,12 +69,12 @@ public final class FunctionGemmaToolCallParser {
             if (start < 0) break;
             int bodyStart = start + START.length();
             int end = output.indexOf(END, bodyStart);
-            if (end < 0) {
-                int nextStart = output.indexOf(START, bodyStart);
+            int nextStart = output.indexOf(START, bodyStart);
+            if (end < 0 || (nextStart >= 0 && nextStart < end)) {
                 diagnostics.add(new ToolCallParseDiagnostic(
                         "UNTERMINATED_CALL",
                         ToolCallParseDiagnostic.Severity.ERROR,
-                        "FunctionGemma call has no matching end marker",
+                        "FunctionGemma call has no matching end marker before the next call",
                         start));
                 if (nextStart < 0) break;
                 cursor = nextStart;
