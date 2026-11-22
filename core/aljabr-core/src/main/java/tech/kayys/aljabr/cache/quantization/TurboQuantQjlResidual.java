@@ -93,9 +93,22 @@ public final class TurboQuantQjlResidual {
             throw new IllegalArgumentException(
                     "encoded residual dimension or projection seed does not match this quantizer");
         }
-        int[] signs = TurboQuantIndexBitPacking.unpack(encoded.packedSigns, dimension, 1);
+        return decode(encoded.packedSigns, encoded.norm);
+    }
+
+    /**
+     * Reconstructs from the canonical packed sign payload and its FP64 residual
+     * norm. This overload allows enclosing codecs to bit-pack sign vectors
+     * across multiple KV heads without retaining per-vector padding bytes.
+     */
+    public float[] decode(byte[] packedSigns, double norm) {
+        Objects.requireNonNull(packedSigns, "packedSigns");
+        if (!Double.isFinite(norm) || norm < 0.0) {
+            throw new IllegalArgumentException("residual norm must be finite and non-negative");
+        }
+        int[] signs = TurboQuantIndexBitPacking.unpack(packedSigns, dimension, 1);
         float[] reconstructed = new float[dimension];
-        if (encoded.norm == 0.0) {
+        if (norm == 0.0) {
             return reconstructed;
         }
 
@@ -108,7 +121,7 @@ public final class TurboQuantQjlResidual {
             }
         }
 
-        double scale = (StrictMath.sqrt(Math.PI / 2.0) / dimension) * encoded.norm;
+        double scale = (StrictMath.sqrt(Math.PI / 2.0) / dimension) * norm;
         for (int i = 0; i < dimension; i++) {
             double value = accumulation[i] * scale;
             float narrowed = (float) value;
