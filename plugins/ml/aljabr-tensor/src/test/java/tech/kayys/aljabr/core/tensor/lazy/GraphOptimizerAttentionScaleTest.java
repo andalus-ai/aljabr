@@ -91,6 +91,21 @@ class GraphOptimizerAttentionScaleTest {
     }
 
     @Test
+    void doesNotFuseAttentionWhenAllOperandsUseUnsupportedNonF32DType() {
+        Shape shape = new Shape(4, 4);
+        GraphNode query = typedNode(OpType.RELU, List.of(), new Object[0], shape, DType.F16);
+        GraphNode key = typedNode(OpType.RELU, List.of(), new Object[0], shape, DType.F16);
+        GraphNode value = typedNode(OpType.RELU, List.of(), new Object[0], shape, DType.F16);
+        GraphNode transpose = typedNode(OpType.TRANSPOSE, List.of(key), new Object[0], shape, DType.F16);
+        GraphNode scores = typedNode(OpType.MATMUL, List.of(query, transpose), new Object[0], shape, DType.F16);
+        GraphNode scaled = typedNode(OpType.MUL_SCALAR, List.of(scores), new Object[] { 0.5f }, shape, DType.F16);
+        GraphNode probabilities = typedNode(OpType.SOFTMAX, List.of(scaled), new Object[0], shape, DType.F16);
+        GraphNode root = typedNode(OpType.MATMUL, List.of(probabilities, value), new Object[0], shape, DType.F16);
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    @Test
     void doesNotFuseRankTwoAttentionWhenKeyAndValueSequenceLengthsDiffer() {
         GraphNode query = node(OpType.RELU, List.of(), new Object[0], new Shape(2, 4));
         GraphNode key = node(OpType.RELU, List.of(), new Object[0], new Shape(3, 4));
@@ -136,6 +151,11 @@ class GraphOptimizerAttentionScaleTest {
         GraphNode scaled = node(scaleOperation, List.of(scores), new Object[] { scale }, matrix);
         GraphNode probabilities = node(OpType.SOFTMAX, List.of(scaled), softmaxArguments, matrix);
         return node(OpType.MATMUL, List.of(probabilities, value), new Object[0], matrix);
+    }
+
+    private static GraphNode typedNode(
+            OpType op, List<GraphNode> inputs, Object[] arguments, Shape shape, DType dtype) {
+        return new GraphNode(op, inputs, arguments, shape, dtype);
     }
 
     private static GraphNode node(OpType op, List<GraphNode> inputs, Object[] arguments, Shape shape) {

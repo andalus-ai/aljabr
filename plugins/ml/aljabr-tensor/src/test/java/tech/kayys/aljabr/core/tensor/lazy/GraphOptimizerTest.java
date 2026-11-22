@@ -18,10 +18,12 @@ class GraphOptimizerTest {
 
     @Test
     void preservesBackwardRuleWhenAnInputRewriteRebuildsNode() {
-        GraphNode leaf = node(OpType.RELU, List.of(), new Object[0], null);
-        GraphNode removable = node(OpType.ADD_SCALAR, List.of(leaf), new Object[] { 0.0f }, null);
+        GraphNode leaf = new GraphNode(OpType.RELU, List.of(), new Object[0], SHAPE, DType.I32);
+        GraphNode removable = new GraphNode(OpType.ADD_SCALAR, List.of(leaf),
+                new Object[] { 0.0f }, SHAPE, DType.I32);
         BackwardFunction backward = (output, gradient, inputs, arguments) -> new Tensor[] { null, null };
-        GraphNode root = node(OpType.ADD, List.of(removable, leaf), new Object[0], backward);
+        GraphNode root = new GraphNode(OpType.ADD, List.of(removable, leaf),
+                new Object[0], SHAPE, DType.I32, backward);
 
         GraphNode optimized = GraphOptimizer.optimize(root);
 
