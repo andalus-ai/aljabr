@@ -385,7 +385,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     int out = outputBase + half * 128 + plane * 32 + lane * 16;
                     for (int i = 0; i < 16; i++) {
                         int low = ((source[qLane + i] & 0xff) >>> shift) & 0x03;
-                        int highMask = source[hBase + lane * 8 + i % 8] & 0xff;
+                        int highMask = source[hBase + lane * 16 + i] & 0xff;
                         int signedQuant = low - ((highMask & mask) != 0 ? 0 : 4);
                         output.putFloat((out + i) * Float.BYTES, scale * signedQuant);
                     }
