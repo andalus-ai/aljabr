@@ -265,7 +265,7 @@ public final class Gemma3TextBackbone {
             // KVCacheSession owns sequence visibility; this bulk write remains
             // uncommitted until every layer has completed the prefill.
             cacheSession.writeRange(
-                    layerIndex, 0, input.length, flatten(key), 0, valueFlat, 0);
+                    layerIndex, 0, input.length, flatten(key), 0, flatten(value), 0);
 
             float[][][] attended = causalAttention(query, key, value, layerIndex);
             float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
@@ -542,6 +542,25 @@ public final class Gemma3TextBackbone {
             for (int head = 0; head < heads; head++) {
                 System.arraycopy(input[token][head], 0, output[token], head * dimension, dimension);
             }
+        }
+        return output;
+    }
+
+    /**
+     * Packs position-major token vectors into the contiguous layout required by
+     * {@link tech.kayys.aljabr.cache.KVCacheStorage#writeRange}.
+     */
+    private static float[] flattenTokens(float[][] input) {
+        if (input.length == 0) {
+            return new float[0];
+        }
+        int width = input[0].length;
+        float[] output = new float[Math.multiplyExact(input.length, width)];
+        for (int token = 0; token < input.length; token++) {
+            if (input[token].length != width) {
+                throw new IllegalArgumentException("token vectors must have a consistent width");
+            }
+            System.arraycopy(input[token], 0, output, token * width, width);
         }
         return output;
     }

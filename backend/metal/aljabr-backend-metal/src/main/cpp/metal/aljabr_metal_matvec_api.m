@@ -1298,12 +1298,41 @@ static size_t g_scratch_triple_C0_bytes = 0;
 static size_t g_scratch_triple_C1_bytes = 0;
 static size_t g_scratch_triple_C2_bytes = 0;
 
+static BOOL checked_size_mul(size_t a, size_t b, size_t *result) {
+  if (result == NULL || (a != 0 && b > SIZE_MAX / a))
+    return NO;
+  *result = a * b;
+  return YES;
+}
+
+static BOOL checked_float_buffer_bytes(size_t rows, size_t columns,
+                                       size_t batch, size_t *result) {
+  size_t elements = 0;
+  return checked_size_mul(rows, columns, &elements) &&
+         checked_size_mul(elements, batch, &elements) &&
+         checked_size_mul(elements, sizeof(float), result);
+}
+
+static BOOL checked_aligned_buffer_length(size_t needed, size_t *result) {
+  if (result == NULL || needed > SIZE_MAX - 16383)
+    return NO;
+  *result = (needed + 16383) & ~(size_t)16383;
+  return *result >= needed;
+}
+
 static inline id<MTLBuffer> ensure_shared_buf(id<MTLBuffer> __strong *slot,
                                               size_t *cap, size_t needed) {
+  if (slot == NULL || cap == NULL)
+    return nil;
   if (*slot == nil || *cap < needed) {
-    size_t sz = (needed + 16383) & ~16383;
-    *slot = [g_device newBufferWithLength:sz
-                                  options:MTLResourceStorageModeShared];
+    size_t sz = 0;
+    if (!checked_aligned_buffer_length(needed, &sz))
+      return nil;
+    id<MTLBuffer> buffer =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (buffer == nil)
+      return nil;
+    *slot = buffer;
     *cap = sz;
   }
   return *slot;
@@ -1322,8 +1351,12 @@ int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B, int K,
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
-    size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
-    size_t cBytes = (size_t)batchSize * (size_t)N * sizeof(float);
+    size_t aBytes = 0, cBytes = 0;
+    if (!checked_float_buffer_bytes((size_t)batchSize, (size_t)K, 1,
+                                    &aBytes) ||
+        !checked_float_buffer_bytes((size_t)batchSize, (size_t)N, 1,
+                                    &cBytes))
+      return -2;
 
     id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_single_A,
                                            &g_scratch_single_A_bytes, aBytes);
@@ -1375,8 +1408,12 @@ int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
   @synchronized(matvec_scratch_lock()) {
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
   @autoreleasepool {
-    size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
-    size_t cBytes = (size_t)batchSize * (size_t)N * sizeof(float);
+    size_t aBytes = 0, cBytes = 0;
+    if (!checked_float_buffer_bytes((size_t)batchSize, (size_t)K, 1,
+                                    &aBytes) ||
+        !checked_float_buffer_bytes((size_t)batchSize, (size_t)N, 1,
+                                    &cBytes))
+      return -2;
     id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_single_A,
                                            &g_scratch_single_A_bytes, aBytes);
     id<MTLBuffer> bufC = ensure_shared_buf(&g_scratch_single_C,
@@ -1475,10 +1512,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
 
   @autoreleasepool {
     size_t bSz = (size_t)batchSize;
-    size_t aBytes = bSz * (size_t)K * sizeof(float);
-    size_t c0Bytes = bSz * (size_t)N0 * sizeof(float);
-    size_t c1Bytes = bSz * (size_t)N1 * sizeof(float);
-    size_t c2Bytes = bSz * (size_t)N2 * sizeof(float);
+    size_t aBytes = 0, c0Bytes = 0, c1Bytes = 0, c2Bytes = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)K, 1, &aBytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)N0, 1, &c0Bytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)N1, 1, &c1Bytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)N2, 1, &c2Bytes))
+      return -2;
 
     id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_triple_A,
                                            &g_scratch_triple_A_bytes, aBytes);
@@ -1581,9 +1620,13 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
   @autoreleasepool {
     uint64_t t0 = monotonic_nanos();
     size_t bSz = (size_t)batchSize;
-    size_t dimBytes = bSz * (size_t)dim * sizeof(float);
+    size_t dimBytes = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)dim, 1, &dimBytes))
+      return -2;
     if (g_scratch_inA == nil || g_scratch_dim_bytes < dimBytes) {
-      size_t sz = (dimBytes + 16383) & ~16383;
+      size_t sz = 0;
+      if (!checked_aligned_buffer_length(dimBytes, &sz))
+        return -2;
       g_scratch_inA =
           [g_device newBufferWithLength:sz
                                 options:MTLResourceStorageModeShared];
@@ -1597,9 +1640,13 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
 
     memcpy([g_scratch_inA contents], inA, dimBytes);
 
-    size_t needed = bSz * (size_t)ffnDim * sizeof(float);
+    size_t needed = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)ffnDim, 1, &needed))
+      return -2;
     if (g_scratch_gate == nil || g_scratch_ffn_bytes < needed) {
-      size_t sz = (needed + 16383) & ~16383;
+      size_t sz = 0;
+      if (!checked_aligned_buffer_length(needed, &sz))
+        return -2;
       g_scratch_gate =
           [g_device newBufferWithLength:sz
                                 options:MTLResourceStorageModePrivate];
@@ -2030,35 +2077,39 @@ static BOOL ensure_woff_next_qkv(size_t qBytes, size_t kBytes, size_t vBytes,
                                  size_t normBytes) {
   if (qBytes > g_woff_nextQ_cap) {
     size_t sz = (qBytes + 16383) & ~16383;
-    g_woff_nextQ = [g_device newBufferWithLength:sz
-                                         options:MTLResourceStorageModeShared];
-    g_woff_nextQ_cap = sz;
-    if (!g_woff_nextQ)
+    id<MTLBuffer> nextQ =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!nextQ)
       return NO;
+    g_woff_nextQ = nextQ;
+    g_woff_nextQ_cap = sz;
   }
   if (kBytes > g_woff_nextK_cap) {
     size_t sz = (kBytes + 16383) & ~16383;
-    g_woff_nextK = [g_device newBufferWithLength:sz
-                                         options:MTLResourceStorageModeShared];
-    g_woff_nextK_cap = sz;
-    if (!g_woff_nextK)
+    id<MTLBuffer> nextK =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!nextK)
       return NO;
+    g_woff_nextK = nextK;
+    g_woff_nextK_cap = sz;
   }
   if (vBytes > g_woff_nextV_cap) {
     size_t sz = (vBytes + 16383) & ~16383;
-    g_woff_nextV = [g_device newBufferWithLength:sz
-                                         options:MTLResourceStorageModeShared];
-    g_woff_nextV_cap = sz;
-    if (!g_woff_nextV)
+    id<MTLBuffer> nextV =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!nextV)
       return NO;
+    g_woff_nextV = nextV;
+    g_woff_nextV_cap = sz;
   }
   if (normBytes > g_woff_nextAttnNormW_cap) {
     size_t sz = (normBytes + 16383) & ~16383;
-    g_woff_nextAttnNormW =
+    id<MTLBuffer> nextNorm =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_nextAttnNormW_cap = sz;
-    if (!g_woff_nextAttnNormW)
+    if (!nextNorm)
       return NO;
+    g_woff_nextAttnNormW = nextNorm;
+    g_woff_nextAttnNormW_cap = sz;
   }
   return YES;
 }
@@ -2066,44 +2117,56 @@ static BOOL ensure_woff_next_qkv(size_t qBytes, size_t kBytes, size_t vBytes,
 static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
   if (attnKBytes > g_woff_attnFull_cap) {
     size_t sz = (attnKBytes + 16383) & ~16383;
-    g_woff_attnFull =
+    id<MTLBuffer> attnFull =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_attnFull_cap = sz;
-    if (!g_woff_attnFull)
+    if (!attnFull)
       return NO;
+    g_woff_attnFull = attnFull;
+    g_woff_attnFull_cap = sz;
   }
   if (dimBytes > g_woff_dim_cap) {
-    size_t sz = (dimBytes + 16383) & ~16383;
-    g_woff_xb = [g_device newBufferWithLength:sz
-                                      options:MTLResourceStorageModeShared];
-    g_woff_x = [g_device newBufferWithLength:sz
-                                     options:MTLResourceStorageModeShared];
-    g_woff_normW1 = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_normW2 = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_normW3 = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_dim_cap = sz;
-    if (!g_woff_xb || !g_woff_x || !g_woff_normW1 || !g_woff_normW2 ||
-        !g_woff_normW3)
+    size_t sz = 0;
+    if (!checked_aligned_buffer_length(dimBytes, &sz))
       return NO;
+    id<MTLBuffer> xb =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> x =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> normW1 =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> normW2 =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> normW3 =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!xb || !x || !normW1 || !normW2 || !normW3)
+      return NO;
+    g_woff_xb = xb;
+    g_woff_x = x;
+    g_woff_normW1 = normW1;
+    g_woff_normW2 = normW2;
+    g_woff_normW3 = normW3;
+    g_woff_dim_cap = sz;
   }
   return YES;
 }
 
 static BOOL ensure_woff_ffn_bufs(size_t ffnBytes) {
   if (ffnBytes > g_woff_ffn_cap) {
-    size_t sz = (ffnBytes + 16383) & ~16383;
-    g_woff_ffn_gate =
-        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_up =
-        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_hb =
-        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_cap = sz;
-    if (!g_woff_ffn_gate || !g_woff_ffn_up || !g_woff_ffn_hb)
+    size_t sz = 0;
+    if (!checked_aligned_buffer_length(ffnBytes, &sz))
       return NO;
+    id<MTLBuffer> gate =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+    id<MTLBuffer> up =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+    id<MTLBuffer> hb =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
+    if (!gate || !up || !hb)
+      return NO;
+    g_woff_ffn_gate = gate;
+    g_woff_ffn_up = up;
+    g_woff_ffn_hb = hb;
+    g_woff_ffn_cap = sz;
   }
   return YES;
 }
@@ -2684,19 +2747,21 @@ static size_t g_woff_outputNormW_cap = 0;
 static BOOL ensure_woff_logits(size_t logitsBytes, size_t normBytes) {
   if (logitsBytes > g_woff_logits_cap) {
     size_t sz = (logitsBytes + 16383) & ~16383;
-    g_woff_logits = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_logits_cap = sz;
-    if (!g_woff_logits)
+    id<MTLBuffer> logits =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!logits)
       return NO;
+    g_woff_logits = logits;
+    g_woff_logits_cap = sz;
   }
   if (normBytes > g_woff_outputNormW_cap) {
     size_t sz = (normBytes + 16383) & ~16383;
-    g_woff_outputNormW =
+    id<MTLBuffer> outputNormW =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_outputNormW_cap = sz;
-    if (!g_woff_outputNormW)
+    if (!outputNormW)
       return NO;
+    g_woff_outputNormW = outputNormW;
+    g_woff_outputNormW_cap = sz;
   }
   return YES;
 }
@@ -4225,9 +4290,11 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     uint32_t nDim = (uint32_t)cfg->wO_N;
     uint32_t nFfn = (uint32_t)cfg->ffnDim;
     uint32_t kDim = (uint32_t)cfg->wO_K;
-    size_t dimBytes = bSz * (size_t)nDim * sizeof(float);
-    size_t attnBytes = bSz * (size_t)kDim * sizeof(float);
-    size_t ffnBytes = bSz * (size_t)nFfn * sizeof(float);
+    size_t dimBytes = 0, attnBytes = 0, ffnBytes = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)nDim, 1, &dimBytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)kDim, 1, &attnBytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)nFfn, 1, &ffnBytes))
+      return -2;
 
     id<MTLBuffer> bufX = ensure_shared_buf(&g_scratch_wo_ffn_x, &g_scratch_wo_ffn_x_bytes, dimBytes);
     id<MTLBuffer> bufAttn = ensure_shared_buf(&g_scratch_wo_ffn_attn, &g_scratch_wo_ffn_attn_bytes, attnBytes);
@@ -4238,7 +4305,9 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     }
 
     if (g_scratch_hb == nil || g_scratch_ffn_bytes < ffnBytes) {
-      size_t sz = (ffnBytes + 16383) & ~16383;
+      size_t sz = 0;
+      if (!checked_aligned_buffer_length(ffnBytes, &sz))
+        return -2;
       g_scratch_hb = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
       g_scratch_ffn_bytes = sz;
     }
