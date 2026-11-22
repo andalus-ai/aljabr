@@ -1625,8 +1625,8 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
       return -2;
     if (g_scratch_inA == nil || g_scratch_dim_bytes < dimBytes) {
       size_t sz = 0;
-      if (!checked_aligned_buffer_length(dimBytes, &sz))
-        return -2;
+    if (!checked_aligned_buffer_length(dimBytes, &sz))
+      return NO;
       g_scratch_inA =
           [g_device newBufferWithLength:sz
                                 options:MTLResourceStorageModeShared];
@@ -2153,8 +2153,8 @@ static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
 static BOOL ensure_woff_ffn_bufs(size_t ffnBytes) {
   if (ffnBytes > g_woff_ffn_cap) {
     size_t sz = 0;
-      if (!checked_aligned_buffer_length(ffnBytes, &sz))
-        return -2;
+    if (!checked_aligned_buffer_length(ffnBytes, &sz))
+      return NO;
     id<MTLBuffer> gate =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
     id<MTLBuffer> up =
