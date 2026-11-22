@@ -771,6 +771,8 @@ class CpuBackendStorageTest {
         }
         assertEquals(0, scalarStorage.references());
     }
+
+    @Test
     void softmaxReadsStridedTensorWithNonZeroStorageOffset() {
         HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 88f);
         DefaultTensor input = new DefaultTensor(
