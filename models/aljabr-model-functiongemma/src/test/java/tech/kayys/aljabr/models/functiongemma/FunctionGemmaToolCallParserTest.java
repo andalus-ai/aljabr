@@ -3,6 +3,7 @@ package tech.kayys.aljabr.models.functiongemma;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.core.tool.ToolCall;
 import tech.kayys.aljabr.core.tool.ToolCallParseDiagnostic;
+import tech.kayys.aljabr.core.tool.ToolCallParser;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -12,6 +13,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FunctionGemmaToolCallParserTest {
     private final FunctionGemmaToolCallParser parser = new FunctionGemmaToolCallParser();
+
+    @Test
+    void implementsModelIndependentParserContract() {
+        ToolCallParser sharedParser = parser;
+        var result = sharedParser.parseResult(
+                "<start_function_call>call:lookup{id:42}<end_function_call>");
+
+        assertEquals(List.of("lookup"), result.calls().stream().map(ToolCall::name).toList());
+        assertTrue(result.isComplete());
+    }
 
     @Test
     void parsesEscapedStringsAndPrimitiveArguments() {
