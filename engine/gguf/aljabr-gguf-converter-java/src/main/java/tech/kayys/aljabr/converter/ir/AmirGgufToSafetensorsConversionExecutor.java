@@ -671,6 +671,9 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed metadata"));
         AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed tensor metadata"));
+        model.architectureDescriptor().ifPresent(descriptor ->
+                AmirSourceMetadataCodec.putUnique(values, AmirArchitectureDescriptorCodec.KEY,
+                        AmirArchitectureDescriptorCodec.encode(descriptor), "Safetensors architecture descriptor"));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) -> AmirSourceMetadataCodec.putUnique(values,
                     "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value,
