@@ -145,6 +145,12 @@ public class GraphOptimizer {
                 || normalizedFirst == rank - 1 && normalizedSecond == rank - 2;
     }
 
+    private static boolean isIntegralDType(tech.kayys.aljabr.core.tensor.DType dtype) {
+        return dtype == tech.kayys.aljabr.core.tensor.DType.I32
+                || dtype == tech.kayys.aljabr.core.tensor.DType.I8
+                || dtype == tech.kayys.aljabr.core.tensor.DType.INT8;
+    }
+
     private static GraphNode optimizeNode(GraphNode node, Map<GraphNode, GraphNode> memo) {
         if (memo.containsKey(node)) {
             return memo.get(node);
@@ -158,6 +164,7 @@ public class GraphOptimizer {
         // ADD_SCALAR(x, 0) -> x is safe only when the graph has no gradient path.
         if (node.getOp() == OpType.ADD_SCALAR
                 && !node.requiresGrad()
+                && isIntegralDType(node.getOutputDType())
                 && node.getArgs().length == 1) {
             float scalar = (float) node.getArgs()[0];
             if (scalar == 0.0f) {
