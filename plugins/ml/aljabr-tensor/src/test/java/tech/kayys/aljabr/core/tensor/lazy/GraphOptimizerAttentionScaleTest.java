@@ -46,6 +46,22 @@ class GraphOptimizerAttentionScaleTest {
     }
 
     @Test
+    void doesNotFuseAttentionWhenSoftmaxAxisIsFractional() {
+        GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[] { 1.5d },
+                new Object[0], new Shape(4, 4));
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    @Test
+    void doesNotFuseAttentionWhenTransposeAxesAreFractional() {
+        GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[0],
+                new Object[] { 0.5d, 1.5d }, new Shape(4, 4));
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    @Test
     void doesNotFuseAttentionWhenTransposeDoesNotSwapLastTwoAxes() {
         Shape batched = new Shape(2, 3, 4, 4);
         GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[0],
