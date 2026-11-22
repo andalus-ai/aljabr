@@ -1338,7 +1338,7 @@ class CpuBackendStorageTest {
     @Test
     void indexSelectReadsOffsetAndStridedSourceAndIndicesInLogicalOrder() {
         HostStorage sourceStorage = new HostStorage(99f, 1f, 4f, 2f, 5f, 3f, 6f);
-        HostStorage indexStorage = new HostStorage(99f, 0f, 99f, 0f);
+        HostStorage indexStorage = new HostStorage(99f, 0f, 99f, 0f, 99f, 0f);
         indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 99);
         indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 4, 2);
         indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 8, 99);
