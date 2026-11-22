@@ -242,6 +242,12 @@ public interface ComputeBackend extends AutoCloseable {
 
     Tensor slice(Tensor a, long[] offsets, long[] sizes);
 
+    /** Axis-wise selection; providers must preserve index order and duplicates. */
+    default Tensor indexSelect(Tensor input, int axis, Tensor indices) {
+        throw new UnsupportedOperationException(
+                "Index selection is not supported by backend " + getClass().getName());
+    }
+
     /**
      * Returns equal, non-empty slices along an axis. Negative axes count from
      * the final dimension; the axis size must be evenly divisible by parts.
