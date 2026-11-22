@@ -63,11 +63,9 @@ class DiagnosticContextTest {
 
     @Test
     void rejectsConflictsWithStandardKeys() {
-        DiagnosticContext context = DiagnosticContext.builder()
+        assertThrows(IllegalArgumentException.class, () -> DiagnosticContext.builder()
                 .correlationId("trace-1")
                 .attribute("operation", "overridden")
-                .build();
-
-        assertThrows(IllegalArgumentException.class, context::asMap);
+                .build());
     }
 }
