@@ -25,6 +25,7 @@ public enum OpType {
     RESHAPE,
     SLICE,
     INDEX_SELECT,
+    INDEX_ADD,
     CAT,
     SPLIT,
     FLATTEN,
