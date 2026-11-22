@@ -333,7 +333,6 @@ final class JavaGgufBackend implements GgufBackend {
         } catch (InferenceException ie) {
             throw ie;
         } catch (Exception e) {
-            metalKvPrefixValid = false; // Metal state unknown after error
             e.printStackTrace();
             throw new InferenceException("Java GGUF generation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage(), e);
         }
