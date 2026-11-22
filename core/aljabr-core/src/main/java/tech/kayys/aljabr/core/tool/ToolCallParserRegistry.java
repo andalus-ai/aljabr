@@ -9,17 +9,17 @@ import java.util.Set;
 
 /**
  * Immutable registry of tool-call parsers keyed by an application-defined
- * protocol identifier.
+ * protocol descriptor.
  *
- * <p>The identifier is deliberately opaque to core. Applications decide
- * which parser key applies to a model or response format; this registry does
- * not inspect model metadata, discover plugins, or execute parsed calls.</p>
+ * <p>Applications decide which descriptor applies to a model or response
+ * format. This registry does not inspect model metadata, discover plugins,
+ * or execute parsed calls.</p>
  */
 public final class ToolCallParserRegistry {
 
-    private final Map<String, ToolCallParser> parsers;
+    private final Map<ToolCallProtocolDescriptor, ToolCallParser> parsers;
 
-    private ToolCallParserRegistry(Map<String, ToolCallParser> parsers) {
+    private ToolCallParserRegistry(Map<ToolCallProtocolDescriptor, ToolCallParser> parsers) {
         this.parsers = Collections.unmodifiableMap(new LinkedHashMap<>(parsers));
     }
 
@@ -28,28 +28,44 @@ public final class ToolCallParserRegistry {
         return new Builder();
     }
 
-    /** Returns the parser registered for the supplied protocol identifier. */
+    /** Returns the parser registered for the supplied protocol descriptor. */
+    public Optional<ToolCallParser> find(ToolCallProtocolDescriptor protocol) {
+        return Optional.ofNullable(parsers.get(Objects.requireNonNull(protocol, "protocol")));
+    }
+
+    /** Returns the parser registered for a protocol identifier. */
     public Optional<ToolCallParser> find(String protocolId) {
-        return Optional.ofNullable(parsers.get(requireProtocolId(protocolId)));
+        return find(ToolCallProtocolDescriptor.of(protocolId));
     }
 
     /**
-     * Returns the parser registered for the supplied protocol identifier.
+     * Returns the parser registered for the supplied protocol descriptor.
      *
      * @throws IllegalArgumentException if no parser is registered
      */
-    public ToolCallParser require(String protocolId) {
-        String id = requireProtocolId(protocolId);
-        ToolCallParser parser = parsers.get(id);
+    public ToolCallParser require(ToolCallProtocolDescriptor protocol) {
+        Objects.requireNonNull(protocol, "protocol");
+        ToolCallParser parser = parsers.get(protocol);
         if (parser == null) {
-            throw new IllegalArgumentException("No tool-call parser registered for protocol: " + id);
+            throw new IllegalArgumentException("No tool-call parser registered for protocol: " + protocol.id());
         }
         return parser;
     }
 
+    /** Returns the parser registered for a protocol identifier. */
+    public ToolCallParser require(String protocolId) {
+        return require(ToolCallProtocolDescriptor.of(protocolId));
+    }
+
+    /** Returns registered protocol descriptors in registration order. */
+    public Set<ToolCallProtocolDescriptor> protocols() {
+        return parsers.keySet();
+    }
+
     /** Returns registered protocol identifiers in registration order. */
     public Set<String> protocolIds() {
-        return parsers.keySet();
+        return parsers.keySet().stream().map(ToolCallProtocolDescriptor::id)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     public int size() {
@@ -60,33 +76,27 @@ public final class ToolCallParserRegistry {
         return parsers.isEmpty();
     }
 
-    private static String requireProtocolId(String protocolId) {
-        Objects.requireNonNull(protocolId, "protocolId");
-        if (protocolId.isBlank()) {
-            throw new IllegalArgumentException("protocolId must not be blank");
-        }
-        return protocolId;
-    }
-
     /** Mutable construction helper; built registries are immutable snapshots. */
     public static final class Builder {
-        private final Map<String, ToolCallParser> parsers = new LinkedHashMap<>();
+        private final Map<ToolCallProtocolDescriptor, ToolCallParser> parsers = new LinkedHashMap<>();
 
         private Builder() {
         }
 
-        /**
-         * Registers a parser under an application-defined protocol identifier.
-         *
-         * @throws IllegalArgumentException if the identifier is blank or already registered
-         */
-        public Builder register(String protocolId, ToolCallParser parser) {
-            String id = requireProtocolId(protocolId);
+        /** Registers a parser under an application-defined protocol descriptor. */
+        public Builder register(ToolCallProtocolDescriptor protocol, ToolCallParser parser) {
+            Objects.requireNonNull(protocol, "protocol");
             Objects.requireNonNull(parser, "parser");
-            if (parsers.putIfAbsent(id, parser) != null) {
-                throw new IllegalArgumentException("A tool-call parser is already registered for protocol: " + id);
+            if (parsers.putIfAbsent(protocol, parser) != null) {
+                throw new IllegalArgumentException(
+                        "A tool-call parser is already registered for protocol: " + protocol.id());
             }
             return this;
+        }
+
+        /** Convenience overload for callers that already have a protocol identifier. */
+        public Builder register(String protocolId, ToolCallParser parser) {
+            return register(ToolCallProtocolDescriptor.of(protocolId), parser);
         }
 
         /** Builds an immutable snapshot of the current registrations. */
