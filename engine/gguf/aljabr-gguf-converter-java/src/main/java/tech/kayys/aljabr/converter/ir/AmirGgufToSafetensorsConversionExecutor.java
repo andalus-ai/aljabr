@@ -157,6 +157,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
             case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
+            case "Q3_K" -> TensorEncoding.dequantized("Q3_K", 110, 256);
             case "Q4_0" -> TensorEncoding.dequantized("Q4_0", 18, 32);
             case "Q4_1" -> TensorEncoding.dequantized("Q4_1", 20, 32);
             case "Q5_0" -> TensorEncoding.dequantized("Q5_0", 22, 32);
@@ -170,7 +171,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "Q2_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
+            case "Q2_K", "Q3_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -275,6 +276,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     dequantizeQ2KBlock(source, base, values, i * valuesPerBlock);
                     continue;
                 }
+                if (type.equals("Q3_K")) {
+                    dequantizeQ3KBlock(source, base, values, i * valuesPerBlock);
+                    continue;
+                }
                 if (type.equals("Q6_K")) {
                     dequantizeQ6KBlock(source, base, values, i * valuesPerBlock);
                     continue;
@@ -313,7 +318,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     values.putFloat(dequantizeValue(type, quantized, scale, minimum));
                 }
             }
-            if (type.equals("Q2_K") || type.equals("Q6_K")) {
+            if (type.equals("Q2_K") || type.equals("Q3_K") || type.equals("Q6_K")) {
                 values.position(0);
                 values.limit(count * valuesPerBlock * Float.BYTES);
             } else {
@@ -356,6 +361,54 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             int quantized = ((source[quantizedOffset + i] & 0xff) >>> shift) & 0x03;
             output.putFloat((outputOffset + i) * Float.BYTES, dl * quantized - ml);
         }
+    }
+
+    /**
+     * GGML block_q3_K layout: hmask[32], qs[64], scales[12], fp16 d.
+     * The 12 packed scale bytes encode sixteen signed 6-bit subgroup scales.
+     */
+    private static void dequantizeQ3KBlock(byte[] source, int base, ByteBuffer output, int blockIndex) {
+        int hmaskOffset = base;
+        int quantizedOffset = base + 32;
+        int scalesOffset = base + 96;
+        float d = halfToFloat(source[base + 108] & 0xff, source[base + 109] & 0xff);
+        int[] scales = unpackQ3KScales(source, scalesOffset);
+        int outputBase = blockIndex * 256;
+
+        for (int half = 0; half < 2; half++) {
+            int qBase = quantizedOffset + half * 32;
+            int hBase = hmaskOffset + half * 16;
+            for (int plane = 0; plane < 4; plane++) {
+                int shift = plane * 2;
+                int mask = 1 << plane;
+                for (int lane = 0; lane < 2; lane++) {
+                    int scaleIndex = half * 8 + plane * 2 + lane;
+                    float scale = d * (scales[scaleIndex] - 32);
+                    int qLane = qBase + lane * 16;
+                    int out = outputBase + half * 128 + plane * 32 + lane * 16;
+                    for (int i = 0; i < 16; i++) {
+                        int low = ((source[qLane + i] & 0xff) >>> shift) & 0x03;
+                        int highMask = source[hBase + lane * 16 + i] & 0xff;
+                        int signedQuant = low - ((highMask & mask) != 0 ? 0 : 4);
+                        output.putFloat((out + i) * Float.BYTES, scale * signedQuant);
+                    }
+                }
+            }
+        }
+    }
+
+    private static int[] unpackQ3KScales(byte[] source, int offset) {
+        int[] scales = new int[16];
+        for (int i = 0; i < 4; i++) {
+            int packedLow = source[offset + i] & 0xff;
+            int packedHigh = source[offset + i + 4] & 0xff;
+            int packedTop = source[offset + i + 8] & 0xff;
+            scales[i] = (packedLow & 0x0f) | ((packedTop & 0x03) << 4);
+            scales[i + 4] = (packedHigh & 0x0f) | (((packedTop >>> 2) & 0x03) << 4);
+            scales[i + 8] = ((packedLow >>> 4) & 0x0f) | (((packedTop >>> 4) & 0x03) << 4);
+            scales[i + 12] = ((packedHigh >>> 4) & 0x0f) | (((packedTop >>> 6) & 0x03) << 4);
+        }
+        return scales;
     }
 
     /**
