@@ -240,6 +240,44 @@ public final class TensorOperationValidator {
     public record IndexSelectPlan(int axis, Shape outputShape) { }
 
     /**
+     * Validates indexed addition metadata. The source matches the destination
+     * in every dimension except the selected axis, whose size equals the index
+     * vector length. Index value bounds are checked by the backend.
+     */
+    public static IndexAddPlan validateIndexAdd(
+            Shape destination, Shape indices, Shape source, int requestedAxis) {
+        Objects.requireNonNull(destination, "destination shape must not be null");
+        Objects.requireNonNull(indices, "indices shape must not be null");
+        Objects.requireNonNull(source, "source shape must not be null");
+        int rank = destination.rank();
+        long normalized = requestedAxis < 0 ? (long) rank + requestedAxis : requestedAxis;
+        if (rank == 0 || normalized < 0 || normalized >= rank) {
+            throw new IllegalArgumentException(
+                    "Index-add axis " + requestedAxis + " is out of range for tensor rank " + rank);
+        }
+        if (indices.rank() != 1) {
+            throw new IllegalArgumentException(
+                    "index-add indices must be rank one; got rank " + indices.rank());
+        }
+        if (source.rank() != rank) {
+            throw new IllegalArgumentException(
+                    "index-add source rank " + source.rank() + " does not match destination rank " + rank);
+        }
+        int axis = (int) normalized;
+        for (int dimension = 0; dimension < rank; dimension++) {
+            long expected = dimension == axis ? indices.dim(0) : destination.dim(dimension);
+            if (source.dim(dimension) != expected) {
+                throw new IllegalArgumentException(
+                        "index-add source dimension " + dimension + " is " + source.dim(dimension)
+                                + "; expected " + expected);
+            }
+        }
+        return new IndexAddPlan(axis, destination);
+    }
+
+    public record IndexAddPlan(int axis, Shape outputShape) { }
+
+    /**
      * Validates flattening the complete logical tensor into a one-dimensional shape.
      * Scalars become a length-one vector and empty tensors remain empty vectors.
      */
