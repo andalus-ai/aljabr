@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. IQ4_NL, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -49,6 +49,9 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
     private static final String TARGET_FORMAT = "safetensors";
     private static final int COPY_BUFFER_BYTES = 1024 * 1024;
     private static final int BLOCKS_PER_BATCH = 1024;
+    private static final int[] IQ4_NL_VALUES = {
+            -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113
+    };
 
     @Override
     public boolean supports(String sourceFormat, String targetFormat) {
@@ -157,6 +160,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
+            case "IQ4_NL" -> TensorEncoding.dequantized("IQ4_NL", 18, 32);
             case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
             case "Q3_K" -> TensorEncoding.dequantized("Q3_K", 110, 256);
             case "Q4_K" -> TensorEncoding.dequantized("Q4_K", 144, 256);
@@ -174,7 +178,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "IQ4_NL", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -275,6 +279,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("IQ4_NL")) {
+                    dequantizeIQ4NLBlock(source, base, values);
+                    continue;
+                }
                 if (type.equals("Q2_K")) {
                     dequantizeQ2KBlock(source, base, values, i * valuesPerBlock);
                     continue;
@@ -337,6 +345,23 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             }
             writeFully(output, values);
             block += count;
+        }
+    }
+
+    /**
+     * GGML block_iq4_nl layout: fp16 scale followed by sixteen packed nibble pairs.
+     * The nonlinear codebook maps each nibble to a signed integer before scaling.
+     */
+    private static void dequantizeIQ4NLBlock(byte[] source, int base, ByteBuffer output) {
+        float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        int quantizedOffset = base + 2;
+        for (int i = 0; i < 16; i++) {
+            int packed = source[quantizedOffset + i] & 0xff;
+            output.putFloat(scale * IQ4_NL_VALUES[packed & 0x0f]);
+        }
+        for (int i = 0; i < 16; i++) {
+            int packed = source[quantizedOffset + i] & 0xff;
+            output.putFloat(scale * IQ4_NL_VALUES[packed >>> 4]);
         }
     }
 
@@ -604,13 +629,17 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         values.put("aljabr.source.format", SOURCE_FORMAT);
         values.put("aljabr.source.architecture", model.architecture());
         model.metadata().forEach((key, value) ->
-                values.put("aljabr.source.metadata." + key, value));
+                AmirSourceMetadataCodec.putUnique(values, "aljabr.source.metadata." + key, value,
+                        "Safetensors source metadata"));
         model.extensions().forEach((key, value) ->
-                values.put("aljabr.source.extension." + key, value));
-        values.putAll(AmirTypedMetadataCodec.encode(model.typedMetadata()));
+                AmirSourceMetadataCodec.putUnique(values, "aljabr.source.extension." + key, value,
+                        "Safetensors source extension"));
+        AmirTypedMetadataCodec.encode(model.typedMetadata()).forEach((key, value) ->
+                AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed metadata"));
         for (TensorDescriptor tensor : model.tensors()) {
-            tensor.extensions().forEach((key, value) -> values.put(
-                    "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value));
+            tensor.extensions().forEach((key, value) -> AmirSourceMetadataCodec.putUnique(values,
+                    "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value,
+                    "Safetensors tensor extension"));
         }
         return Map.copyOf(values);
     }

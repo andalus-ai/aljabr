@@ -162,12 +162,12 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
             }
         });
         model.metadata().forEach((key, value) ->
-                result.put("aljabr.source.metadata." + key, GgufMetaValue.ofString(value)));
+                putUnique(result, "aljabr.source.metadata." + key, GgufMetaValue.ofString(value)));
         model.extensions().forEach((key, value) ->
-                result.put("aljabr.source.extension." + key, GgufMetaValue.ofString(value)));
+                putUnique(result, "aljabr.source.extension." + key, GgufMetaValue.ofString(value)));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) ->
-                    result.put("aljabr.source.tensor."
+                    putUnique(result, "aljabr.source.tensor."
                                     + metadataKeyPart(tensor.name()) + "." + metadataKeyPart(key),
                             GgufMetaValue.ofString(value)));
         }
@@ -199,6 +199,12 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
             case INT64 -> new GgufMetaValue.Int64Val((Long) value.value());
             case FLOAT64 -> new GgufMetaValue.Float64Val((Double) value.value());
         };
+    }
+
+    private static void putUnique(Map<String, GgufMetaValue> target, String key, GgufMetaValue value) {
+        if (target.putIfAbsent(key, value) != null) {
+            throw new IllegalArgumentException("GGUF metadata key collision while preserving AMIR source data: " + key);
+        }
     }
 
     private static String metadataKeyPart(String value) {
