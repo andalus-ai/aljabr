@@ -75,7 +75,8 @@ public final class TurboQuantMseCodec implements KVCacheCompressionCodec {
                 TurboQuantScalarCodebook.forDimension(transformDimension, bits);
         TurboQuantHadamardTransform transform =
                 new TurboQuantHadamardTransform(transformDimension, seed);
-        int[] indices = new int[context.elementCount()];
+        int quantizedElementCount = Math.multiplyExact(vectorCount, transformDimension);
+        int[] indices = new int[quantizedElementCount];
         float[] vector = new float[transformDimension];
         float[] transformed = new float[transformDimension];
         double[] norms = new double[vectorCount];
@@ -99,7 +100,7 @@ public final class TurboQuantMseCodec implements KVCacheCompressionCodec {
             norms[vectorIndex] = norm;
             if (norm == 0.0) {
                 // Zero vectors decode exactly regardless of the codebook index.
-                indexOffset += originalDimension;
+                indexOffset += transformDimension;
                 continue;
             }
 
@@ -142,7 +143,8 @@ public final class TurboQuantMseCodec implements KVCacheCompressionCodec {
         int vectorCount = Math.multiplyExact(context.tokenCount(), context.kvHeads());
         double[] norms = decodeMetadata(
                 encoded.metadata(), originalDimension, expectedTransformDimension, vectorCount);
-        int[] indices = TurboQuantIndexBitPacking.unpack(encoded.payload(), context.elementCount(), bits);
+        int quantizedElementCount = Math.multiplyExact(vectorCount, expectedTransformDimension);
+        int[] indices = TurboQuantIndexBitPacking.unpack(encoded.payload(), quantizedElementCount, bits);
 
         TurboQuantScalarCodebook codebook =
                 TurboQuantScalarCodebook.forDimension(expectedTransformDimension, bits);
