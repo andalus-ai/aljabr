@@ -14,7 +14,7 @@ import java.util.List;
 /**
  * Interface for the RAG pipeline.
  * @author bhangun
-  * @deprecated This RAG workflow contract is being retired from Aljabr's Safetensors API. Retrieval and orchestration belong in a downstream knowledge/search runtime.
+ * @deprecated This RAG workflow contract is being retired from Aljabr's Safetensors API. Retrieval and orchestration belong in a downstream knowledge/search runtime.
  */
 @Deprecated(forRemoval = true)
 public interface RagPipeline {
