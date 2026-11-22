@@ -22,7 +22,7 @@ import java.util.concurrent.Executors;
  * Text embedding endpoint implementing the OpenAI-compatible embeddings request/response protocol.
  * Uses reflection to access EmbeddingEngine to avoid circular dependencies.
  * @author bhangun
-  * @deprecated This REST serving adapter is being retired from Aljabr. Use the AQLI embeddings API; retain reusable embedding computation in Aljabr.
+ * @deprecated This REST serving adapter is being retired from Aljabr. Use the AQLI embeddings API; retain reusable embedding computation in Aljabr.
  */
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
