@@ -344,8 +344,14 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                 Map.of("general.architecture", "llama"),
                 Map.of("gguf.metadata.general.alignment", "32"), List.of(tensor));
         Path output = temporaryDirectory.resolve("typed-metadata.safetensors");
+        var executor = new AmirGgufToSafetensorsConversionExecutor();
 
-        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+        assertThrows(java.io.IOException.class, () -> executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
+                new ConversionRequest(output.toUri(), true, Map.of())));
+        assertFalse(Files.exists(output));
+
+        var result = executor.execute(
                 model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
                 new ConversionRequest(output.toUri(), true, Map.of()));
 
