@@ -310,11 +310,13 @@ public class HatComputeBackendTest {
             for (int i = 1; i <= 8; i++) {
                 final float scale = i;
                 results.add(executor.submit(() -> {
-                    Tensor left = TensorFactory.of(
-                            new float[] { scale, 0.0f, 0.0f, scale }, 2, 2);
-                    Tensor right = TensorFactory.of(
-                            new float[] { 2.0f, 0.0f, 0.0f, 3.0f }, 2, 2);
-                    return backend.matmul(left, right).toFloatArray();
+                    try (Tensor left = TensorFactory.of(
+                                    new float[] { scale, 0.0f, 0.0f, scale }, 2, 2);
+                            Tensor right = TensorFactory.of(
+                                    new float[] { 2.0f, 0.0f, 0.0f, 3.0f }, 2, 2);
+                            Tensor product = backend.matmul(left, right)) {
+                        return product.toFloatArray();
+                    }
                 }));
             }
 
