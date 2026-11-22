@@ -1,7 +1,5 @@
 package tech.kayys.aljabr.cache.quantization;
 
-import java.util.Arrays;
-
 /**
  * Reference Lloyd-Max scalar codebook for coordinates of a uniformly rotated
  * unit vector.
@@ -198,10 +196,7 @@ public final class TurboQuantScalarCodebook {
         }
 
         private double conditionalMean(double lower, double upper) {
-            double mass = cumulative(lower, cumulativeMass) - cumulative(upper, cumulativeMass);
-            // The difference above is reversed because cumulative() returns
-            // the mass to the left of its argument.
-            mass = cumulative(upper, cumulativeMass) - cumulative(lower, cumulativeMass);
+            double mass = cumulative(upper, cumulativeMass) - cumulative(lower, cumulativeMass);
             if (!(mass > 1.0e-15)) {
                 return (lower + upper) * 0.5;
             }
