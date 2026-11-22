@@ -45,6 +45,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     private final AtomicLong totalCount = new AtomicLong(0);
     private final AtomicLong failedCount = new AtomicLong(0);
     private final AtomicLong decisionObserverFailureCount = new AtomicLong(0);
+    private final AtomicLong executionObserverFailureCount = new AtomicLong(0);
     private volatile boolean initialized = false;
 
     public GgufInferenceEngine() {
@@ -101,6 +102,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         return decisionObserverFailureCount.get();
     }
 
+    /** Number of execution-observer runtime failures isolated by this engine. */
+    public long executionObserverFailureCount() {
+        return executionObserverFailureCount.get();
+    }
+
     public synchronized void unloadModel(String modelId) {
         GgufBackend removed = backends.remove(modelId);
         if (removed != null) {
@@ -151,7 +157,8 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 .component("gguf")
                 .provider(backend.name())
                 .build();
-        try (ExecutionScope scope = ExecutionScope.start(context, executionObserver)) {
+        ExecutionScope scope = ExecutionScope.start(context, executionObserver);
+        try (scope) {
             try {
                 InferenceResponse response = modelContext == null
                         ? backend.execute(request)
@@ -161,6 +168,10 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             } catch (RuntimeException | Error failure) {
                 scope.fail(failure);
                 throw failure;
+            }
+        } finally {
+            if (scope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
             }
         }
     }
