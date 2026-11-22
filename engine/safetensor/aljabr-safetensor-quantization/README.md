@@ -38,11 +38,6 @@ aljabr-safetensor-quantization/
 │   ├── GPTQQuantizer.java          # INT4 GPTQ implementation
 │   ├── INT8Quantizer.java          # INT8 implementation
 │   └── FP8Quantizer.java           # FP8 E4M3/E5M2 implementation
-└── quantizer/
-    ├── Quantizer.java              # Quantizer SPI
-    ├── GPTQQuantizer.java          # INT4 GPTQ implementation
-    ├── INT8Quantizer.java          # INT8 implementation
-    └── FP8Quantizer.java           # FP8 E4M3/E5M2 implementation
 ```
 
 ## Usage
