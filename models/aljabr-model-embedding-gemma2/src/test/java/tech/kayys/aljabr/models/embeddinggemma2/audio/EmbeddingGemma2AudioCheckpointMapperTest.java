@@ -87,7 +87,7 @@ class EmbeddingGemma2AudioCheckpointMapperTest {
         assertEquals(1, weights.layers().size());
         assertEquals(3, weights.outputProjection().length);
         assertEquals(3, weights.outputProjectionBias().length);
-        assertEquals(4, weights.layers().get(0).selfAttention().query().kernel().length);
+        assertEquals(2, weights.layers().get(0).selfAttention().query().kernel().length);
         assertEquals(2, weights.layers().get(0).lightConvolution().depthwiseKernel().length);
     }
 
