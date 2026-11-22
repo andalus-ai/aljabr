@@ -49,6 +49,16 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             }
         }
 
+        boolean hasFlattenedLegacyMetadata = source.extensions().keySet().stream()
+                .anyMatch(key -> key.startsWith("gguf.metadata."));
+        if (hasFlattenedLegacyMetadata) {
+            diagnostics.add(new CompatibilityReport.Diagnostic(
+                    CompatibilityReport.Severity.WARNING,
+                    "GGUF_TYPED_METADATA_FLATTENED",
+                    "Legacy AMIR descriptors contain rendered GGUF metadata strings without their original types."));
+            partial = true;
+        }
+
         boolean hasOpaqueExtensions = !source.extensions().isEmpty()
                 || source.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
         if (hasOpaqueExtensions && !"gguf".equalsIgnoreCase(source.sourceFormat())) {
