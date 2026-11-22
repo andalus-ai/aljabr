@@ -533,9 +533,11 @@ class GgufInferenceEngineDelegationTest {
     void closeAttemptsEveryBackendAndPreservesFailuresAndUnloadEvents() throws Exception {
         Path firstModel = Files.createTempFile("gguf-close-first", ".gguf");
         Path secondModel = Files.createTempFile("gguf-close-second", ".gguf");
+        Path thirdModel = Files.createTempFile("gguf-close-third", ".gguf");
         List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
         AtomicBoolean firstClosed = new AtomicBoolean();
         AtomicBoolean secondClosed = new AtomicBoolean();
+        AtomicBoolean thirdClosed = new AtomicBoolean();
         GgufBackendProvider provider = new GgufBackendProvider() {
             @Override public String id() { return "test"; }
             @Override public boolean isAvailable() { return true; }
@@ -552,9 +554,18 @@ class GgufInferenceEngineDelegationTest {
                         }
                     };
                 }
+                if (path.equals(secondModel)) {
+                    return new TestBackend() {
+                        @Override public String name() { return "second"; }
+                        @Override public void close() {
+                            secondClosed.set(true);
+                            throw new IllegalArgumentException("second close failed");
+                        }
+                    };
+                }
                 return new TestBackend() {
-                    @Override public String name() { return "second"; }
-                    @Override public void close() { secondClosed.set(true); }
+                    @Override public String name() { return "third"; }
+                    @Override public void close() { thirdClosed.set(true); }
                 };
             }
         };
@@ -563,18 +574,23 @@ class GgufInferenceEngineDelegationTest {
         try {
             engine.loadModel("first", firstModel, Map.of("gguf.backend", "test"));
             engine.loadModel("second", secondModel, Map.of("gguf.backend", "test"));
+            engine.loadModel("third", thirdModel, Map.of("gguf.backend", "test"));
             events.clear();
 
-            IllegalStateException failure = assertThrows(IllegalStateException.class, engine::close);
+            RuntimeException failure = assertThrows(RuntimeException.class, engine::close);
 
-            assertEquals("first close failed", failure.getMessage());
+            assertTrue(failure instanceof IllegalStateException || failure instanceof IllegalArgumentException);
+            assertEquals(1, failure.getSuppressed().length);
+            assertTrue(failure.getSuppressed()[0] instanceof IllegalStateException
+                    || failure.getSuppressed()[0] instanceof IllegalArgumentException);
             assertTrue(firstClosed.get());
-            assertTrue(secondClosed.get(), "a failing backend must not prevent later backend cleanup");
-            assertEquals(4, events.size(), "both unload scopes must emit STARTED and a terminal event");
-            assertEquals(2, events.stream()
+            assertTrue(secondClosed.get(), "a second failing backend must still be attempted");
+            assertTrue(thirdClosed.get(), "a failing backend must not prevent later backend cleanup");
+            assertEquals(6, events.size(), "all three unload scopes must emit STARTED and a terminal event");
+            assertEquals(3, events.stream()
                     .filter(event -> event.context().operation().equals("gguf.model.unload")
                             && event.type() == ExecutionEvent.Type.STARTED).count());
-            assertEquals(1, events.stream()
+            assertEquals(2, events.stream()
                     .filter(event -> event.context().operation().equals("gguf.model.unload")
                             && event.type() == ExecutionEvent.Type.FAILED).count());
             assertEquals(1, events.stream()
@@ -587,6 +603,7 @@ class GgufInferenceEngineDelegationTest {
         } finally {
             Files.deleteIfExists(firstModel);
             Files.deleteIfExists(secondModel);
+            Files.deleteIfExists(thirdModel);
         }
     }
 
