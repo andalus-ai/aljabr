@@ -25,6 +25,16 @@ class FunctionGemmaToolCallParserTest {
     }
 
     @Test
+    void registersUsingItsProtocolDescriptor() {
+        var registry = tech.kayys.aljabr.core.tool.ToolCallParserRegistry.builder()
+                .register(FunctionGemmaToolCallParser.PROTOCOL, parser)
+                .build();
+
+        assertSame(parser, registry.require(FunctionGemmaToolCallParser.PROTOCOL));
+        assertEquals("functiongemma-native", FunctionGemmaToolCallParser.PROTOCOL.id());
+    }
+
+    @Test
     void parsesEscapedStringsAndPrimitiveArguments() {
         var calls = parser.parse(
                 "<start_function_call>call:send_email{"
