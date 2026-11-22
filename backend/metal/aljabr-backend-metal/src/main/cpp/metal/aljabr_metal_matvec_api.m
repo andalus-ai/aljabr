@@ -1624,7 +1624,9 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     if (!checked_float_buffer_bytes(bSz, (size_t)dim, 1, &dimBytes))
       return -2;
     if (g_scratch_inA == nil || g_scratch_dim_bytes < dimBytes) {
-      size_t sz = (dimBytes + 16383) & ~16383;
+      size_t sz = 0;
+      if (!checked_aligned_buffer_length(dimBytes, &sz))
+        return -2;
       g_scratch_inA =
           [g_device newBufferWithLength:sz
                                 options:MTLResourceStorageModeShared];
@@ -1642,7 +1644,9 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
     if (!checked_float_buffer_bytes(bSz, (size_t)ffnDim, 1, &needed))
       return -2;
     if (g_scratch_gate == nil || g_scratch_ffn_bytes < needed) {
-      size_t sz = (needed + 16383) & ~16383;
+      size_t sz = 0;
+      if (!checked_aligned_buffer_length(needed, &sz))
+        return -2;
       g_scratch_gate =
           [g_device newBufferWithLength:sz
                                 options:MTLResourceStorageModePrivate];
@@ -2121,7 +2125,9 @@ static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
     g_woff_attnFull_cap = sz;
   }
   if (dimBytes > g_woff_dim_cap) {
-    size_t sz = (dimBytes + 16383) & ~16383;
+    size_t sz = 0;
+      if (!checked_aligned_buffer_length(dimBytes, &sz))
+        return -2;
     id<MTLBuffer> xb =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
     id<MTLBuffer> x =
@@ -2146,7 +2152,9 @@ static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
 
 static BOOL ensure_woff_ffn_bufs(size_t ffnBytes) {
   if (ffnBytes > g_woff_ffn_cap) {
-    size_t sz = (ffnBytes + 16383) & ~16383;
+    size_t sz = 0;
+      if (!checked_aligned_buffer_length(ffnBytes, &sz))
+        return -2;
     id<MTLBuffer> gate =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
     id<MTLBuffer> up =
@@ -4297,7 +4305,9 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     }
 
     if (g_scratch_hb == nil || g_scratch_ffn_bytes < ffnBytes) {
-      size_t sz = (ffnBytes + 16383) & ~16383;
+      size_t sz = 0;
+      if (!checked_aligned_buffer_length(ffnBytes, &sz))
+        return -2;
       g_scratch_hb = [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
       g_scratch_ffn_bytes = sz;
     }
