@@ -1274,4 +1274,52 @@ class CpuBackendStorageTest {
     }
 
 
+
+    @Test
+    void splitPreservesOffsetStridesAndSharesStorageAcrossChunks() {
+        HostStorage storage = new HostStorage(
+                99f, 1f, 2f, 99f, 3f, 4f, 99f, 5f, 6f, 99f, 7f, 8f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(4, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(4, 2), new long[] {3, 1}, 1));
+        List<Tensor> chunks = List.of();
+        try {
+            chunks = backend.split(input, 0, 2);
+            assertEquals(2, chunks.size());
+            assertArrayEquals(new long[] {2, 2}, chunks.get(0).shape().dims());
+            assertArrayEquals(new long[] {2, 2}, chunks.get(1).shape().dims());
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f}, chunks.get(0).toFloatArray(), 0f);
+            assertArrayEquals(new float[] {5f, 6f, 7f, 8f}, chunks.get(1).toFloatArray(), 0f);
+            assertEquals(3, storage.references());
+        } finally {
+            for (Tensor chunk : chunks) chunk.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void splitNormalizesNegativeAxisAndPreservesNonContiguousLogicalOrder() {
+        HostStorage storage = new HostStorage(1f, 5f, 2f, 6f, 3f, 7f, 4f, 8f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 4), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 4), new long[] {1, 2}, 0));
+        List<Tensor> chunks = List.of();
+        try {
+            chunks = backend.split(input, -1, 2);
+            assertEquals(2, chunks.size());
+            assertArrayEquals(new long[] {2, 2}, chunks.get(0).shape().dims());
+            assertArrayEquals(new long[] {2, 2}, chunks.get(1).shape().dims());
+            assertArrayEquals(new float[] {1f, 2f, 5f, 6f}, chunks.get(0).toFloatArray(), 0f);
+            assertArrayEquals(new float[] {3f, 4f, 7f, 8f}, chunks.get(1).toFloatArray(), 0f);
+            assertEquals(3, storage.references());
+        } finally {
+            for (Tensor chunk : chunks) chunk.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
 }
