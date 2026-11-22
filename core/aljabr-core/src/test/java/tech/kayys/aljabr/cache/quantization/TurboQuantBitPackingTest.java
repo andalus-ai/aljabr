@@ -32,10 +32,10 @@ class TurboQuantBitPackingTest {
 
     @Test
     void packsAcrossByteBoundariesInLeastSignificantBitFirstOrder() {
-        // Three 3-bit values occupy nine bits: 001, 010, 111 -> 0x51, 0x01.
+        // Three 3-bit values occupy nine bits: 001, 010, 111 -> 0xD1, 0x01.
         byte[] packed = TurboQuantBitPacking.packIndices(new int[]{1, 2, 7}, 3);
 
-        assertArrayEquals(new byte[]{0x51, 0x01}, packed);
+        assertArrayEquals(new byte[]{(byte) 0xD1, 0x01}, packed);
         assertArrayEquals(new int[]{1, 2, 7},
                 TurboQuantBitPacking.unpackIndices(packed, 3, 3));
     }
@@ -87,7 +87,7 @@ class TurboQuantBitPackingTest {
     void canonicalPaddingBitsAreZero() {
         byte[] packed = TurboQuantBitPacking.packIndices(new int[]{7, 7, 7}, 3);
 
-        assertEquals(0x07, packed[1] & 0xFF);
+        assertEquals(0x01, packed[1] & 0xFF);
         assertArrayEquals(new int[]{7, 7, 7},
                 TurboQuantBitPacking.unpackIndices(packed, 3, 3));
     }
