@@ -5,6 +5,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.core.tensor.DefaultTensor;
+import tech.kayys.aljabr.core.tensor.DType;
+import tech.kayys.aljabr.core.tensor.Shape;
+import tech.kayys.aljabr.core.tensor.TensorLayout;
 import tech.kayys.aljabr.backend.cpu.CpuBackend;
 
 import java.util.ArrayList;
@@ -205,6 +209,41 @@ public class HatComputeBackendTest {
             assertEquals(0, result.numel());
             assertEquals(backend, result.backend());
             assertArrayEquals(new float[0], result.toFloatArray(), 0.0f);
+        }
+    }
+
+    @Test
+    public void testMatmulConsumesTransposedLogicalLayout() {
+        try (Tensor parent = TensorFactory.of(new float[] {
+                1.0f, 2.0f, 3.0f,
+                4.0f, 5.0f, 6.0f
+        }, backend, 2, 3)) {
+            var storage = parent.storage();
+            storage.retain();
+            try (Tensor transposed = new DefaultTensor(
+                    new Shape(3, 2),
+                    DType.F32,
+                    parent.device(),
+                    storage,
+                    backend,
+                    new TensorLayout(new Shape(3, 2), new long[] { 1, 3 }, 0));
+                    Tensor identity = TensorFactory.of(new float[] {
+                            1.0f, 0.0f,
+                            0.0f, 1.0f
+                    }, backend, 2, 2);
+                    Tensor result = backend.matmul(transposed, identity)) {
+                assertArrayEquals(new float[] {
+                        1.0f, 4.0f,
+                        2.0f, 5.0f,
+                        3.0f, 6.0f
+                }, transposed.toFloatArray(), 1e-4f);
+                assertEquals(backend, result.backend());
+                assertArrayEquals(new float[] {
+                        1.0f, 4.0f,
+                        2.0f, 5.0f,
+                        3.0f, 6.0f
+                }, result.toFloatArray(), 1e-4f);
+            }
         }
     }
 
