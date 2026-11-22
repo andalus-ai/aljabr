@@ -256,8 +256,12 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     void dequantizesQ3KBlockUsingPackedSixBitScalesLowBitsAndHighMask() throws Exception {
         byte[] block = new byte[110];
         java.util.Arrays.fill(block, 32, 96, (byte) 0xe4); // low two-bit planes: 0, 1, 2, 3
-        for (int i = 0; i < 8; i++) block[96 + i] = 0x11; // subgroup scales 33
-        java.util.Arrays.fill(block, 104, 108, (byte) 0xaa); // upper two scale bits
+        for (int i = 0; i < 8; i++) {
+            int lowScale = 33 + i;
+            int highScale = 41 + i;
+            block[96 + i] = (byte) ((lowScale & 0x0f) | ((highScale & 0x0f) << 4));
+        }
+        java.util.Arrays.fill(block, 104, 108, (byte) 0xaa); // upper two bits encode 2 for every scale
         java.util.Arrays.fill(block, 0, 32, (byte) 0xff); // high bit set => no -4 offset
         block[0] = (byte) 0xfe; // first quantized value uses the negative branch
         block[109] = 0x3c; // fp16 d = 1
@@ -281,14 +285,14 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         assertEquals(1.0f, values.getFloat(1 * Float.BYTES), 0.0f);
         assertEquals(2.0f, values.getFloat(2 * Float.BYTES), 0.0f);
         assertEquals(3.0f, values.getFloat(3 * Float.BYTES), 0.0f);
-        assertEquals(0.0f, values.getFloat(16 * Float.BYTES), 0.0f);
-        assertEquals(1.0f, values.getFloat(32 * Float.BYTES), 0.0f);
-        assertEquals(2.0f, values.getFloat(64 * Float.BYTES), 0.0f);
-        assertEquals(3.0f, values.getFloat(96 * Float.BYTES), 0.0f);
-        assertEquals(0.0f, values.getFloat(128 * Float.BYTES), 0.0f);
-        assertEquals(1.0f, values.getFloat(160 * Float.BYTES), 0.0f);
-        assertEquals(2.0f, values.getFloat(192 * Float.BYTES), 0.0f);
-        assertEquals(3.0f, values.getFloat(224 * Float.BYTES), 0.0f);
+        assertEquals(2.0f, values.getFloat(17 * Float.BYTES), 0.0f);
+        assertEquals(3.0f, values.getFloat(33 * Float.BYTES), 0.0f);
+        assertEquals(4.0f, values.getFloat(49 * Float.BYTES), 0.0f);
+        assertEquals(5.0f, values.getFloat(65 * Float.BYTES), 0.0f);
+        assertEquals(8.0f, values.getFloat(113 * Float.BYTES), 0.0f);
+        assertEquals(9.0f, values.getFloat(129 * Float.BYTES), 0.0f);
+        assertEquals(12.0f, values.getFloat(177 * Float.BYTES), 0.0f);
+        assertEquals(16.0f, values.getFloat(241 * Float.BYTES), 0.0f);
     }
 
     @Test
