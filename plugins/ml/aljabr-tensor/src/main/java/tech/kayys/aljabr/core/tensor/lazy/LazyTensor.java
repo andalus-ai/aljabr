@@ -6,6 +6,7 @@ import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.DeviceType;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -346,6 +347,27 @@ public class LazyTensor implements Tensor {
     @Override
     public Tensor dropout(float p, boolean training) {
         return op(OpType.DROPOUT, List.of(this), new Object[] { p, training }, this.shape(), this.dtype());
+    }
+
+    @Override
+    public Tensor indexSelect(int axis, Tensor indices) {
+        ensureOpen();
+        java.util.Objects.requireNonNull(indices, "indices");
+        TensorOperationValidator.IndexSelectPlan plan =
+                TensorOperationValidator.validateIndexSelect(shape(), indices.shape(), axis);
+        if (indices.dtype() != DType.I32) {
+            throw new IllegalArgumentException(
+                    "index-select indices must use I32; actual dtype=" + indices.dtype());
+        }
+        if (indices.requiresGrad()) {
+            throw new IllegalArgumentException("index-select indices cannot require gradients");
+        }
+        if (requiresGrad()) {
+            throw new UnsupportedOperationException(
+                    "indexSelect autograd is not available until scatter-add VJP support is implemented");
+        }
+        return op(OpType.INDEX_SELECT, List.of(this, indices),
+                new Object[] { plan.axis() }, plan.outputShape(), dtype());
     }
 
     @Override
