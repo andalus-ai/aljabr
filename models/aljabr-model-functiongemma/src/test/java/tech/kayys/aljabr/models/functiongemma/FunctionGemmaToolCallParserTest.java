@@ -2,6 +2,7 @@ package tech.kayys.aljabr.models.functiongemma;
 
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.core.tool.ToolCall;
+import tech.kayys.aljabr.core.tool.ToolCallParseDiagnostic;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -70,6 +71,42 @@ class FunctionGemmaToolCallParserTest {
         ToolCall core = FunctionGemmaToolCallParser.toToolCall(legacy);
         mutable.add("two");
         assertEquals(List.of("one"), ((Map<?, ?>) core.arguments().get("filter")).get("tags"));
+    }
+
+    @Test
+    void parseResultRetainsValidCallsAroundMalformedCalls() {
+        String output = "<start_function_call>call:first{x:1}<end_function_call>"
+                + "<start_function_call>call:broken{x:1,x:2}<end_function_call>"
+                + "<start_function_call>call:last{ok:true}<end_function_call>";
+
+        var result = parser.parseResult(output);
+
+        assertEquals(List.of("first", "last"), result.calls().stream().map(ToolCall::name).toList());
+        assertEquals(1, result.diagnostics().size());
+        assertEquals("MALFORMED_CALL", result.diagnostics().getFirst().code());
+        assertEquals(ToolCallParseDiagnostic.Severity.ERROR, result.diagnostics().getFirst().severity());
+        assertTrue(result.hasCalls());
+        assertTrue(result.hasErrors());
+        assertFalse(result.isComplete());
+    }
+
+    @Test
+    void parseResultReportsUnterminatedCallAndContinuesAtNextStartMarker() {
+        String output = "<start_function_call>call:truncated{x:1"
+                + "<start_function_call>call:recovered{y:2}<end_function_call>";
+
+        var result = parser.parseResult(output);
+
+        assertEquals(List.of("recovered"), result.calls().stream().map(ToolCall::name).toList());
+        assertEquals("UNTERMINATED_CALL", result.diagnostics().getFirst().code());
+        assertEquals(0, result.diagnostics().getFirst().offset());
+    }
+
+    @Test
+    void parseResultReturnsCleanEmptyOutcomeWhenNoCallsExist() {
+        var result = parser.parseResult("ordinary assistant response");
+        assertTrue(result.isEmpty());
+        assertTrue(result.isComplete());
     }
 
     @Test
