@@ -382,3 +382,28 @@ When a computation can fail, the scope should be retained outside the try body o
 ### Validation status
 
 The first CI run exposed a test assertion that constructed an invalid context without calling `build()`; this assertion has been corrected. The same run also exposed a separate CPU backend compile failure at `CpuBackend.java:470` (`@Override` does not match a supertype), which is outside this diagnostics change and must be investigated independently. The lifecycle slice remains in progress until the new branch's targeted tests and CI complete successfully.
+
+
+## 16. GGUF execution lifecycle integration — implementation slice 3
+
+The next increment connects the generic lifecycle contract to one real model execution boundary: synchronous GGUF inference.
+
+### Implemented integration
+
+- `GgufInferenceEngine` accepts an optional `ExecutionObserver` through an additive constructor overload. Existing constructors remain source-compatible and use `ExecutionObserver.NOOP`.
+- Synchronous `execute(...)` and context-aware `execute(..., ModelExecutionContext)` create a single `gguf.infer` scope around the backend call.
+- The context uses an opaque generated correlation ID and the selected backend name. Request prompts, messages, user/session identifiers, model paths and arbitrary request metadata are not copied into lifecycle context.
+- Backend success emits SUCCEEDED; runtime failure or fatal error emits FAILED with exception class identity only. The engine preserves its existing inference exception behavior and counters.
+- Observer runtime failures remain isolated from inference and are reflected in `executionObserverFailureCount()`.
+- Tests cover failure event ordering, safe context metadata and observer-failure isolation.
+
+### Deliberate limits
+
+- This integration covers synchronous inference only. Streaming scopes require lifecycle handling at subscription time and correct terminal handling for completion, failure and cancellation; instrumenting `Multi` construction would produce misleading durations.
+- Embedding, model load/unload, provider discovery outside GGUF, tensor primitives, resource allocation and kernel-level profiling remain separate integration points.
+- The default observer is a no-op. No logging backend, exporter, persistence, background thread or global observer is introduced.
+- A generated correlation ID starts a local observation; applications needing end-to-end correlation should add a separately reviewed explicit context propagation API rather than relying on hidden thread-local state.
+
+### Validation status
+
+Tests have been added but require CI execution. The current full CI job is blocked at the unrelated existing CPU compilation error in `CpuBackend.java:470`; this does not establish that the GGUF tests passed. The lifecycle integration remains in progress until targeted tests and CI complete successfully.
