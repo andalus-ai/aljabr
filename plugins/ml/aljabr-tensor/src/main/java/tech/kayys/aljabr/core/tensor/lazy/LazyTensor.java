@@ -371,15 +371,28 @@ public class LazyTensor implements Tensor {
     }
 
     /**
-     * Index selection is not yet represented in the lazy graph IR. Fail explicitly
-     * rather than materializing implicitly or constructing a graph node that the
-     * executor cannot evaluate or differentiate.
+     * Records index selection in the lazy graph. The operation remains
+     * forward-only until its scatter-add vector-Jacobian product is available.
      */
     @Override
     public Tensor indexSelect(int axis, Tensor indices) {
         ensureOpen();
-        throw new UnsupportedOperationException(
-                "indexSelect is not yet supported by the lazy tensor execution graph");
+        java.util.Objects.requireNonNull(indices, "indices");
+        TensorOperationValidator.IndexSelectPlan plan =
+                TensorOperationValidator.validateIndexSelect(shape(), indices.shape(), axis);
+        if (indices.dtype() != DType.I32) {
+            throw new IllegalArgumentException(
+                    "index-select indices must use I32; actual dtype=" + indices.dtype());
+        }
+        if (indices.requiresGrad()) {
+            throw new IllegalArgumentException("index-select indices cannot require gradients");
+        }
+        if (requiresGrad()) {
+            throw new UnsupportedOperationException(
+                    "indexSelect autograd is not available until scatter-add VJP support is implemented");
+        }
+        return op(OpType.INDEX_SELECT, List.of(this, indices), new Object[] { plan.axis() },
+                plan.outputShape(), dtype());
     }
 
     @Override
