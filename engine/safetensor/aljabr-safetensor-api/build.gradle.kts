@@ -6,6 +6,8 @@ plugins {
 group = "tech.kayys.aljabr"
 version = "0.1.0-SNAPSHOT"
 
+description = "DEPRECATED: legacy REST and workflow adapters; use AQLI for serving APIs."
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(25))

@@ -16,7 +16,9 @@ import java.time.Duration;
  * Response payload for quantization operations.
  * DTO moved to use primitive types to avoid circular dependencies with Quantization module.
  * @author bhangun
+ * @deprecated This HTTP response DTO is being retired with the Safetensors REST adapter. Use Aljabr's transport-neutral quantization result API.
  */
+@Deprecated(forRemoval = true)
 public class QuantizationResponse {
 
     @JsonProperty("success")
