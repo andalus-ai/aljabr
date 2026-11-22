@@ -112,6 +112,13 @@ public interface Tensor extends AutoCloseable {
      * while the scatter-add VJP is being implemented.</p>
      */
     Tensor indexSelect(int axis, Tensor indices);
+    /**
+     * Adds source slices into this tensor at the axis positions in a rank-one
+     * I32 index vector. Repeated indices accumulate; indices are not gradients.
+     * The initial implementation is forward-only.
+     */
+    Tensor indexAdd(int axis, Tensor indices, Tensor source);
+
 
     Tensor pow(float exponent);
 
