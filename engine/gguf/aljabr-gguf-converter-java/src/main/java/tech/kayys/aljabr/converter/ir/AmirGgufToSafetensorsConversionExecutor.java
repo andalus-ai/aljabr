@@ -687,7 +687,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
     }
 
     private static boolean hasUnrepresentableLayers(ModelDescriptor model) {
-        return model.architectureDescriptor().isPresent() || model.graphCollection().isPresent()
+        return model.graphCollection().isPresent()
                 || model.assetCollection().isPresent() || model.componentCollection().isPresent();
     }
 
