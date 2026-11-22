@@ -97,7 +97,8 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
         });
         AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(metadata, tensors);
         metadata = new LinkedHashMap<>(sourceAttributes.metadata());
-        tensors = new ArrayList<>(sourceAttributes.tensors());
+        tensors = new ArrayList<>(AmirTensorTypeCodec.restore(metadata, sourceAttributes.tensors()));
+        metadata = new LinkedHashMap<>(AmirTensorTypeCodec.withoutEncodedValues(metadata));
         String architecture = metadata.getOrDefault("general.architecture", "unknown");
         Map<String, MetadataValue> typedMetadata = new LinkedHashMap<>();
         rawTypedMetadata.forEach((key, value) -> {
@@ -146,7 +147,8 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
 
         AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(storedMetadata, tensors);
         metadata = new LinkedHashMap<>(sourceAttributes.metadata());
-        tensors = new ArrayList<>(sourceAttributes.tensors());
+        tensors = new ArrayList<>(AmirTensorTypeCodec.restore(storedMetadata, sourceAttributes.tensors()));
+        metadata = new LinkedHashMap<>(AmirTensorTypeCodec.withoutEncodedValues(metadata));
         String architecture = metadata.getOrDefault("general.architecture",
                 metadata.getOrDefault("aljabr.source.architecture", "unknown"));
         return new ModelDescriptor(ModelIdentity.of(name), architecture, SAFETENSORS,
