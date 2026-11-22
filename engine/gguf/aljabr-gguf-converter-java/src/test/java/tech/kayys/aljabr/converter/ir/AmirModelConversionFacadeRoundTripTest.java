@@ -105,7 +105,7 @@ class AmirModelConversionFacadeRoundTripTest {
 
     private static TensorType expectedTensorType() {
         return TensorType.of(TensorDataType.F32, TensorShape.of(2))
-                .withLayout(new TensorLayout("vendor.layout", List.of(1L)));
+                .withLayout(TensorLayout.CONTIGUOUS);
     }
 
     private Path writeSafetensors(String name, byte[] payload) throws Exception {
