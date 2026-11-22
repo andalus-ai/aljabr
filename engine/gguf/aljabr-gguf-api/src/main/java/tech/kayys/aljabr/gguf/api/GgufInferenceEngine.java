@@ -151,6 +151,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             GgufBackend backend,
             InferenceRequest request,
             ModelExecutionContext modelContext) {
+        if (executionObserver == ExecutionObserver.NOOP) {
+            return modelContext == null
+                    ? backend.execute(request)
+                    : backend.execute(request, modelContext);
+        }
         DiagnosticContext context = DiagnosticContext.builder()
                 .correlationId(UUID.randomUUID().toString())
                 .operation("gguf.infer")
