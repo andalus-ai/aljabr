@@ -12,7 +12,7 @@ class EmbeddingGemma2AudioSubsamplingTest {
                 "gemma4_audio", 3, 1, 1, 8, 5, List.of(2, 2),
                 12, 13, 0, 1e-6, 0.5, "silu", "float32", false,
                 16_000, 4, 8, 4, 2, 0.0, 8_000.0, 0.001,
-                0.0, 1.0, 0.0, 280, 40, 1, 2, 3, 1.0e10);
+                0.0, 1.0, 0.0, 280, 40, 1, 2, 3, 1.0e10, 50.0, -1.0e9);
     }
 
     private static EmbeddingGemma2AudioSubsampling.Weights zeroWeights() {
