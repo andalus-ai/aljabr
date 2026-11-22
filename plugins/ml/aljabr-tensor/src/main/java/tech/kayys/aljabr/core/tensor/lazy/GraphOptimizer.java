@@ -116,7 +116,10 @@ public class GraphOptimizer {
             GraphNode key,
             GraphNode value) {
         var dtype = query.getOutputDType();
-        return dtype == key.getOutputDType()
+        // The backend-neutral ATTENTION contract currently guarantees F32 only.
+        // Do not replace an unfused graph with an operation some backends reject.
+        return dtype == DType.F32
+                && dtype == key.getOutputDType()
                 && dtype == value.getOutputDType()
                 && dtype == transpose.getOutputDType()
                 && dtype == scores.getOutputDType()

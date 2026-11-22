@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
+import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 
 import java.util.List;
 import java.util.Map;
@@ -20,8 +21,9 @@ class SafetensorsTargetCapabilityTest {
                 "llama",
                 "gguf",
                 Map.of("general.architecture", "llama"),
-                Map.of("gguf.metadata.general.alignment", "32"),
-                List.of());
+                Map.of(),
+                List.of()).withTypedMetadata(Map.of("general.alignment",
+                        new MetadataValue.Scalar(MetadataValue.Kind.UINT32, 32L)));
 
         CompatibilityReport report = new SafetensorsTargetCapability().assess(model);
 

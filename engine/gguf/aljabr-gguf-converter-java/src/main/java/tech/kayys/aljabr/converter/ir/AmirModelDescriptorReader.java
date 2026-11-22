@@ -10,6 +10,7 @@ import tech.kayys.aljabr.safetensor.loader.SafetensorDType;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptorReader;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
+import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -60,6 +61,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
 
     private ModelDescriptor readGguf(Path file, String name) throws IOException {
         Map<String, Object> rawMetadata;
+        Map<String, tech.kayys.aljabr.gguf.core.GgufMetaValue> rawTypedMetadata;
         List<TensorDescriptor> tensors = new ArrayList<>();
         long fileSize = Files.size(file);
         long dataStart;
@@ -67,6 +69,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
         try (GGUFReader reader = new GGUFReader(file)) {
             GGUFModel model = new GGUFParser().parse(reader.segment(), reader.arena());
             rawMetadata = model.metadata();
+            rawTypedMetadata = model.typedMetadata();
             dataStart = model.dataStart();
             for (GGUFTensorInfo tensor : model.tensors()) {
                 GgmlType type = GgmlType.fromId(tensor.typeId());
@@ -87,17 +90,20 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
         }
 
         Map<String, String> metadata = new LinkedHashMap<>();
-        Map<String, String> extensions = new LinkedHashMap<>();
         rawMetadata.forEach((key, value) -> {
-            String rendered = renderMetadata(value);
+            String rendered = rawTypedMetadata.containsKey(key)
+                    ? renderGgufMetadata(rawTypedMetadata.get(key)) : renderMetadata(value);
             metadata.put(key, rendered);
-            if (!(value instanceof String)) {
-                extensions.put("gguf.metadata." + key, rendered);
-            }
         });
         String architecture = metadata.getOrDefault("general.architecture", "unknown");
+        Map<String, MetadataValue> typedMetadata = new LinkedHashMap<>();
+        rawTypedMetadata.forEach((key, value) -> {
+            if (!(value instanceof tech.kayys.aljabr.gguf.core.GgufMetaValue.StringVal)) {
+                typedMetadata.put(key, toMetadataValue(value));
+            }
+        });
         return new ModelDescriptor(ModelIdentity.of(name), architecture, GGUF,
-                metadata, extensions, tensors);
+                metadata, Map.of(), tensors).withTypedMetadata(typedMetadata);
     }
 
     private ModelDescriptor readSafetensors(Path file, String name) throws IOException {
@@ -159,6 +165,58 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
         if (end > fileSize) {
             throw new IOException("GGUF payload exceeds source file for tensor " + tensor);
         }
+    }
+
+
+    private static MetadataValue toMetadataValue(tech.kayys.aljabr.gguf.core.GgufMetaValue value) {
+        return switch (value) {
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt8Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.UINT8, (long) v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int8Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.INT8, (int) v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt16Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.UINT16, (long) v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int16Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.INT16, (int) v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt32Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.UINT32, v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int32Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.INT32, v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Float32Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.FLOAT32, v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.BoolVal v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.BOOL, v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.StringVal v -> MetadataValue.string(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt64Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.UINT64, v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int64Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.INT64, v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Float64Val v ->
+                    new MetadataValue.Scalar(MetadataValue.Kind.FLOAT64, v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.ArrayVal v ->
+                    new MetadataValue.Array(MetadataValue.Kind.valueOf(v.elementType().name()),
+                            v.elements().stream().map(element -> (MetadataValue.Scalar) toMetadataValue(element)).toList());
+        };
+    }
+
+    private static String renderGgufMetadata(tech.kayys.aljabr.gguf.core.GgufMetaValue value) {
+        return switch (value) {
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt8Val v -> Short.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int8Val v -> Byte.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt16Val v -> Integer.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int16Val v -> Short.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt32Val v -> Long.toUnsignedString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int32Val v -> Integer.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Float32Val v -> Float.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.BoolVal v -> Boolean.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.StringVal v -> v.value();
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt64Val v -> Long.toUnsignedString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Int64Val v -> Long.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.Float64Val v -> Double.toString(v.value());
+            case tech.kayys.aljabr.gguf.core.GgufMetaValue.ArrayVal v ->
+                    v.elements().stream().map(AmirModelDescriptorReader::renderGgufMetadata)
+                            .collect(java.util.stream.Collectors.joining(",", "[", "]"));
+        };
     }
 
     private static String renderMetadata(Object value) {
