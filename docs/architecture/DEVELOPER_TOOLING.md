@@ -407,3 +407,27 @@ The next increment connects the generic lifecycle contract to one real model exe
 ### Validation status
 
 Tests have been added but require CI execution. The current full CI job is blocked at the unrelated existing CPU compilation error in `CpuBackend.java:470`; this does not establish that the GGUF tests passed. The lifecycle integration remains in progress until targeted tests and CI complete successfully.
+
+
+## 17. GGUF streaming lifecycle integration — implementation slice 4
+
+The streaming integration applies the same lifecycle contract to Mutiny `Multi` execution while preserving reactive subscription semantics.
+
+### Implemented behavior
+
+- Lifecycle scopes are created from the `Multi.createFrom().deferred(...)` subscription path, not when the stream is assembled. Each subscription receives its own scope and generated correlation ID.
+- Normal upstream completion emits SUCCEEDED; upstream failure emits FAILED with exception class identity only; downstream cancellation closes the scope as ABANDONED.
+- Active-inference accounting is decremented from the common termination callback. Failure accounting is incremented for upstream failures and synchronous backend stream-construction failures.
+- Context-aware streaming delegates the supplied `ModelExecutionContext` unchanged and uses the same lifecycle behavior.
+- The no-op observer path retains a lean chain without lifecycle context or scope allocation.
+- Tests cover deferred start, successful completion, failure privacy and cancellation/abandonment.
+
+### Deliberate limits
+
+- The scope measures the subscription lifetime through terminal completion/cancellation, not merely stream assembly or first-item latency. Token-level timing and per-chunk instrumentation are not added.
+- A backend that returns a hot/shared `Multi` retains its own source semantics; the engine creates a distinct observation per subscription but does not make a hot source cold.
+- This does not yet instrument embeddings, model load/unload, resource allocation, or lower-level tensor/kernel operations.
+
+### Validation status
+
+Source and tests have been added. CI must validate the Mutiny event hooks and cancellation behavior before this slice can be marked validated. No local build or hardware test is claimed.
