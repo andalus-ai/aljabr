@@ -1130,6 +1130,9 @@ class CpuBackendStorageTest {
         }
         assertEquals(0, leftStorage.references());
         assertEquals(0, rightStorage.references());
+    }
+
+    @Test
     void scalarUnaryOperationsAndDropoutReadTransposedOffsetViews() {
         HostStorage storage = new HostStorage(99f, 1f, 9f, 4f, 16f);
         DefaultTensor input = new DefaultTensor(
