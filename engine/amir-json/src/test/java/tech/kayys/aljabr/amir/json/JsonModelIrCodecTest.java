@@ -123,7 +123,8 @@ class JsonModelIrCodecTest {
                     "architectureDescriptor": null,
                     "graphCollection": null,
                     "assetCollection": null,
-                    "componentCollection": null
+                    "componentCollection": null,
+                    "typedMetadata": {}
                   },
                   "extensions": {}
                 }

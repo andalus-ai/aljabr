@@ -62,14 +62,13 @@ public final class GgufTargetCapability implements TargetFormatCapability {
             }
         }
 
-        if (source.architectureDescriptor().isPresent()
-                || source.graphCollection().isPresent()
+        if (source.graphCollection().isPresent()
                 || source.assetCollection().isPresent()
                 || source.componentCollection().isPresent()) {
             diagnostics.add(diagnostic(CompatibilityReport.Severity.WARNING,
                     "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
-                    "GGUF conversion preserves architecture identity and string metadata, but cannot encode "
-                            + "typed architecture configuration, computation graphs, assets, or components."));
+                    "GGUF conversion preserves the typed architecture descriptor, but cannot encode "
+                            + "computation graphs, assets, or components."));
             partial = true;
         }
 

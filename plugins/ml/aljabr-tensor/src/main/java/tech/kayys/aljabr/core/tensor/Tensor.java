@@ -107,11 +107,23 @@ public interface Tensor extends AutoCloseable {
      * Index order and duplicates are preserved; indices must be in
      * {@code [0, shape().dim(axis))}. Negative axes count from the end.
      *
-     * <p>The initial CPU implementation supports F32 source tensors. The
-     * operation is currently forward-only; differentiable use is rejected
-     * while the scatter-add VJP is being implemented.</p>
+     * <p>The initial CPU implementation supports F32 source tensors.
+     * Reverse-mode differentiation scatters gradients back with indexed
+     * addition, so repeated indices accumulate their contributions.</p>
      */
     Tensor indexSelect(int axis, Tensor indices);
+
+    /**
+     * Adds source slices into this tensor at the positions specified by a
+     * rank-one I32 index tensor. The source must have the same rank as this
+     * tensor, with its indexed dimension equal to the index count and all
+     * other dimensions equal to this tensor's. Indices must be in range.
+     * Repeated indices accumulate rather than overwrite. The operation
+     * returns a new tensor and does not mutate its inputs.
+     */
+    default Tensor indexAdd(int axis, Tensor indices, Tensor source) {
+        return backend().indexAdd(this, axis, indices, source);
+    }
 
     Tensor pow(float exponent);
 

@@ -149,11 +149,38 @@ public final class Gemma3TextBackbone {
                             "token ID out of vocabulary range at index " + index + ": " + tokenId);
                 }
             }
-            float[][] result = new float[inputIds.length][];
-            for (int index = 0; index < inputIds.length; index++) {
-                result[index] = decode(inputIds[index]);
+            float scale = (float) Math.sqrt(hidden) * config.resolvedEmbeddingMultiplier();
+            float[][] embeddingTable = weights.tokenEmbeddings();
+            float[][] state = new float[inputIds.length][hidden];
+            for (int token = 0; token < inputIds.length; token++) {
+                int tokenId = inputIds[token];
+                for (int dimension = 0; dimension < hidden; dimension++) {
+                    state[token][dimension] = embeddingTable[tokenId][dimension] * scale;
+                }
             }
-            return result;
+
+            // Prefill is a sequence operation: each layer projects the whole prompt,
+            // writes its K/V range once, and evaluates causal attention in one pass.
+            for (int layerIndex = 0; layerIndex < weights.layers().size(); layerIndex++) {
+                state = forwardPrefillLayer(state, weights.layers().get(layerIndex), layerIndex);
+            }
+
+            float[][] normalized = rmsNorm(state, weights.finalNorm());
+            float[][] logits = linear(normalized, weights.languageModelHead());
+            float softcap = config.finalLogitSoftcapping() == null
+                    ? 0.0f : config.finalLogitSoftcapping().floatValue();
+            float lmScale = config.resolvedLmHeadMultiplier();
+            for (int token = 0; token < logits.length; token++) {
+                for (int vocab = 0; vocab < logits[token].length; vocab++) {
+                    float value = logits[token][vocab] * lmScale;
+                    logits[token][vocab] = softcap > 0.0f
+                            ? (float) (Math.tanh(value / softcap) * softcap) : value;
+                }
+            }
+
+            // Publish the prompt only after every layer has populated its cache.
+            cacheSession.commit(inputIds.length);
+            return logits;
         }
 
         /** Appends one token and returns its vocabulary logits. */
@@ -210,6 +237,52 @@ public final class Gemma3TextBackbone {
 
         private void ensureOpen() {
             if (closed) throw new IllegalStateException("decode session is closed");
+        }
+
+        private float[][] forwardPrefillLayer(
+                float[][] input,
+                Gemma3TextCheckpointMapper.LayerWeights layer,
+                int layerIndex) {
+            float[][] normalized = rmsNorm(input, layer.attentionNorm());
+            float[][] queryFlat = linear(normalized, layer.query());
+            float[][] keyFlat = linear(normalized, layer.key());
+            float[][] valueFlat = linear(normalized, layer.value());
+
+            float[][][] query = reshape(queryFlat, queryHeads, headDim);
+            float[][][] key = headRmsNorm(reshape(keyFlat, kvHeads, headDim), layer.keyNorm());
+            float[][][] value = reshape(valueFlat, kvHeads, headDim);
+            query = headRmsNorm(query, layer.queryNorm());
+
+            int[] positions = new int[input.length];
+            for (int position = 0; position < positions.length; position++) {
+                positions[position] = position;
+            }
+            double theta = config.ropeThetaForLayer(layerIndex);
+            double rotaryFactor = config.partialRotaryFactorForLayer(layerIndex);
+            query = applyRope(query, positions, theta, rotaryFactor);
+            key = applyRope(key, positions, theta, rotaryFactor);
+
+            // KVCacheSession owns sequence visibility; this bulk write remains
+            // uncommitted until every layer has completed the prefill.
+            cacheSession.writeRange(
+                    layerIndex, 0, input.length, flatten(key), 0, flatten(value), 0);
+
+            float[][][] attended = causalAttention(query, key, value, layerIndex);
+            float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
+            attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
+            float[][] afterAttention = add(input, attentionOutput);
+
+            normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
+            float[][] gate = linear(normalized, layer.feedForwardGate());
+            float[][] up = linear(normalized, layer.feedForwardUp());
+            for (int token = 0; token < gate.length; token++) {
+                for (int dimension = 0; dimension < gate[token].length; dimension++) {
+                    gate[token][dimension] = geluTanh(gate[token][dimension]) * up[token][dimension];
+                }
+            }
+            float[][] feedForward = linear(gate, layer.feedForwardDown());
+            feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
+            return add(afterAttention, feedForward);
         }
 
         private float[][] forwardIncrementalLayer(
@@ -469,6 +542,25 @@ public final class Gemma3TextBackbone {
             for (int head = 0; head < heads; head++) {
                 System.arraycopy(input[token][head], 0, output[token], head * dimension, dimension);
             }
+        }
+        return output;
+    }
+
+    /**
+     * Packs position-major token vectors into the contiguous layout required by
+     * {@link tech.kayys.aljabr.cache.KVCacheStorage#writeRange}.
+     */
+    private static float[] flattenTokens(float[][] input) {
+        if (input.length == 0) {
+            return new float[0];
+        }
+        int width = input[0].length;
+        float[] output = new float[Math.multiplyExact(input.length, width)];
+        for (int token = 0; token < input.length; token++) {
+            if (input[token].length != width) {
+                throw new IllegalArgumentException("token vectors must have a consistent width");
+            }
+            System.arraycopy(input[token], 0, output, token * width, width);
         }
         return output;
     }

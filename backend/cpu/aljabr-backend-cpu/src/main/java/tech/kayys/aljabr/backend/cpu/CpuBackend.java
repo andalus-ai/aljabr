@@ -487,7 +487,16 @@ public final class CpuBackend implements ComputeBackend {
                     "CPU indexAdd indices must use I32; actual dtype=" + indices.dtype());
         }
 
-        int[] selected = indices.toIntArray();
+        int[] selected = new int[Math.toIntExact(indices.numel())];
+        MemorySegment indexSegment = seg(indices);
+        long[] indexDimensions = indices.shape().dims();
+        TensorLayout indexLayout = indices.layout();
+        for (int i = 0; i < selected.length; i++) {
+            long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(
+                    indexDimensions, indexLayout, i);
+            selected[i] = indexSegment.get(
+                    ValueLayout.JAVA_INT, Math.multiplyExact(elementOffset, Integer.BYTES));
+        }
         long[] dimensions = input.shape().dims();
         int selectedAxis = plan.axis();
         long axisSize = dimensions[selectedAxis];
