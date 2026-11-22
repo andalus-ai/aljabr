@@ -164,13 +164,14 @@ public class GraphOptimizer {
         // ADD_SCALAR(x, 0) -> x is safe only when the graph has no gradient path.
         if (node.getOp() == OpType.ADD_SCALAR
                 && !node.requiresGrad()
+                && newInputs.size() == 1
+                && newInputs.get(0).getOutputDType() == node.getOutputDType()
                 && isIntegralDType(node.getOutputDType())
-                && node.getArgs().length == 1) {
-            float scalar = (float) node.getArgs()[0];
-            if (scalar == 0.0f) {
-                memo.put(node, newInputs.get(0));
-                return newInputs.get(0);
-            }
+                && node.getArgs().length == 1
+                && node.getArgs()[0] instanceof Number number
+                && number.floatValue() == 0.0f) {
+            memo.put(node, newInputs.get(0));
+            return newInputs.get(0);
         }
 
         // Flash Attention Fusion:
