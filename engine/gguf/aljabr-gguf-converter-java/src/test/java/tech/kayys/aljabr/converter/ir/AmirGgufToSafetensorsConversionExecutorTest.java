@@ -11,7 +11,6 @@ import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutors;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
-import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -446,6 +445,24 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
         assertEquals(typed, restored.typedMetadata());
         assertEquals("llama", restored.metadata().get("aljabr.source.metadata.general.architecture"));
+
+        Path ggufOutput = temporaryDirectory.resolve("typed-metadata-roundtrip.gguf");
+        var ggufPlan = new ConversionPlan(restored.identity(), "safetensors", "gguf",
+                new CompatibilityReport(CompatibilityReport.ConversionFidelity.FULL, List.of()));
+        new AmirGgufConversionExecutor().execute(restored, ggufPlan,
+                ConversionRequest.to(ggufOutput.toUri()));
+        try (var ggufReader = new tech.kayys.aljabr.gguf.loader.GGUFReader(ggufOutput)) {
+            var parsed = new tech.kayys.aljabr.gguf.loader.GGUFParser()
+                    .parse(ggufReader.segment(), ggufReader.arena());
+            assertEquals(typed.size(), parsed.typedMetadata().size());
+            assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt32Val.class,
+                    parsed.typedMetadata().get("general.alignment"));
+            assertEquals(-1L, assertInstanceOf(
+                    tech.kayys.aljabr.gguf.core.GgufMetaValue.UInt64Val.class,
+                    parsed.typedMetadata().get("general.quantization_version")).value());
+            assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.ArrayVal.class,
+                    parsed.typedMetadata().get("tokenizer.ggml.tokens"));
+        }
     }
 
     private Path writeContainer(byte[] payload) throws Exception {
