@@ -10,14 +10,17 @@ import java.util.Objects;
 @FunctionalInterface
 public interface DiagnosticSink {
 
+    /** Shared disabled sink; it performs no allocation or work per event. */
+    DiagnosticSink NOOP = diagnostic -> {
+        // Intentionally disabled.
+    };
+
     /** Receives one diagnostic. */
     void accept(Diagnostic diagnostic);
 
     /** Returns a sink that intentionally discards all diagnostics. */
     static DiagnosticSink noop() {
-        return diagnostic -> {
-            // Intentionally disabled.
-        };
+        return NOOP;
     }
 
     /**

@@ -304,3 +304,28 @@ Stable release requires tests for immutability, schema compatibility, privacy/re
 ## 13. Implementation status
 
 This document defines the target contract and implementation gates. It is not evidence that the APIs, event sinks, exporters or integrations already exist. Track each deliverable separately as planned, in progress, implemented, validated, stable or optimized, and link status to source/tests and the exact validation environment.
+
+
+## 14. Diagnostics foundation — implementation slice 1
+
+The first implementation increment extends the existing `core:aljabr-diagnostics` artifact. It does not create a parallel diagnostics module or replace the existing `Diagnostic`, `DiagnosticSeverity`, `DiagnosticSink`, or `DiagnosticFormatter` contracts.
+
+### Implemented in this slice
+
+- `DiagnosticContext`: immutable execution context with opaque correlation and parent IDs, operation/component/provider fields, and explicitly selected attributes.
+- Context attributes are bounded (32 entries, 64-character keys, 512-character values), deterministically ordered, and immutable after construction.
+- Standard context keys are reserved so arbitrary attributes cannot spoof correlation, operation, component or provider identity.
+- `Diagnostic.withContext(...)` adapts the typed context to the existing diagnostic representation. A named factory deliberately preserves source compatibility for existing constructor calls, including calls passing a null map.
+- `DiagnosticSink.NOOP` is a shared disabled sink and `DiagnosticSink.noop()` returns that shared instance.
+- Tests cover context immutability, defensive copying, bounded values, reserved keys, typed-context integration, and no-op sink identity.
+
+### Explicit limitations
+
+- Context construction validates structure and bounds, not whether arbitrary caller-provided values are safe. Callers must allowlist metadata; exporters must redact.
+- This slice does not add implicit thread-local context propagation, tracing, audit persistence, exporters, background workers, or automatic tensor-value inspection.
+- The existing map-based `Diagnostic` constructor remains available for compatibility. New integrations should prefer `Diagnostic.withContext`.
+- No performance claim is made until the disabled-path and allocation behavior are measured.
+
+### Validation status
+
+Source and unit tests have been added. CI/build execution is still required before this increment can be marked validated. The next slice should add explicit diagnostic scopes and lifecycle events only after reviewing the actual operation/provider integration points.
