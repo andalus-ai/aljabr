@@ -546,6 +546,25 @@ public final class Gemma3TextBackbone {
         return output;
     }
 
+    /**
+     * Packs position-major token vectors into the contiguous layout required by
+     * {@link tech.kayys.aljabr.cache.KVCacheStorage#writeRange}.
+     */
+    private static float[] flattenTokens(float[][] input) {
+        if (input.length == 0) {
+            return new float[0];
+        }
+        int width = input[0].length;
+        float[] output = new float[Math.multiplyExact(input.length, width)];
+        for (int token = 0; token < input.length; token++) {
+            if (input[token].length != width) {
+                throw new IllegalArgumentException("token vectors must have a consistent width");
+            }
+            System.arraycopy(input[token], 0, output, token * width, width);
+        }
+        return output;
+    }
+
     private static float[][] linear(float[][] input, float[][] weight) {
         int outputSize = weight.length;
         int inputSize = weight[0].length;
