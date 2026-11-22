@@ -292,6 +292,31 @@ class TensorOperationValidatorTest {
     }
 
     @Test
+    void indexSelectNormalizesAxisAndUsesIndexVectorLengthForOutputShape() {
+        TensorOperationValidator.IndexSelectPlan plan =
+                TensorOperationValidator.validateIndexSelect(new Shape(2, 3, 4), new Shape(5), -2);
+        assertThat(plan.axis()).isEqualTo(1);
+        assertThat(plan.outputShape().dims()).containsExactly(2, 5, 4);
+    }
+
+    @Test
+    void indexSelectAllowsEmptyIndexVectorAndRejectsInvalidMetadata() {
+        TensorOperationValidator.IndexSelectPlan empty =
+                TensorOperationValidator.validateIndexSelect(new Shape(2, 0, 4), new Shape(0), 1);
+        assertThat(empty.outputShape().dims()).containsExactly(2, 0, 4);
+
+        assertThatThrownBy(() -> TensorOperationValidator.validateIndexSelect(new Shape(), new Shape(1), 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("out of range");
+        assertThatThrownBy(() -> TensorOperationValidator.validateIndexSelect(new Shape(2, 3), new Shape(1, 1), 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("index-select indices must be rank one; got rank 2");
+        assertThatThrownBy(() -> TensorOperationValidator.validateIndexSelect(new Shape(2, 3), new Shape(1), -3))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("out of range");
+    }
+
+    @Test
     void splitNormalizesAxisAndProducesEqualOutputShapes() {
         TensorOperationValidator.SplitPlan plan =
                 TensorOperationValidator.validateSplit(new Shape(2, 12, 4), -2, 3);

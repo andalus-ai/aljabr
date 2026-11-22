@@ -214,6 +214,32 @@ public final class TensorOperationValidator {
     public record SplitPlan(int axis, int parts, long chunkSize, Shape outputShape) { }
 
     /**
+     * Validates axis-wise index selection. The index tensor must be rank one;
+     * value bounds and index dtype are checked by the backend that can access
+     * the index representation.
+     */
+    public static IndexSelectPlan validateIndexSelect(Shape input, Shape indices, int requestedAxis) {
+        Objects.requireNonNull(input, "input shape must not be null");
+        Objects.requireNonNull(indices, "indices shape must not be null");
+        int rank = input.rank();
+        long normalized = requestedAxis < 0 ? (long) rank + requestedAxis : requestedAxis;
+        if (rank == 0 || normalized < 0 || normalized >= rank) {
+            throw new IllegalArgumentException(
+                    "Index-select axis " + requestedAxis + " is out of range for tensor rank " + rank);
+        }
+        if (indices.rank() != 1) {
+            throw new IllegalArgumentException(
+                    "index-select indices must be rank one; got rank " + indices.rank());
+        }
+        int axis = (int) normalized;
+        long[] outputDimensions = input.dims();
+        outputDimensions[axis] = indices.dim(0);
+        return new IndexSelectPlan(axis, new Shape(outputDimensions));
+    }
+
+    public record IndexSelectPlan(int axis, Shape outputShape) { }
+
+    /**
      * Validates flattening the complete logical tensor into a one-dimensional shape.
      * Scalars become a length-one vector and empty tensors remain empty vectors.
      */
