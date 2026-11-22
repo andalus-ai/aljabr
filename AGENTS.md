@@ -494,3 +494,17 @@ A feature is not observability-ready merely because it logs an exception or expo
 The canonical starting point is `core:aljabr-diagnostics`. Extend its existing `Diagnostic`, `DiagnosticSeverity`, `DiagnosticSink` and `DiagnosticFormatter` contracts; do not create a competing diagnostics artifact or duplicate the existing API.
 
 New integrations should prefer `DiagnosticContext` and `Diagnostic.withContext(...)` for bounded correlation/parent IDs and explicit operation/component/provider metadata. Keep existing map-based constructors source-compatible. Use `DiagnosticSink.noop()` (the shared `DiagnosticSink.NOOP`) for disabled diagnostics. Do not introduce implicit ThreadLocal context propagation or capture unreviewed payloads as context attributes.
+
+
+### 20.2 Explicit execution lifecycle scopes
+
+The diagnostics foundation now includes explicit execution lifecycle contracts in `core:aljabr-diagnostics`:
+
+- Use `ExecutionScope.start(context, observer)` around meaningful computation boundaries. The context must explicitly provide a correlation ID and operation; pass parent IDs when creating child scopes.
+- Emit STARTED followed by exactly one terminal event: SUCCEEDED, FAILED or ABANDONED. Closing an unfinished scope records ABANDONED; closing a completed scope is harmless.
+- Use monotonic elapsed nanoseconds for duration. Wall-clock timestamps identify event occurrence only; do not derive elapsed time from wall-clock subtraction.
+- Failure events expose exception class identity only. Do not export exception messages or stack traces through lifecycle context by default.
+- Observer callbacks are synchronous and should be fast/non-blocking. Runtime exceptions are isolated and retained on the scope through `observerFailure()`; fatal errors are not swallowed.
+- Context propagation is explicit across nested and asynchronous work. Do not add ThreadLocal propagation, background dispatch, implicit buffers or persistence.
+- Lifecycle events are observations, not diagnostics, audit facts or metric samples. Add separate contracts only when their semantics and delivery guarantees are defined.
+- Test start/terminal ordering, abandoned scopes, observer failure isolation, privacy, duplicate completion and context requirements. Keep observer-disabled paths cheap.
