@@ -14,7 +14,7 @@ class EmbeddingGemma2AudioProcessorTest {
                 12, 13, 0, 1e-6, 0.5, "silu", "bfloat16", false,
                 16_000, 128, 512, 320, 160, 0.0, 8_000.0,
                 0.001, 0.0, 1.0, 0.0,
-                280, 40, 1, 2, 3);
+                280, 40, 1, 2, 3, 1.0e10);
     }
 
     @Test
@@ -66,7 +66,7 @@ class EmbeddingGemma2AudioProcessorTest {
                 base.maxFrequency(), base.melFloor(), base.paddingValue(),
                 base.inputScaleFactor(), 0.01, base.audioSequenceLength(),
                 base.audioMillisecondsPerToken(), base.audioTokenId(),
-                base.beginAudioTokenId(), base.endAudioTokenId());
+                base.beginAudioTokenId(), base.endAudioTokenId(), base.gradientClipping());
 
         assertThrows(IllegalArgumentException.class,
                 () -> new EmbeddingGemma2AudioProcessor(withDither));
