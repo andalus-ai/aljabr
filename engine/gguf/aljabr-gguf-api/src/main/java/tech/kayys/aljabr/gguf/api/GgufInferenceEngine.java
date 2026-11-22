@@ -231,6 +231,9 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Multi.createFrom().failure(error);
+            } catch (Error fatal) {
+                activeCount.decrementAndGet();
+                throw fatal;
             }
         });
     }
@@ -293,7 +296,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                         }
                         activeCount.decrementAndGet();
                     });
-        } catch (RuntimeException | Error failure) {
+        } catch (RuntimeException failure) {
             failedCount.incrementAndGet();
             try {
                 if (activeScope != null) {
