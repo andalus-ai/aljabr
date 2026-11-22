@@ -370,6 +370,18 @@ public class LazyTensor implements Tensor {
                 new Object[] { plan.axis() }, plan.outputShape(), dtype());
     }
 
+    /**
+     * Index selection is not yet represented in the lazy graph IR. Fail explicitly
+     * rather than materializing implicitly or constructing a graph node that the
+     * executor cannot evaluate or differentiate.
+     */
+    @Override
+    public Tensor indexSelect(int axis, Tensor indices) {
+        ensureOpen();
+        throw new UnsupportedOperationException(
+                "indexSelect is not yet supported by the lazy tensor execution graph");
+    }
+
     @Override
     public Tensor slice(long[] offsets, long[] sizes) {
         return op(OpType.SLICE, List.of(this), new Object[] { offsets, sizes }, new Shape(sizes), this.dtype());
