@@ -485,17 +485,37 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     }
 
     @Override
-    public void close() {
-        if (executionObserver == ExecutionObserver.NOOP) {
-            backends.values().forEach(GgufBackend::close);
-            backends.clear();
-            initialized = false;
-            return;
-        }
-        backends.values().forEach(backend ->
-                observeLifecycleUnchecked("gguf.model.unload", backend.name(), backend::close));
+    public synchronized void close() {
+        // Detach the complete set before invoking provider code. This makes
+        // shutdown idempotent and prevents a failing close from leaving models
+        // registered or causing already-attempted backends to be closed twice.
+        List<GgufBackend> closing = new ArrayList<>(backends.values());
         backends.clear();
         initialized = false;
+
+        Throwable firstFailure = null;
+        for (GgufBackend backend : closing) {
+            try {
+                if (executionObserver == ExecutionObserver.NOOP) {
+                    backend.close();
+                } else {
+                    observeLifecycleUnchecked("gguf.model.unload", backend.name(), backend::close);
+                }
+            } catch (RuntimeException | Error failure) {
+                if (firstFailure == null) {
+                    firstFailure = failure;
+                } else if (firstFailure != failure) {
+                    firstFailure.addSuppressed(failure);
+                }
+            }
+        }
+
+        if (firstFailure instanceof RuntimeException runtimeFailure) {
+            throw runtimeFailure;
+        }
+        if (firstFailure instanceof Error fatalFailure) {
+            throw fatalFailure;
+        }
     }
 
     private GgufBackend backendFor(String modelId) {
@@ -508,6 +528,39 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                     "No GGUF model loaded with id: " + modelId + ". Loaded models: " + backends.keySet());
         }
         return backend;
+    }
+
+    /**
+     * Measures the provider's cheap model-readiness probe independently from
+     * the later backend construction/load lifecycle. Provider decisions remain
+     * on the dedicated decision observer.
+     */
+    private GgufBackendCapability probeProvider(
+            GgufBackendProvider provider, Path modelPath) throws Exception {
+        if (executionObserver == ExecutionObserver.NOOP) {
+            return provider.probe(modelPath);
+        }
+        DiagnosticContext context = DiagnosticContext.builder()
+                .correlationId(UUID.randomUUID().toString())
+                .operation("gguf.provider.probe")
+                .component("gguf")
+                .provider(provider.id())
+                .build();
+        ExecutionScope scope = ExecutionScope.start(context, executionObserver);
+        try (scope) {
+            try {
+                GgufBackendCapability capability = provider.probe(modelPath);
+                scope.succeed();
+                return capability;
+            } catch (Exception | Error failure) {
+                scope.fail(failure);
+                throw failure;
+            }
+        } finally {
+            if (scope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
+            }
+        }
     }
 
     private GgufBackendProvider selectProvider(Path modelPath, GgufBackendSelection selection) {

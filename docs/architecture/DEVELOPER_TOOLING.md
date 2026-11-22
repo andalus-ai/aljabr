@@ -474,3 +474,43 @@ Embedding text, request IDs, model IDs, paths, request parameters and vectors ar
 ### Validation status
 
 Tests cover deferred start, success, failure privacy, cancellation accounting and observer-failure isolation. CI is required to validate the Mutiny cancellation hooks and compilation. The current full build is blocked by the existing CPU backend compile error at `CpuBackend.java:470`; no passing validation is claimed.
+
+
+## 20. GGUF provider readiness probe lifecycle — implementation slice 7
+
+The seventh GGUF integration slice measures the provider's cheap model-readiness probe separately from provider selection decisions and backend construction.
+
+### Implemented behavior
+
+- AUTO selection wraps each available provider's `probe(modelPath)` call in a `gguf.provider.probe` execution scope.
+- Probe success emits SUCCEEDED even when the returned capability is not generation-ready; readiness and selection outcomes remain the responsibility of `ProviderDecisionObserver`.
+- Probe exceptions emit FAILED with exception class identity only. Existing AUTO selection behavior is preserved: ordinary probe exceptions are recorded as provider decision failures and selection proceeds to the next candidate.
+- Explicit provider selection intentionally bypasses the readiness probe and therefore emits no probe lifecycle scope.
+- The no-op execution observer path invokes the provider probe directly without allocating a context or scope.
+- Observer RuntimeExceptions remain isolated and contribute to the existing execution-observer failure count.
+
+### Privacy and boundaries
+
+Probe context contains only a generated correlation ID, operation/component identity and provider ID. It excludes model paths, model IDs, capability metadata, probe explanations and exception messages. The lifecycle duration covers the probe call only; it excludes provider ranking, decision publication and backend creation.
+
+### Validation status
+
+Tests cover successful probe ordering relative to model loading and failed-probe privacy. CI must validate compilation and the selection/fallback behavior; no passing validation is claimed until the workflow completes.
+
+
+## 21. GGUF engine shutdown cleanup reliability — implementation slice 8
+
+Engine shutdown now detaches the loaded-backend registry and marks the engine uninitialized before invoking backend cleanup. It then attempts every captured backend, regardless of earlier close failures.
+
+### Behavior
+
+- Each backend receives its own `gguf.model.unload` lifecycle scope when execution observation is enabled.
+- A backend close failure is retained as the primary failure, but does not prevent later backends from being closed or observed.
+- Additional cleanup failures are attached to the primary failure as suppressed exceptions.
+- The original RuntimeException or Error type is rethrown after all cleanup attempts.
+- The no-op observer path uses direct backend close calls but follows the same best-effort cleanup semantics.
+- Repeated `close()` calls are harmless after the backend registry has been detached.
+
+### Validation
+
+Tests cover an early backend failure followed by a successful cleanup, lifecycle STARTED/FAILED/SUCCEEDED outcomes, repeated close, and the no-op observer path. CI remains the authority for compile and test validation.

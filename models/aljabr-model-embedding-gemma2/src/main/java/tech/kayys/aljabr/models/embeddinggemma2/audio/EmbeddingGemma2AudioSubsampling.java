@@ -61,7 +61,7 @@ public final class EmbeddingGemma2AudioSubsampling {
         for (int b = 0; b < batch; b++) {
             for (int t = 0; t < time; t++) {
                 if (inputFeaturesMask == null || inputFeaturesMask[b][t]) {
-                    System.arraycopy(inputFeatures[b][t], 0, hidden[b][0][t], 0, inputFeatures);
+                    System.arraycopy(inputFeatures[b][t], 0, hidden[b][0][t], 0, this.inputFeatures);
                 }
             }
         }

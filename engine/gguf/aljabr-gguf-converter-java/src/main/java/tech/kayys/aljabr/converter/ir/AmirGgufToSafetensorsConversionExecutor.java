@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. IQ4_NL, IQ4_XS, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. IQ3_S, IQ4_NL, IQ4_XS, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -160,6 +160,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
+            case "IQ3_S" -> TensorEncoding.dequantized("IQ3_S", 110, 256);
             case "IQ4_NL" -> TensorEncoding.dequantized("IQ4_NL", 18, 32);
             case "IQ4_XS" -> TensorEncoding.dequantized("IQ4_XS", 136, 256);
             case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
@@ -179,7 +180,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "IQ3_S", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -280,6 +281,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("IQ3_S")) {
+                    dequantizeIQ3SBlock(source, base, values);
+                    continue;
+                }
                 if (type.equals("IQ4_NL")) {
                     dequantizeIQ4NLBlock(source, base, values);
                     continue;
@@ -351,6 +356,53 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             writeFully(output, values);
             block += count;
         }
+    }
+
+    /**
+     * GGML block_iq3_s layout: fp16 scale, 64 low grid-index bytes, eight high-index
+     * bytes, 32 packed sign codes, and four bytes of paired four-bit group scales.
+     * The canonical 512-entry grid is stored as little-endian packed bytes.
+     */
+    private static void dequantizeIQ3SBlock(byte[] source, int base, ByteBuffer output) {
+        float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        int qsOffset = base + 2;
+        int qhOffset = base + 66;
+        int signsOffset = base + 74;
+        int scalesOffset = base + 106;
+        for (int pair = 0; pair < 4; pair++) {
+            int packedScales = source[scalesOffset + pair] & 0xff;
+            float firstScale = scale * (1 + 2 * (packedScales & 0x0f));
+            float secondScale = scale * (1 + 2 * (packedScales >>> 4));
+            int qhFirst = source[qhOffset + pair * 2] & 0xff;
+            int qhSecond = source[qhOffset + pair * 2 + 1] & 0xff;
+            writeIQ3SGridPair(source, qsOffset + pair * 16, qhFirst,
+                    signsOffset + pair * 8, firstScale, output);
+            writeIQ3SGridPair(source, qsOffset + pair * 16 + 8, qhSecond,
+                    signsOffset + pair * 8 + 4, secondScale, output);
+        }
+    }
+
+    private static void writeIQ3SGridPair(
+            byte[] source, int qsOffset, int qh, int signsOffset, float scale, ByteBuffer output) {
+        for (int lane = 0; lane < 4; lane++) {
+            int firstIndex = (source[qsOffset + lane * 2] & 0xff)
+                    | (((qh << (8 - 2 * lane)) & 0x100));
+            int secondIndex = (source[qsOffset + lane * 2 + 1] & 0xff)
+                    | (((qh << (7 - 2 * lane)) & 0x100));
+            int signMask = decodeIQ3SSignMask(source[signsOffset + lane] & 0x7f);
+            for (int value = 0; value < 4; value++) {
+                float sign = (signMask & (1 << value)) != 0 ? -1.0f : 1.0f;
+                output.putFloat(scale * Iq3SGrid.value(firstIndex, value) * sign);
+            }
+            for (int value = 0; value < 4; value++) {
+                float sign = (signMask & (1 << (value + 4))) != 0 ? -1.0f : 1.0f;
+                output.putFloat(scale * Iq3SGrid.value(secondIndex, value) * sign);
+            }
+        }
+    }
+
+    private static int decodeIQ3SSignMask(int encoded) {
+        return encoded | ((Integer.bitCount(encoded) & 1) << 7);
     }
 
     /**
@@ -671,9 +723,6 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed metadata"));
         AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed tensor metadata"));
-        model.architectureDescriptor().ifPresent(descriptor ->
-                AmirSourceMetadataCodec.putUnique(values, AmirArchitectureDescriptorCodec.KEY,
-                        AmirArchitectureDescriptorCodec.encode(descriptor), "Safetensors architecture descriptor"));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) -> AmirSourceMetadataCodec.putUnique(values,
                     "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value,

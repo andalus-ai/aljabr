@@ -33,7 +33,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            if (Set.of("IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
+            if (Set.of("IQ3_S", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.WARNING,
                         "GGML_QUANTIZATION_DEQUANTIZED",
@@ -56,16 +56,6 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
                     CompatibilityReport.Severity.WARNING,
                     "GGUF_TYPED_METADATA_FLATTENED",
                     "Legacy AMIR descriptors contain rendered GGUF metadata strings without their original types."));
-            partial = true;
-        }
-
-        boolean hasOpaqueExtensions = !source.extensions().isEmpty()
-                || source.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
-        if (hasOpaqueExtensions && !"gguf".equalsIgnoreCase(source.sourceFormat())) {
-            diagnostics.add(new CompatibilityReport.Diagnostic(
-                    CompatibilityReport.Severity.INFO,
-                    "OPAQUE_METADATA_REQUIRES_MAPPING",
-                    "This conversion path does not preserve all opaque source extensions."));
             partial = true;
         }
 

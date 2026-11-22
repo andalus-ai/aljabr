@@ -77,10 +77,71 @@ class EulerSigmaStepExecutorTest {
     }
 
     @Test
-    void rejectsDerivativeWithShapeDifferentFromSample() {
+    void rejectsModelOutputWithShapeDifferentFromSampleBeforeConversion() {
         try (CpuBackend backend = new CpuBackend();
                 Tensor sample = TensorFactory.of(new float[] {1f, 2f}, backend, 2);
                 Tensor modelOutput = TensorFactory.of(new float[] {0f}, backend, 1)) {
+            AtomicBoolean conversionCalled = new AtomicBoolean();
+            SigmaPredictionConverter converter = converter(
+                    PredictionType.FLOW, (current, output, step) -> {
+                        conversionCalled.set(true);
+                        return current.mul(1f);
+                    });
+            SigmaStepContext context =
+                    new SigmaStepContext(0, 1.0d, 0.5d, PredictionType.FLOW);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> executor.execute(sample, modelOutput, context, converter));
+            assertTrue(!conversionCalled.get());
+            assertArrayEquals(new float[] {1f, 2f}, sample.toFloatArray(), 0f);
+        }
+    }
+
+    @Test
+    void rejectsSampleAndModelOutputFromDifferentBackendsBeforeConversion() {
+        try (CpuBackend sampleBackend = new CpuBackend();
+                CpuBackend outputBackend = new CpuBackend();
+                Tensor sample = TensorFactory.of(new float[] {1f, 2f}, sampleBackend, 2);
+                Tensor modelOutput = TensorFactory.of(new float[] {0f, 0f}, outputBackend, 2)) {
+            AtomicBoolean conversionCalled = new AtomicBoolean();
+            SigmaPredictionConverter converter = converter(
+                    PredictionType.FLOW, (current, output, step) -> {
+                        conversionCalled.set(true);
+                        return current.mul(1f);
+                    });
+            SigmaStepContext context =
+                    new SigmaStepContext(0, 1.0d, 0.5d, PredictionType.FLOW);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> executor.execute(sample, modelOutput, context, converter));
+            assertTrue(!conversionCalled.get());
+        }
+    }
+
+    @Test
+    void rejectsDerivativeOwnedByDifferentBackend() {
+        try (CpuBackend sampleBackend = new CpuBackend();
+                CpuBackend derivativeBackend = new CpuBackend();
+                Tensor sample = TensorFactory.of(new float[] {1f, 2f}, sampleBackend, 2);
+                Tensor modelOutput = TensorFactory.of(new float[] {0f, 0f}, sampleBackend, 2)) {
+            SigmaPredictionConverter converter = converter(
+                    PredictionType.FLOW,
+                    (current, output, step) ->
+                            TensorFactory.of(new float[] {1f, 1f}, derivativeBackend, 2));
+            SigmaStepContext context =
+                    new SigmaStepContext(0, 1.0d, 0.5d, PredictionType.FLOW);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> executor.execute(sample, modelOutput, context, converter));
+            assertArrayEquals(new float[] {1f, 2f}, sample.toFloatArray(), 0f);
+        }
+    }
+
+    @Test
+    void rejectsDerivativeWithShapeDifferentFromSample() {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor sample = TensorFactory.of(new float[] {1f, 2f}, backend, 2);
+                Tensor modelOutput = TensorFactory.of(new float[] {0f, 0f}, backend, 2)) {
             SigmaPredictionConverter converter = converter(
                     PredictionType.FLOW,
                     (current, output, step) -> TensorFactory.of(new float[] {1f}, backend, 1));

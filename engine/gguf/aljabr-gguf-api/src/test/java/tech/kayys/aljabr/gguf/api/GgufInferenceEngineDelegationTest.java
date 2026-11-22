@@ -341,6 +341,130 @@ class GgufInferenceEngineDelegationTest {
     }
 
     @Test
+    void providerProbeEmitsIndependentLifecycleEvents() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-probe", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackend backend = new TestBackend();
+        GgufBackendProvider provider = provider((path, config) -> backend);
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            assertSame(backend, engine.loadModel("model", model, Map.of()));
+            assertEquals(List.of(
+                            "gguf.provider.probe:STARTED",
+                            "gguf.provider.probe:SUCCEEDED",
+                            "gguf.model.load:STARTED",
+                            "gguf.model.load:SUCCEEDED"),
+                    events.stream().map(event -> event.context().operation() + ":" + event.type()).toList());
+            assertEquals("test", events.get(0).context().provider());
+            assertTrue(events.get(0).context().attributes().isEmpty());
+            assertNotNull(events.get(0).context().correlationId());
+            assertTrue(events.get(1).elapsedNanos() >= 0);
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void providerProbeFailureEmitsFailedWithoutCapturingPathOrMessage() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-probe-failure", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) throws Exception {
+                throw new IllegalStateException("private probe detail");
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                return new TestBackend();
+            }
+        };
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            assertThrows(tech.kayys.aljabr.spi.exception.InferenceException.class,
+                    () -> engine.loadModel("model", model, Map.of()));
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.FAILED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals("gguf.provider.probe", events.get(1).context().operation());
+            assertEquals(IllegalStateException.class.getName(), events.get(1).failureType());
+            assertTrue(events.get(1).context().attributes().isEmpty());
+            assertFalse(events.toString().contains(model.toString()));
+            assertFalse(events.toString().contains("private probe detail"));
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void explicitProviderSelectionBypassesReadinessProbeLifecycle() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-explicit", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean probed = new AtomicBoolean();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) {
+                probed.set(true);
+                throw new AssertionError("explicit selection must not probe");
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                return new TestBackend();
+            }
+        };
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            engine.loadModel("model", model, Map.of("gguf.backend", "test"));
+            assertFalse(probed.get());
+            assertEquals(List.of("gguf.model.load:STARTED", "gguf.model.load:SUCCEEDED"),
+                    events.stream().map(event -> event.context().operation() + ":" + event.type()).toList());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void failedProviderProbeIsObservedBeforeAutoFallback() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-probe-fallback", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackendProvider first = new GgufBackendProvider() {
+            @Override public String id() { return "first"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public int priority() { return 10; }
+            @Override public GgufBackendCapability probe(Path path) {
+                throw new IllegalStateException("private first-provider probe failure");
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                throw new AssertionError("failed provider must not be created");
+            }
+        };
+        GgufBackendProvider second = new GgufBackendProvider() {
+            @Override public String id() { return "second"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public int priority() { return 0; }
+            @Override public GgufBackendCapability probe(Path path) {
+                return GgufBackendCapability.ready("second", Set.of(), Map.of());
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                return new TestBackend();
+            }
+        };
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(first, second), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            engine.loadModel("model", model, Map.of());
+            assertEquals(List.of(
+                            "gguf.provider.probe:first:STARTED",
+                            "gguf.provider.probe:first:FAILED",
+                            "gguf.provider.probe:second:STARTED",
+                            "gguf.provider.probe:second:SUCCEEDED",
+                            "gguf.model.load:second:STARTED",
+                            "gguf.model.load:second:SUCCEEDED"),
+                    events.stream().map(event -> event.context().operation() + ":"
+                            + event.context().provider() + ":" + event.type()).toList());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
     void modelLoadEmitsLifecycleEventsWithoutModelPathMetadata() throws Exception {
         Path model = Files.createTempFile("gguf-model-load", ".gguf");
         List<ExecutionEvent> events = new java.util.ArrayList<>();
@@ -402,6 +526,120 @@ class GgufInferenceEngineDelegationTest {
             assertEquals("test", events.get(0).context().provider());
         } finally {
             Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void closeAttemptsEveryBackendAndPreservesFailuresAndUnloadEvents() throws Exception {
+        Path firstModel = Files.createTempFile("gguf-close-first", ".gguf");
+        Path secondModel = Files.createTempFile("gguf-close-second", ".gguf");
+        Path thirdModel = Files.createTempFile("gguf-close-third", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean firstClosed = new AtomicBoolean();
+        AtomicBoolean secondClosed = new AtomicBoolean();
+        AtomicBoolean thirdClosed = new AtomicBoolean();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) {
+                return GgufBackendCapability.ready("test", Set.of(), Map.of());
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                if (path.equals(firstModel)) {
+                    return new TestBackend() {
+                        @Override public String name() { return "first"; }
+                        @Override public void close() {
+                            firstClosed.set(true);
+                            throw new IllegalStateException("first close failed");
+                        }
+                    };
+                }
+                if (path.equals(secondModel)) {
+                    return new TestBackend() {
+                        @Override public String name() { return "second"; }
+                        @Override public void close() {
+                            secondClosed.set(true);
+                            throw new IllegalArgumentException("second close failed");
+                        }
+                    };
+                }
+                return new TestBackend() {
+                    @Override public String name() { return "third"; }
+                    @Override public void close() { thirdClosed.set(true); }
+                };
+            }
+        };
+        GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add);
+        try {
+            engine.loadModel("first", firstModel, Map.of("gguf.backend", "test"));
+            engine.loadModel("second", secondModel, Map.of("gguf.backend", "test"));
+            engine.loadModel("third", thirdModel, Map.of("gguf.backend", "test"));
+            events.clear();
+
+            RuntimeException failure = assertThrows(RuntimeException.class, engine::close);
+
+            assertTrue(failure instanceof IllegalStateException || failure instanceof IllegalArgumentException);
+            assertEquals(1, failure.getSuppressed().length);
+            assertTrue(failure.getSuppressed()[0] instanceof IllegalStateException
+                    || failure.getSuppressed()[0] instanceof IllegalArgumentException);
+            assertTrue(firstClosed.get());
+            assertTrue(secondClosed.get(), "a second failing backend must still be attempted");
+            assertTrue(thirdClosed.get(), "a failing backend must not prevent later backend cleanup");
+            assertEquals(6, events.size(), "all three unload scopes must emit STARTED and a terminal event");
+            assertEquals(3, events.stream()
+                    .filter(event -> event.context().operation().equals("gguf.model.unload")
+                            && event.type() == ExecutionEvent.Type.STARTED).count());
+            assertEquals(2, events.stream()
+                    .filter(event -> event.context().operation().equals("gguf.model.unload")
+                            && event.type() == ExecutionEvent.Type.FAILED).count());
+            assertEquals(1, events.stream()
+                    .filter(event -> event.context().operation().equals("gguf.model.unload")
+                            && event.type() == ExecutionEvent.Type.SUCCEEDED).count());
+            assertEquals(0, engine.getStats().activeInferences());
+            assertThrows(tech.kayys.aljabr.spi.exception.InferenceException.class,
+                    () -> engine.execute("first", request()));
+            assertDoesNotThrow(engine::close, "a second close must be harmless after cleanup was attempted");
+        } finally {
+            Files.deleteIfExists(firstModel);
+            Files.deleteIfExists(secondModel);
+            Files.deleteIfExists(thirdModel);
+        }
+    }
+
+    @Test
+    void closeWithoutObserverStillClosesRemainingBackendsAfterFailure() throws Exception {
+        Path firstModel = Files.createTempFile("gguf-close-noop-first", ".gguf");
+        Path secondModel = Files.createTempFile("gguf-close-noop-second", ".gguf");
+        AtomicBoolean secondClosed = new AtomicBoolean();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) {
+                return GgufBackendCapability.ready("test", Set.of(), Map.of());
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                if (path.equals(firstModel)) {
+                    return new TestBackend() {
+                        @Override public void close() { throw new IllegalArgumentException("close failure"); }
+                    };
+                }
+                return new TestBackend() {
+                    @Override public void close() { secondClosed.set(true); }
+                };
+            }
+        };
+        GgufInferenceEngine engine = new GgufInferenceEngine(List.of(provider));
+        try {
+            engine.loadModel("first", firstModel, Map.of("gguf.backend", "test"));
+            engine.loadModel("second", secondModel, Map.of("gguf.backend", "test"));
+
+            assertThrows(IllegalArgumentException.class, engine::close);
+            assertTrue(secondClosed.get());
+            assertDoesNotThrow(engine::close);
+        } finally {
+            Files.deleteIfExists(firstModel);
+            Files.deleteIfExists(secondModel);
         }
     }
 

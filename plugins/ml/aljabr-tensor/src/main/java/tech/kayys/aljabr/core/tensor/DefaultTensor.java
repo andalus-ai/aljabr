@@ -323,11 +323,46 @@ public final class DefaultTensor implements Tensor {
         if (indices.requiresGrad()) {
             throw new IllegalArgumentException("index-select indices cannot require gradients");
         }
-        if (requiresGrad()) {
-            throw new UnsupportedOperationException(
-                    "indexSelect autograd is not available until scatter-add VJP support is implemented");
+        return record(OpType.INDEX_SELECT, new Tensor[] { this, indices },
+                new Object[] { plan.axis() }, backend.indexSelect(this, plan.axis(), indices));
+    }
+
+    @Override
+    public Tensor indexAdd(int axis, Tensor indices, Tensor source) {
+        ensureOpen();
+        Objects.requireNonNull(indices, "indices");
+        Objects.requireNonNull(source, "source");
+        TensorOperationValidator.IndexAddPlan plan =
+                TensorOperationValidator.validateIndexAdd(shape, indices.shape(), source.shape(), axis);
+        if (indices.dtype() != DType.I32) {
+            throw new IllegalArgumentException(
+                    "index-add indices must use I32; actual dtype=" + indices.dtype());
         }
-        return backend.indexSelect(this, plan.axis(), indices);
+        if (indices.requiresGrad()) {
+            throw new IllegalArgumentException("index-add indices cannot require gradients");
+        }
+        return record(OpType.INDEX_ADD, new Tensor[] { this, indices, source },
+                new Object[] { plan.axis() }, backend.indexAdd(this, plan.axis(), indices, source));
+    }
+
+    @Override
+    public Tensor indexAdd(int axis, Tensor indices, Tensor source) {
+        ensureOpen();
+        Objects.requireNonNull(indices, "indices");
+        Objects.requireNonNull(source, "source");
+        TensorOperationValidator.IndexAddPlan plan =
+                TensorOperationValidator.validateIndexAdd(shape, indices.shape(), source.shape(), axis);
+        if (indices.dtype() != DType.I32) {
+            throw new IllegalArgumentException("index-add indices must use I32; actual dtype=" + indices.dtype());
+        }
+        if (indices.requiresGrad()) {
+            throw new IllegalArgumentException("index-add indices cannot require gradients");
+        }
+        if (requiresGrad() || source.requiresGrad()) {
+            throw new UnsupportedOperationException(
+                    "indexAdd autograd is not available until its vector-Jacobian products are implemented");
+        }
+        return backend.indexAdd(this, plan.axis(), indices, source);
     }
 
     @Override

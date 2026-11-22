@@ -127,6 +127,42 @@ class Gemma3TextBackboneTest {
     }
 
     @Test
+    void slidingWindowPrefillAndIncrementalDecodeMatchFullForward() throws Exception {
+        ModelConfig config = slidingWindowConfig();
+        Gemma3TextFamily architecture = new Gemma3TextFamily();
+        Map<String, Gemma3TextCheckpointMapper.CheckpointTensor> tensors = new LinkedHashMap<>();
+        putPatternMatrix(tensors, architecture.embedTokensWeight(), 5, 4);
+        putVector(tensors, architecture.finalNormWeight(), 4, 0.0f);
+        putMatrix(tensors, architecture.layerQueryWeight(0), 4, 4, 0.02f);
+        putMatrix(tensors, architecture.layerKeyWeight(0), 2, 4, 0.015f);
+        putMatrix(tensors, architecture.layerValueWeight(0), 2, 4, 0.03f);
+        putMatrix(tensors, architecture.layerOutputWeight(0), 4, 4, 0.025f);
+        putVector(tensors, architecture.layerAttentionNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerPostAttnNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerPreFfnNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerPostFfnNormWeight(0), 4, 0.0f);
+        putVector(tensors, architecture.layerQueryNormWeight(0), 2, 0.0f);
+        putVector(tensors, architecture.layerKeyNormWeight(0), 2, 0.0f);
+        putMatrix(tensors, architecture.layerFfnGateWeight(0), 6, 4, 0.01f);
+        putMatrix(tensors, architecture.layerFfnUpWeight(0), 6, 4, 0.012f);
+        putMatrix(tensors, architecture.layerFfnDownWeight(0), 4, 6, 0.008f);
+        Gemma3TextBackbone backbone = new Gemma3TextBackbone(
+                config, Gemma3TextCheckpointMapper.map(config, architecture, tensors));
+
+        int[] prompt = {0, 1, 2, 3, 4};
+        float[][] expected = backbone.forward(prompt);
+        try (Gemma3TextBackbone.DecodeSession session = backbone.newDecodeSession()) {
+            float[][] prefill = session.prefill(new int[] {0, 1, 2, 3});
+            assertEquals(4, session.position());
+            for (int index = 0; index < prefill.length; index++) {
+                assertArrayEquals(expected[index], prefill[index], 1.0e-5f);
+            }
+            assertArrayEquals(expected[4], session.decode(4), 1.0e-5f);
+            assertEquals(prompt.length, session.position());
+        }
+    }
+
+    @Test
     void prefillValidatesTheEntirePromptBeforeMutatingDecodeState() throws Exception {
         Gemma3TextBackbone backbone = new Gemma3TextBackbone(config(), emptyMappedWeights());
         try (Gemma3TextBackbone.DecodeSession session = backbone.newDecodeSession()) {
@@ -171,6 +207,28 @@ class Gemma3TextBackboneTest {
         putMatrix(tensors, architecture.layerFfnUpWeight(0), 6, 4, 0.0f);
         putMatrix(tensors, architecture.layerFfnDownWeight(0), 4, 6, 0.0f);
         return Gemma3TextCheckpointMapper.map(config, architecture, tensors);
+    }
+
+    private ModelConfig slidingWindowConfig() throws Exception {
+        Path path = temporaryDirectory.resolve("gemma3-sliding-config.json");
+        Files.writeString(path, """
+                {
+                  "model_type": "gemma3_text",
+                  "architectures": ["Gemma3ForCausalLM"],
+                  "hidden_size": 4,
+                  "num_hidden_layers": 1,
+                  "num_attention_heads": 2,
+                  "num_key_value_heads": 1,
+                  "head_dim": 2,
+                  "intermediate_size": 6,
+                  "vocab_size": 5,
+                  "max_position_embeddings": 32,
+                  "tie_word_embeddings": true,
+                  "layer_types": ["sliding_attention"],
+                  "sliding_window": 2
+                }
+                """);
+        return ModelConfig.load(path, new ObjectMapper());
     }
 
     private ModelConfig config() throws Exception {

@@ -33,6 +33,8 @@ public final class OperationBackwardFunctions {
             case RESHAPE, FLATTEN, UNSQUEEZE, SQUEEZE -> OperationBackwardFunctions::restoreInputShape;
             case TRANSPOSE -> OperationBackwardFunctions::transpose;
             case SLICE -> OperationBackwardFunctions::slice;
+            case INDEX_SELECT -> OperationBackwardFunctions::indexSelect;
+            case INDEX_ADD -> OperationBackwardFunctions::indexAdd;
             case CAT -> OperationBackwardFunctions::cat;
             case MEAN -> OperationBackwardFunctions::mean;
             case SUM -> OperationBackwardFunctions::sum;
@@ -124,6 +126,39 @@ public final class OperationBackwardFunctions {
         }
     }
 
+
+    /**
+     * The VJP of indexSelect scatters the upstream slices back into the input
+     * domain. indexAdd deliberately accumulates duplicate indices.
+     */
+    private static Tensor[] indexSelect(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor input = inputs.get(0);
+        Tensor indices = inputs.get(1);
+        Tensor zeros = input.zerosLike();
+        try {
+            return new Tensor[] { zeros.indexAdd((int) arguments[0], indices, gradient), null };
+        } finally {
+            zeros.release();
+        }
+    }
+
+    /**
+     * The destination receives the upstream gradient unchanged; each source
+     * slice receives the upstream values selected at its corresponding index.
+     */
+    private static Tensor[] indexAdd(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        Tensor indices = inputs.get(1);
+        Tensor destinationGradient = gradient.add(0.0f);
+        try {
+            Tensor sourceGradient = gradient.indexSelect((int) arguments[0], indices);
+            return new Tensor[] { destinationGradient, null, sourceGradient };
+        } catch (RuntimeException | Error failure) {
+            destinationGradient.release();
+            throw failure;
+        }
+    }
 
     /**
      * Routes each concatenated region of the upstream gradient to its source input.
