@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -132,6 +131,110 @@ class GgufInferenceEngineDelegationTest {
             assertEquals(ExecutionEvent.Type.STARTED, events.get(0).type());
             assertEquals(ExecutionEvent.Type.ABANDONED, events.get(1).type());
             assertTrue(events.get(1).elapsedNanos() >= 0);
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void embeddingEmitsStartedAndSucceededOnlyAfterSubscription() throws Exception {
+        Path model = Files.createTempFile("gguf-embedding-lifecycle", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean embedCreated = new AtomicBoolean();
+        EmbeddingResponse expected = new EmbeddingResponse(
+                "request", "model", List.of(new float[]{1f, 2f}), 2, Map.of());
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Uni<EmbeddingResponse> embed(EmbeddingRequest request) {
+                embedCreated.set(true);
+                return Uni.createFrom().item(expected);
+            }
+        };
+        try (GgufInferenceEngine engine = engine(model, backend, events::add)) {
+            Uni<EmbeddingResponse> embedding = engine.executeEmbedding("model", embeddingRequest());
+            assertTrue(events.isEmpty(), "lifecycle must not start while the Uni is only assembled");
+            assertFalse(embedCreated.get());
+
+            assertSame(expected, embedding.await().indefinitely());
+
+            assertTrue(embedCreated.get());
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.SUCCEEDED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals("gguf.embed", events.get(0).context().operation());
+            assertEquals("test", events.get(0).context().provider());
+            assertTrue(events.get(1).elapsedNanos() >= 0);
+            assertEquals(0, engine.getStats().activeInferences());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void embeddingFailureEmitsFailedWithoutCapturingFailureMessage() throws Exception {
+        Path model = Files.createTempFile("gguf-embedding-failure", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Uni<EmbeddingResponse> embed(EmbeddingRequest request) {
+                return Uni.createFrom().failure(new IllegalStateException("private embedding failure"));
+            }
+        };
+        try (GgufInferenceEngine engine = engine(model, backend, events::add)) {
+            IllegalStateException failure = assertThrows(IllegalStateException.class,
+                    () -> engine.executeEmbedding("model", embeddingRequest()).await().indefinitely());
+            assertEquals("private embedding failure", failure.getMessage());
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.FAILED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals(IllegalStateException.class.getName(), events.get(1).failureType());
+            assertTrue(events.get(1).context().attributes().isEmpty());
+            assertEquals(1, engine.getStats().failedInferences());
+            assertEquals(0, engine.getStats().activeInferences());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void embeddingCancellationEmitsAbandonedAndReleasesActiveCount() throws Exception {
+        Path model = Files.createTempFile("gguf-embedding-cancel", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Uni<EmbeddingResponse> embed(EmbeddingRequest request) {
+                return Uni.createFrom().emitter(emitter -> { });
+            }
+        };
+        try (GgufInferenceEngine engine = engine(model, backend, events::add)) {
+            Cancellable subscription = engine.executeEmbedding("model", embeddingRequest())
+                    .subscribe().with(item -> { }, failure -> fail(failure));
+            subscription.cancel();
+
+            assertEquals(List.of(ExecutionEvent.Type.STARTED, ExecutionEvent.Type.ABANDONED),
+                    events.stream().map(ExecutionEvent::type).toList());
+            assertEquals(0, engine.getStats().activeInferences());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void embeddingObserverFailuresDoNotChangeResult() throws Exception {
+        Path model = Files.createTempFile("gguf-embedding-observer-failure", ".gguf");
+        EmbeddingResponse expected = new EmbeddingResponse(
+                "request", "model", List.of(new float[]{1f, 2f}), 2, Map.of());
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Uni<EmbeddingResponse> embed(EmbeddingRequest request) {
+                return Uni.createFrom().item(expected);
+            }
+        };
+        ExecutionObserver observer = event -> {
+            throw new IllegalStateException("observer failure");
+        };
+        try (GgufInferenceEngine engine = engine(model, backend, observer)) {
+            assertSame(expected, engine.executeEmbedding("model", embeddingRequest()).await().indefinitely());
+            assertTrue(engine.executionObserverFailureCount() > 0);
+            assertEquals(0, engine.getStats().activeInferences());
         } finally {
             Files.deleteIfExists(model);
         }
@@ -339,6 +442,10 @@ class GgufInferenceEngineDelegationTest {
                 List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, observer);
         engine.loadModel("model", model, Map.of("gguf.backend", "test"));
         return engine;
+    }
+
+    private static EmbeddingRequest embeddingRequest() {
+        return EmbeddingRequest.builder().requestId("request").model("model").input("private input").build();
     }
 
     private static InferenceRequest request() {

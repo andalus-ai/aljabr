@@ -453,3 +453,24 @@ The fifth integration slice observes backend creation and cleanup at the model l
 ### Validation status
 
 Tests cover successful load, failed load metadata privacy, and unload behavior. They require CI execution; the current full build is known to be blocked by the unrelated CPU backend compile error at `CpuBackend.java:470`, so no passing validation is claimed for this slice.
+
+## 19. GGUF embedding lifecycle observation — implementation slice 6
+
+The sixth integration slice applies the explicit execution lifecycle contract to GGUF embedding operations.
+
+### Implemented behavior
+
+- Embedding instrumentation uses operation `gguf.embed` and starts only when the deferred Mutiny `Uni` is subscribed.
+- Each subscription receives its own correlation ID and execution scope.
+- Item emission maps to SUCCEEDED, upstream failure maps to FAILED, and downstream cancellation closes the unfinished scope as ABANDONED.
+- Active and failed counters are updated for terminal outcomes; synchronous backend construction failures are handled without leaking active counts.
+- The no-op observer path retains direct backend delegation and only existing counter hooks.
+- Observer RuntimeExceptions are isolated by `ExecutionScope` and counted after termination.
+
+### Privacy and boundaries
+
+Embedding text, request IDs, model IDs, paths, request parameters and vectors are not copied into diagnostic context. This is operation lifecycle telemetry, not embedding-content logging or durable audit persistence.
+
+### Validation status
+
+Tests cover deferred start, success, failure privacy, cancellation accounting and observer-failure isolation. CI is required to validate the Mutiny cancellation hooks and compilation. The current full build is blocked by the existing CPU backend compile error at `CpuBackend.java:470`; no passing validation is claimed.
