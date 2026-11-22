@@ -113,12 +113,13 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
 
     private ModelDescriptor readSafetensors(Path file, String name) throws IOException {
         Map<String, String> metadata;
+        Map<String, String> storedMetadata;
         Map<String, MetadataValue> typedMetadata;
         List<TensorDescriptor> tensors = new ArrayList<>();
         long fileSize = Files.size(file);
 
         try (SafetensorsReader reader = new SafetensorsReader(file)) {
-            Map<String, String> storedMetadata = new LinkedHashMap<>(reader.globalMeta());
+            storedMetadata = new LinkedHashMap<>(reader.globalMeta());
             typedMetadata = AmirTypedMetadataCodec.decode(storedMetadata);
             metadata = new LinkedHashMap<>(AmirTypedMetadataCodec.withoutEncodedValues(storedMetadata));
             for (SafetensorsReader.TensorEntry tensor : reader.tensors().values()) {
