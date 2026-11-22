@@ -40,7 +40,7 @@ final class AmirSourceMetadataCodec {
                 putUnique(tensorExtensions.computeIfAbsent(tensorName, ignored -> new LinkedHashMap<>()),
                         extensionName, value, "tensor extension for " + tensorName);
             } else {
-                metadata.put(key, value);
+                putUnique(metadata, key, value, "metadata");
             }
         });
 
