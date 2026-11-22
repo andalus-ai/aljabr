@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @Tag(name = "Embeddings", description = "Text embedding generation")
+@SuppressWarnings("removal")
 @Deprecated(forRemoval = true)
 public class EmbeddingsResource {
 
