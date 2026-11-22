@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":engine:gguf:aljabr-gguf-converter"))
+    // Keep the AMIR converter independent of the legacy native GGUF converter.
     implementation(project(":engine:gguf:aljabr-gguf-core"))
     implementation(project(":core:aljabr-core"))
     api(project(":engine:safetensor:aljabr-safetensor-loader"))
