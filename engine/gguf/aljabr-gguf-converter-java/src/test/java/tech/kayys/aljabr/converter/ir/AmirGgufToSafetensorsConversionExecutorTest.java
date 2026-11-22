@@ -253,6 +253,45 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesQ3KBlockUsingPackedSixBitScalesLowBitsAndHighMask() throws Exception {
+        byte[] block = new byte[110];
+        java.util.Arrays.fill(block, 32, 96, (byte) 0xe4); // low two-bit planes: 0, 1, 2, 3
+        for (int i = 0; i < 8; i++) block[96 + i] = 0x11; // subgroup scales 33
+        java.util.Arrays.fill(block, 104, 108, (byte) 0xaa); // upper two scale bits
+        java.util.Arrays.fill(block, 0, 32, (byte) 0xff); // high bit set => no -4 offset
+        block[0] = (byte) 0xfe; // first quantized value uses the negative branch
+        block[109] = 0x3c; // fp16 d = 1
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q3_K", List.of(256L), source, 8L, block.length);
+        var model = model("q3_k", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("q3_k.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        assertEquals(-4.0f, values.getFloat(0 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(1 * Float.BYTES), 0.0f);
+        assertEquals(2.0f, values.getFloat(2 * Float.BYTES), 0.0f);
+        assertEquals(3.0f, values.getFloat(3 * Float.BYTES), 0.0f);
+        assertEquals(0.0f, values.getFloat(16 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        assertEquals(2.0f, values.getFloat(64 * Float.BYTES), 0.0f);
+        assertEquals(3.0f, values.getFloat(96 * Float.BYTES), 0.0f);
+        assertEquals(0.0f, values.getFloat(128 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(160 * Float.BYTES), 0.0f);
+        assertEquals(2.0f, values.getFloat(192 * Float.BYTES), 0.0f);
+        assertEquals(3.0f, values.getFloat(224 * Float.BYTES), 0.0f);
+    }
+
+    @Test
     void dequantizesQ6KBlockUsingLowBitsHighBitsAndSubgroupScales() throws Exception {
         byte[] block = new byte[210];
         java.util.Arrays.fill(block, 192, 208, (byte) 1);
