@@ -1298,12 +1298,41 @@ static size_t g_scratch_triple_C0_bytes = 0;
 static size_t g_scratch_triple_C1_bytes = 0;
 static size_t g_scratch_triple_C2_bytes = 0;
 
+static BOOL checked_size_mul(size_t a, size_t b, size_t *result) {
+  if (result == NULL || (a != 0 && b > SIZE_MAX / a))
+    return NO;
+  *result = a * b;
+  return YES;
+}
+
+static BOOL checked_float_buffer_bytes(size_t rows, size_t columns,
+                                       size_t batch, size_t *result) {
+  size_t elements = 0;
+  return checked_size_mul(rows, columns, &elements) &&
+         checked_size_mul(elements, batch, &elements) &&
+         checked_size_mul(elements, sizeof(float), result);
+}
+
+static BOOL checked_aligned_buffer_length(size_t needed, size_t *result) {
+  if (result == NULL || needed > SIZE_MAX - 16383)
+    return NO;
+  *result = (needed + 16383) & ~(size_t)16383;
+  return *result >= needed;
+}
+
 static inline id<MTLBuffer> ensure_shared_buf(id<MTLBuffer> __strong *slot,
                                               size_t *cap, size_t needed) {
+  if (slot == NULL || cap == NULL)
+    return nil;
   if (*slot == nil || *cap < needed) {
-    size_t sz = (needed + 16383) & ~16383;
-    *slot = [g_device newBufferWithLength:sz
-                                  options:MTLResourceStorageModeShared];
+    size_t sz = 0;
+    if (!checked_aligned_buffer_length(needed, &sz))
+      return nil;
+    id<MTLBuffer> buffer =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (buffer == nil)
+      return nil;
+    *slot = buffer;
     *cap = sz;
   }
   return *slot;
@@ -1322,8 +1351,12 @@ int aljabr_metal_matvec_tb_batch(void *C, const void *A, const void *B, int K,
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
 
   @autoreleasepool {
-    size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
-    size_t cBytes = (size_t)batchSize * (size_t)N * sizeof(float);
+    size_t aBytes = 0, cBytes = 0;
+    if (!checked_float_buffer_bytes((size_t)batchSize, (size_t)K, 1,
+                                    &aBytes) ||
+        !checked_float_buffer_bytes((size_t)batchSize, (size_t)N, 1,
+                                    &cBytes))
+      return -2;
 
     id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_single_A,
                                            &g_scratch_single_A_bytes, aBytes);
@@ -1375,8 +1408,12 @@ int aljabr_metal_matvec_tb_batch_q4k_dispatch_bench(
   @synchronized(matvec_scratch_lock()) {
   AljabrMetalPipelines *pipelines = aljabr_metal_pipelines();
   @autoreleasepool {
-    size_t aBytes = (size_t)batchSize * (size_t)K * sizeof(float);
-    size_t cBytes = (size_t)batchSize * (size_t)N * sizeof(float);
+    size_t aBytes = 0, cBytes = 0;
+    if (!checked_float_buffer_bytes((size_t)batchSize, (size_t)K, 1,
+                                    &aBytes) ||
+        !checked_float_buffer_bytes((size_t)batchSize, (size_t)N, 1,
+                                    &cBytes))
+      return -2;
     id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_single_A,
                                            &g_scratch_single_A_bytes, aBytes);
     id<MTLBuffer> bufC = ensure_shared_buf(&g_scratch_single_C,
@@ -1475,10 +1512,12 @@ int aljabr_metal_matvec_tb_triple_batch(void *C0, void *C1, void *C2,
 
   @autoreleasepool {
     size_t bSz = (size_t)batchSize;
-    size_t aBytes = bSz * (size_t)K * sizeof(float);
-    size_t c0Bytes = bSz * (size_t)N0 * sizeof(float);
-    size_t c1Bytes = bSz * (size_t)N1 * sizeof(float);
-    size_t c2Bytes = bSz * (size_t)N2 * sizeof(float);
+    size_t aBytes = 0, c0Bytes = 0, c1Bytes = 0, c2Bytes = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)K, 1, &aBytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)N0, 1, &c0Bytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)N1, 1, &c1Bytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)N2, 1, &c2Bytes))
+      return -2;
 
     id<MTLBuffer> bufA = ensure_shared_buf(&g_scratch_triple_A,
                                            &g_scratch_triple_A_bytes, aBytes);
@@ -1581,7 +1620,9 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
   @autoreleasepool {
     uint64_t t0 = monotonic_nanos();
     size_t bSz = (size_t)batchSize;
-    size_t dimBytes = bSz * (size_t)dim * sizeof(float);
+    size_t dimBytes = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)dim, 1, &dimBytes))
+      return -2;
     if (g_scratch_inA == nil || g_scratch_dim_bytes < dimBytes) {
       size_t sz = (dimBytes + 16383) & ~16383;
       g_scratch_inA =
@@ -1597,7 +1638,9 @@ int aljabr_metal_ffn_gated_fused_batch(void *outDown, const void *inA,
 
     memcpy([g_scratch_inA contents], inA, dimBytes);
 
-    size_t needed = bSz * (size_t)ffnDim * sizeof(float);
+    size_t needed = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)ffnDim, 1, &needed))
+      return -2;
     if (g_scratch_gate == nil || g_scratch_ffn_bytes < needed) {
       size_t sz = (needed + 16383) & ~16383;
       g_scratch_gate =
@@ -4239,9 +4282,11 @@ int aljabr_metal_wo_ffn_fused_layer_batch(
     uint32_t nDim = (uint32_t)cfg->wO_N;
     uint32_t nFfn = (uint32_t)cfg->ffnDim;
     uint32_t kDim = (uint32_t)cfg->wO_K;
-    size_t dimBytes = bSz * (size_t)nDim * sizeof(float);
-    size_t attnBytes = bSz * (size_t)kDim * sizeof(float);
-    size_t ffnBytes = bSz * (size_t)nFfn * sizeof(float);
+    size_t dimBytes = 0, attnBytes = 0, ffnBytes = 0;
+    if (!checked_float_buffer_bytes(bSz, (size_t)nDim, 1, &dimBytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)kDim, 1, &attnBytes) ||
+        !checked_float_buffer_bytes(bSz, (size_t)nFfn, 1, &ffnBytes))
+      return -2;
 
     id<MTLBuffer> bufX = ensure_shared_buf(&g_scratch_wo_ffn_x, &g_scratch_wo_ffn_x_bytes, dimBytes);
     id<MTLBuffer> bufAttn = ensure_shared_buf(&g_scratch_wo_ffn_attn, &g_scratch_wo_ffn_attn_bytes, attnBytes);
