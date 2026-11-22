@@ -2030,35 +2030,39 @@ static BOOL ensure_woff_next_qkv(size_t qBytes, size_t kBytes, size_t vBytes,
                                  size_t normBytes) {
   if (qBytes > g_woff_nextQ_cap) {
     size_t sz = (qBytes + 16383) & ~16383;
-    g_woff_nextQ = [g_device newBufferWithLength:sz
-                                         options:MTLResourceStorageModeShared];
-    g_woff_nextQ_cap = sz;
-    if (!g_woff_nextQ)
+    id<MTLBuffer> nextQ =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!nextQ)
       return NO;
+    g_woff_nextQ = nextQ;
+    g_woff_nextQ_cap = sz;
   }
   if (kBytes > g_woff_nextK_cap) {
     size_t sz = (kBytes + 16383) & ~16383;
-    g_woff_nextK = [g_device newBufferWithLength:sz
-                                         options:MTLResourceStorageModeShared];
-    g_woff_nextK_cap = sz;
-    if (!g_woff_nextK)
+    id<MTLBuffer> nextK =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!nextK)
       return NO;
+    g_woff_nextK = nextK;
+    g_woff_nextK_cap = sz;
   }
   if (vBytes > g_woff_nextV_cap) {
     size_t sz = (vBytes + 16383) & ~16383;
-    g_woff_nextV = [g_device newBufferWithLength:sz
-                                         options:MTLResourceStorageModeShared];
-    g_woff_nextV_cap = sz;
-    if (!g_woff_nextV)
+    id<MTLBuffer> nextV =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!nextV)
       return NO;
+    g_woff_nextV = nextV;
+    g_woff_nextV_cap = sz;
   }
   if (normBytes > g_woff_nextAttnNormW_cap) {
     size_t sz = (normBytes + 16383) & ~16383;
-    g_woff_nextAttnNormW =
+    id<MTLBuffer> nextNorm =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_nextAttnNormW_cap = sz;
-    if (!g_woff_nextAttnNormW)
+    if (!nextNorm)
       return NO;
+    g_woff_nextAttnNormW = nextNorm;
+    g_woff_nextAttnNormW_cap = sz;
   }
   return YES;
 }
@@ -2066,28 +2070,33 @@ static BOOL ensure_woff_next_qkv(size_t qBytes, size_t kBytes, size_t vBytes,
 static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
   if (attnKBytes > g_woff_attnFull_cap) {
     size_t sz = (attnKBytes + 16383) & ~16383;
-    g_woff_attnFull =
+    id<MTLBuffer> attnFull =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_attnFull_cap = sz;
-    if (!g_woff_attnFull)
+    if (!attnFull)
       return NO;
+    g_woff_attnFull = attnFull;
+    g_woff_attnFull_cap = sz;
   }
   if (dimBytes > g_woff_dim_cap) {
     size_t sz = (dimBytes + 16383) & ~16383;
-    g_woff_xb = [g_device newBufferWithLength:sz
-                                      options:MTLResourceStorageModeShared];
-    g_woff_x = [g_device newBufferWithLength:sz
-                                     options:MTLResourceStorageModeShared];
-    g_woff_normW1 = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_normW2 = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_normW3 = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_dim_cap = sz;
-    if (!g_woff_xb || !g_woff_x || !g_woff_normW1 || !g_woff_normW2 ||
-        !g_woff_normW3)
+    id<MTLBuffer> xb =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> x =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> normW1 =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> normW2 =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    id<MTLBuffer> normW3 =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!xb || !x || !normW1 || !normW2 || !normW3)
       return NO;
+    g_woff_xb = xb;
+    g_woff_x = x;
+    g_woff_normW1 = normW1;
+    g_woff_normW2 = normW2;
+    g_woff_normW3 = normW3;
+    g_woff_dim_cap = sz;
   }
   return YES;
 }
@@ -2095,15 +2104,18 @@ static BOOL ensure_woff_dim_bufs(size_t attnKBytes, size_t dimBytes) {
 static BOOL ensure_woff_ffn_bufs(size_t ffnBytes) {
   if (ffnBytes > g_woff_ffn_cap) {
     size_t sz = (ffnBytes + 16383) & ~16383;
-    g_woff_ffn_gate =
+    id<MTLBuffer> gate =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_up =
+    id<MTLBuffer> up =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_hb =
+    id<MTLBuffer> hb =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModePrivate];
-    g_woff_ffn_cap = sz;
-    if (!g_woff_ffn_gate || !g_woff_ffn_up || !g_woff_ffn_hb)
+    if (!gate || !up || !hb)
       return NO;
+    g_woff_ffn_gate = gate;
+    g_woff_ffn_up = up;
+    g_woff_ffn_hb = hb;
+    g_woff_ffn_cap = sz;
   }
   return YES;
 }
@@ -2684,19 +2696,21 @@ static size_t g_woff_outputNormW_cap = 0;
 static BOOL ensure_woff_logits(size_t logitsBytes, size_t normBytes) {
   if (logitsBytes > g_woff_logits_cap) {
     size_t sz = (logitsBytes + 16383) & ~16383;
-    g_woff_logits = [g_device newBufferWithLength:sz
-                                          options:MTLResourceStorageModeShared];
-    g_woff_logits_cap = sz;
-    if (!g_woff_logits)
+    id<MTLBuffer> logits =
+        [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
+    if (!logits)
       return NO;
+    g_woff_logits = logits;
+    g_woff_logits_cap = sz;
   }
   if (normBytes > g_woff_outputNormW_cap) {
     size_t sz = (normBytes + 16383) & ~16383;
-    g_woff_outputNormW =
+    id<MTLBuffer> outputNormW =
         [g_device newBufferWithLength:sz options:MTLResourceStorageModeShared];
-    g_woff_outputNormW_cap = sz;
-    if (!g_woff_outputNormW)
+    if (!outputNormW)
       return NO;
+    g_woff_outputNormW = outputNormW;
+    g_woff_outputNormW_cap = sz;
   }
   return YES;
 }
