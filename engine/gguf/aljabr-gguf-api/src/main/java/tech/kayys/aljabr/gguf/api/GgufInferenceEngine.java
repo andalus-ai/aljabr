@@ -4,6 +4,8 @@ import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
 import tech.kayys.aljabr.execution.ModelExecutionContext;
+import tech.kayys.aljabr.diagnostics.ProviderDecisionEvent;
+import tech.kayys.aljabr.diagnostics.ProviderDecisionObserver;
 import tech.kayys.aljabr.spi.embedding.EmbeddingRequest;
 import tech.kayys.aljabr.spi.embedding.EmbeddingResponse;
 import tech.kayys.aljabr.spi.exception.InferenceException;
@@ -34,6 +36,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
 
     private final Map<String, GgufBackend> backends = new ConcurrentHashMap<>();
     private final List<GgufBackendProvider> providers;
+    private final ProviderDecisionObserver decisionObserver;
     private final AtomicLong activeCount = new AtomicLong(0);
     private final AtomicLong totalCount = new AtomicLong(0);
     private final AtomicLong failedCount = new AtomicLong(0);
@@ -44,9 +47,20 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     }
 
     public GgufInferenceEngine(List<GgufBackendProvider> providers) {
+        this(providers, ProviderDecisionObserver.NOOP);
+    }
+
+    /**
+     * Creates an engine with an explicit provider decision observer.
+     * Observer runtime failures are isolated from provider selection.
+     */
+    public GgufInferenceEngine(
+            List<GgufBackendProvider> providers,
+            ProviderDecisionObserver decisionObserver) {
         List<GgufBackendProvider> sorted = new ArrayList<>(providers);
         sorted.sort(Comparator.comparingInt(GgufBackendProvider::priority).reversed());
         this.providers = List.copyOf(sorted);
+        this.decisionObserver = Objects.requireNonNull(decisionObserver, "decisionObserver");
         this.initialized = true;
     }
 
@@ -253,24 +267,50 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
 
     private GgufBackendProvider selectProvider(Path modelPath, GgufBackendSelection selection) {
         if (selection.explicit()) {
-            return providers.stream()
-                    .filter(p -> matches(p, selection.normalizedValue()))
-                    .filter(GgufBackendProvider::isAvailable)
-                    .findFirst()
-                    .orElseThrow(() -> new InferenceException(
+            for (GgufBackendProvider provider : providers) {
+                if (!matches(provider, selection.normalizedValue())) {
+                    continue;
+                }
+                if (!provider.isAvailable()) {
+                    observe(provider, ProviderDecisionEvent.Decision.UNAVAILABLE,
+                            "explicitly requested provider is unavailable",
+                            ProviderDecisionEvent.SelectionMode.EXPLICIT);
+                    throw new InferenceException(
                             "Requested GGUF backend '" + selection.requestedValue()
-                                    + "' is not available. Available: " + availableIds()));
+                                    + "' is not available. Available: " + availableIds());
+                }
+                observe(provider, ProviderDecisionEvent.Decision.SELECTED,
+                        "explicit provider selection; readiness probe intentionally bypassed",
+                        ProviderDecisionEvent.SelectionMode.EXPLICIT);
+                return provider;
+            }
+            observe(selection.normalizedValue(), 0, ProviderDecisionEvent.Decision.REJECTED,
+                    "no registered provider matches the explicit request",
+                    ProviderDecisionEvent.SelectionMode.EXPLICIT);
+            throw new InferenceException(
+                    "Requested GGUF backend '" + selection.requestedValue()
+                            + "' is not available. Available: " + availableIds());
         }
 
         List<String> readiness = new ArrayList<>();
+        int skipped = 0;
         for (GgufBackendProvider provider : providers) {
             if (!provider.isAvailable()) {
                 readiness.add(provider.id() + ": unavailable");
+                observe(provider, ProviderDecisionEvent.Decision.UNAVAILABLE,
+                        "provider reports unavailable", ProviderDecisionEvent.SelectionMode.AUTO);
+                skipped++;
                 continue;
             }
             try {
                 GgufBackendCapability capability = provider.probe(modelPath);
                 if (capability != null && capability.generationReady()) {
+                    String reason = skipped == 0
+                            ? "provider is generation-ready and has the highest available priority"
+                            : "provider is generation-ready; selected after " + skipped
+                                    + " higher-priority candidate(s) were skipped";
+                    observe(provider, ProviderDecisionEvent.Decision.SELECTED,
+                            reason, ProviderDecisionEvent.SelectionMode.AUTO);
                     return provider;
                 }
                 String reason = capability == null
@@ -279,9 +319,15 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                                 ? "generation is not ready"
                                 : capability.reason();
                 readiness.add(provider.id() + ": " + reason);
+                observe(provider, ProviderDecisionEvent.Decision.NOT_READY,
+                        reason, ProviderDecisionEvent.SelectionMode.AUTO);
+                skipped++;
             } catch (Exception error) {
-                readiness.add(provider.id() + ": probe failed (" + error.getClass().getSimpleName()
-                        + (error.getMessage() == null ? "" : ": " + error.getMessage()) + ")");
+                readiness.add(provider.id() + ": probe failed (" + error.getClass().getSimpleName() + ")");
+                observe(provider, ProviderDecisionEvent.Decision.PROBE_FAILED,
+                        "probe threw " + error.getClass().getSimpleName(),
+                        ProviderDecisionEvent.SelectionMode.AUTO);
+                skipped++;
             }
         }
 
@@ -289,6 +335,31 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 "No GGUF backend reports generation readiness for model: " + modelPath
                         + ". Provider readiness: " + String.join("; ", readiness)
                         + ". Select a provider explicitly only for deliberate testing, or install a compatible backend.");
+    }
+
+    private void observe(
+            GgufBackendProvider provider,
+            ProviderDecisionEvent.Decision decision,
+            String reason,
+            ProviderDecisionEvent.SelectionMode mode) {
+        observe(provider.id(), provider.priority(), decision, reason, mode);
+    }
+
+    private void observe(
+            String providerId,
+            int priority,
+            ProviderDecisionEvent.Decision decision,
+            String reason,
+            ProviderDecisionEvent.SelectionMode mode) {
+        if (decisionObserver == ProviderDecisionObserver.NOOP) {
+            return;
+        }
+        try {
+            decisionObserver.onDecision(new ProviderDecisionEvent(
+                    providerId, decision, reason, priority, mode, java.time.Instant.now()));
+        } catch (RuntimeException ignored) {
+            // Provider diagnostics must never change backend selection behavior.
+        }
     }
 
     private static boolean matches(GgufBackendProvider provider, String normalizedValue) {
