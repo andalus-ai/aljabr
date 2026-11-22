@@ -544,3 +544,14 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Keep input text, request IDs, model IDs, paths, arbitrary request parameters and embedding vectors out of lifecycle context. Provider identity and generated correlation ID are sufficient.
 - Runtime observer failures must not change the embedding result or failure. Fatal JVM errors propagate and must not leak active counts.
 - Test deferred invocation, success, failure, cancellation, observer failure isolation and no-op behavior.
+
+
+#### GGUF provider probe lifecycle requirements
+
+- In AUTO provider selection, observe each available provider's model-readiness probe with a separate `gguf.provider.probe` execution scope. The scope measures only the probe call, not the subsequent selection decision or backend construction.
+- Keep provider decision outcomes on `ProviderDecisionObserver`; do not duplicate SELECTED, NOT_READY, UNAVAILABLE or PROBE_FAILED decisions as lifecycle attributes.
+- Explicit provider selection intentionally bypasses readiness probing and must not emit a probe scope.
+- Keep model paths, model IDs, probe details, capability maps and provider exception messages out of lifecycle context. Use an opaque correlation ID and provider identity only.
+- Preserve AUTO fallback behavior: a failed probe emits FAILED, then selection may continue to the next candidate. Fatal JVM errors propagate after the scope is failed.
+- Preserve a direct no-op path with no scope/context allocation. Isolate observer RuntimeExceptions and count them through the existing execution-observer failure counter.
+- Test successful probes, failed probes, fallback/decision separation, privacy, explicit-selection bypass and no-op behavior.
