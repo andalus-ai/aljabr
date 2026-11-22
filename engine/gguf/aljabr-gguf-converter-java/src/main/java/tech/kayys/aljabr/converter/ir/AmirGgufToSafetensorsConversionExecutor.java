@@ -8,7 +8,6 @@ import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
 import tech.kayys.aljabr.spi.model.ir.ModelConversionExecutor;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
-import tech.kayys.aljabr.spi.model.ir.MetadataValue;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
@@ -39,9 +38,10 @@ import java.util.Objects;
  * their representation. Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
- * <p>GGUF metadata and opaque AMIR extensions are retained as Safetensors
- * string metadata under an Aljabr namespace. Typed graph, asset, and component
- * layers are not representable in the Safetensors file and are reported.
+ * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
+ * Safetensors metadata envelope. Opaque AMIR extensions are retained as
+ * namespaced strings. Typed graph, asset, and component layers are not
+ * representable in the Safetensors file and are reported.
  */
 public final class AmirGgufToSafetensorsConversionExecutor implements ModelConversionExecutor {
 
