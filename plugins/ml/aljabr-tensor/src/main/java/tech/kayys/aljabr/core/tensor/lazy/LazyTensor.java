@@ -362,10 +362,6 @@ public class LazyTensor implements Tensor {
         if (indices.requiresGrad()) {
             throw new IllegalArgumentException("index-select indices cannot require gradients");
         }
-        if (requiresGrad()) {
-            throw new UnsupportedOperationException(
-                    "indexSelect autograd is not available until scatter-add VJP support is implemented");
-        }
         return op(OpType.INDEX_SELECT, List.of(this, indices),
                 new Object[] { plan.axis() }, plan.outputShape(), dtype());
     }
@@ -382,10 +378,6 @@ public class LazyTensor implements Tensor {
         }
         if (indices.requiresGrad()) {
             throw new IllegalArgumentException("index-add indices cannot require gradients");
-        }
-        if (requiresGrad() || source.requiresGrad()) {
-            throw new UnsupportedOperationException(
-                    "indexAdd autograd is not available until its vector-Jacobian products are implemented");
         }
         return op(OpType.INDEX_ADD, List.of(this, indices, source),
                 new Object[] { plan.axis() }, plan.outputShape(), dtype());
