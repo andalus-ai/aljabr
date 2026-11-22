@@ -341,8 +341,8 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         block[1] = 0x3c; // fp16 d = 1
         block[3] = 0x40; // fp16 dmin = 2
 
-        int[] scales = {1, 2, 3, 4, 5, 6, 7, 8};
-        int[] mins = {9, 10, 11, 12, 13, 14, 15, 16};
+        int[] scales = {17, 18, 19, 20, 21, 22, 23, 24};
+        int[] mins = {25, 26, 27, 28, 29, 30, 31, 32};
         for (int i = 0; i < 4; i++) {
             block[4 + i] = (byte) ((scales[i] & 0x3f) | ((scales[i + 4] >>> 4) << 6));
             block[8 + i] = (byte) ((mins[i] & 0x3f) | ((mins[i + 4] >>> 4) << 6));
@@ -366,7 +366,8 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
                 .slice().order(ByteOrder.LITTLE_ENDIAN);
 
-        float[] expectedFirstValues = {7.0f, 0.0f, -3.0f, 4.0f, -5.0f, 16.0f, -7.0f, 24.0f};
+        float[] expectedFirstValues = {239.0f, -16.0f, 269.0f, -16.0f,
+                -37.0f, 336.0f, -39.0f, 368.0f};
         for (int group = 0; group < expectedFirstValues.length; group++) {
             assertEquals(expectedFirstValues[group],
                     values.getFloat(group * 32 * Float.BYTES), 0.0f);
