@@ -20,10 +20,10 @@ class EmbeddingGemma2AudioEncoderTest {
                 new float[2][1][3][3], new float[]{1f, 1f});
         var layer1 = new EmbeddingGemma2AudioSubsampling.ConvLayerWeights(
                 new float[2][2][3][3], new float[]{1f, 1f});
-        // Two frequency bins after the two stride-2 convolutions, each with
-        // two channels: 2 * 2 = 4 projection inputs.
+        // One frequency bin after the two stride-2 convolutions, with
+        // two channels: 1 * 2 = 2 projection inputs.
         return new EmbeddingGemma2AudioSubsampling.Weights(
-                layer0, layer1, new float[2][4]);
+                layer0, layer1, new float[2][2]);
     }
 
     private static EmbeddingGemma2AudioFeedForward.Weights feedForwardWeights() {
