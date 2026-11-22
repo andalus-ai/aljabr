@@ -24,6 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.function.Supplier;
+import java.util.concurrent.Callable;
 
 /**
  * ServiceLoader-based GGUF inference engine implementing {@link InferenceEngine}.
@@ -93,9 +94,56 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     public synchronized GgufBackend loadModel(String modelId, Path modelPath, Map<String, Object> config) throws Exception {
         GgufBackendSelection selection = GgufBackendSelection.resolve(config);
         GgufBackendProvider provider = selectProvider(modelPath, selection);
-        GgufBackend backend = provider.create(modelPath, config);
-        backends.put(modelId, backend);
-        return backend;
+        if (executionObserver == ExecutionObserver.NOOP) {
+            GgufBackend backend = provider.create(modelPath, config);
+            backends.put(modelId, backend);
+            return backend;
+        }
+        return observeLifecycle("gguf.model.load", provider.id(), () -> {
+            GgufBackend backend = provider.create(modelPath, config);
+            backends.put(modelId, backend);
+            return backend;
+        });
+    }
+
+    private <T> T observeLifecycle(String operation, String provider, Callable<T> action) throws Exception {
+        if (executionObserver == ExecutionObserver.NOOP) {
+            return action.call();
+        }
+        DiagnosticContext context = DiagnosticContext.builder()
+                .correlationId(UUID.randomUUID().toString())
+                .operation(operation)
+                .component("gguf")
+                .provider(provider)
+                .build();
+        ExecutionScope scope = ExecutionScope.start(context, executionObserver);
+        try (scope) {
+            try {
+                T result = action.call();
+                scope.succeed();
+                return result;
+            } catch (Exception | Error failure) {
+                scope.fail(failure);
+                throw failure;
+            }
+        } finally {
+            if (scope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
+            }
+        }
+    }
+
+    private void observeLifecycleUnchecked(String operation, String provider, Runnable action) {
+        try {
+            observeLifecycle(operation, provider, () -> {
+                action.run();
+                return null;
+            });
+        } catch (RuntimeException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new IllegalStateException("GGUF lifecycle operation failed: " + operation, failure);
+        }
     }
 
     /** Number of provider-observer runtime failures isolated by this engine. */
@@ -111,7 +159,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     public synchronized void unloadModel(String modelId) {
         GgufBackend removed = backends.remove(modelId);
         if (removed != null) {
-            removed.close();
+            if (executionObserver == ExecutionObserver.NOOP) {
+                removed.close();
+            } else {
+                observeLifecycleUnchecked("gguf.model.unload", removed.name(), removed::close);
+            }
         }
     }
 
@@ -318,15 +370,81 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             activeCount.incrementAndGet();
             totalCount.incrementAndGet();
             try {
-                return backendFor(modelId).embed(request)
-                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+                GgufBackend backend = backendFor(modelId);
+                if (executionObserver == ExecutionObserver.NOOP) {
+                    return backend.embed(request)
+                            .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                            .onTermination().invoke(() -> activeCount.decrementAndGet());
+                }
+                return observeEmbedding(backend, () -> backend.embed(request));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Uni.createFrom().failure(error);
+            } catch (Error fatal) {
+                activeCount.decrementAndGet();
+                throw fatal;
             }
         });
+    }
+
+    /**
+     * Attaches one lifecycle scope to each embedding subscription. The backend
+     * supplier is invoked only after subscription to the deferred Uni.
+     */
+    private Uni<EmbeddingResponse> observeEmbedding(
+            GgufBackend backend,
+            Supplier<Uni<EmbeddingResponse>> embeddingSupplier) {
+        ExecutionScope scope = null;
+        if (executionObserver != ExecutionObserver.NOOP) {
+            DiagnosticContext context = DiagnosticContext.builder()
+                    .correlationId(UUID.randomUUID().toString())
+                    .operation("gguf.embed")
+                    .component("gguf")
+                    .provider(backend.name())
+                    .build();
+            scope = ExecutionScope.start(context, executionObserver);
+        }
+        final ExecutionScope activeScope = scope;
+        try {
+            Uni<EmbeddingResponse> embedding =
+                    Objects.requireNonNull(embeddingSupplier.get(), "backend embedding");
+            if (activeScope == null) {
+                return embedding
+                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+            }
+            return embedding
+                    .onItem().invoke(item -> activeScope.succeed())
+                    .onFailure().invoke(failure -> {
+                        failedCount.incrementAndGet();
+                        activeScope.fail(failure);
+                    })
+                    .onCancellation().invoke(activeScope::close)
+                    .onTermination().invoke(() -> {
+                        if (activeScope.observerFailure().isPresent()) {
+                            executionObserverFailureCount.incrementAndGet();
+                        }
+                        activeCount.decrementAndGet();
+                    });
+        } catch (RuntimeException failure) {
+            failedCount.incrementAndGet();
+            try {
+                activeScope.fail(failure);
+                if (activeScope.observerFailure().isPresent()) {
+                    executionObserverFailureCount.incrementAndGet();
+                }
+            } finally {
+                activeCount.decrementAndGet();
+            }
+            return Uni.createFrom().failure(failure);
+        } catch (Error fatal) {
+            activeScope.fail(fatal);
+            if (activeScope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
+            }
+            throw fatal;
+        }
     }
 
     @Override
@@ -368,7 +486,14 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
 
     @Override
     public void close() {
-        backends.values().forEach(GgufBackend::close);
+        if (executionObserver == ExecutionObserver.NOOP) {
+            backends.values().forEach(GgufBackend::close);
+            backends.clear();
+            initialized = false;
+            return;
+        }
+        backends.values().forEach(backend ->
+                observeLifecycleUnchecked("gguf.model.unload", backend.name(), backend::close));
         backends.clear();
         initialized = false;
     }
@@ -383,6 +508,39 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                     "No GGUF model loaded with id: " + modelId + ". Loaded models: " + backends.keySet());
         }
         return backend;
+    }
+
+    /**
+     * Measures the provider's cheap model-readiness probe independently from
+     * the later backend construction/load lifecycle. Provider decisions remain
+     * on the dedicated decision observer.
+     */
+    private GgufBackendCapability probeProvider(
+            GgufBackendProvider provider, Path modelPath) throws Exception {
+        if (executionObserver == ExecutionObserver.NOOP) {
+            return provider.probe(modelPath);
+        }
+        DiagnosticContext context = DiagnosticContext.builder()
+                .correlationId(UUID.randomUUID().toString())
+                .operation("gguf.provider.probe")
+                .component("gguf")
+                .provider(provider.id())
+                .build();
+        ExecutionScope scope = ExecutionScope.start(context, executionObserver);
+        try (scope) {
+            try {
+                GgufBackendCapability capability = provider.probe(modelPath);
+                scope.succeed();
+                return capability;
+            } catch (Exception | Error failure) {
+                scope.fail(failure);
+                throw failure;
+            }
+        } finally {
+            if (scope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
+            }
+        }
     }
 
     private GgufBackendProvider selectProvider(Path modelPath, GgufBackendSelection selection) {
