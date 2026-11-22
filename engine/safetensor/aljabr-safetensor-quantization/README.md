@@ -38,10 +38,11 @@ aljabr-safetensor-quantization/
 │   ├── GPTQQuantizer.java          # INT4 GPTQ implementation
 │   ├── INT8Quantizer.java          # INT8 implementation
 │   └── FP8Quantizer.java           # FP8 E4M3/E5M2 implementation
-└── rest/
-    ├── QuantizationResource.java   # REST API endpoints
-    ├── QuantizationRequest.java    # Request DTO
-    └── QuantizationResponse.java   # Response DTO
+└── quantizer/
+    ├── Quantizer.java              # Quantizer SPI
+    ├── GPTQQuantizer.java          # INT4 GPTQ implementation
+    ├── INT8Quantizer.java          # INT8 implementation
+    └── FP8Quantizer.java           # FP8 E4M3/E5M2 implementation
 ```
 
 ## Usage
@@ -130,87 +131,9 @@ public void loadQuantizedModel() {
 }
 ```
 
-### REST API
+### HTTP integration boundary
 
-#### Quantize a Model
-
-```bash
-POST /api/v1/quantization/quantize
-Content-Type: application/json
-
-{
-  "input_path": "/models/llama3-8b-fp16",
-  "output_path": "/models/llama3-8b-int4",
-  "strategy": "INT4",
-  "bits": 4,
-  "group_size": 128,
-  "symmetric": false,
-  "per_channel": true,
-  "act_order": false,
-  "damp_percent": 0.01,
-  "num_samples": 128,
-  "seq_len": 2048
-}
-```
-
-Response:
-```json
-{
-  "success": true,
-  "output_path": "/models/llama3-8b-int4",
-  "original_size": "16.00 GB",
-  "quantized_size": "4.00 GB",
-  "compression_ratio": 4.0,
-  "duration_ms": 125000,
-  "tensor_count": 256,
-  "param_count": 8000000000,
-  "avg_quant_error_mse": 0.0001,
-  "strategy": "INT4"
-}
-```
-
-#### Streaming Quantization
-
-```bash
-POST /api/v1/quantization/quantize/stream
-Content-Type: application/json
-Accept: text/event-stream
-
-{
-  "input_path": "/models/llama3-8b-fp16",
-  "output_path": "/models/llama3-8b-int4",
-  "strategy": "INT4"
-}
-```
-
-SSE Events:
-```
-data: {"type":"progress","tensor_name":"model.layers.0.self_attn.q_proj.weight","current_tensor":1,"total_tensors":256,"percent_complete":0.39,"phase":"QUANTIZING","message":"Quantizing tensor 1/256"}
-
-data: {"type":"complete","success":true,"output_path":"/models/llama3-8b-int4","stats":{"original_size":"16.00 GB","quantized_size":"4.00 GB","compression_ratio":4.0}}
-```
-
-#### Get Recommendation
-
-```bash
-GET /api/v1/quantization/recommend?model_size_gb=7.0&prioritize_quality=false
-```
-
-Response:
-```json
-{
-  "recommended_strategy": "INT4",
-  "description": "Best for large models requiring maximum compression with acceptable quality loss",
-  "model_size_gb": 7.0,
-  "prioritize_quality": false
-}
-```
-
-#### List Strategies
-
-```bash
-GET /api/v1/quantization/strategies
-```
+This module exposes reusable Java quantization and Safetensors I/O capabilities; it does not provide HTTP endpoints or transport DTOs. The former REST adapter belongs to the deprecated `aljabr-safetensor-api` artifact and is being retired. Applications that need a quantization HTTP API should expose it from their serving/control-plane layer (for example, AQLI) using the transport-neutral `QuantConfig`, `QuantResult`, and `QuantizationEngine` contracts.
 
 ## Configuration Reference
 
