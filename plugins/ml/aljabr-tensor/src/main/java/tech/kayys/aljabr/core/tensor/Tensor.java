@@ -115,8 +115,11 @@ public interface Tensor extends AutoCloseable {
 
     /**
      * Adds source slices into this tensor at the positions specified by a
-     * rank-one I32 index tensor. Repeated indices accumulate rather than
-     * overwrite. The operation returns a new tensor and does not mutate inputs.
+     * rank-one I32 index tensor. The source must have the same rank as this
+     * tensor, with its indexed dimension equal to the index count and all
+     * other dimensions equal to this tensor's. Indices must be in range.
+     * Repeated indices accumulate rather than overwrite. The operation
+     * returns a new tensor and does not mutate its inputs.
      */
     Tensor indexAdd(int axis, Tensor indices, Tensor source);
 
