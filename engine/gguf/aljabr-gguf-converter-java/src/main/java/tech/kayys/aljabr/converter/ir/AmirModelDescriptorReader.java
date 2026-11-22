@@ -90,14 +90,10 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
         }
 
         Map<String, String> metadata = new LinkedHashMap<>();
-        Map<String, String> extensions = new LinkedHashMap<>();
         rawMetadata.forEach((key, value) -> {
             String rendered = rawTypedMetadata.containsKey(key)
                     ? renderGgufMetadata(rawTypedMetadata.get(key)) : renderMetadata(value);
             metadata.put(key, rendered);
-            if (!(value instanceof String)) {
-                extensions.put("gguf.metadata." + key, rendered);
-            }
         });
         String architecture = metadata.getOrDefault("general.architecture", "unknown");
         Map<String, MetadataValue> typedMetadata = new LinkedHashMap<>();
@@ -107,7 +103,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             }
         });
         return new ModelDescriptor(ModelIdentity.of(name), architecture, GGUF,
-                metadata, extensions, tensors).withTypedMetadata(typedMetadata);
+                metadata, Map.of(), tensors).withTypedMetadata(typedMetadata);
     }
 
     private ModelDescriptor readSafetensors(Path file, String name) throws IOException {
