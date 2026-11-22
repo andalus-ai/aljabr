@@ -94,6 +94,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     public synchronized GgufBackend loadModel(String modelId, Path modelPath, Map<String, Object> config) throws Exception {
         GgufBackendSelection selection = GgufBackendSelection.resolve(config);
         GgufBackendProvider provider = selectProvider(modelPath, selection);
+        if (executionObserver == ExecutionObserver.NOOP) {
+            GgufBackend backend = provider.create(modelPath, config);
+            backends.put(modelId, backend);
+            return backend;
+        }
         return observeLifecycle("gguf.model.load", provider.id(), () -> {
             GgufBackend backend = provider.create(modelPath, config);
             backends.put(modelId, backend);
@@ -154,7 +159,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     public synchronized void unloadModel(String modelId) {
         GgufBackend removed = backends.remove(modelId);
         if (removed != null) {
-            observeLifecycleUnchecked("gguf.model.unload", removed.name(), removed::close);
+            if (executionObserver == ExecutionObserver.NOOP) {
+                removed.close();
+            } else {
+                observeLifecycleUnchecked("gguf.model.unload", removed.name(), removed::close);
+            }
         }
     }
 
@@ -411,6 +420,12 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
 
     @Override
     public void close() {
+        if (executionObserver == ExecutionObserver.NOOP) {
+            backends.values().forEach(GgufBackend::close);
+            backends.clear();
+            initialized = false;
+            return;
+        }
         backends.values().forEach(backend ->
                 observeLifecycleUnchecked("gguf.model.unload", backend.name(), backend::close));
         backends.clear();
