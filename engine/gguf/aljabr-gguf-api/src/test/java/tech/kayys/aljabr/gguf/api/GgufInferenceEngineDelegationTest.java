@@ -395,6 +395,76 @@ class GgufInferenceEngineDelegationTest {
     }
 
     @Test
+    void explicitProviderSelectionBypassesReadinessProbeLifecycle() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-explicit", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean probed = new AtomicBoolean();
+        GgufBackendProvider provider = new GgufBackendProvider() {
+            @Override public String id() { return "test"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public GgufBackendCapability probe(Path path) {
+                probed.set(true);
+                throw new AssertionError("explicit selection must not probe");
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                return new TestBackend();
+            }
+        };
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            engine.loadModel("model", model, Map.of("gguf.backend", "test"));
+            assertFalse(probed.get());
+            assertEquals(List.of("gguf.model.load:STARTED", "gguf.model.load:SUCCEEDED"),
+                    events.stream().map(event -> event.context().operation() + ":" + event.type()).toList());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void failedProviderProbeIsObservedBeforeAutoFallback() throws Exception {
+        Path model = Files.createTempFile("gguf-provider-probe-fallback", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        GgufBackendProvider first = new GgufBackendProvider() {
+            @Override public String id() { return "first"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public int priority() { return 10; }
+            @Override public GgufBackendCapability probe(Path path) {
+                throw new IllegalStateException("private first-provider probe failure");
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                throw new AssertionError("failed provider must not be created");
+            }
+        };
+        GgufBackendProvider second = new GgufBackendProvider() {
+            @Override public String id() { return "second"; }
+            @Override public boolean isAvailable() { return true; }
+            @Override public int priority() { return 0; }
+            @Override public GgufBackendCapability probe(Path path) {
+                return GgufBackendCapability.ready("second", Set.of(), Map.of());
+            }
+            @Override public GgufBackend create(Path path, Map<String, Object> config) {
+                return new TestBackend();
+            }
+        };
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(first, second), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            engine.loadModel("model", model, Map.of());
+            assertEquals(List.of(
+                            "gguf.provider.probe:first:STARTED",
+                            "gguf.provider.probe:first:FAILED",
+                            "gguf.provider.probe:second:STARTED",
+                            "gguf.provider.probe:second:SUCCEEDED",
+                            "gguf.model.load:second:STARTED",
+                            "gguf.model.load:second:SUCCEEDED"),
+                    events.stream().map(event -> event.context().operation() + ":"
+                            + event.context().provider() + ":" + event.type()).toList());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
     void modelLoadEmitsLifecycleEventsWithoutModelPathMetadata() throws Exception {
         Path model = Files.createTempFile("gguf-model-load", ".gguf");
         List<ExecutionEvent> events = new java.util.ArrayList<>();
