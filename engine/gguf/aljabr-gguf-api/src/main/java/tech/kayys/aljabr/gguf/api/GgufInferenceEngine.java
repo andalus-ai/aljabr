@@ -510,6 +510,39 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         return backend;
     }
 
+    /**
+     * Measures the provider's cheap model-readiness probe independently from
+     * the later backend construction/load lifecycle. Provider decisions remain
+     * on the dedicated decision observer.
+     */
+    private GgufBackendCapability probeProvider(
+            GgufBackendProvider provider, Path modelPath) throws Exception {
+        if (executionObserver == ExecutionObserver.NOOP) {
+            return provider.probe(modelPath);
+        }
+        DiagnosticContext context = DiagnosticContext.builder()
+                .correlationId(UUID.randomUUID().toString())
+                .operation("gguf.provider.probe")
+                .component("gguf")
+                .provider(provider.id())
+                .build();
+        ExecutionScope scope = ExecutionScope.start(context, executionObserver);
+        try (scope) {
+            try {
+                GgufBackendCapability capability = probeProvider(provider, modelPath);
+                scope.succeed();
+                return capability;
+            } catch (Exception | Error failure) {
+                scope.fail(failure);
+                throw failure;
+            }
+        } finally {
+            if (scope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
+            }
+        }
+    }
+
     private GgufBackendProvider selectProvider(Path modelPath, GgufBackendSelection selection) {
         if (selection.explicit()) {
             for (GgufBackendProvider provider : providers) {
