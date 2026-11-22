@@ -4,6 +4,7 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.List;
+import tech.kayys.aljabr.gguf.core.GgufMetaValue;
 import java.util.Map;
 
 /**
@@ -14,14 +15,21 @@ import java.util.Map;
 public final class GGUFModel implements AutoCloseable {
     private final int version;
     private final Map<String, Object> metadata;
+    private final Map<String, GgufMetaValue> typedMetadata;
     private final List<GGUFTensorInfo> tensors;
     private final long dataStart;
     private final MemorySegment segment;
     private final Arena arena;
 
     public GGUFModel(int version, Map<String, Object> metadata, List<GGUFTensorInfo> tensors, long dataStart, MemorySegment segment, Arena arena) {
+        this(version, metadata, Map.of(), tensors, dataStart, segment, arena);
+    }
+
+    public GGUFModel(int version, Map<String, Object> metadata, Map<String, GgufMetaValue> typedMetadata,
+                     List<GGUFTensorInfo> tensors, long dataStart, MemorySegment segment, Arena arena) {
         this.version = version;
         this.metadata = metadata;
+        this.typedMetadata = Map.copyOf(typedMetadata);
         this.tensors = tensors;
         this.dataStart = dataStart;
         this.segment = segment;
@@ -30,6 +38,7 @@ public final class GGUFModel implements AutoCloseable {
 
     public int version() { return version; }
     public Map<String, Object> metadata() { return metadata; }
+    public Map<String, GgufMetaValue> typedMetadata() { return typedMetadata; }
     public List<GGUFTensorInfo> tensors() { return tensors; }
     public long dataStart() { return dataStart; }
     public MemorySegment segment() { return segment; }
