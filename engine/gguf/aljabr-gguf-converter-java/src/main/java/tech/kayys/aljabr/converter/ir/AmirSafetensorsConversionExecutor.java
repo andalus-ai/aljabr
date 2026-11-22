@@ -208,7 +208,10 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
 
     private static boolean hasUntransferredExtensions(ModelDescriptor model) {
         return !model.extensions().isEmpty()
-                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
+                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty())
+                || model.graphCollection().isPresent()
+                || model.assetCollection().isPresent()
+                || model.componentCollection().isPresent();
     }
 
     private static List<String> untransferredExtensionKeys(ModelDescriptor model) {
@@ -216,6 +219,9 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         model.extensions().keySet().forEach(key -> keys.add("model:" + key));
         model.tensors().forEach(tensor -> tensor.extensions().keySet()
                 .forEach(key -> keys.add("tensor:" + tensor.name() + ":" + key)));
+        model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
+        model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
+        model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
         return List.copyOf(keys);
     }
 
