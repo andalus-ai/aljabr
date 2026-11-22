@@ -127,6 +127,24 @@ class Gemma3TextBackboneTest {
     }
 
     @Test
+    void prefillValidatesTheEntirePromptBeforeMutatingDecodeState() throws Exception {
+        Gemma3TextBackbone backbone = new Gemma3TextBackbone(config(), emptyMappedWeights());
+        try (Gemma3TextBackbone.DecodeSession session = backbone.newDecodeSession()) {
+            int[] oversized = new int[33];
+            java.util.Arrays.fill(oversized, 0);
+            assertThrows(IllegalArgumentException.class, () -> session.prefill(oversized));
+            assertEquals(0, session.position());
+
+            assertThrows(IllegalArgumentException.class, () -> session.prefill(new int[] {0, 1, 5}));
+            assertEquals(0, session.position());
+
+            float[][] logits = session.prefill(new int[] {0, 1});
+            assertEquals(2, logits.length);
+            assertEquals(2, session.position());
+        }
+    }
+
+    @Test
     void rejectsEmptyAndOutOfRangeTokenSequences() throws Exception {
         Gemma3TextBackbone backbone = new Gemma3TextBackbone(config(), emptyMappedWeights());
         assertThrows(IllegalArgumentException.class, () -> backbone.forward(new int[0]));
