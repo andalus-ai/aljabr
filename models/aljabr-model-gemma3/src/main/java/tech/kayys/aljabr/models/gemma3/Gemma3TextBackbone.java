@@ -265,7 +265,7 @@ public final class Gemma3TextBackbone {
             // KVCacheSession owns sequence visibility; this bulk write remains
             // uncommitted until every layer has completed the prefill.
             cacheSession.writeRange(
-                    layerIndex, 0, input.length, flatten(key), 0, valueFlat, 0);
+                    layerIndex, 0, input.length, flatten(key), 0, flatten(value), 0);
 
             float[][][] attended = causalAttention(query, key, value, layerIndex);
             float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
