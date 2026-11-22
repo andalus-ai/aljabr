@@ -88,4 +88,56 @@ class LazyTensorAutogradTest {
         }
     }
 
+
+    @Test
+    void indexSelectBackwardAccumulatesRepeatedIndexContributions() {
+        CpuBackend backend = new CpuBackend();
+        Tensor leafValue = TensorFactory.of(new float[] { 10.0f, 20.0f, 30.0f }, backend, 3);
+        leafValue.setRequiresGrad(true);
+        LazyTensor leaf = LazyTensor.of(leafValue);
+        Tensor indices = TensorFactory.of(new int[] { 2, 0, 2 }, backend, 3);
+        Tensor selected = leaf.indexSelect(0, indices);
+        Tensor seed = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f }, backend, 3);
+
+        try {
+            selected.backward(seed);
+            assertArrayEquals(new float[] { 2.0f, 0.0f, 4.0f }, leaf.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            selected.release();
+            indices.release();
+            leafValue.release();
+            backend.close();
+        }
+    }
+
+    @Test
+    void indexAddBackwardRoutesGradientsToDestinationAndSource() {
+        CpuBackend backend = new CpuBackend();
+        Tensor destinationValue = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f }, backend, 3);
+        Tensor sourceValue = TensorFactory.of(new float[] { 4.0f, 5.0f }, backend, 2);
+        destinationValue.setRequiresGrad(true);
+        sourceValue.setRequiresGrad(true);
+        LazyTensor destination = LazyTensor.of(destinationValue);
+        LazyTensor source = LazyTensor.of(sourceValue);
+        Tensor indices = TensorFactory.of(new int[] { 1, 1 }, backend, 2);
+        Tensor output = destination.indexAdd(0, indices, source);
+        Tensor seed = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f }, backend, 3);
+
+        try {
+            assertArrayEquals(new float[] { 1.0f, 11.0f, 3.0f }, output.toFloatArray(), 1.0e-6f);
+            output.backward(seed);
+            assertArrayEquals(new float[] { 1.0f, 2.0f, 3.0f },
+                    destination.grad().toFloatArray(), 1.0e-6f);
+            assertArrayEquals(new float[] { 2.0f, 2.0f },
+                    source.grad().toFloatArray(), 1.0e-6f);
+        } finally {
+            seed.release();
+            output.release();
+            indices.release();
+            destinationValue.release();
+            sourceValue.release();
+            backend.close();
+        }
+    }
 }

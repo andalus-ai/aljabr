@@ -496,3 +496,21 @@ Probe context contains only a generated correlation ID, operation/component iden
 ### Validation status
 
 Tests cover successful probe ordering relative to model loading and failed-probe privacy. CI must validate compilation and the selection/fallback behavior; no passing validation is claimed until the workflow completes.
+
+
+## 21. GGUF engine shutdown cleanup reliability — implementation slice 8
+
+Engine shutdown now detaches the loaded-backend registry and marks the engine uninitialized before invoking backend cleanup. It then attempts every captured backend, regardless of earlier close failures.
+
+### Behavior
+
+- Each backend receives its own `gguf.model.unload` lifecycle scope when execution observation is enabled.
+- A backend close failure is retained as the primary failure, but does not prevent later backends from being closed or observed.
+- Additional cleanup failures are attached to the primary failure as suppressed exceptions.
+- The original RuntimeException or Error type is rethrown after all cleanup attempts.
+- The no-op observer path uses direct backend close calls but follows the same best-effort cleanup semantics.
+- Repeated `close()` calls are harmless after the backend registry has been detached.
+
+### Validation
+
+Tests cover an early backend failure followed by a successful cleanup, lifecycle STARTED/FAILED/SUCCEEDED outcomes, repeated close, and the no-op observer path. CI remains the authority for compile and test validation.
