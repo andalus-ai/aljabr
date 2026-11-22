@@ -49,14 +49,14 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             }
         }
 
-        boolean hasTypedGgufMetadata = source.extensions().keySet().stream()
-                .anyMatch(key -> key.startsWith("gguf.metadata."));
+        boolean hasTypedGgufMetadata = !source.typedMetadata().isEmpty()
+                || source.extensions().keySet().stream().anyMatch(key -> key.startsWith("gguf.metadata."));
         if (hasTypedGgufMetadata) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
                     "GGUF_TYPED_METADATA_FLATTENED",
-                    "Non-string GGUF metadata values are rendered as strings in AMIR and cannot retain "
-                            + "their original GGUF scalar or array types in Safetensors metadata."));
+                    "Typed GGUF metadata values are retained in AMIR but Safetensors metadata only stores strings, "
+                            + "so their original scalar or array types cannot be represented in the target."));
             partial = true;
         }
 
