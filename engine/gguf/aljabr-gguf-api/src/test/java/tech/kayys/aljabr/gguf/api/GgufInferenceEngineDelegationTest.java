@@ -580,7 +580,8 @@ class GgufInferenceEngineDelegationTest {
                     .filter(event -> event.context().operation().equals("gguf.model.unload")
                             && event.type() == ExecutionEvent.Type.SUCCEEDED).count());
             assertEquals(0, engine.getStats().activeInferences());
-            assertThrows(InferenceException.class, () -> engine.execute("first", request()));
+            assertThrows(tech.kayys.aljabr.spi.exception.InferenceException.class,
+                    () -> engine.execute("first", request()));
             assertDoesNotThrow(engine::close, "a second close must be harmless after cleanup was attempted");
         } finally {
             Files.deleteIfExists(firstModel);
