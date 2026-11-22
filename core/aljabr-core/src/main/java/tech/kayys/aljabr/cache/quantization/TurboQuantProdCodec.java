@@ -142,16 +142,18 @@ public final class TurboQuantProdCodec implements KVCacheCompressionCodec {
                 encoded.metadata(), dimension, vectorCount);
         DecodedPayload decodedPayload = decodePayload(encoded.payload(), vectorCount, dimension);
 
+        // Validate the complete QJL bitstream before touching caller-owned output.
+        int[] signs = TurboQuantIndexBitPacking.unpack(
+                decodedPayload.qjlPayload, Math.multiplyExact(vectorCount, dimension), 1);
         KVCacheEncodedBlock mseBlock = new KVCacheEncodedBlock(
                 mseCodec.id(),
                 mseCodec.version(),
                 context.elementCount(),
                 decodedPayload.msePayload,
                 decodedMetadata.mseMetadata);
-        mseCodec.decode(mseBlock, destination, destinationOffset, context);
+        float[] decodedValues = new float[context.elementCount()];
+        mseCodec.decode(mseBlock, decodedValues, 0, context);
 
-        int[] signs = TurboQuantIndexBitPacking.unpack(
-                decodedPayload.qjlPayload, Math.multiplyExact(vectorCount, dimension), 1);
         TurboQuantQjlResidual qjl = new TurboQuantQjlResidual(dimension, qjlSeed);
         int signOffset = 0;
         for (int vectorIndex = 0; vectorIndex < vectorCount; vectorIndex++) {
@@ -159,16 +161,18 @@ public final class TurboQuantProdCodec implements KVCacheCompressionCodec {
             System.arraycopy(signs, signOffset, vectorSigns, 0, dimension);
             byte[] packedVectorSigns = TurboQuantIndexBitPacking.pack(vectorSigns, 1);
             float[] correction = qjl.decode(packedVectorSigns, decodedMetadata.residualNorms[vectorIndex]);
-            int vectorOffset = destinationOffset + vectorIndex * dimension;
+            int vectorOffset = vectorIndex * dimension;
             for (int i = 0; i < dimension; i++) {
-                float value = destination[vectorOffset + i] + correction[i];
+                float value = decodedValues[vectorOffset + i] + correction[i];
                 if (!Float.isFinite(value)) {
                     throw new IllegalArgumentException("decoded TurboQuant value is outside the finite float range");
                 }
-                destination[vectorOffset + i] = value;
+                decodedValues[vectorOffset + i] = value;
             }
             signOffset += dimension;
         }
+        // Publish only after every nested payload and correction has decoded successfully.
+        System.arraycopy(decodedValues, 0, destination, destinationOffset, decodedValues.length);
     }
 
     private byte[] encodePayload(byte[] msePayload, byte[] qjlPayload) {
