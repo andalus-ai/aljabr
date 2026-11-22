@@ -329,3 +329,53 @@ The first implementation increment extends the existing `core:aljabr-diagnostics
 ### Validation status
 
 Source and unit tests have been added. CI/build execution is still required before this increment can be marked validated. The next slice should add explicit diagnostic scopes and lifecycle events only after reviewing the actual operation/provider integration points.
+
+
+## 15. Execution lifecycle scopes — implementation slice 2
+
+The second increment adds explicit, synchronous execution lifecycle observation to the existing JDK-only diagnostics artifact.
+
+### Implemented contracts
+
+- `ExecutionEvent` is an immutable lifecycle record with STARTED, SUCCEEDED, FAILED and ABANDONED transitions.
+- `ExecutionObserver` is a minimal synchronous callback contract with a shared no-op implementation.
+- `ExecutionScope` requires explicit correlation and operation metadata, emits STARTED immediately, and emits exactly one terminal event.
+- Closing an unfinished scope emits ABANDONED. Closing a completed scope is safe and does not emit a duplicate event.
+- Durations use monotonic nanoseconds; event timestamps use wall-clock instants. These clocks must not be conflated.
+- Failure events contain the exception class name only. Exception messages and stack traces are not copied into lifecycle events.
+- Runtime exceptions thrown by an observer are isolated from computation and retained for inspection through `ExecutionScope.observerFailure()`. Fatal JVM errors are not intercepted.
+
+### Usage
+
+```java
+var context = DiagnosticContext.builder()
+        .correlationId("trace-123")
+        .parentId("model-forward-7")
+        .operation("tensor.matmul")
+        .component("tensor")
+        .provider("cpu")
+        .build();
+
+try (var scope = ExecutionScope.start(context, observer)) {
+    var result = left.matmul(right);
+    scope.succeed();
+    return result;
+} catch (RuntimeException failure) {
+    // If the failure must be observed, call scope.fail(failure) before rethrowing
+    throw failure;
+}
+```
+
+When a computation can fail, the scope should be retained outside the try body or use a small helper so the failure path calls `fail(Throwable)` before rethrowing. A plain close without an explicit terminal call is intentionally reported as ABANDONED, not silently treated as success.
+
+### Boundaries and remaining work
+
+- No implicit ThreadLocal, async propagation, executor, queue, background worker or persistence is introduced. Nested/asynchronous callers construct child contexts explicitly.
+- These events are lifecycle observations, not diagnostic findings, immutable audit facts or metric samples. Those require separate contracts and delivery guarantees.
+- Observer callbacks run synchronously and should be fast/non-blocking. Runtime exceptions are available through the scope accessor; fatal errors propagate.
+- This slice does not yet instrument tensor/provider/resource implementations. Integration points must be selected and tested at their owning module boundaries.
+- Unit tests cover transition order, failure metadata privacy, abandoned close, observer failure isolation, required context and duplicate completion.
+
+### Validation status
+
+The first CI run exposed a test assertion that constructed an invalid context without calling `build()`; this assertion has been corrected. The same run also exposed a separate CPU backend compile failure at `CpuBackend.java:470` (`@Override` does not match a supertype), which is outside this diagnostics change and must be investigated independently. The lifecycle slice remains in progress until the new branch's targeted tests and CI complete successfully.
