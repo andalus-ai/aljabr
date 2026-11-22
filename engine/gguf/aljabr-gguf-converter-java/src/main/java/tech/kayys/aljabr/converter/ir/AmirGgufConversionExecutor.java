@@ -125,7 +125,6 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
         boolean hasUnrepresentableLayers = "unknown".equalsIgnoreCase(model.architecture())
-                || model.architectureDescriptor().isPresent()
                 || model.graphCollection().isPresent()
                 || model.assetCollection().isPresent()
                 || model.componentCollection().isPresent();
@@ -165,12 +164,17 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
                 putUnique(result, "aljabr.source.metadata." + key, GgufMetaValue.ofString(value)));
         model.extensions().forEach((key, value) ->
                 putUnique(result, "aljabr.source.extension." + key, GgufMetaValue.ofString(value)));
+        AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
+                putUnique(result, key, GgufMetaValue.ofString(value)));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) ->
                     putUnique(result, "aljabr.source.tensor."
                                     + metadataKeyPart(tensor.name()) + "." + metadataKeyPart(key),
                             GgufMetaValue.ofString(value)));
         }
+        model.architectureDescriptor().ifPresent(descriptor ->
+                putUnique(result, AmirArchitectureDescriptorCodec.KEY,
+                        GgufMetaValue.ofString(AmirArchitectureDescriptorCodec.encode(descriptor))));
         return result;
     }
 
@@ -214,7 +218,6 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
 
     private static List<String> untransferredKeys(ModelDescriptor model) {
         List<String> keys = new ArrayList<>();
-        model.architectureDescriptor().ifPresent(ignored -> keys.add("model:architectureDescriptor"));
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
         model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
         model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));

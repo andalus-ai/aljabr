@@ -468,6 +468,104 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     @Override
+    public Tensor indexAdd(Tensor input, int axis, Tensor indices, Tensor source) {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(indices, "indices");
+        Objects.requireNonNull(source, "source");
+        TensorOperationValidator.IndexAddPlan plan =
+                TensorOperationValidator.validateIndexAdd(input.shape(), indices.shape(), source.shape(), axis);
+        if (input.backend() != this || indices.backend() != this || source.backend() != this) {
+            throw new IllegalArgumentException("CPU indexAdd requires all tensors to use this backend");
+        }
+        if (input.dtype() != DType.F32 || source.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU indexAdd currently supports F32 destination and source tensors; destination="
+                            + input.dtype() + ", source=" + source.dtype());
+        }
+        if (indices.dtype() != DType.I32) {
+            throw new IllegalArgumentException(
+                    "CPU indexAdd indices must use I32; actual dtype=" + indices.dtype());
+        }
+
+        int[] selected = new int[Math.toIntExact(indices.numel())];
+        MemorySegment indexSegment = seg(indices);
+        long[] indexDimensions = indices.shape().dims();
+        TensorLayout indexLayout = indices.layout();
+        for (int i = 0; i < selected.length; i++) {
+            long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(
+                    indexDimensions, indexLayout, i);
+            selected[i] = indexSegment.get(
+                    ValueLayout.JAVA_INT, Math.multiplyExact(elementOffset, Integer.BYTES));
+        }
+        long[] dimensions = input.shape().dims();
+        int selectedAxis = plan.axis();
+        long axisSize = dimensions[selectedAxis];
+        for (int i = 0; i < selected.length; i++) {
+            if (selected[i] < 0 || selected[i] >= axisSize) {
+                throw new IndexOutOfBoundsException(
+                        "index-add index " + selected[i] + " at position " + i
+                                + " is outside axis " + selectedAxis + " with size " + axisSize);
+            }
+        }
+
+        long outer = 1;
+        long inner = 1;
+        for (int i = 0; i < selectedAxis; i++) {
+            outer = Math.multiplyExact(outer, dimensions[i]);
+        }
+        for (int i = selectedAxis + 1; i < dimensions.length; i++) {
+            inner = Math.multiplyExact(inner, dimensions[i]);
+        }
+        long outputElements = plan.outputShape().numel();
+        HostAccessibleStorage output = allocateOutput(
+                Math.multiplyExact(outputElements, (long) Float.BYTES));
+        try {
+            MemorySegment destination = output.segment();
+            MemorySegment inputSegment = seg(input);
+            MemorySegment sourceSegment = seg(source);
+            TensorLayout inputLayout = input.layout();
+            TensorLayout sourceLayout = source.layout();
+
+            for (long logicalIndex = 0; logicalIndex < outputElements; logicalIndex++) {
+                float value = CpuTensorLayoutAccess.readLogical(
+                        inputSegment, dimensions, inputLayout, logicalIndex);
+                destination.set(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(logicalIndex, Float.BYTES), value);
+            }
+
+            long sourceAxisSize = selected.length;
+            long destinationAxisStride = Math.multiplyExact(axisSize, inner);
+            long sourceAxisStride = Math.multiplyExact(sourceAxisSize, inner);
+            long destinationIndex = 0;
+            for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
+                for (int selectedIndex : selected) {
+                    long destinationBase = Math.addExact(
+                            Math.multiplyExact(outerIndex, destinationAxisStride),
+                            Math.multiplyExact((long) selectedIndex, inner));
+                    long sourceBase = Math.addExact(
+                            Math.multiplyExact(outerIndex, sourceAxisStride),
+                            Math.multiplyExact(destinationIndex, inner));
+                    for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
+                        long outputOffset = Math.multiplyExact(
+                                Math.addExact(destinationBase, innerIndex), Float.BYTES);
+                        long sourceLogicalIndex = Math.addExact(sourceBase, innerIndex);
+                        float current = destination.get(ValueLayout.JAVA_FLOAT, outputOffset);
+                        float addition = CpuTensorLayoutAccess.readLogical(
+                                sourceSegment, source.shape().dims(), sourceLayout, sourceLogicalIndex);
+                        destination.set(ValueLayout.JAVA_FLOAT, outputOffset, current + addition);
+                    }
+                    destinationIndex++;
+                }
+                destinationIndex = 0;
+            }
+            return out(plan.outputShape(), output);
+        } catch (RuntimeException | Error failure) {
+            output.release();
+            throw failure;
+        }
+    }
+
+    @Override
     public Tensor indexSelect(Tensor input, int axis, Tensor indices) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(indices, "indices");

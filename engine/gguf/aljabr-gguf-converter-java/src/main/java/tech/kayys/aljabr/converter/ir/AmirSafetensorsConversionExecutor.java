@@ -34,9 +34,10 @@ import java.util.Objects;
  * Safetensors. Tensor payloads are copied directly from their referenced
  * source ranges in bounded chunks; no tensor is materialized as a heap array.
  *
- * <p>Opaque AMIR extensions cannot be represented in a Safetensors file.
- * A PARTIAL plan therefore requires explicit acknowledgement, and the result
- * reports exactly which extension keys were not transferred.
+ * <p>Opaque AMIR extensions and model-level graph, asset, and component
+ * collections are not yet represented in a Safetensors file. A PARTIAL plan
+ * therefore requires explicit acknowledgement, and the result reports each
+ * category of model data that was not transferred.
  */
 public final class AmirSafetensorsConversionExecutor implements ModelConversionExecutor {
 
@@ -123,12 +124,24 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
             String key = entry.getKey();
             String outputKey = key.startsWith("safetensors.")
                     ? key.substring("safetensors.".length()) : key;
+            if (outputKey.startsWith(AmirTypedMetadataCodec.PREFIX)
+                    || AmirTensorTypeCodec.isEncodedKey(outputKey)) {
+                throw new IOException("Source metadata key uses a reserved AMIR envelope namespace: " + outputKey);
+            }
             String previous = metadata.putIfAbsent(outputKey, entry.getValue());
             if (previous != null && !previous.equals(entry.getValue())) {
                 throw new IOException("Conflicting Safetensors metadata key after namespace mapping: "
                         + outputKey);
             }
         }
+
+        AmirTypedMetadataCodec.encode(model.typedMetadata()).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
+        AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
+        model.architectureDescriptor().ifPresent(descriptor ->
+                putUniqueMetadata(metadata, AmirArchitectureDescriptorCodec.KEY,
+                        AmirArchitectureDescriptorCodec.encode(descriptor)));
 
         Path parent = target.getParent();
         Files.createDirectories(parent);
@@ -157,6 +170,13 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
                 plan);
     }
 
+    private static void putUniqueMetadata(Map<String, String> metadata, String key, String value)
+            throws IOException {
+        if (metadata.putIfAbsent(key, value) != null) {
+            throw new IOException("Conflicting reserved Safetensors metadata key: " + key);
+        }
+    }
+
     private static void validatePlan(
             ModelDescriptor model, ConversionPlan plan, boolean acknowledgePartial) throws IOException {
         if (!plan.sourceIdentity().equals(model.identity())) {
@@ -176,7 +196,7 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        if (hasUntransferredExtensions(model)
+        if (hasUntransferredData(model)
                 && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
             throw new IOException("AMIR model or tensor extensions cannot be silently omitted; "
                     + "the plan must be PARTIAL");
@@ -187,9 +207,12 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         }
     }
 
-    private static boolean hasUntransferredExtensions(ModelDescriptor model) {
+    private static boolean hasUntransferredData(ModelDescriptor model) {
         return !model.extensions().isEmpty()
-                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
+                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty())
+                || model.graphCollection().isPresent()
+                || model.assetCollection().isPresent()
+                || model.componentCollection().isPresent();
     }
 
     private static List<String> untransferredExtensionKeys(ModelDescriptor model) {
@@ -197,6 +220,9 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         model.extensions().keySet().forEach(key -> keys.add("model:" + key));
         model.tensors().forEach(tensor -> tensor.extensions().keySet()
                 .forEach(key -> keys.add("tensor:" + tensor.name() + ":" + key)));
+        model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
+        model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
+        model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
         return List.copyOf(keys);
     }
 

@@ -25,7 +25,11 @@ final class AmirSourceMetadataCodec {
         for (TensorDescriptor tensor : tensors) tensorsByName.put(tensor.name(), tensor);
 
         stored.forEach((key, value) -> {
-            if (key.startsWith(METADATA_PREFIX)) {
+            if (AmirTensorTypeCodec.isEncodedKey(key)
+                    || key.startsWith(AmirTypedMetadataCodec.PREFIX)
+                    || AmirArchitectureDescriptorCodec.isEncodedKey(key)) {
+                return;
+            } else if (key.startsWith(METADATA_PREFIX)) {
                 putUnique(metadata, key.substring(METADATA_PREFIX.length()), value, "source metadata");
             } else if (key.startsWith(EXTENSION_PREFIX)) {
                 putUnique(extensions, key.substring(EXTENSION_PREFIX.length()), value, "source extension");

@@ -317,6 +317,31 @@ class TensorOperationValidatorTest {
     }
 
     @Test
+    void indexAddNormalizesAxisAndPreservesDestinationShape() {
+        TensorOperationValidator.IndexAddPlan plan =
+                TensorOperationValidator.validateIndexAdd(
+                        new Shape(2, 3, 4), new Shape(5), new Shape(2, 5, 4), -2);
+        assertThat(plan.axis()).isEqualTo(1);
+        assertThat(plan.outputShape().dims()).containsExactly(2, 3, 4);
+    }
+
+    @Test
+    void indexAddRejectsInvalidRankAndSourceDimensions() {
+        assertThatThrownBy(() -> TensorOperationValidator.validateIndexAdd(
+                new Shape(), new Shape(1), new Shape(1), 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("out of range");
+        assertThatThrownBy(() -> TensorOperationValidator.validateIndexAdd(
+                new Shape(2, 3), new Shape(1, 1), new Shape(2, 1, 1), 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("index-add indices must be rank one; got rank 2");
+        assertThatThrownBy(() -> TensorOperationValidator.validateIndexAdd(
+                new Shape(2, 3), new Shape(1), new Shape(2, 2), 1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("index-add source dimension 1");
+    }
+
+    @Test
     void splitNormalizesAxisAndProducesEqualOutputShapes() {
         TensorOperationValidator.SplitPlan plan =
                 TensorOperationValidator.validateSplit(new Shape(2, 12, 4), -2, 3);
