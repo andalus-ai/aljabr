@@ -170,6 +170,8 @@ public class GraphOptimizer {
                 && !node.requiresGrad()
                 && newInputs.size() == 1
                 && newInputs.get(0).getOutputDType() == node.getOutputDType()
+                && java.util.Arrays.equals(
+                        newInputs.get(0).getOutputShape().dims(), node.getOutputShape().dims())
                 && isIntegralDType(node.getOutputDType())
                 && node.getArgs().length == 1
                 && node.getArgs()[0] instanceof Number number
