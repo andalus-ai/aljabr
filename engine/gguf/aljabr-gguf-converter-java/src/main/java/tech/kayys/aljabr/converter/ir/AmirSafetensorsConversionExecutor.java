@@ -130,6 +130,11 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
             }
         }
 
+        AmirTypedMetadataCodec.encode(model.typedMetadata()).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
+        AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
+
         Path parent = target.getParent();
         Files.createDirectories(parent);
         Path temporary = Files.createTempFile(parent, "aljabr-conversion-", ".partial");
@@ -155,6 +160,13 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
                 target,
                 untransferredExtensionKeys(model),
                 plan);
+    }
+
+    private static void putUniqueMetadata(Map<String, String> metadata, String key, String value)
+            throws IOException {
+        if (metadata.putIfAbsent(key, value) != null) {
+            throw new IOException("Conflicting reserved Safetensors metadata key: " + key);
+        }
     }
 
     private static void validatePlan(
