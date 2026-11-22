@@ -62,12 +62,11 @@ public final class TurboQuantHadamardTransform {
         Objects.requireNonNull(destination, "destination");
         checkRange(source.length, sourceOffset, "sourceOffset");
         checkRange(destination.length, destinationOffset, "destinationOffset");
+        System.arraycopy(source, sourceOffset, destination, destinationOffset, dimension);
         for (int i = 0; i < dimension; i++) {
-            float value = source[sourceOffset + i];
-            if (!Float.isFinite(value)) {
+            if (!Float.isFinite(destination[destinationOffset + i])) {
                 throw new IllegalArgumentException("vector values must be finite");
             }
-            destination[destinationOffset + i] = value;
         }
     }
 
