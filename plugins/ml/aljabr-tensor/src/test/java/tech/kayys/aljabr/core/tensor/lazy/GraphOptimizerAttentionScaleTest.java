@@ -73,8 +73,8 @@ class GraphOptimizerAttentionScaleTest {
     @Test
     void keepsSafeChildRewritesWhenCustomScalePreventsAttentionFusion() {
         Shape shape = new Shape(4, 4);
-        GraphNode queryLeaf = typedNode(OpType.RELU, List.of(), new Object[0], shape, DType.I32);
-        GraphNode query = typedNode(OpType.ADD_SCALAR, List.of(queryLeaf), new Object[] { 0.0f }, shape, DType.I32);
+        GraphNode queryLeaf = node(OpType.RELU, List.of(), new Object[0], shape);
+        GraphNode query = node(OpType.ADD_SCALAR, List.of(queryLeaf), new Object[] { 0.0f }, shape);
         GraphNode key = node(OpType.RELU, List.of(), new Object[0], shape);
         GraphNode value = node(OpType.RELU, List.of(), new Object[0], shape);
         GraphNode transpose = node(OpType.TRANSPOSE, List.of(key), new Object[0], shape);

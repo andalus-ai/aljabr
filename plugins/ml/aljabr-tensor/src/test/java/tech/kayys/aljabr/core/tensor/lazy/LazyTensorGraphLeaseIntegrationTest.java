@@ -80,7 +80,7 @@ class LazyTensorGraphLeaseIntegrationTest {
     }
 
     private static GraphNode operation(OpType op, List<GraphNode> inputs, Object[] args) {
-        return new GraphNode(op, inputs, args, new Shape(2, 2), DType.I32);
+        return new GraphNode(op, inputs, args, new Shape(2, 2), DType.F32);
     }
 
     private static Tensor tensor(AtomicInteger releases) {
@@ -90,7 +90,7 @@ class LazyTensorGraphLeaseIntegrationTest {
                 new Class<?>[] { Tensor.class },
                 (proxy, method, args) -> switch (method.getName()) {
                     case "shape" -> shape;
-                    case "dtype" -> DType.I32;
+                    case "dtype" -> DType.F32;
                     case "device" -> DeviceType.CPU;
                     case "requiresGrad" -> false;
                     case "backend" -> null;
