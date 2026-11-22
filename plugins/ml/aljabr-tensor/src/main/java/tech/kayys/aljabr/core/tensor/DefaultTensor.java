@@ -323,7 +323,7 @@ public final class DefaultTensor implements Tensor {
         if (indices.requiresGrad()) {
             throw new IllegalArgumentException("index-select indices cannot require gradients");
         }
-        if (AutogradContext.isRecordingEnabled() && requiresGrad()) {
+        if (requiresGrad()) {
             throw new UnsupportedOperationException(
                     "indexSelect autograd is not available until scatter-add VJP support is implemented");
         }
