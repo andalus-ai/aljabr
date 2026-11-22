@@ -51,6 +51,15 @@ class GraphOptimizerTest {
     }
 
     @Test
+    void doesNotRemoveIntegerAddZeroWhenOutputShapeDiffersFromInput() {
+        GraphNode input = new GraphNode(OpType.RELU, List.of(), new Object[0], new Shape(1), DType.I32);
+        GraphNode addZero = new GraphNode(OpType.ADD_SCALAR, List.of(input),
+                new Object[] { 0.0f }, new Shape(2), DType.I32);
+
+        assertSame(addZero, GraphOptimizer.optimize(addZero));
+    }
+
+    @Test
     void doesNotRemoveZeroScalarOperationWithExplicitBackwardRule() {
         GraphNode input = differentiableLeaf();
         BackwardFunction backward = (output, gradient, inputs, arguments) -> new Tensor[] { null };
