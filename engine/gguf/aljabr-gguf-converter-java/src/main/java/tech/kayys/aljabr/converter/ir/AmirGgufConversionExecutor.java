@@ -173,6 +173,9 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
                                     + metadataKeyPart(tensor.name()) + "." + metadataKeyPart(key),
                             GgufMetaValue.ofString(value)));
         }
+        model.architectureDescriptor().ifPresent(descriptor ->
+                putUnique(result, AmirArchitectureDescriptorCodec.KEY,
+                        GgufMetaValue.ofString(AmirArchitectureDescriptorCodec.encode(descriptor))));
         return result;
     }
 
