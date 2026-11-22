@@ -33,7 +33,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            if (Set.of("Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
+            if (Set.of("IQ4_NL", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.WARNING,
                         "GGML_QUANTIZATION_DEQUANTIZED",
