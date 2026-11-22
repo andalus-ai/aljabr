@@ -2,6 +2,14 @@ package tech.kayys.aljabr.converter.ir;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tech.kayys.aljabr.spi.model.ir.AssetCollection;
+import tech.kayys.aljabr.spi.model.ir.AssetReference;
+import tech.kayys.aljabr.spi.model.ir.ComponentCollection;
+import tech.kayys.aljabr.spi.model.ir.GraphCollection;
+import tech.kayys.aljabr.spi.model.ir.GraphDescriptor;
+import tech.kayys.aljabr.spi.model.ir.GraphSignature;
+import tech.kayys.aljabr.spi.model.ir.ModelComponent;
+import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ConversionExecutionResult;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
@@ -133,6 +141,30 @@ class AmirSafetensorsConversionExecutorTest {
         var result = executor.execute(
                 model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL), output, true);
         assertEquals(List.of("tensor:weight:vendor.layout_hint"), result.untransferredExtensionKeys());
+    }
+
+    @Test
+    void typedModelLayersRequirePartialFidelityAndAreReported() throws Exception {
+        Path source = writeSource("typed-model-layers.safetensors");
+        ModelDescriptor model = model(source, Map.of(), Map.of())
+                .withGraphCollection(new GraphCollection(List.of(
+                        GraphDescriptor.of("forward", List.of(), List.of(), GraphSignature.empty()))))
+                .withAssetCollection(new AssetCollection(List.of(
+                        AssetReference.of("vocab", "assets/tokenizer.json"))))
+                .withComponentCollection(new ComponentCollection(List.of(
+                        ModelComponent.of("tokenizer", ModelComponentKind.TOKENIZER))));
+        var executor = new AmirSafetensorsConversionExecutor();
+        var output = temporaryDirectory.resolve("typed-model-layers-output.safetensors");
+
+        assertThrows(java.io.IOException.class, () -> executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false));
+
+        var result = executor.execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL), output, true);
+        assertEquals(List.of(
+                "model:graphCollection",
+                "model:assetCollection",
+                "model:componentCollection"), result.untransferredExtensionKeys());
     }
 
     private ModelDescriptor model(Path source, Map<String, String> metadata, Map<String, String> extensions) {
