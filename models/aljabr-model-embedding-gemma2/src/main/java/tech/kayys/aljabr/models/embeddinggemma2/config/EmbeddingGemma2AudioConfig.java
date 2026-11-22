@@ -46,7 +46,8 @@ public record EmbeddingGemma2AudioConfig(
         int audioMillisecondsPerToken,
         int audioTokenId,
         int beginAudioTokenId,
-        int endAudioTokenId) {
+        int endAudioTokenId,
+        double gradientClipping) {
 
     public static final String MODEL_TYPE = "gemma4_audio";
     public static final String FEATURE_EXTRACTOR_TYPE = "Gemma4AudioFeatureExtractor";
@@ -77,6 +78,7 @@ public record EmbeddingGemma2AudioConfig(
         subsamplingConvolutionChannels.forEach(value -> positive(value, "subsampling convolution channel"));
         positiveFinite(rmsNormEps, "rmsNormEps");
         positiveFinite(residualWeight, "residualWeight");
+        positiveFinite(gradientClipping, "gradientClipping");
         nonNegativeFinite(minFrequency, "minFrequency");
         positiveFinite(maxFrequency, "maxFrequency");
         positiveFinite(melFloor, "melFloor");
@@ -150,7 +152,8 @@ public record EmbeddingGemma2AudioConfig(
                 positiveInt(processorConfig, "audio_ms_per_token"),
                 positiveInt(modelConfig, "audio_token_id"),
                 positiveInt(modelConfig, "boa_token_id"),
-                positiveInt(modelConfig, "eoa_token_index"));
+                positiveInt(modelConfig, "eoa_token_index"),
+                optionalPositiveDouble(audio, "gradient_clipping", 1.0e10));
     }
 
     private static int positiveInt(JsonNode n, String f) {
@@ -172,6 +175,10 @@ public record EmbeddingGemma2AudioConfig(
         double v=number(n,f);
         positiveFinite(v,f);
         return v;
+    }
+    private static double optionalPositiveDouble(JsonNode n, String f, double fallback) {
+        JsonNode value = n.path(f);
+        return value.isMissingNode() || value.isNull() ? fallback : positiveDouble(n, f);
     }
     private static double nonNegativeDouble(JsonNode n, String f) {
         double v=number(n,f);
