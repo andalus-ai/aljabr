@@ -425,3 +425,65 @@ For a structural, API, execution, provider, CLI or documentation change, reviewe
 8. Are claims about implementation, validation and support backed by evidence?
 
 If a question is not applicable, say why in the PR rather than adding unnecessary machinery. These principles supplement the existing test, compatibility, provider, memory and hardware-specific rules; they do not override them.
+
+
+## 20. Diagnostics, observability, and auditability — mandatory framework capability
+
+Treat diagnostics, observability, and auditability as a first-class Aljabr capability across numerical, tensor, model, format, memory, execution, and provider layers. This is not permission to add logging calls indiscriminately or to build a serving control plane.
+
+### Ownership and boundaries
+
+- Aljabr owns framework-level diagnostic semantics, stable diagnostic codes, computational execution events, provider decision explanations, resource/memory lifecycle observations, numerical validation findings, and reproducible execution evidence.
+- AQLI owns request/serving telemetry, admission and scheduling decisions, deployment/operational audit, service-level objectives, and production request correlation. Aljabr may accept an explicit correlation context and emit framework events, but must not own AQLI policy or depend on AQLI.
+- Tafkir owns experiment/training workflow history and dataset/training lifecycle audit. Aljabr emits reusable computation and optimizer events only where those are genuine framework primitives.
+- Farabi and presentation products own research governance, analytics interpretation, dashboards and visualization. Aljabr supplies structured evidence, not a dashboard or governance workflow.
+- Keep the diagnostics API JDK-only or dependent on the smallest existing stable API. Logging, metrics, tracing, JFR, OpenTelemetry, Micrometer, JSON/CSV exporters and UI integrations are optional adapters.
+- Never require a global singleton, background thread, network exporter, file output, dashboard, agent, or instrumentation dependency for ordinary tensor/model consumers. The disabled/no-op path must be cheap and allocation-conscious.
+
+### Required observability signals
+
+Every relevant capability should expose appropriate, bounded, opt-in signals for:
+- **Execution:** operation/model scope start, completion, failure, duration, execution identity, and parent/correlation IDs.
+- **Provider decisions:** requested constraints, candidate providers, compatibility/rejection reasons, selected provider, fallback path and initialization outcome. Never silently fall back across an explicit user constraint.
+- **Numerics:** shape/dtype/layout validation, non-finite/overflow findings, tolerance/parity results and gradient-check outcomes. Value scans that can synchronize or copy device data must be explicit.
+- **Memory and ownership:** allocation/release, retain/borrow/view, copy/materialization, pool reuse, host/device transfer, failure and lifecycle violations, with bytes and storage identity only when known.
+- **Performance:** operation/provider/kernel timing, counters and distributions with clock source, warmup policy, sample count, synchronization policy, and host/device attribution.
+- **Model and format loading:** format/version metadata validation, tensor mapping/shape mismatches, missing/unexpected weights, conversion decisions and unsupported architecture/operation reasons. Do not expose weight contents.
+- **Capability/provider lifecycle:** discovery, declared/installed/available/compatible/validated state transitions, initialization, shutdown and cleanup failures.
+
+Do not instrument every hot-path operation unconditionally. Define explicit scopes, sampling, filters and bounded buffers; ensure event ordering and context propagation are documented for concurrent/asynchronous work.
+
+### Structured diagnostic and audit records
+
+- Diagnostics are immutable structured records with stable code, schema version, severity, category, operation/component, concise message, explanation, remediation, timestamp/clock semantics, correlation/parent IDs and typed context.
+- Include relevant input metadata (shape, dtype, layout, device, operation and provider) only when available. Mark missing values as unavailable; never guess.
+- Preserve the original cause for programmatic debugging while keeping public exception and diagnostic contracts provider-neutral.
+- Distinguish diagnostic findings from audit events and measurements: a warning is not an audit record; a timing sample is not proof of correctness; a provider declaration is not validation evidence.
+- Audit events are append-only facts about framework-relevant decisions and lifecycle transitions. Each event identifies actor/source (framework, caller, provider), action, target/resource, outcome, timestamp, correlation ID and schema version. Include before/after values only for safe configuration metadata and only when policy permits.
+- Audit history must be bounded/retention-controlled by the consuming application or exporter. Do not silently persist records, create a hidden database, or claim tamper-proof/non-repudiation guarantees. Cryptographic integrity, retention, access control and compliance policy belong to an explicitly selected audit sink/product.
+- Never capture tensor values, prompts, user data, credentials, secrets, raw model weights, or arbitrary configuration payloads by default. Redaction and allowlisting are mandatory at export boundaries. Sensitive capture requires explicit opt-in and a documented scope.
+- Keep event/diagnostic schemas versioned and deterministic. JSON/CSV/JFR exporters must preserve units, provenance and measured/estimated/unavailable status.
+
+### Evidence and provenance rules
+
+- Every measurement must say measured, estimated, sampled, derived or unavailable; identify host/device, clock, unit, scope (inclusive/exclusive), and synchronization semantics.
+- Distinguish wall time, CPU time, asynchronous launch latency and synchronized device execution time. Never compare them as equivalent.
+- Memory reports must distinguish logical tensor bytes, physical allocation bytes, retained/peak bytes and estimates. Never label an estimate as measured usage.
+- Provider/model compatibility and validation reports must include the tested API/provider/model/format versions and relevant environment constraints.
+- Numerical audit reports should record reference implementation, seed/determinism conditions, tolerance, comparison count, mismatch count and max absolute/relative error where applicable.
+- Performance reports should record build/runtime/JDK, provider/device, shape/dtype, warmup, sample count, statistic and benchmark method. JMH remains the preferred JVM microbenchmark harness.
+- Do not call an execution reproducible unless inputs/configuration, seeds, provider, versions and relevant nondeterminism constraints are captured sufficiently to reproduce it.
+
+### Review and acceptance gate
+
+For any new or changed public operation, model, format, memory path or provider:
+1. Identify the relevant diagnostic/error codes and failure context.
+2. Explain provider selection, fallback and unsupported-capability outcomes.
+3. Cover resource allocation/ownership/cleanup and failure/cancellation paths.
+4. Add opt-in observability at meaningful boundaries without hidden hot-path cost.
+5. Add audit events for consequential framework decisions and lifecycle transitions where evidence is needed.
+6. Test disabled/no-op behavior, event ordering/correlation, boundedness, redaction, exception paths and concurrency as applicable.
+7. Document what is measured versus estimated and which exporter/adapters are optional.
+8. State exactly which tests were run; source presence or compilation is not validation.
+
+A feature is not observability-ready merely because it logs an exception or exposes a metrics counter. It must be diagnosable, explainable, privacy-safe, bounded, testable and useful without coupling core computation to a product runtime.
