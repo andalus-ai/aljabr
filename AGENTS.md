@@ -555,3 +555,13 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Preserve AUTO fallback behavior: a failed probe emits FAILED, then selection may continue to the next candidate. Fatal JVM errors propagate after the scope is failed.
 - Preserve a direct no-op path with no scope/context allocation. Isolate observer RuntimeExceptions and count them through the existing execution-observer failure counter.
 - Test successful probes, failed probes, fallback/decision separation, privacy, explicit-selection bypass and no-op behavior.
+
+
+#### GGUF engine shutdown cleanup requirements
+
+- Engine shutdown must attempt to close every backend captured at the start of shutdown, even when an earlier backend's `close()` throws.
+- Detach the backend registry and mark the engine uninitialized before invoking backend cleanup so repeated shutdown is idempotent and attempted backends are not closed twice.
+- Preserve the first backend cleanup failure as the primary thrown failure and attach subsequent cleanup failures as suppressed exceptions. RuntimeExceptions and fatal Errors must retain their original type.
+- Emit one `gguf.model.unload` lifecycle scope per backend when execution observation is enabled; one failed unload must not suppress later unload attempts or their events.
+- Preserve the direct no-op observer path while applying the same all-backends cleanup guarantee.
+- Test multiple backends, a failure before a successful close, lifecycle terminal outcomes, repeated close, and no-op observer behavior.
