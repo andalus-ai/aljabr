@@ -123,12 +123,21 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
             String key = entry.getKey();
             String outputKey = key.startsWith("safetensors.")
                     ? key.substring("safetensors.".length()) : key;
+            if (outputKey.startsWith(AmirTypedMetadataCodec.PREFIX)
+                    || AmirTensorTypeCodec.isEncodedKey(outputKey)) {
+                throw new IOException("Source metadata key uses a reserved AMIR envelope namespace: " + outputKey);
+            }
             String previous = metadata.putIfAbsent(outputKey, entry.getValue());
             if (previous != null && !previous.equals(entry.getValue())) {
                 throw new IOException("Conflicting Safetensors metadata key after namespace mapping: "
                         + outputKey);
             }
         }
+
+        AmirTypedMetadataCodec.encode(model.typedMetadata()).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
+        AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
 
         Path parent = target.getParent();
         Files.createDirectories(parent);
@@ -155,6 +164,13 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
                 target,
                 untransferredExtensionKeys(model),
                 plan);
+    }
+
+    private static void putUniqueMetadata(Map<String, String> metadata, String key, String value)
+            throws IOException {
+        if (metadata.putIfAbsent(key, value) != null) {
+            throw new IOException("Conflicting reserved Safetensors metadata key: " + key);
+        }
     }
 
     private static void validatePlan(

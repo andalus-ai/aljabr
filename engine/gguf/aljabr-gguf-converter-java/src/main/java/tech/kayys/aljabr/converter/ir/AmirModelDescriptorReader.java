@@ -95,7 +95,9 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
                     ? renderGgufMetadata(rawTypedMetadata.get(key)) : renderMetadata(value);
             metadata.put(key, rendered);
         });
-        AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(metadata, tensors);
+        List<TensorDescriptor> typedTensors = AmirTensorTypeCodec.restore(metadata, tensors);
+        AmirSourceMetadataCodec.Decoded sourceAttributes =
+                AmirSourceMetadataCodec.decode(metadata, typedTensors);
         metadata = new LinkedHashMap<>(sourceAttributes.metadata());
         tensors = new ArrayList<>(sourceAttributes.tensors());
         String architecture = metadata.getOrDefault("general.architecture", "unknown");
@@ -111,12 +113,13 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
 
     private ModelDescriptor readSafetensors(Path file, String name) throws IOException {
         Map<String, String> metadata;
+        Map<String, String> storedMetadata;
         Map<String, MetadataValue> typedMetadata;
         List<TensorDescriptor> tensors = new ArrayList<>();
         long fileSize = Files.size(file);
 
         try (SafetensorsReader reader = new SafetensorsReader(file)) {
-            Map<String, String> storedMetadata = new LinkedHashMap<>(reader.globalMeta());
+            storedMetadata = new LinkedHashMap<>(reader.globalMeta());
             typedMetadata = AmirTypedMetadataCodec.decode(storedMetadata);
             metadata = new LinkedHashMap<>(AmirTypedMetadataCodec.withoutEncodedValues(storedMetadata));
             for (SafetensorsReader.TensorEntry tensor : reader.tensors().values()) {
@@ -144,7 +147,9 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
         }
 
-        AmirSourceMetadataCodec.Decoded sourceAttributes = AmirSourceMetadataCodec.decode(storedMetadata, tensors);
+        List<TensorDescriptor> typedTensors = AmirTensorTypeCodec.restore(storedMetadata, tensors);
+        AmirSourceMetadataCodec.Decoded sourceAttributes =
+                AmirSourceMetadataCodec.decode(storedMetadata, typedTensors);
         metadata = new LinkedHashMap<>(sourceAttributes.metadata());
         tensors = new ArrayList<>(sourceAttributes.tensors());
         String architecture = metadata.getOrDefault("general.architecture",
