@@ -46,14 +46,6 @@ final class AmirTensorTypeCodec {
         return key.startsWith(PREFIX);
     }
 
-    static Map<String, String> withoutEncodedValues(Map<String, String> metadata) {
-        Map<String, String> ordinary = new LinkedHashMap<>();
-        metadata.forEach((key, value) -> {
-            if (!isEncodedKey(key)) ordinary.put(key, value);
-        });
-        return Map.copyOf(ordinary);
-    }
-
     static List<TensorDescriptor> restore(Map<String, String> metadata, List<TensorDescriptor> tensors) {
         Map<String, TensorDescriptor> byName = new LinkedHashMap<>();
         tensors.forEach(tensor -> byName.put(tensor.name(), tensor));
