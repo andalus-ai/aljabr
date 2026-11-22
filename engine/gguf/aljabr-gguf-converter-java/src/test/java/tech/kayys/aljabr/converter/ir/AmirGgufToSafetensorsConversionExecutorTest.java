@@ -334,6 +334,24 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         assertFalse(Files.exists(output));
     }
 
+
+    @Test
+    void reportsFlattenedTypedGgufMetadataAsUntransferred() throws Exception {
+        byte[] values = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(1.0f).array();
+        Path source = writeContainer(values);
+        var tensor = tensor("weight", "F32", List.of(1L), source, 8L, values.length);
+        var model = new ModelDescriptor(ModelIdentity.of("typed-metadata"), "llama", "gguf",
+                Map.of("general.architecture", "llama"),
+                Map.of("gguf.metadata.general.alignment", "32"), List.of(tensor));
+        Path output = temporaryDirectory.resolve("typed-metadata.safetensors");
+
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        assertTrue(result.untransferredMetadataKeys().contains("model:typed-metadata:general.alignment"));
+    }
+
     private Path writeContainer(byte[] payload) throws Exception {
         byte[] prefix = new byte[8];
         Path source = temporaryDirectory.resolve("model.gguf");
