@@ -27,6 +27,8 @@ public record DiagnosticContext(
 
     private static final DiagnosticContext EMPTY =
             new DiagnosticContext(null, null, null, null, null, Map.of());
+    private static final java.util.Set<String> RESERVED_KEYS = java.util.Set.of(
+            "correlation.id", "parent.id", "operation", "component", "provider");
 
     public DiagnosticContext {
         correlationId = optionalText(correlationId, "correlationId", 128);
@@ -109,7 +111,8 @@ public record DiagnosticContext(
         Objects.requireNonNull(key, "attribute key");
         String normalized = key.trim();
         if (normalized.isEmpty() || normalized.length() > MAX_KEY_LENGTH
-                || !normalized.matches("[a-zA-Z][a-zA-Z0-9_.-]*")) {
+                || !normalized.matches("[a-zA-Z][a-zA-Z0-9_.-]*")
+                || RESERVED_KEYS.contains(normalized)) {
             throw new IllegalArgumentException("invalid diagnostic attribute key: " + key);
         }
         return normalized;
