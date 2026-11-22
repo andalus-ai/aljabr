@@ -375,8 +375,6 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             float secondScale = scale * (1 + 2 * (packedScales >>> 4));
             int qhFirst = source[qhOffset + pair * 2] & 0xff;
             int qhSecond = source[qhOffset + pair * 2 + 1] & 0xff;
-            int signsFirst = decodeIQ3SSignMask(source[signsOffset + pair * 8] & 0x7f);
-            int signsSecond = decodeIQ3SSignMask(source[signsOffset + pair * 8 + 4] & 0x7f);
             writeIQ3SGridPair(source, qsOffset + pair * 16, qhFirst,
                     signsOffset + pair * 8, firstScale, output);
             writeIQ3SGridPair(source, qsOffset + pair * 16 + 8, qhSecond,
