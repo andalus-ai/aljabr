@@ -77,20 +77,15 @@ class EmbeddingGemma2AudioConformerLayerTest {
 
         assertEquals(1, output.length);
         assertEquals(2, output[0].length);
-        assertArrayEquals(new float[]{1f, 0f}, output[0][0], 1e-5f);
+        assertArrayEquals(new float[]{(float) Math.sqrt(2.0), 0f}, output[0][0], 1e-5f);
 
         // FFN-1 and the zero-weight light-convolution/FFN-2 fixtures are
         // residual identities. Attention averages the two normalized frames
         // for the second query; the layer then adds its saved residual and
         // applies the final RMSNorm.
-        float attended = 1f / (float) Math.sqrt(2f);
-        float secondResidual = 2f + attended;
-        float inverseRms = (float) (1.0 / Math.sqrt(
-                (attended * attended + secondResidual * secondResidual) / 2.0 + 1e-6));
-        assertArrayEquals(
-                new float[]{attended * inverseRms, secondResidual * inverseRms},
-                output[0][1],
-                1e-5f);
+        float secondResidual = 3f;
+        float inverseRms = (float) (1.0 / Math.sqrt((1f + secondResidual * secondResidual) / 2.0 + 1e-6));
+        assertArrayEquals(new float[]{inverseRms, secondResidual * inverseRms}, output[0][1], 1e-5f);
         assertArrayEquals(new float[]{1f, 0f}, input[0][0], 0f);
         assertArrayEquals(new float[]{0f, 2f}, input[0][1], 0f);
     }
@@ -102,8 +97,8 @@ class EmbeddingGemma2AudioConformerLayerTest {
 
         float[][][] output = layer().compute(input, mask);
 
-        assertArrayEquals(new float[]{1f, 0f}, output[0][0], 1e-5f);
-        assertArrayEquals(new float[]{0f, 1f}, output[0][1], 1e-5f);
+        assertArrayEquals(new float[]{(float) Math.sqrt(2.0), 0f}, output[0][0], 1e-5f);
+        assertArrayEquals(new float[]{0f, (float) Math.sqrt(2.0)}, output[0][1], 1e-5f);
         assertArrayEquals(new float[]{0f, 2f}, input[0][1], 0f);
     }
 
