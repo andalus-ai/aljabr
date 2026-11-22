@@ -30,9 +30,11 @@ public final class ExecutionScope implements AutoCloseable {
     private ExecutionScope(DiagnosticContext context, ExecutionObserver observer) {
         this.context = requireExecutionContext(context);
         this.observer = Objects.requireNonNull(observer, "observer");
-        this.startedNanos = System.nanoTime();
-        emit(new ExecutionEvent(
-                ExecutionEvent.Type.STARTED, context, Instant.now(), 0, null));
+        this.startedNanos = observer == ExecutionObserver.NOOP ? 0L : System.nanoTime();
+        if (observer != ExecutionObserver.NOOP) {
+            emit(new ExecutionEvent(
+                    ExecutionEvent.Type.STARTED, context, Instant.now(), 0, null));
+        }
     }
 
     /**
@@ -98,6 +100,9 @@ public final class ExecutionScope implements AutoCloseable {
     }
 
     private void emitTerminal(ExecutionEvent.Type type, String failureType) {
+        if (observer == ExecutionObserver.NOOP) {
+            return;
+        }
         long elapsed = Math.max(0L, System.nanoTime() - startedNanos);
         emit(new ExecutionEvent(type, context, Instant.now(), elapsed, failureType));
     }
