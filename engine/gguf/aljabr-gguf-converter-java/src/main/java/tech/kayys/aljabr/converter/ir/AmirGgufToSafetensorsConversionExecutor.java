@@ -144,7 +144,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 || model.architecture().equalsIgnoreCase("unknown")
                 || hasLossyQuantization || hasFlattenedTypedMetadata;
         if (partial && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("Dequantization or unrepresented AMIR layers require a PARTIAL plan");
+            throw new IOException("Dequantization, flattened typed metadata, or unrepresented AMIR layers require a PARTIAL plan");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !request.acknowledgePartial()) {
             throw new IOException("GGUF-to-Safetensors conversion is PARTIAL; explicit acknowledgement is required");
