@@ -106,7 +106,7 @@ class GgufInferenceEngineDelegationTest {
             assertEquals("java.lang.IllegalStateException", events.get(1).failureType());
             assertFalse(events.get(1).context().attributes().values().stream()
                     .anyMatch(value -> value.contains("private failure detail")));
-            assertEquals(1, engine.getStats().failedRequests());
+            assertEquals(1, engine.getStats().failedInferences());
         } finally {
             Files.deleteIfExists(model);
         }
