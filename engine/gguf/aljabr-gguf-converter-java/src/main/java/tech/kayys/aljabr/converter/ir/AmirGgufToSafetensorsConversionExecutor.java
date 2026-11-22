@@ -138,8 +138,8 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
         boolean hasLossyQuantization = model.tensors().stream().anyMatch(tensor ->
                 isDequantizedType(tensor.dataType()));
-        boolean hasFlattenedTypedMetadata = model.extensions().keySet().stream()
-                .anyMatch(key -> key.startsWith("gguf.metadata."));
+        boolean hasFlattenedTypedMetadata = !model.typedMetadata().isEmpty()
+                || model.extensions().keySet().stream().anyMatch(key -> key.startsWith("gguf.metadata."));
         boolean partial = hasUnrepresentableLayers(model)
                 || model.architecture().equalsIgnoreCase("unknown")
                 || hasLossyQuantization || hasFlattenedTypedMetadata;
@@ -529,6 +529,8 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
         model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
         model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
+        model.typedMetadata().keySet().stream().sorted()
+                .forEach(key -> keys.add("model:typed-metadata:" + key));
         model.extensions().keySet().stream()
                 .filter(key -> key.startsWith("gguf.metadata."))
                 .sorted()
