@@ -104,6 +104,24 @@ class TurboQuantProdCodecTest {
     }
 
     @Test
+    void leavesDestinationUnchangedWhenQjlPayloadIsCorrupt() {
+        KVCacheCompressionContext context = context(1, 1, 4);
+        TurboQuantProdCodec codec = new TurboQuantProdCodec(4, 5);
+        KVCacheEncodedBlock encoded = codec.encode(new float[]{1, 2, 3, 4}, 0, context);
+        byte[] corruptPayload = encoded.payload();
+        corruptPayload[corruptPayload.length - 1] |= (byte) 0x80;
+        KVCacheEncodedBlock badPayload = new KVCacheEncodedBlock(
+                encoded.codecId(), encoded.codecVersion(), encoded.elementCount(),
+                corruptPayload, encoded.metadata());
+        float[] destination = {17, 17, 17, 17};
+
+        assertThrows(IllegalArgumentException.class,
+                () -> codec.decode(badPayload, destination, 0, context));
+        assertArrayEquals(new float[]{17, 17, 17, 17}, destination,
+                "failed decoding must not partially publish MSE output");
+    }
+
+    @Test
     void validatesTotalBitWidth() {
         assertThrows(IllegalArgumentException.class, () -> new TurboQuantProdCodec(1, 0));
         assertThrows(IllegalArgumentException.class, () -> new TurboQuantProdCodec(10, 0));
