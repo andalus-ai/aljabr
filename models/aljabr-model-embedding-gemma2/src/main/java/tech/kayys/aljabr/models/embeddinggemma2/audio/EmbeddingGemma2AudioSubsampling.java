@@ -57,7 +57,7 @@ public final class EmbeddingGemma2AudioSubsampling {
         int batch = inputFeatures.length;
         int time = inputFeatures[0].length;
 
-        float[][][][] hidden = new float[batch][1][time][inputFeatures];
+        float[][][][] hidden = new float[batch][1][time][this.inputFeatures];
         for (int b = 0; b < batch; b++) {
             for (int t = 0; t < time; t++) {
                 if (inputFeaturesMask == null || inputFeaturesMask[b][t]) {
@@ -128,7 +128,7 @@ public final class EmbeddingGemma2AudioSubsampling {
     }
 
     /** LayerNorm is applied over channels at each time/frequency position, then ReLU. */
-    private static float[][][][] normalizeAndActivate(float[][][][] values, float[] scale) {
+    private float[][][][] normalizeAndActivate(float[][][][] values, float[] scale) {
         int batch = values.length;
         int channels = values[0].length;
         int time = values[0][0].length;
@@ -146,7 +146,7 @@ public final class EmbeddingGemma2AudioSubsampling {
                         variance += centered * centered;
                     }
                     variance /= channels;
-                    float inverseStd = (float) (1.0 / Math.sqrt(variance + EPSILON_PLACEHOLDER));
+                    float inverseStd = (float) (1.0 / Math.sqrt(variance + epsilon));
                     for (int c = 0; c < channels; c++) {
                         float normalized = (values[b][c][t][f] - mean) * inverseStd * scale[c];
                         output[b][c][t][f] = Math.max(0f, normalized);
@@ -201,6 +201,9 @@ public final class EmbeddingGemma2AudioSubsampling {
         if (input == null || input.length == 0) {
             throw new IllegalArgumentException("inputFeatures must contain at least one batch item");
         }
+        if (mask != null && mask.length != input.length) {
+            throw new IllegalArgumentException("inputFeaturesMask batch dimension must match inputFeatures");
+        }
         int time = -1;
         for (int b = 0; b < input.length; b++) {
             if (input[b] == null || input[b].length == 0) {
@@ -249,7 +252,6 @@ public final class EmbeddingGemma2AudioSubsampling {
         }
     }
 
-    private static final float EPSILON_PLACEHOLDER = 1.0e-6f;
 
     /** One convolution's checkpoint parameters; kernel layout is [out][in][3][3]. */
     public record ConvLayerWeights(float[][][][] kernel, float[] layerNormScale) {
