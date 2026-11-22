@@ -46,7 +46,10 @@ public record EmbeddingGemma2AudioConfig(
         int audioMillisecondsPerToken,
         int audioTokenId,
         int beginAudioTokenId,
-        int endAudioTokenId) {
+        int endAudioTokenId,
+        double gradientClipping,
+        double attentionLogitCap,
+        double attentionInvalidLogitsValue) {
 
     public static final String MODEL_TYPE = "gemma4_audio";
     public static final String FEATURE_EXTRACTOR_TYPE = "Gemma4AudioFeatureExtractor";
@@ -77,6 +80,9 @@ public record EmbeddingGemma2AudioConfig(
         subsamplingConvolutionChannels.forEach(value -> positive(value, "subsampling convolution channel"));
         positiveFinite(rmsNormEps, "rmsNormEps");
         positiveFinite(residualWeight, "residualWeight");
+        positiveFinite(gradientClipping, "gradientClipping");
+        positiveFinite(attentionLogitCap, "attentionLogitCap");
+        finite(attentionInvalidLogitsValue, "attentionInvalidLogitsValue");
         nonNegativeFinite(minFrequency, "minFrequency");
         positiveFinite(maxFrequency, "maxFrequency");
         positiveFinite(melFloor, "melFloor");
@@ -150,7 +156,10 @@ public record EmbeddingGemma2AudioConfig(
                 positiveInt(processorConfig, "audio_ms_per_token"),
                 positiveInt(modelConfig, "audio_token_id"),
                 positiveInt(modelConfig, "boa_token_id"),
-                positiveInt(modelConfig, "eoa_token_index"));
+                positiveInt(modelConfig, "eoa_token_index"),
+                optionalPositiveDouble(audio, "gradient_clipping", 1.0e10),
+                optionalPositiveDouble(audio, "attention_logit_cap", 50.0),
+                optionalFiniteDouble(audio, "attention_invalid_logits_value", -1.0e9));
     }
 
     private static int positiveInt(JsonNode n, String f) {
@@ -172,6 +181,14 @@ public record EmbeddingGemma2AudioConfig(
         double v=number(n,f);
         positiveFinite(v,f);
         return v;
+    }
+    private static double optionalPositiveDouble(JsonNode n, String f, double fallback) {
+        JsonNode value = n.path(f);
+        return value.isMissingNode() || value.isNull() ? fallback : positiveDouble(n, f);
+    }
+    private static double optionalFiniteDouble(JsonNode n, String f, double fallback) {
+        JsonNode value = n.path(f);
+        return value.isMissingNode() || value.isNull() ? fallback : number(n, f);
     }
     private static double nonNegativeDouble(JsonNode n, String f) {
         double v=number(n,f);

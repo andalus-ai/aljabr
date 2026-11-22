@@ -55,19 +55,35 @@ public class GraphOptimizer {
         return Math.abs(actual - expected) <= tolerance;
     }
 
+    private static Integer exactIntegerArgument(Object argument) {
+        if (!(argument instanceof Number number)) {
+            return null;
+        }
+        double value = number.doubleValue();
+        if (!Double.isFinite(value) || value < Integer.MIN_VALUE || value > Integer.MAX_VALUE
+                || value != Math.rint(value)) {
+            return null;
+        }
+        return (int) value;
+    }
+
     private static boolean usesStandardAttentionSoftmax(GraphNode softmax) {
         Object[] arguments = softmax.getArgs();
         if (arguments.length == 0) {
             return true;
         }
-        if (arguments.length != 1 || !(arguments[0] instanceof Number number)) {
+        if (arguments.length != 1) {
+            return false;
+        }
+        Integer dimensionArgument = exactIntegerArgument(arguments[0]);
+        if (dimensionArgument == null) {
             return false;
         }
         int rank = softmax.getOutputShape().rank();
         if (rank == 0) {
             return false;
         }
-        int dimension = number.intValue();
+        int dimension = dimensionArgument;
         int normalized = dimension < 0 ? dimension + rank : dimension;
         return normalized == rank - 1;
     }
@@ -133,17 +149,20 @@ public class GraphOptimizer {
         if (arguments.length == 0) {
             return key.getOutputShape().rank() >= 2;
         }
-        if (arguments.length != 2
-                || !(arguments[0] instanceof Number first)
-                || !(arguments[1] instanceof Number second)) {
+        if (arguments.length != 2) {
+            return false;
+        }
+        Integer first = exactIntegerArgument(arguments[0]);
+        Integer second = exactIntegerArgument(arguments[1]);
+        if (first == null || second == null) {
             return false;
         }
         int rank = key.getOutputShape().rank();
         if (rank < 2) {
             return false;
         }
-        int firstDimension = first.intValue();
-        int secondDimension = second.intValue();
+        int firstDimension = first;
+        int secondDimension = second;
         int normalizedFirst = firstDimension < 0 ? firstDimension + rank : firstDimension;
         int normalizedSecond = secondDimension < 0 ? secondDimension + rank : secondDimension;
         return normalizedFirst == rank - 2 && normalizedSecond == rank - 1
@@ -170,6 +189,8 @@ public class GraphOptimizer {
                 && !node.requiresGrad()
                 && newInputs.size() == 1
                 && newInputs.get(0).getOutputDType() == node.getOutputDType()
+                && java.util.Arrays.equals(
+                        newInputs.get(0).getOutputShape().dims(), node.getOutputShape().dims())
                 && isIntegralDType(node.getOutputDType())
                 && node.getArgs().length == 1
                 && node.getArgs()[0] instanceof Number number

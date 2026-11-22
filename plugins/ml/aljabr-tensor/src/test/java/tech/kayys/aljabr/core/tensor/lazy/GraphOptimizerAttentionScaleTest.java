@@ -46,6 +46,22 @@ class GraphOptimizerAttentionScaleTest {
     }
 
     @Test
+    void doesNotFuseAttentionWhenSoftmaxAxisIsFractional() {
+        GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[] { 1.5d },
+                new Object[0], new Shape(4, 4));
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    @Test
+    void doesNotFuseAttentionWhenTransposeAxesAreFractional() {
+        GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[0],
+                new Object[] { 0.5d, 1.5d }, new Shape(4, 4));
+
+        assertSame(root, GraphOptimizer.optimize(root));
+    }
+
+    @Test
     void doesNotFuseAttentionWhenTransposeDoesNotSwapLastTwoAxes() {
         Shape batched = new Shape(2, 3, 4, 4);
         GraphNode root = attentionGraph(OpType.DIV_SCALAR, 2.0f, new Object[0],
@@ -57,8 +73,8 @@ class GraphOptimizerAttentionScaleTest {
     @Test
     void keepsSafeChildRewritesWhenCustomScalePreventsAttentionFusion() {
         Shape shape = new Shape(4, 4);
-        GraphNode queryLeaf = node(OpType.RELU, List.of(), new Object[0], shape);
-        GraphNode query = node(OpType.ADD_SCALAR, List.of(queryLeaf), new Object[] { 0.0f }, shape);
+        GraphNode queryLeaf = typedNode(OpType.RELU, List.of(), new Object[0], shape, DType.I32);
+        GraphNode query = typedNode(OpType.ADD_SCALAR, List.of(queryLeaf), new Object[] { 0.0f }, shape, DType.I32);
         GraphNode key = node(OpType.RELU, List.of(), new Object[0], shape);
         GraphNode value = node(OpType.RELU, List.of(), new Object[0], shape);
         GraphNode transpose = node(OpType.TRANSPOSE, List.of(key), new Object[0], shape);
