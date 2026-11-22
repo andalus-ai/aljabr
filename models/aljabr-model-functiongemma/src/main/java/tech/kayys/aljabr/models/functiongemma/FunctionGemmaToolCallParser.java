@@ -3,6 +3,7 @@ package tech.kayys.aljabr.models.functiongemma;
 import tech.kayys.aljabr.core.tool.ToolCall;
 import tech.kayys.aljabr.core.tool.ToolCallParseDiagnostic;
 import tech.kayys.aljabr.core.tool.ToolCallParseResult;
+import tech.kayys.aljabr.core.tool.ToolCallParser;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -22,7 +23,7 @@ import java.util.Objects;
  *
  * <p>This parser only extracts untrusted model output. It never invokes a tool.</p>
  */
-public final class FunctionGemmaToolCallParser {
+public final class FunctionGemmaToolCallParser implements ToolCallParser {
     private static final String START = FunctionGemmaTokenizer.START_FUNCTION_CALL;
     private static final String END = FunctionGemmaTokenizer.END_FUNCTION_CALL;
     private static final String ESCAPE = FunctionGemmaTokenizer.ESCAPE;
@@ -59,6 +60,7 @@ public final class FunctionGemmaToolCallParser {
      * <p>Diagnostic codes are stable identifiers for this adapter. Offsets
      * refer to the original output string.</p>
      */
+    @Override
     public ToolCallParseResult parseResult(String output) {
         Objects.requireNonNull(output, "output");
         List<ToolCall> calls = new ArrayList<>();
