@@ -67,8 +67,17 @@ final class AmirTensorTypeCodec {
         List<TensorDescriptor> restored = new ArrayList<>(tensors.size());
         for (TensorDescriptor tensor : tensors) {
             TensorType type = decoded.get(tensor.name());
-            restored.add(type == null ? tensor
-                    : TensorDescriptor.typed(tensor.name(), type, tensor.payload(), tensor.extensions()));
+            if (type == null) {
+                restored.add(tensor);
+            } else {
+                List<Long> shape = type.shape().isStatic()
+                        ? type.shape().staticDimensions() : tensor.shape();
+                String quantization = type.quantization()
+                        .map(QuantizationDescriptor::scheme).orElse(null);
+                restored.add(new TensorDescriptor(tensor.name(), type.dataType().id(), shape,
+                        type.layout().id(), quantization, tensor.payload(), tensor.extensions(),
+                        Optional.of(type)));
+            }
         }
         return List.copyOf(restored);
     }
