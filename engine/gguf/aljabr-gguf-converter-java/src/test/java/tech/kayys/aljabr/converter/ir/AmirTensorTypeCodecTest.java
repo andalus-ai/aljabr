@@ -38,6 +38,7 @@ class AmirTensorTypeCodecTest {
                         "unknown", null, null)));
 
         assertEquals(Optional.of(type), restored.get(0).tensorType());
+        assertEquals(List.of(128L, 32L), restored.get(0).shape());
         assertEquals("extension", restored.get(0).extensions().get("source"));
         assertTrue(AmirTensorTypeCodec.isEncodedKey(encoded.keySet().iterator().next()));
     }
