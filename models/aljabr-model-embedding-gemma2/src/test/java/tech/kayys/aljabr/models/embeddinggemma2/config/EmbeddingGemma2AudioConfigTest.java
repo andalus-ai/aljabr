@@ -33,6 +33,8 @@ class EmbeddingGemma2AudioConfigTest {
         assertEquals(256000, c.beginAudioTokenId());
         assertEquals(258883, c.endAudioTokenId());
         assertEquals(1.0e10, c.gradientClipping());
+        assertEquals(50.0, c.attentionLogitCap());
+        assertEquals(-1.0e9, c.attentionInvalidLogitsValue());
     }
 
     @Test
@@ -64,7 +66,7 @@ class EmbeddingGemma2AudioConfigTest {
               "subsampling_conv_channels":[128,32],"attention_chunk_size":12,
               "attention_context_left":13,"attention_context_right":0,
               "rms_norm_eps":0.000001,"residual_weight":0.5,"hidden_act":"silu",
-              "dtype":"bfloat16","use_clipped_linears":true,"gradient_clipping":1.0e10
+              "dtype":"bfloat16","use_clipped_linears":true,"gradient_clipping":1.0e10,"attention_logit_cap":50.0,"attention_invalid_logits_value":-1.0e9
             }
           }
           """);
