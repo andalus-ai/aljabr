@@ -370,15 +370,72 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             activeCount.incrementAndGet();
             totalCount.incrementAndGet();
             try {
-                return backendFor(modelId).embed(request)
-                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+                GgufBackend backend = backendFor(modelId);
+                return observeEmbedding(backend, () -> backend.embed(request));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Uni.createFrom().failure(error);
+            } catch (Error fatal) {
+                activeCount.decrementAndGet();
+                throw fatal;
             }
         });
+    }
+
+    /**
+     * Attaches one lifecycle scope to each embedding subscription. The backend
+     * supplier is invoked only after subscription to the deferred Uni.
+     */
+    private Uni<EmbeddingResponse> observeEmbedding(
+            GgufBackend backend,
+            Supplier<Uni<EmbeddingResponse>> embeddingSupplier) {
+        ExecutionScope scope = null;
+        if (executionObserver != ExecutionObserver.NOOP) {
+            DiagnosticContext context = DiagnosticContext.builder()
+                    .correlationId(UUID.randomUUID().toString())
+                    .operation("gguf.embed")
+                    .component("gguf")
+                    .provider(backend.name())
+                    .build();
+            scope = ExecutionScope.start(context, executionObserver);
+        }
+        final ExecutionScope activeScope = scope;
+        try {
+            Uni<EmbeddingResponse> embedding =
+                    Objects.requireNonNull(embeddingSupplier.get(), "backend embedding");
+            if (activeScope == null) {
+                return embedding
+                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+            }
+            return embedding
+                    .onItem().invoke(item -> activeScope.succeed())
+                    .onFailure().invoke(failure -> {
+                        failedCount.incrementAndGet();
+                        activeScope.fail(failure);
+                    })
+                    .onCancellation().invoke(activeScope::close)
+                    .onTermination().invoke(() -> {
+                        if (activeScope.observerFailure().isPresent()) {
+                            executionObserverFailureCount.incrementAndGet();
+                        }
+                        activeCount.decrementAndGet();
+                    });
+        } catch (RuntimeException failure) {
+            failedCount.incrementAndGet();
+            try {
+                if (activeScope != null) {
+                    activeScope.fail(failure);
+                    if (activeScope.observerFailure().isPresent()) {
+                        executionObserverFailureCount.incrementAndGet();
+                    }
+                }
+            } finally {
+                activeCount.decrementAndGet();
+            }
+            return Uni.createFrom().failure(failure);
+        }
     }
 
     @Override

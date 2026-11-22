@@ -535,3 +535,12 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Keep model IDs, filesystem paths, model metadata/configuration maps, prompts and weight details out of lifecycle context by default. Use opaque generated correlation IDs and provider identity only.
 - Preserve backend exceptions and cleanup semantics. Observer RuntimeExceptions must never change load, unload or close behavior; fatal JVM errors must propagate.
 - Test load success/failure, unload success/cleanup, privacy, observer-disabled behavior and observer-failure isolation.
+
+#### GGUF embedding lifecycle requirements
+
+- Observe GGUF embedding execution with an explicit `gguf.embed` scope created inside the deferred `Uni` subscription supplier, not while the `Uni` is assembled.
+- Emit STARTED per subscription; map item emission to SUCCEEDED, upstream failure to FAILED and downstream cancellation to ABANDONED.
+- Release active-execution accounting exactly once for success, failure, cancellation and synchronous backend-construction failure.
+- Keep input text, request IDs, model IDs, paths, arbitrary request parameters and embedding vectors out of lifecycle context. Provider identity and generated correlation ID are sufficient.
+- Runtime observer failures must not change the embedding result or failure. Fatal JVM errors propagate and must not leak active counts.
+- Test deferred invocation, success, failure, cancellation, observer failure isolation and no-op behavior.
