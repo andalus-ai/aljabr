@@ -53,26 +53,29 @@ public record Diagnostic(
         this(code, severity, category, message, context, Instant.now());
     }
 
-    /** Creates a diagnostic with explicitly selected, bounded execution context. */
-    public Diagnostic(
+    /**
+     * Creates a diagnostic with explicitly selected, bounded execution context.
+     * A named factory avoids making existing constructor calls with a null
+     * context ambiguous.
+     */
+    public static Diagnostic withContext(
             String code,
             DiagnosticSeverity severity,
             String category,
             String message,
             DiagnosticContext context) {
-        this(code, severity, category, message,
-                Objects.requireNonNull(context, "context").asMap(), Instant.now());
+        return withContext(code, severity, category, message, context, Instant.now());
     }
 
     /** Creates a diagnostic with explicit context and observation timestamp. */
-    public Diagnostic(
+    public static Diagnostic withContext(
             String code,
             DiagnosticSeverity severity,
             String category,
             String message,
             DiagnosticContext context,
             Instant occurredAt) {
-        this(code, severity, category, message,
+        return new Diagnostic(code, severity, category, message,
                 Objects.requireNonNull(context, "context").asMap(), occurredAt);
     }
 
