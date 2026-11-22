@@ -370,6 +370,27 @@ public class LazyTensor implements Tensor {
                 new Object[] { plan.axis() }, plan.outputShape(), dtype());
     }
 
+    @Override
+    public Tensor indexAdd(int axis, Tensor indices, Tensor source) {
+        ensureOpen();
+        java.util.Objects.requireNonNull(indices, "indices");
+        java.util.Objects.requireNonNull(source, "source");
+        TensorOperationValidator.IndexAddPlan plan =
+                TensorOperationValidator.validateIndexAdd(shape(), indices.shape(), source.shape(), axis);
+        if (indices.dtype() != DType.I32) {
+            throw new IllegalArgumentException("index-add indices must use I32; actual dtype=" + indices.dtype());
+        }
+        if (indices.requiresGrad()) {
+            throw new IllegalArgumentException("index-add indices cannot require gradients");
+        }
+        if (requiresGrad() || source.requiresGrad()) {
+            throw new UnsupportedOperationException(
+                    "indexAdd autograd is not available until its vector-Jacobian products are implemented");
+        }
+        return op(OpType.INDEX_ADD, List.of(this, indices, source),
+                new Object[] { plan.axis() }, plan.outputShape(), dtype());
+    }
+
     /**
      * Records index selection in the lazy graph. The operation remains
      * forward-only until its scatter-add vector-Jacobian product is available.
