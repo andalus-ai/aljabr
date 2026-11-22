@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Uses reflection to access Engine and HubClient to avoid circular
  * dependencies.
  * @author bhangun
-  * @deprecated This REST serving adapter is being retired from Aljabr. Use the AQLI REST API for chat/completion and model-serving endpoints; Aljabr retains reusable model and execution capabilities.
+ * @deprecated This REST serving adapter is being retired from Aljabr. Use the AQLI REST API for chat/completion and model-serving endpoints; Aljabr retains reusable model and execution capabilities.
  */
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
