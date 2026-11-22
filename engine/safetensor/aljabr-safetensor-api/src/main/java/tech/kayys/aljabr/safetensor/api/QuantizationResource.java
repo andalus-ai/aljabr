@@ -34,6 +34,7 @@ import java.util.concurrent.CompletableFuture;
  */
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@SuppressWarnings("removal")
 @Deprecated(forRemoval = true)
 public class QuantizationResource {
 
