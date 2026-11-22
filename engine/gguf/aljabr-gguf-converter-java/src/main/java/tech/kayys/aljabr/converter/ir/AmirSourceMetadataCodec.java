@@ -65,7 +65,7 @@ final class AmirSourceMetadataCodec {
         }
     }
 
-    private static void putUnique(Map<String, String> target, String key, String value, String kind) {
+    static void putUnique(Map<String, String> target, String key, String value, String kind) {
         if (key.isBlank()) throw new IllegalArgumentException(kind + " key must not be blank");
         if (target.putIfAbsent(key, value) != null) {
             throw new IllegalArgumentException("Duplicate " + kind + " key: " + key);
