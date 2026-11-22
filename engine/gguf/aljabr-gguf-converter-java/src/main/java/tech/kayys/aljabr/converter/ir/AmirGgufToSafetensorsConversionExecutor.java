@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. IQ4_NL, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. IQ4_NL, IQ4_XS, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -161,6 +161,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
             case "IQ4_NL" -> TensorEncoding.dequantized("IQ4_NL", 18, 32);
+            case "IQ4_XS" -> TensorEncoding.dequantized("IQ4_XS", 136, 256);
             case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
             case "Q3_K" -> TensorEncoding.dequantized("Q3_K", 110, 256);
             case "Q4_K" -> TensorEncoding.dequantized("Q4_K", 144, 256);
@@ -178,7 +179,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "IQ4_NL", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -283,6 +284,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     dequantizeIQ4NLBlock(source, base, values);
                     continue;
                 }
+                if (type.equals("IQ4_XS")) {
+                    dequantizeIQ4XSBlock(source, base, values);
+                    continue;
+                }
                 if (type.equals("Q2_K")) {
                     dequantizeQ2KBlock(source, base, values, i * valuesPerBlock);
                     continue;
@@ -362,6 +367,34 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         for (int i = 0; i < 16; i++) {
             int packed = source[quantizedOffset + i] & 0xff;
             output.putFloat(scale * IQ4_NL_VALUES[packed >>> 4]);
+        }
+    }
+
+    /**
+     * GGML block_iq4_xs layout: fp16 super-block scale, uint16 packed scale high bits,
+     * four bytes of packed scale low nibbles, then 128 bytes of IQ4_NL codebook indices.
+     * Each of the eight 32-value groups has a signed six-bit scale (stored with bias 32).
+     */
+    private static void dequantizeIQ4XSBlock(byte[] source, int base, ByteBuffer output) {
+        float superBlockScale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        int packedHighScales = (source[base + 2] & 0xff) | ((source[base + 3] & 0xff) << 8);
+        int lowScalesOffset = base + 4;
+        int quantizedOffset = base + 8;
+        for (int group = 0; group < 8; group++) {
+            int packedLow = source[lowScalesOffset + group / 2] & 0xff;
+            int lowScale = (packedLow >>> (4 * (group & 1))) & 0x0f;
+            int highScale = (packedHighScales >>> (2 * group)) & 0x03;
+            int scale = lowScale | (highScale << 4);
+            float groupScale = superBlockScale * (scale - 32);
+            int groupQuantizedOffset = quantizedOffset + group * 16;
+            for (int i = 0; i < 16; i++) {
+                int packed = source[groupQuantizedOffset + i] & 0xff;
+                output.putFloat(groupScale * IQ4_NL_VALUES[packed & 0x0f]);
+            }
+            for (int i = 0; i < 16; i++) {
+                int packed = source[groupQuantizedOffset + i] & 0xff;
+                output.putFloat(groupScale * IQ4_NL_VALUES[packed >>> 4]);
+            }
         }
     }
 
