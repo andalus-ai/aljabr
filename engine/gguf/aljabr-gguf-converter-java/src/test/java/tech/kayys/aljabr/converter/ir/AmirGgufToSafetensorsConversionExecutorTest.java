@@ -420,7 +420,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
 
 
     @Test
-    void reportsFlattenedTypedGgufMetadataAsUntransferred() throws Exception {
+    void roundTripsTypedGgufMetadataThroughSafetensorsEnvelope() throws Exception {
         byte[] values = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putFloat(1.0f).array();
         Path source = writeContainer(values);
         var tensor = tensor("weight", "F32", List.of(1L), source, 8L, values.length);
@@ -445,7 +445,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         assertTrue(result.untransferredMetadataKeys().isEmpty());
         ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
         assertEquals(typed, restored.typedMetadata());
-        assertEquals("llama", restored.metadata().get("general.architecture"));
+        assertEquals("llama", restored.metadata().get("aljabr.source.metadata.general.architecture"));
     }
 
     private Path writeContainer(byte[] payload) throws Exception {
