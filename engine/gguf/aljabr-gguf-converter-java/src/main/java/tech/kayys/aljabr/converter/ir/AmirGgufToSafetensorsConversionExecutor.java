@@ -604,13 +604,17 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         values.put("aljabr.source.format", SOURCE_FORMAT);
         values.put("aljabr.source.architecture", model.architecture());
         model.metadata().forEach((key, value) ->
-                values.put("aljabr.source.metadata." + key, value));
+                AmirSourceMetadataCodec.putUnique(values, "aljabr.source.metadata." + key, value,
+                        "Safetensors source metadata"));
         model.extensions().forEach((key, value) ->
-                values.put("aljabr.source.extension." + key, value));
-        values.putAll(AmirTypedMetadataCodec.encode(model.typedMetadata()));
+                AmirSourceMetadataCodec.putUnique(values, "aljabr.source.extension." + key, value,
+                        "Safetensors source extension"));
+        AmirTypedMetadataCodec.encode(model.typedMetadata()).forEach((key, value) ->
+                AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed metadata"));
         for (TensorDescriptor tensor : model.tensors()) {
-            tensor.extensions().forEach((key, value) -> values.put(
-                    "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value));
+            tensor.extensions().forEach((key, value) -> AmirSourceMetadataCodec.putUnique(values,
+                    "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value,
+                    "Safetensors tensor extension"));
         }
         return Map.copyOf(values);
     }
