@@ -275,25 +275,20 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         try {
             Multi<StreamingInferenceChunk> stream =
                     Objects.requireNonNull(streamSupplier.get(), "backend stream");
+            if (activeScope == null) {
+                return stream
+                        .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+            }
             return stream
                     .onFailure().invoke(failure -> {
                         failedCount.incrementAndGet();
-                        if (activeScope != null) {
-                            activeScope.fail(failure);
-                        }
+                        activeScope.fail(failure);
                     })
-                    .onCompletion().invoke(() -> {
-                        if (activeScope != null) {
-                            activeScope.succeed();
-                        }
-                    })
-                    .onCancellation().invoke(() -> {
-                        if (activeScope != null) {
-                            activeScope.close();
-                        }
-                    })
+                    .onCompletion().invoke(activeScope::succeed)
+                    .onCancellation().invoke(activeScope::close)
                     .onTermination().invoke(() -> {
-                        if (activeScope != null && activeScope.observerFailure().isPresent()) {
+                        if (activeScope.observerFailure().isPresent()) {
                             executionObserverFailureCount.incrementAndGet();
                         }
                         activeCount.decrementAndGet();
