@@ -70,22 +70,6 @@ final class JavaGgufBackend implements GgufBackend {
     private final Object promptCacheLock = new Object();
     private PromptCacheEntry cachedPrompt = null;
 
-    /**
-     * Tracks whether the native Metal KV buffers already hold the correct K/V
-     * data for the first {@link #metalKvPrefixTokenCount} tokens of the cached
-     * prompt. When true, a cache-hit path can skip {@code syncMetalCache} and
-     * save the 170–270 ms spent re-uploading 75 MB of KV data to Metal shared
-     * memory.
-     *
-     * <p>Invariant: set to {@code true} only right after a full prefill (the
-     * Metal buffers were just written by the prefill pass) or right after a
-     * successful cache-hit decode (the prefix portion 0..T-1 was never
-     * overwritten; decode only writes at positions ≥ T). Reset to {@code false}
-     * whenever Metal state is uncertain (init failure, model reload, etc.).
-     */
-    private volatile boolean metalKvPrefixValid = false;
-    private volatile int     metalKvPrefixTokenCount = 0;
-
     private KVCache createKVCache() {
         if (cfg.nKVHeadsPerLayer() != null && cfg.headDimPerLayer() != null) {
             return new KVCache(cfg.nLayers(), cfg.contextLength(), cfg.nKVHeadsPerLayer(), cfg.headDimPerLayer());
@@ -226,37 +210,21 @@ final class JavaGgufBackend implements GgufBackend {
                     }
                     cache.advance(tokenIds.length);
                     decodeSession = new GgufDecodeSession(cache);
-                    // If the Metal-side KV buffers already hold the correct prefix
-                    // data for this exact prompt (positions 0..T-1 are valid from the
-                    // previous prefill/decode and were never overwritten), skip the
-                    // 170-270 ms syncMetalCache round-trip. The decode step only writes
-                    // at positions >= seqLen, so the prefix is always preserved.
-                    boolean skipSync = !fromDisk && metalKvPrefixValid
-                            && metalKvPrefixTokenCount == tokenIds.length;
-                    if (!skipSync) {
-                        decodeStep.syncMetalCache(tokenIds.length, cache);
-                        metalKvPrefixValid = true;
-                        metalKvPrefixTokenCount = tokenIds.length;
-                    }
                     logits = hit.logits.clone();
                     pos = tokenIds.length;
                     prefillMs = Math.max(1, System.currentTimeMillis() - t0);
                     if (isVerbose()) {
-                        System.err.printf("[java-engine] Prompt prefix cache %s: %d tokens restored in %d ms (Metal sync: %s)%n",
+                        System.err.printf("[java-engine] Prompt prefix cache %s: %d tokens restored in %d ms%n",
                                 fromDisk ? "DISK-HIT" : "MEMORY-HIT",
-                                tokenIds.length, prefillMs, skipSync ? "SKIPPED" : "done");
+                                tokenIds.length, prefillMs);
                     }
                 } else {
-                    metalKvPrefixValid = false; // Metal state unknown until prefill completes
                     cache = sharedCache;
                     cache.resetFast();
                     decodeSession = new GgufDecodeSession(cache);
                     logits = decodeStep.prefill(tokenIds, decodeSession);
                     pos = tokenIds.length;
                     prefillMs = Math.max(1, System.currentTimeMillis() - t0);
-                    // Prefill just wrote positions 0..T-1 into Metal KV buffers.
-                    metalKvPrefixValid = true;
-                    metalKvPrefixTokenCount = tokenIds.length;
 
                     try {
                         int nLayers = cfg.nLayers();
@@ -363,7 +331,6 @@ final class JavaGgufBackend implements GgufBackend {
                     finishReason,
                     request != null && request.getSessionId().isPresent() ? request.getSessionId().get() : null);
         } catch (InferenceException ie) {
-            metalKvPrefixValid = false; // Metal state unknown after error
             throw ie;
         } catch (Exception e) {
             metalKvPrefixValid = false; // Metal state unknown after error
