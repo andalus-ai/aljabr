@@ -31,4 +31,21 @@ class SafetensorsTargetCapabilityTest {
         assertTrue(report.diagnostics().stream().noneMatch(d ->
                 d.code().equals("GGUF_TYPED_METADATA_FLATTENED")));
     }
+    @Test
+    void marksLegacyFlattenedGgufMetadataAsPartial() {
+        var model = new ModelDescriptor(
+                ModelIdentity.of("legacy-typed-metadata"),
+                "llama",
+                "gguf",
+                Map.of("general.architecture", "llama"),
+                Map.of("gguf.metadata.general.alignment", "32"),
+                List.of());
+
+        CompatibilityReport report = new SafetensorsTargetCapability().assess(model);
+
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
+        assertTrue(report.diagnostics().stream().anyMatch(d ->
+                d.code().equals("GGUF_TYPED_METADATA_FLATTENED")));
+    }
+
 }
