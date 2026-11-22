@@ -302,7 +302,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         block[1] = 0x3c; // fp16 scale = 1
         block[2] = 1; // grid index 1: [3, 1, 1, 1]
         block[3] = 0; // grid index 0: [1, 1, 1, 1]
-        block[66] = 1; // high bit selects grid index 256 for first grid in second 32-value half
+        block[67] = 1; // high bit selects grid index 256 for first grid in second 32-value half
         block[74] = 1; // parity-expanded sign mask 0x81: first and eighth values negative
         block[106] = 0x10; // first group scale = 1, second group scale = 3
 
@@ -327,7 +327,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
             assertEquals(expected[i], values.getFloat(i * Float.BYTES), 0.0f);
         }
         // The next 32-value group uses the second packed scale nibble (3x).
-        assertEquals(3.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        assertEquals(21.0f, values.getFloat(32 * Float.BYTES), 0.0f); // grid[256][0] = 7, scaled by 3
     }
 
     @Test
