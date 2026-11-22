@@ -371,6 +371,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             totalCount.incrementAndGet();
             try {
                 GgufBackend backend = backendFor(modelId);
+                if (executionObserver == ExecutionObserver.NOOP) {
+                    return backend.embed(request)
+                            .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                            .onTermination().invoke(() -> activeCount.decrementAndGet());
+                }
                 return observeEmbedding(backend, () -> backend.embed(request));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
@@ -425,16 +430,20 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         } catch (RuntimeException failure) {
             failedCount.incrementAndGet();
             try {
-                if (activeScope != null) {
-                    activeScope.fail(failure);
-                    if (activeScope.observerFailure().isPresent()) {
-                        executionObserverFailureCount.incrementAndGet();
-                    }
+                activeScope.fail(failure);
+                if (activeScope.observerFailure().isPresent()) {
+                    executionObserverFailureCount.incrementAndGet();
                 }
             } finally {
                 activeCount.decrementAndGet();
             }
             return Uni.createFrom().failure(failure);
+        } catch (Error fatal) {
+            activeScope.fail(fatal);
+            if (activeScope.observerFailure().isPresent()) {
+                executionObserverFailureCount.incrementAndGet();
+            }
+            throw fatal;
         }
     }
 
