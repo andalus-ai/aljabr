@@ -1171,6 +1171,9 @@ class CpuBackendStorageTest {
             input.release();
         }
         assertEquals(0, storage.references());
+    }
+
+    @Test
     void rankTwoAttentionReadsTransposedOffsetQueryKeyAndValueViews() {
         HostStorage queryStorage = new HostStorage(99f, 0f, 0f, 0f, 0f);
         DefaultTensor query = new DefaultTensor(
