@@ -563,6 +563,7 @@ class GgufInferenceEngineDelegationTest {
         try {
             engine.loadModel("first", firstModel, Map.of("gguf.backend", "test"));
             engine.loadModel("second", secondModel, Map.of("gguf.backend", "test"));
+            events.clear();
 
             IllegalStateException failure = assertThrows(IllegalStateException.class, engine::close);
 
