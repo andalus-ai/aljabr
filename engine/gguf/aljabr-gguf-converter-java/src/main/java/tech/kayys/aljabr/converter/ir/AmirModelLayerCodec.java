@@ -191,8 +191,7 @@ final class AmirModelLayerCodec {
             case "boolean" -> new ConfigurationValue.BooleanValue(requiredBoolean(value, "value"));
             case "string-list" -> new ConfigurationValue.StringListValue(stringList(requiredArray(value, "value")));
             case "integer-list" -> new ConfigurationValue.IntegerListValue(
-                    requiredArray(value, "value").asList().stream()
-                            .map(JsonElement::getAsString).map(Long::parseLong).toList());
+                    integerList(requiredArray(value, "value")));
             default -> throw new IllegalArgumentException("Unknown AMIR component configuration value type");
         };
     }
@@ -210,7 +209,7 @@ final class AmirModelLayerCodec {
     private static void requireVersion(JsonObject root) {
         if (!root.has("version") || !root.get("version").isJsonPrimitive()
                 || !root.get("version").getAsJsonPrimitive().isNumber()
-                || root.get("version").getAsInt() != 1) {
+                || !"1".equals(root.get("version").getAsString())) {
             throw new IllegalArgumentException("Unsupported AMIR model layer envelope version");
         }
     }
@@ -235,6 +234,17 @@ final class AmirModelLayerCodec {
                 throw new IllegalArgumentException("AMIR model layer map values must be strings");
             }
             result.put(entry.getKey(), entry.getValue().getAsString());
+        });
+        return result;
+    }
+
+    private static List<Long> integerList(JsonArray values) {
+        List<Long> result = new ArrayList<>(values.size());
+        values.forEach(value -> {
+            if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+                throw new IllegalArgumentException("Expected string-encoded integer in AMIR model layer list");
+            }
+            result.add(Long.parseLong(value.getAsString()));
         });
         return result;
     }
