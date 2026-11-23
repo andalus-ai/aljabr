@@ -142,6 +142,8 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         model.architectureDescriptor().ifPresent(descriptor ->
                 putUniqueMetadata(metadata, AmirArchitectureDescriptorCodec.KEY,
                         AmirArchitectureDescriptorCodec.encode(descriptor)));
+        AmirModelLayerCodec.encode(model).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
 
         Path parent = target.getParent();
         Files.createDirectories(parent);
@@ -211,8 +213,8 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         return !model.extensions().isEmpty()
                 || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty())
                 || model.graphCollection().isPresent()
-                || model.assetCollection().isPresent()
-                || model.componentCollection().isPresent();
+                || model.componentCollection().filter(collection ->
+                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent();
     }
 
     private static List<String> untransferredExtensionKeys(ModelDescriptor model) {
@@ -221,8 +223,9 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         model.tensors().forEach(tensor -> tensor.extensions().keySet()
                 .forEach(key -> keys.add("tensor:" + tensor.name() + ":" + key)));
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
-        model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
-        model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
+        model.componentCollection().filter(collection ->
+                !AmirModelLayerCodec.hasNoGraphBindings(collection))
+                .ifPresent(ignored -> keys.add("model:componentCollection"));
         return List.copyOf(keys);
     }
 
