@@ -34,10 +34,9 @@ import java.util.Objects;
  * Safetensors. Tensor payloads are copied directly from their referenced
  * source ranges in bounded chunks; no tensor is materialized as a heap array.
  *
- * <p>Opaque AMIR extensions and model-level graph, asset, and component
- * collections are not yet represented in a Safetensors file. A PARTIAL plan
- * therefore requires explicit acknowledgement, and the result reports each
- * category of model data that was not transferred.
+ * <p>Versioned metadata envelopes preserve typed assets and components that
+ * do not bind to computation graphs. Graph collections and graph-bound
+ * components remain untransferred and require an acknowledged PARTIAL plan.
  */
 public final class AmirSafetensorsConversionExecutor implements ModelConversionExecutor {
 
