@@ -78,6 +78,8 @@ class FormatTargetCapabilityTest {
                 tensor("q5k", "Q5_K", List.of(256L))));
         var q8 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q8", "Q8_0", List.of(32L))));
+        var iq3xxs = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("iq3xxs", "IQ3_XXS", List.of(256L))));
         var iq3s = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("iq3s", "IQ3_S", List.of(256L))));
         var iq4nl = new SafetensorsTargetCapability().assess(model("llama", "gguf",
@@ -95,6 +97,7 @@ class FormatTargetCapabilityTest {
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q4k.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5k.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q8.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq3xxs.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq3s.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq4nl.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq4xs.fidelity());
