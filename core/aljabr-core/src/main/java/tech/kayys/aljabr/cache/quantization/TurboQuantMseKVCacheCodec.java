@@ -187,13 +187,9 @@ public final class TurboQuantMseKVCacheCodec implements KVCacheCompressionCodec 
             transform.inverse(transformed, 0, transformed, 0);
 
             for (int i = 0; i < headDimension; i++) {
-                // A zero vector has no direction; publish canonical positive zero
-                // rather than preserving a sign bit introduced by the inverse transform.
-                if (norm == 0.0) {
-                    reconstructed[outputOffset++] = 0.0f;
-                    continue;
-                }
-                double value = transformed[i] * norm;
+                // A zero-norm input has no direction; publish canonical +0.0
+                // rather than preserving a sign bit from quantized reconstruction.
+                double value = norm == 0.0 ? 0.0 : transformed[i] * norm;
                 if (!Double.isFinite(value) || Math.abs(value) > Float.MAX_VALUE) {
                     throw new IllegalArgumentException("decoded value exceeds finite float range");
                 }

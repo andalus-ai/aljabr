@@ -19,7 +19,7 @@ class RocksDbMemoryStoreTest {
         try (RocksDbMemoryStore store = new RocksDbMemoryStore(tempDir.toString())) {
             byte[] key = "test-key".getBytes();
 
-            try (Arena arena = Arena.ofShared()) {
+            try (Arena arena = Arena.create()) {
                 // Prepare some data
                 MemorySegment input = arena.allocate(100);
                 for (int i = 0; i < 100; i++) {

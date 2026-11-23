@@ -49,13 +49,9 @@ class CpuIndexSelectTest {
                 Tensor selected = transposed.indexSelect(0, indices)) {
             assertEquals(DType.I32, selected.dtype());
             assertArrayEquals(new long[] {2, 2}, selected.shape().dims());
-            HostAccessibleStorage storage = (HostAccessibleStorage) selected.storage();
-            MemorySegment values = storage.segment();
-            int[] actual = new int[Math.toIntExact(selected.numel())];
-            for (int i = 0; i < actual.length; i++) {
-                actual[i] = values.get(ValueLayout.JAVA_INT, (long) i * Integer.BYTES);
+            try (Tensor asFloat = selected.cast(DType.F32)) {
+                assertArrayEquals(new float[] {3, 6, 1, 4}, asFloat.toFloatArray());
             }
-            assertArrayEquals(new int[] {3, 6, 1, 4}, actual);
         }
     }
 
