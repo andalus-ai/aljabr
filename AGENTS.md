@@ -573,6 +573,8 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Emit one `gguf.model.unload` lifecycle scope per backend when execution observation is enabled; one failed unload must not suppress later unload attempts or their events.
 - Preserve the direct no-op observer path while applying the same all-backends cleanup guarantee.
 - Test multiple backends, a failure before a successful close, lifecycle terminal outcomes, repeated close, and no-op observer behavior.
+- Reject blank model IDs and duplicate registrations before provider selection/creation. A load must never overwrite an existing backend implicitly; callers must explicitly unload the existing model before registering another backend under that ID.
+- Test that a duplicate load does not create a provider backend, emit a load lifecycle scope, replace or close the existing backend, or prevent the original backend from remaining usable.
 
 ### 19.4 Backend facade size and responsibility boundaries
 

@@ -498,6 +498,43 @@ class GgufInferenceEngineDelegationTest {
     }
 
     @Test
+    void duplicateModelIdIsRejectedWithoutReplacingOrClosingRegisteredBackend() throws Exception {
+        Path model = Files.createTempFile("gguf-duplicate-model-id", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean closed = new AtomicBoolean();
+        AtomicBoolean replacementCreated = new AtomicBoolean();
+        GgufBackend original = new TestBackend() {
+            @Override public InferenceResponse execute(InferenceRequest request) {
+                return response("original");
+            }
+            @Override public void close() { closed.set(true); }
+        };
+        GgufBackendProvider provider = provider((path, config) -> {
+            if (replacementCreated.getAndSet(true)) {
+                throw new AssertionError("duplicate registration must be rejected before provider creation");
+            }
+            return original;
+        });
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, events::add)) {
+            assertSame(original, engine.loadModel("model", model, Map.of("gguf.backend", "test")));
+            events.clear();
+
+            assertThrows(IllegalStateException.class,
+                    () -> engine.loadModel("model", model, Map.of("gguf.backend", "test")));
+
+            assertFalse(closed.get(), "the registered backend must remain usable");
+            assertTrue(events.isEmpty(), "rejected duplicate registration must not start a load lifecycle");
+            assertEquals("original", engine.execute("model", request()).getContent());
+
+            engine.unloadModel("model");
+            assertTrue(closed.get(), "the original backend must close when explicitly unloaded");
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
     void modelLoadEmitsLifecycleEventsWithoutModelPathMetadata() throws Exception {
         Path model = Files.createTempFile("gguf-model-load", ".gguf");
         List<ExecutionEvent> events = new java.util.ArrayList<>();
