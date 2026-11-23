@@ -531,3 +531,20 @@ The GGUF `infer(...)` and `executeAsync(...)` methods schedule the existing sync
 ### Validation
 
 A delegation test verifies that async inference is lazy and emits exactly one correlated `gguf.infer` STARTED/SUCCEEDED pair. CI must validate the test on the supported JDK baseline.
+
+## 23. GGUF model registration ownership — implementation slice 10
+
+A model ID is a unique live registration key within one `GgufInferenceEngine`.
+
+### Behavior
+
+- `loadModel` rejects null or blank model IDs and rejects an ID that is already registered.
+- Duplicate detection occurs before provider selection, readiness probing, backend creation or lifecycle observation.
+- Duplicate registration never silently replaces or closes the currently registered backend.
+- Callers must explicitly call `unloadModel(modelId)` before loading another backend under the same ID.
+- The existing backend remains registered and usable after a rejected duplicate load.
+- This slice deliberately does not add implicit hot replacement or claim safe concurrent unload while inference is in flight. A future replacement API must define draining/reference ownership before it can close an active backend.
+
+### Validation
+
+A focused test verifies that duplicate registration is rejected before provider creation, produces no model-load lifecycle event, preserves the original backend for inference, and closes it only on explicit unload. CI must validate the supported JDK baseline.
