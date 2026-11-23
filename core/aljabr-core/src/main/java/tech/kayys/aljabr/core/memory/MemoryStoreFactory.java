@@ -1,102 +1,62 @@
 package tech.kayys.aljabr.core.memory;
 
 /**
- * Config-driven factory for creating {@link UnifiedMemoryStore} instances.
+ * Explicit factory for optional {@link UnifiedMemoryStore} providers.
  *
- * <h2>Backend selection</h2>
- * <p>
- * The backend is resolved in this order:
- * <ol>
- * <li>System property {@value #PROPERTY_KEY} (e.g.
- * {@code -Daljabr.memory.store=helixdb})</li>
- * <li>Environment variable {@value #ENV_KEY}</li>
- * <li>Default: {@value #BACKEND_ROCKSDB}</li>
- * </ol>
+ * <p>No storage provider is selected implicitly. Add the corresponding provider
+ * module to the runtime classpath and either call its explicit factory method or
+ * configure {@value #PROPERTY_KEY}/{@value #ENV_KEY} before calling {@link #open(String)}.
  *
- * <h2>ServiceLoader design</h2>
- * <p>
- * The store implementations ({@code aljabr-rocksdb},
- * {@code aljabr-helixdb})
- * are
- * loaded via reflection so that neither needs to be a compile-time dependency
- * of
- * {@code aljabr-core}. Simply include the desired JAR on the runtime
- * classpath.
- *
- * <h2>Usage</h2>
- * 
- * <pre>{@code
- * // Auto-select via system property (-Daljabr.memory.store=helixdb):
- * try (UnifiedMemoryStore store = MemoryStoreFactory.open("/var/aljabr/kv")) {
- *     store.put(key, tensorSegment);
- *     store.getZeroCopy(key, expectedSize, arena).ifPresent(seg -> ...);
- * }
- *
- * // Explicit:
- * try (UnifiedMemoryStore store = MemoryStoreFactory.openHelixDb("/var/aljabr/kv")) {
- *     ...
- * }
- * }</pre>
- * @author bhangun
+ * <p>RocksDB is a durable key-value adapter. The legacy HelixDB-named provider
+ * is currently an in-process off-heap implementation and does not persist data
+ * across JVM restarts.
  */
 public final class MemoryStoreFactory {
 
-    /** System property key: {@code -Daljabr.memory.store=rocksdb|helixdb} */
     public static final String PROPERTY_KEY = "aljabr.memory.store";
     public static final String ENV_KEY = "ALJABR_MEMORY_STORE";
 
     public static final String BACKEND_ROCKSDB = "rocksdb";
     public static final String BACKEND_HELIXDB = "helixdb";
 
-    private static final String ROCKSDB_CLASS = "tech.kayys.aljabr.core.memory.rocksdb.RocksDbMemoryStore";
-    private static final String HELIXDB_CLASS = "tech.kayys.aljabr.core.memory.helixdb.HelixDbMemoryStore";
+    private static final String ROCKSDB_CLASS =
+            "tech.kayys.aljabr.core.memory.rocksdb.RocksDbMemoryStore";
+    private static final String HELIXDB_CLASS =
+            "tech.kayys.aljabr.core.memory.helixdb.HelixDbMemoryStore";
 
     private MemoryStoreFactory() {
     }
 
-    // ── Auto-select ───────────────────────────────────────────────────────────
-
     /**
-     * Opens a store using the backend selected by system property or environment
-     * variable.
+     * Opens the explicitly configured provider.
      *
-     * @param dbPath directory path for the store's data files
-     * @return the opened store
+     * @throws IllegalStateException if no provider is configured
+     * @throws IllegalArgumentException if the configured provider is unknown
      */
     public static UnifiedMemoryStore open(String dbPath) {
         return switch (resolvedBackend()) {
+            case BACKEND_ROCKSDB -> openRocksDb(dbPath);
             case BACKEND_HELIXDB -> openHelixDb(dbPath);
-            default -> openRocksDb(dbPath);
+            default -> throw new IllegalArgumentException(
+                    "Unsupported memory store '" + resolvedBackend()
+                            + "'. Supported providers: " + BACKEND_ROCKSDB + ", " + BACKEND_HELIXDB);
         };
     }
 
-    // ── Explicit factories ────────────────────────────────────────────────────
-
-    /**
-     * Creates a new RocksDB-backed store at {@code dbPath}.
-     *
-     * @param dbPath path where RocksDB files will be created/opened
-     * @return the opened store
-     * @throws RuntimeException if {@code aljabr-rocksdb} is not on the
-     *                          classpath
-     */
+    /** Opens the optional RocksDB durable-storage provider. */
     public static UnifiedMemoryStore openRocksDb(String dbPath) {
         return instantiate(ROCKSDB_CLASS, dbPath, "aljabr-rocksdb");
     }
 
     /**
-     * Creates a new HelixDB-backed store at {@code dbPath}.
+     * Opens the legacy in-process off-heap provider.
      *
-     * @param dbPath path where HelixDB files will be created/opened
-     * @return the opened store
-     * @throws RuntimeException if {@code aljabr-helixdb} is not on the
-     *                          classpath
+     * <p>The historical HelixDB name is retained temporarily for source
+     * compatibility; this implementation is not a persistent HelixDB adapter.
      */
     public static UnifiedMemoryStore openHelixDb(String dbPath) {
         return instantiate(HELIXDB_CLASS, dbPath, "aljabr-helixdb");
     }
-
-    // ── Deprecated aliases (keep for backwards compat) ────────────────────────
 
     /** @deprecated use {@link #openRocksDb(String)} */
     @Deprecated(forRemoval = true)
@@ -110,51 +70,68 @@ public final class MemoryStoreFactory {
         return openHelixDb(dbPath);
     }
 
-    /** @deprecated use {@link #open(String)} */
+    /** @deprecated configure a provider explicitly and use {@link #open(String)} */
     @Deprecated(forRemoval = true)
     public static UnifiedMemoryStore createDefault(String dbPath) {
         return open(dbPath);
     }
 
-    // ── Diagnostics ───────────────────────────────────────────────────────────
-
     /**
-     * Returns the name of the backend that {@link #open(String)} would select
-     * given the current system property / environment variable configuration.
+     * Returns the explicitly configured provider name.
+     *
+     * @throws IllegalStateException when neither the system property nor
+     *         environment variable selects a provider
      */
     public static String resolvedBackend() {
-        String prop = System.getProperty(PROPERTY_KEY);
-        if (prop != null && !prop.isBlank())
-            return prop.trim().toLowerCase();
-        String env = System.getenv(ENV_KEY);
-        if (env != null && !env.isBlank())
-            return env.trim().toLowerCase();
-        return BACKEND_ROCKSDB;
+        String property = System.getProperty(PROPERTY_KEY);
+        if (property != null && !property.isBlank()) {
+            return property.trim().toLowerCase(java.util.Locale.ROOT);
+        }
+        String environment = System.getenv(ENV_KEY);
+        if (environment != null && !environment.isBlank()) {
+            return environment.trim().toLowerCase(java.util.Locale.ROOT);
+        }
+        throw new IllegalStateException(
+                "No memory store provider configured. Set -D" + PROPERTY_KEY
+                        + "=rocksdb|helixdb or " + ENV_KEY
+                        + ", or call an explicit provider factory.");
     }
 
-    /** {@code true} when {@link #open} would use HelixDB. */
     public static boolean isHelixDb() {
-        return BACKEND_HELIXDB.equals(resolvedBackend());
+        return BACKEND_HELIXDB.equals(configuredBackend());
     }
 
-    /** {@code true} when {@link #open} would use RocksDB. */
     public static boolean isRocksDb() {
-        return BACKEND_ROCKSDB.equals(resolvedBackend());
+        return BACKEND_ROCKSDB.equals(configuredBackend());
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    private static String configuredBackend() {
+        String property = System.getProperty(PROPERTY_KEY);
+        if (property != null && !property.isBlank()) {
+            return property.trim().toLowerCase(java.util.Locale.ROOT);
+        }
+        String environment = System.getenv(ENV_KEY);
+        return environment == null || environment.isBlank()
+                ? null
+                : environment.trim().toLowerCase(java.util.Locale.ROOT);
+    }
 
     private static UnifiedMemoryStore instantiate(String className, String dbPath, String module) {
         try {
-            Class<?> clazz = Class.forName(className);
-            return (UnifiedMemoryStore) clazz.getConstructor(String.class).newInstance(dbPath);
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(
-                    "Backend class '" + className + "' not found. "
-                            + "Add the '" + module + "' module to your runtime classpath.",
-                    e);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to instantiate " + className + " at " + dbPath, e);
+            Class<?> providerClass = Class.forName(className);
+            return (UnifiedMemoryStore) providerClass
+                    .getConstructor(String.class)
+                    .newInstance(dbPath);
+        } catch (ClassNotFoundException exception) {
+            throw new IllegalStateException(
+                    "Provider class '" + className + "' is unavailable. Add the '"
+                            + module + "' module to the runtime classpath.",
+                    exception);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(
+                    "Failed to initialize memory store provider '" + module
+                            + "' at " + dbPath,
+                    exception);
         }
     }
 }
