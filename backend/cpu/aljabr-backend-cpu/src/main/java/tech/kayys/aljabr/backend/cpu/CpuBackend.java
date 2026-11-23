@@ -697,7 +697,7 @@ public final class CpuBackend implements ComputeBackend {
                     cursor[dimension] = 0;
                 }
             }
-            return new DefaultTensor(outShape, a.dtype(), a.device(), outBuf, this);
+            return out(outShape, a.dtype(), outBuf);
         } catch (RuntimeException | Error failure) {
             outBuf.release();
             throw failure;

@@ -191,7 +191,8 @@ public final class TurboQuantMseKVCacheCodec implements KVCacheCompressionCodec 
                 if (!Double.isFinite(value) || Math.abs(value) > Float.MAX_VALUE) {
                     throw new IllegalArgumentException("decoded value exceeds finite float range");
                 }
-                reconstructed[outputOffset++] = (float) value;
+                // Canonicalize the zero-vector case so decode does not expose signed -0.0 values.
+                reconstructed[outputOffset++] = norm == 0.0 ? 0.0f : (float) value;
             }
         }
 
