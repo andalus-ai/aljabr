@@ -96,6 +96,8 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
         Objects.requireNonNull(textEmbeddings, "textEmbeddings must not be null");
         Objects.requireNonNull(inputIds, "inputIds must not be null");
         Objects.requireNonNull(modalityFeatures, "modalityFeatures must not be null");
+        Objects.requireNonNull(modality, "modality must not be null");
+        if (modality.isBlank()) throw new IllegalArgumentException("modality must not be blank");
         if (placeholderTokenId < 0) {
             throw new IllegalArgumentException("placeholderTokenId must be non-negative");
         }
@@ -122,16 +124,16 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
         }
 
         int featureCount = 0;
-        for (int image = 0; image < modalityFeatures.size(); image++) {
+        for (int sequence = 0; sequence < modalityFeatures.size(); sequence++) {
             float[][] features = modalityFeatures.get(image);
             if (features == null || features.length == 0) {
-                throw new IllegalArgumentException("modality feature sequence " + image + " must be non-empty");
+                throw new IllegalArgumentException("modality + " feature sequence " + sequence + " must be non-empty");
             }
             featureCount = Math.addExact(featureCount, features.length);
             for (int token = 0; token < features.length; token++) {
                 float[] row = features[token];
                 if (row == null || row.length != hiddenSize) {
-                    throw new IllegalArgumentException("modality feature " + image + ":" + token
+                    throw new IllegalArgumentException("modality + " feature " + sequence + ":" + token
                             + " must have text hidden size " + hiddenSize);
                 }
                 for (float value : row) {
@@ -146,16 +148,16 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
                     + ") must equal projected modality soft-token count (" + featureCount + ")");
         }
 
-        int imageIndex = 0;
-        int imageTokenIndex = 0;
+        int sequenceIndex = 0;
+        int sequenceTokenIndex = 0;
         for (int token = 0; token < inputIds.length; token++) {
             if (inputIds[token] != placeholderTokenId) continue;
-            while (imageIndex < modalityFeatures.size()
-                    && imageTokenIndex == modalityFeatures.get(imageIndex).length) {
-                imageIndex++;
-                imageTokenIndex = 0;
+            while (sequenceIndex < modalityFeatures.size()
+                    && sequenceTokenIndex == modalityFeatures.get(sequenceIndex).length) {
+                sequenceIndex++;
+                sequenceTokenIndex = 0;
             }
-            output[token] = modalityFeatures.get(imageIndex)[imageTokenIndex++].clone();
+            output[token] = modalityFeatures.get(sequenceIndex)[sequenceTokenIndex++].clone();
         }
         return output;
     }
