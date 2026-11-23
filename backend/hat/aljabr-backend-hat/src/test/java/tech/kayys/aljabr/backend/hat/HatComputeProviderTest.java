@@ -231,7 +231,8 @@ class HatComputeProviderTest {
                             "bias_present", "false", "stride", "1", "dilation", "1", "padding", "0")).support());
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.max_pool2d", Map.of(
-                            "dtype", "F32", "rank", "4", "kernel_size", "2", "stride", "2", "padding", "0")).support());
+                            "dtype", "F32", "rank", "4", "input_height", "4", "input_width", "4",
+                            "kernel_size", "2", "stride", "2", "padding", "0")).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.max_pool2d", Map.of(
                             "dtype", "F32", "rank", "3", "kernel_size", "2", "stride", "2", "padding", "0")).support());
@@ -239,7 +240,8 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.max_pool2d", Map.of("dtype", "F32", "rank", "4")).support());
             assertEquals(OperationSupport.DELEGATED,
                     session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
-                            "dtype", "F32", "rank", "4", "output_h", "1", "output_w", "1")).support());
+                            "dtype", "F32", "rank", "4", "input_height", "4", "input_width", "4",
+                            "output_h", "1", "output_w", "1")).support());
             assertEquals(OperationSupport.UNSUPPORTED,
                     session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
                             "dtype", "F32", "rank", "4", "output_h", "0", "output_w", "1")).support());
@@ -835,6 +837,45 @@ class HatComputeProviderTest {
             provider.close();
         }
     }
+    @Test
+    void poolingCapabilitiesRequireValidInputSpatialDimensions() throws Exception {
+        HatComputeProvider provider = new HatComputeProvider();
+        provider.initialize(new ProviderContext("test", Map.of()));
+        try (ProviderSession session = provider.openSession(provider.devices().get(0))) {
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.max_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4",
+                            "kernel_size", "2", "stride", "2", "padding", "0")).support());
+            assertEquals(OperationSupport.UNKNOWN,
+                    session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "output_h", "1", "output_w", "1")).support());
+
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.max_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "input_height", "4", "input_width", "4",
+                            "kernel_size", "2", "stride", "2", "padding", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.max_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "input_height", "1", "input_width", "1",
+                            "kernel_size", "3", "stride", "1", "padding", "0")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.max_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "input_height", "0", "input_width", "4",
+                            "kernel_size", "2", "stride", "2", "padding", "0")).support());
+
+            assertEquals(OperationSupport.DELEGATED,
+                    session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "input_height", "4", "input_width", "4",
+                            "output_h", "1", "output_w", "1")).support());
+            assertEquals(OperationSupport.UNSUPPORTED,
+                    session.operationSupport("tensor.adaptive_avg_pool2d", Map.of(
+                            "dtype", "F32", "rank", "4", "input_height", "4", "input_width", "0",
+                            "output_h", "1", "output_w", "1")).support());
+        } finally {
+            provider.close();
+        }
+    }
+
     @Test
     void castAndDeviceIdentityPreserveHatOwnershipWithoutUnsafeCpuFallback() {
         CpuBackend cpu = new CpuBackend();

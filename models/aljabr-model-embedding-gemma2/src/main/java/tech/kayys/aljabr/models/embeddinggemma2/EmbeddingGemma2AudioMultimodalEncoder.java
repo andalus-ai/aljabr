@@ -3,6 +3,7 @@ package tech.kayys.aljabr.models.embeddinggemma2;
 import java.util.List;
 import java.util.Objects;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioEncoder;
+import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioFeatureExtractor;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioProcessor;
 import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2AudioConfig;
 import tech.kayys.aljabr.models.embeddinggemma2.vision.EmbeddingGemma2MultimodalEmbedder;
@@ -74,8 +75,8 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
     }
 
     /**
-     * Convenience path: expands one audio marker using the processor-owned
-     * feature-mask policy and generates sequential text positions.
+     * Convenience path: expands one audio marker using the processor's
+     * duration-based soft-token policy and generates sequential text positions.
      */
     public float[][] encode(int[] inputIds, float[] interleavedPcm, int channels, int sourceSampleRate) {
         Objects.requireNonNull(inputIds, "inputIds must not be null");
@@ -102,7 +103,7 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
         if (audioStates.length != expectedAudioTokens) {
             throw new IllegalStateException("audio tower produced " + audioStates.length
                     + " valid soft tokens, but processor policy requires " + expectedAudioTokens
-                    + "; verify audio subsampling and processor configuration");
+                    + " placeholders; verify audio subsampling and processor configuration");
         }
         int actualPlaceholders = 0;
         for (int tokenId : inputIds) if (tokenId == audioTokenId) actualPlaceholders++;

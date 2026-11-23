@@ -73,28 +73,24 @@ class EmbeddingGemma2AudioProcessorTest {
                 () -> new EmbeddingGemma2AudioProcessor(withDither));
     }
     @Test
-    void computesMaskBasedAudioPlaceholderCountAndExpandsOneMarker() {
+    void computesDurationBasedAudioPlaceholderCountAndExpandsOneMarker() {
         var processor = new EmbeddingGemma2AudioProcessor(config());
         var processed = processor.process(new float[1_600], 1, 16_000);
 
         assertEquals(3, processor.audioPlaceholderCount(processed));
-        assertArrayEquals(new int[]{11, 2, 1, 1, 1, 3, 12},
+        assertArrayEquals(new int[]{11, 1, 1, 1, 12},
                 processor.expandAudioPlaceholders(new int[]{11, 1, 12}, processed));
     }
 
     @Test
     void capsAudioPlaceholderCountAtConfiguredSequenceLength() {
         var processor = new EmbeddingGemma2AudioProcessor(config());
-        float[][] frames = new float[1_200][128];
-        boolean[] frameMask = new boolean[1_200];
-        java.util.Arrays.fill(frameMask, true);
         var features = new EmbeddingGemma2AudioFeatureExtractor.Features(
-                frames, frameMask, 480_000, 480_000);
+                new float[][]{{0f}}, new boolean[]{true}, 480_000, 480_000);
         var thirtySeconds = new EmbeddingGemma2AudioProcessor.ProcessedAudio(
                 features, 16_000, 1, 16_000, 480_000, false);
 
         assertEquals(280, processor.audioPlaceholderCount(thirtySeconds));
-        assertEquals(179_200, processor.maxInputSamples());
     }
 
     @Test
@@ -106,18 +102,6 @@ class EmbeddingGemma2AudioProcessorTest {
                 () -> processor.expandAudioPlaceholders(new int[]{11, 12}, processed));
         assertThrows(IllegalArgumentException.class,
                 () -> processor.expandAudioPlaceholders(new int[]{1, 1, 12}, processed));
-    }
-
-    @Test
-    void rejectsAudioFeaturesWithoutAnyValidSoftTokens() {
-        var processor = new EmbeddingGemma2AudioProcessor(config());
-        var features = new EmbeddingGemma2AudioFeatureExtractor.Features(
-                new float[][]{{0f}, {0f}, {0f}, {0f}},
-                new boolean[]{false, false, false, false}, 640, 640);
-        var processed = new EmbeddingGemma2AudioProcessor.ProcessedAudio(
-                features, 16_000, 1, 16_000, 640, false);
-
-        assertThrows(IllegalArgumentException.class, () -> processor.audioPlaceholderCount(processed));
     }
 
 }
