@@ -116,6 +116,7 @@ public final class Gemma3TextBackbone {
         private final float[][] currentValues;
         private final float[][] visibleKeys;
         private final float[][] visibleValues;
+        private final double[][] attentionScores;
         private boolean closed;
 
         private DecodeSession() {
@@ -138,6 +139,7 @@ public final class Gemma3TextBackbone {
             currentValues = new float[layerCount][cacheWidth];
             visibleKeys = new float[layerCount][];
             visibleValues = new float[layerCount][];
+            attentionScores = new double[layerCount][];
         }
 
         /** Processes a prompt on a fresh session and returns logits for every prompt token. */
@@ -250,6 +252,31 @@ public final class Gemma3TextBackbone {
             if (closed) throw new IllegalStateException("decode session is closed");
         }
 
+        private void ensureAttentionWorkspace(int layerIndex, int requiredPositions) {
+            int currentCapacity = visibleKeys[layerIndex] == null
+                    ? 0 : visibleKeys[layerIndex].length / cacheWidth;
+            if (currentCapacity < requiredPositions) {
+                int doubled = currentCapacity == 0 ? 1
+                        : currentCapacity > maximumPositions / 2
+                                ? maximumPositions : currentCapacity * 2;
+                int nextCapacity = Math.min(maximumPositions,
+                        Math.max(requiredPositions, doubled));
+                int elements = Math.multiplyExact(nextCapacity, cacheWidth);
+                visibleKeys[layerIndex] = new float[elements];
+                visibleValues[layerIndex] = new float[elements];
+            }
+            if (attentionScores[layerIndex] == null
+                    || attentionScores[layerIndex].length < requiredPositions) {
+                int currentScores = attentionScores[layerIndex] == null
+                        ? 0 : attentionScores[layerIndex].length;
+                int doubled = currentScores == 0 ? 1
+                        : currentScores > maximumPositions / 2
+                                ? maximumPositions : currentScores * 2;
+                attentionScores[layerIndex] = new double[Math.min(maximumPositions,
+                        Math.max(requiredPositions, doubled))];
+            }
+        }
+
         private float[][] forwardPrefillLayer(
                 float[][] input,
                 Gemma3TextCheckpointMapper.LayerWeights layer,
@@ -334,13 +361,10 @@ public final class Gemma3TextBackbone {
             Double configuredSoftcap = config.attnLogitSoftcapping();
             double softcap = configuredSoftcap == null ? 0.0d : configuredSoftcap;
             int visibleTokenCount = absolutePosition - firstVisible + 1;
-            int visibleElements = Math.multiplyExact(visibleTokenCount, cacheWidth);
-            if (visibleKeys[layerIndex] == null || visibleKeys[layerIndex].length < visibleElements) {
-                visibleKeys[layerIndex] = new float[visibleElements];
-                visibleValues[layerIndex] = new float[visibleElements];
-            }
+            ensureAttentionWorkspace(layerIndex, visibleTokenCount);
             float[] layerVisibleKeys = visibleKeys[layerIndex];
             float[] layerVisibleValues = visibleValues[layerIndex];
+            double[] scores = attentionScores[layerIndex];
             cacheSession.readKeyRangeForAttention(
                     layerIndex, firstVisible, visibleTokenCount, layerVisibleKeys, 0);
             cacheSession.readValueRangeForAttention(
@@ -348,7 +372,6 @@ public final class Gemma3TextBackbone {
             for (int head = 0; head < queryHeads; head++) {
                 int kvHead = head / groups;
                 double maximum = Double.NEGATIVE_INFINITY;
-                double[] scores = new double[visibleTokenCount];
                 for (int source = firstVisible; source <= absolutePosition; source++) {
                     int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double dot = 0.0d;
