@@ -63,8 +63,8 @@ public final class EmbeddingGemma2VisionPooler {
                     maxX = Math.max(maxX, pixelPositionIds[i][0] + 1);
                 }
             }
-            if (maxX <= 0 || inputLength % maxX != 0) {
-                throw new IllegalArgumentException("patch positions do not define a rectangular row-major grid");
+            if (maxX <= 0) {
+                throw new IllegalArgumentException("valid patch positions do not define a rectangular row-major grid");
             }
             int validPatchCount = 0;
             for (boolean padding : paddingPositions) {
