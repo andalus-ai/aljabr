@@ -2,7 +2,7 @@ package tech.kayys.aljabr.core.memory.rocksdb;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import tech.kayys.aljabr.core.memory.ManagedArena;
+import java.lang.foreign.Arena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -19,7 +19,7 @@ class RocksDbMemoryStoreTest {
         try (RocksDbMemoryStore store = new RocksDbMemoryStore(tempDir.toString())) {
             byte[] key = "test-key".getBytes();
 
-            try (ManagedArena arena = ManagedArena.create()) {
+            try (Arena arena = Arena.create()) {
                 // Prepare some data
                 MemorySegment input = arena.allocate(100);
                 for (int i = 0; i < 100; i++) {
