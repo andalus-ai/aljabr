@@ -40,8 +40,9 @@ import java.util.Objects;
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
  * Safetensors metadata envelope. Opaque AMIR extensions are retained as
- * namespaced strings. Typed graph, asset, and component layers are not
- * representable in the Safetensors file and are reported.
+ * namespaced strings. Versioned envelopes preserve typed assets and
+ * components without graph bindings; graph collections and graph-bound
+ * components remain explicitly reported.
  */
 public final class AmirGgufToSafetensorsConversionExecutor implements ModelConversionExecutor {
 
