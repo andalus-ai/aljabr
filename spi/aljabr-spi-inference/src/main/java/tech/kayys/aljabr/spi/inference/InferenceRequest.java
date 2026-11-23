@@ -317,9 +317,10 @@ public final class InferenceRequest {
     }
 
     /** Explicit wire protocol used to encode tool calls, when configured. */
+    @Nullable
     @JsonProperty("toolCallProtocol")
-    public Optional<ToolCallProtocolDescriptor> getToolCallProtocol() {
-        return Optional.ofNullable(toolCallProtocol);
+    public ToolCallProtocolDescriptor getToolCallProtocol() {
+        return toolCallProtocol;
     }
 
     public Map<String, Object> getParameters() {
