@@ -45,6 +45,17 @@ class TurboQuantQjlTransformTest {
     }
 
     @Test
+    void zeroNormReconstructionWritesCanonicalZerosAtRequestedOffset() {
+        TurboQuantQjlTransform transform = new TurboQuantQjlTransform(3, 17L);
+        float[] destination = {9.0f, -1.0f, -1.0f, -1.0f, 8.0f};
+        transform.reconstruct(new byte[] {0}, 0.0, destination, 1);
+        assertArrayEquals(new float[] {9.0f, 0.0f, 0.0f, 0.0f, 8.0f}, destination);
+        for (int i = 1; i <= 3; i++) {
+            assertEquals(Float.floatToIntBits(0.0f), Float.floatToIntBits(destination[i]));
+        }
+    }
+
+    @Test
     void qjlInnerProductEstimatorIsUnbiasedAcrossIndependentSeeds() {
         int dimension = 16;
         float[] residual = new float[dimension];
