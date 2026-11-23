@@ -22,6 +22,7 @@ class TurboQuantProdKVCacheCodecTest {
         float[] original = new float[context.elementCount()];
         System.arraycopy(source, 1, original, 0, original.length);
 
+        float[] sourceBefore = source.clone();
         TurboQuantProdKVCacheCodec codec = new TurboQuantProdKVCacheCodec(4, 0x1234ABCDL);
         KVCacheEncodedBlock encoded = codec.encode(source, 1, context);
         float[] destination = new float[context.elementCount() + 4];
@@ -39,7 +40,7 @@ class TurboQuantProdKVCacheCodecTest {
         assertEquals(77.0f, destination[0]);
         assertEquals(78.0f, destination[1]);
         assertEquals(79.0f, destination[destination.length - 1]);
-        assertArrayEquals(source, source.clone());
+        assertArrayEquals(sourceBefore, source);
 
         for (int i = 0; i < original.length; i++) {
             assertTrue(Float.isFinite(destination[i + 2]));
