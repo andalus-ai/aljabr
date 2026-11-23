@@ -322,12 +322,12 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
                 .slice().order(ByteOrder.LITTLE_ENDIAN);
 
-        float[] expected = {-3.0f, 3.0f, 3.0f, 15.0f, 3.0f, 3.0f, 3.0f, 3.0f};
+        float[] expected = {-15.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, -3.0f};
         for (int i = 0; i < expected.length; i++) {
             assertEquals(expected[i], values.getFloat(i * Float.BYTES), 0.0f);
         }
-        // The next 32-value group has a distinct packed scale nibble of one.
-        assertEquals(3.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        // The next 32-value group retains the default 0.5 multiplier.
+        assertEquals(1.0f, values.getFloat(32 * Float.BYTES), 0.0f);
     }
 
     @Test
