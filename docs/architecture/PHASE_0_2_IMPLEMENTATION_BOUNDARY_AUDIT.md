@@ -250,3 +250,40 @@ The README still describes the module as part of the "Aljabr inference engine", 
 
 Retain the quantization module and compute algorithms. Do not move quantizers to AQLI or delete the module with `aljabr-safetensor-api`. The next implementation should first map all quantization consumers and separate the pure quantizer/config/result contract from the application-scoped orchestration surface. Preserve SafeTensors I/O and existing algorithm behavior, and add active round-trip tests before changing the writer/reader contract.
 
+
+
+### Quantization consumer follow-up — AQLI and Tafkir contracts
+
+**Audit date:** 2026-11-23  
+**Scope:** Current default-branch trees and source/build files in `andalus-ai/aljabr`, `andalus-ai/aqli`, and `andalus-ai/tafkir`.
+
+This follow-up closes the immediate cross-repository consumer-map gap for the quantization API. It is a static source/build audit; it does not establish that every adapter algorithm is numerically production-ready.
+
+**Confirmed Aljabr → extension contract**
+
+- Tafkir's `extensions/aljabr/tafkir-aljabr-integration` declares `api("tech.kayys.aljabr:aljabr-safetensor-quantization:0.1.0-SNAPSHOT")` and the matching Safetensors core artifact.
+- The extension implements Aljabr's `tech.kayys.aljabr.safetensor.quantization.quantizer.Quantizer` SPI and registers five provider classes through `META-INF/services/tech.kayys.aljabr.safetensor.quantization.quantizer.Quantizer`: GPTQ, AWQ, AutoRound, BitsAndBytes, and TurboQuant.
+- The Aljabr registry discovers these providers through Java `ServiceLoader`; built-in GPTQ/INT8/FP8 implementations are registered independently. The extension is optional and must remain outside Aljabr's dependency graph.
+- Tafkir's BitsAndBytes adapter directly compares `QuantConfig.getStrategy()` with `QuantizationEngine.QuantStrategy.BNB`. Tafkir's `QuantizerAvailabilityTest` also imports the nested enum. Therefore the nested enum is a real cross-repository source-compatibility dependency, not an internal implementation detail.
+- The extension test explicitly verifies BitsAndBytes advertises only its implemented NF4 path. The GPTQ, AWQ, AutoRound, and TurboQuant adapters are currently deliberately unavailable (`supports=false`, quantize/dequantize throw); do not describe their presence in ServiceLoader metadata as proof that those algorithms are enabled or validated.
+
+**Confirmed AQLI consumers**
+
+- AQLI's optional `:runner:safetensor:aqli-safetensor-quantization` module directly depends on the published Aljabr quantization and Safetensors core artifacts.
+- Its `QuantizationService` imports and uses `QuantConfig`, `QuantResult`, `QuantStats`, `QuantizationEngine`, `QuantizerRegistry`, and `Quantizer`. It invokes the nested `QuantizationEngine.QuantStrategy` constants and exposes Aljabr's Mutiny `Uni`/`Multi` operations through a CDI service.
+- AQLI's main Safetensors inference engine deliberately does not depend on that optional module; its build comment says Tafkir-backed quantization remains outside the default inference classpath.
+- AQLI's CLI `QuantizeCommand` currently fails closed because no real quantization engine is connected. It does not invoke Aljabr's quantization engine. The run CLI's `QuantizationRunCapability` and `RuntimeQuantizationRequestConfiguration` pass strategy/bit/KV-cache options as request parameters; these are runtime request settings, not direct consumers of Aljabr's quantization API.
+- AQLI also has independent inference/KV-cache quantization code. Do not conflate those serving-time/runtime mechanisms with offline model-weight quantization in Aljabr.
+
+**Implications for API evolution**
+
+1. Do not move or delete `QuantizationEngine.QuantStrategy` in the first decoupling change. Both AQLI and Tafkir compile against it today.
+2. If a neutral top-level `QuantizationStrategy` is introduced, retain the nested enum and existing signatures as a deprecated compatibility facade for a bounded migration. Add explicit conversion methods and migrate AQLI/Tafkir in coordinated, independently buildable changes before removal.
+3. Keep the Aljabr-owned `Quantizer` SPI and registry provider-neutral. Do not import Tafkir classes into Aljabr or make the optional extension mandatory.
+4. Do not treat the AQLI CDI/Mutiny wrapper as the reusable compute API. First introduce and validate a synchronous framework-neutral quantization operation contract in Aljabr, then adapt AQLI's optional CDI/reactive service to it in a separate change.
+5. Keep the offline model-weight quantization API distinct from AQLI's inference-time KV-cache quantization options and runtime request configuration.
+6. Treat provider presence, provider selection, and algorithm correctness as separate states. In particular, preserve explicit unavailable status for adapters that still lack reference-backed numerical and serialization validation.
+
+**Next safe implementation slice**
+
+Add a neutral strategy value type and compatibility mapping without changing the existing SPI or removing old signatures; add mapping tests in Aljabr and compile-time compatibility coverage for the Tafkir/AQLI consumers. Only after those contracts are stable should the synchronous compute boundary and CDI/Mutiny orchestration split proceed. No consumer migration or runtime behavior change is included in this audit note.
