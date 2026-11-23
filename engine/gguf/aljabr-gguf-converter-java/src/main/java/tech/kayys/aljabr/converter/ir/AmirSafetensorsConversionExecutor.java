@@ -34,10 +34,9 @@ import java.util.Objects;
  * Safetensors. Tensor payloads are copied directly from their referenced
  * source ranges in bounded chunks; no tensor is materialized as a heap array.
  *
- * <p>Opaque AMIR extensions and model-level graph, asset, and component
- * collections are not yet represented in a Safetensors file. A PARTIAL plan
- * therefore requires explicit acknowledgement, and the result reports each
- * category of model data that was not transferred.
+ * <p>Versioned metadata envelopes preserve typed assets and components that
+ * do not bind to computation graphs. Graph collections and graph-bound
+ * components remain untransferred and require an acknowledged PARTIAL plan.
  */
 public final class AmirSafetensorsConversionExecutor implements ModelConversionExecutor {
 
@@ -125,7 +124,8 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
             String outputKey = key.startsWith("safetensors.")
                     ? key.substring("safetensors.".length()) : key;
             if (outputKey.startsWith(AmirTypedMetadataCodec.PREFIX)
-                    || AmirTensorTypeCodec.isEncodedKey(outputKey)) {
+                    || AmirTensorTypeCodec.isEncodedKey(outputKey)
+                    || AmirModelLayerCodec.isEncodedKey(outputKey)) {
                 throw new IOException("Source metadata key uses a reserved AMIR envelope namespace: " + outputKey);
             }
             String previous = metadata.putIfAbsent(outputKey, entry.getValue());
@@ -142,6 +142,8 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         model.architectureDescriptor().ifPresent(descriptor ->
                 putUniqueMetadata(metadata, AmirArchitectureDescriptorCodec.KEY,
                         AmirArchitectureDescriptorCodec.encode(descriptor)));
+        AmirModelLayerCodec.encode(model).forEach((key, value) ->
+                putUniqueMetadata(metadata, key, value));
 
         Path parent = target.getParent();
         Files.createDirectories(parent);
@@ -198,7 +200,7 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         }
         if (hasUntransferredData(model)
                 && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("AMIR model or tensor extensions cannot be silently omitted; "
+            throw new IOException("Untransferred AMIR model or tensor data cannot be silently omitted; "
                     + "the plan must be PARTIAL");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !acknowledgePartial) {
@@ -211,8 +213,8 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         return !model.extensions().isEmpty()
                 || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty())
                 || model.graphCollection().isPresent()
-                || model.assetCollection().isPresent()
-                || model.componentCollection().isPresent();
+                || model.componentCollection().filter(collection ->
+                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent();
     }
 
     private static List<String> untransferredExtensionKeys(ModelDescriptor model) {
@@ -221,8 +223,9 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         model.tensors().forEach(tensor -> tensor.extensions().keySet()
                 .forEach(key -> keys.add("tensor:" + tensor.name() + ":" + key)));
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
-        model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
-        model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
+        model.componentCollection().filter(collection ->
+                !AmirModelLayerCodec.hasNoGraphBindings(collection))
+                .ifPresent(ignored -> keys.add("model:componentCollection"));
         return List.copyOf(keys);
     }
 

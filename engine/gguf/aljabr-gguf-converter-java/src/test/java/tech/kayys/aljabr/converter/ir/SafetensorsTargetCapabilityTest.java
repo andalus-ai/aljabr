@@ -1,6 +1,11 @@
 package tech.kayys.aljabr.converter.ir;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.spi.model.ir.AssetCollection;
+import tech.kayys.aljabr.spi.model.ir.AssetReference;
+import tech.kayys.aljabr.spi.model.ir.ComponentCollection;
+import tech.kayys.aljabr.spi.model.ir.ModelComponent;
+import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
@@ -49,6 +54,20 @@ class SafetensorsTargetCapabilityTest {
         assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
         assertTrue(report.diagnostics().stream().noneMatch(d ->
                 d.code().equals("OPAQUE_METADATA_REQUIRES_MAPPING")));
+    }
+
+    @Test
+    void classifiesAssetAndUnboundComponentEnvelopesAsFullyPreserved() {
+        var model = new ModelDescriptor(
+                ModelIdentity.of("model-layers"), "llama", "safetensors",
+                Map.of(), Map.of(), List.of())
+                .withAssetCollection(new AssetCollection(List.of(
+                        AssetReference.of("tokenizer", "assets/tokenizer.json"))))
+                .withComponentCollection(new ComponentCollection(List.of(
+                        ModelComponent.of("tokenizer", ModelComponentKind.TOKENIZER))));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL,
+                new SafetensorsTargetCapability().assess(model).fidelity());
     }
 
     @Test
