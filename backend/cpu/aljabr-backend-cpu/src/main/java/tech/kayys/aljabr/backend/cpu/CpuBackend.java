@@ -1501,7 +1501,21 @@ public final class CpuBackend implements ComputeBackend {
             tech.kayys.aljabr.backend.cpu.ops.DequantizeOps.dequantizeQ8_0(seg(a), outBuf.segment(), n);
         } else if (a.dtype() == DType.Q4_0 && dtype == DType.F32) {
             tech.kayys.aljabr.backend.cpu.ops.DequantizeOps.dequantizeQ4_0(seg(a), outBuf.segment(), n);
+        } else if (a.dtype() == DType.I32 && dtype == DType.F32) {
+            MemorySegment source = seg(a);
+            MemorySegment destination = outBuf.segment();
+            long[] dimensions = a.shape().dims();
+            TensorLayout layout = a.layout();
+            for (long index = 0; index < n; index++) {
+                long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(
+                        dimensions, layout, index);
+                int value = source.get(ValueLayout.JAVA_INT,
+                        Math.multiplyExact(elementOffset, Integer.BYTES));
+                destination.set(ValueLayout.JAVA_FLOAT,
+                        Math.multiplyExact(index, Float.BYTES), value);
+            }
         } else {
+            outBuf.release();
             throw new UnsupportedOperationException("cast from " + a.dtype() + " to " + dtype + " not supported yet");
         }
 
