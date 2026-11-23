@@ -115,7 +115,9 @@ public final class TensorOperationValidator {
                                 "leftDimension", Long.toString(dimA),
                                 "rightDimension", Long.toString(dimB)));
             }
-            batchDims[axis] = Math.max(dimA, dimB);
+            // A singleton expands to the other dimension, including zero.
+            // Math.max is incorrect for the valid (0, 1) broadcast pair.
+            batchDims[axis] = dimA == 1 ? dimB : dimA;
         }
         long[] outputDims = java.util.Arrays.copyOf(batchDims, batchRank + 2);
         outputDims[batchRank] = m;

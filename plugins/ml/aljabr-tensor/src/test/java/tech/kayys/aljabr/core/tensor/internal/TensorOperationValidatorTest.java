@@ -247,6 +247,32 @@ class TensorOperationValidatorTest {
     }
 
     @Test
+    void matmulBroadcastPreservesZeroSizedBatchDimensions() {
+        TensorOperationValidator.MatmulPlan leftEmpty = TensorOperationValidator.validateMatmul(
+                new Shape(0, 3, 4), new Shape(1, 4, 5));
+        assertThat(leftEmpty.batchDimensions()).containsExactly(0);
+        assertThat(leftEmpty.outputDimensions()).containsExactly(0, 3, 5);
+
+        TensorOperationValidator.MatmulPlan rightEmpty = TensorOperationValidator.validateMatmul(
+                new Shape(1, 3, 4), new Shape(0, 4, 5));
+        assertThat(rightEmpty.batchDimensions()).containsExactly(0);
+        assertThat(rightEmpty.outputDimensions()).containsExactly(0, 3, 5);
+
+        TensorOperationValidator.MatmulPlan bothEmpty = TensorOperationValidator.validateMatmul(
+                new Shape(0, 3, 4), new Shape(0, 4, 5));
+        assertThat(bothEmpty.batchDimensions()).containsExactly(0);
+        assertThat(bothEmpty.outputDimensions()).containsExactly(0, 3, 5);
+    }
+
+    @Test
+    void elementwiseBroadcastPreservesZeroSizedDimensions() {
+        TensorOperationValidator.BroadcastPlan plan = TensorOperationValidator.validateBroadcast(
+                new Shape(0, 3), new Shape(1, 3));
+        assertThat(plan.outputDimensions()).containsExactly(0, 3);
+        assertThat(plan.outputElements()).isZero();
+    }
+
+    @Test
     void broadcastReportsIncompatibleTrailingDimension() {
         List<Diagnostic> diagnostics = new ArrayList<>();
 
