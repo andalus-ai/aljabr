@@ -167,10 +167,7 @@ class AmirSafetensorsConversionExecutorTest {
 
         var result = executor.execute(
                 model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL), output, true);
-        assertEquals(List.of(
-                "model:graphCollection",
-                "model:assetCollection",
-                "model:componentCollection"), result.untransferredExtensionKeys());
+        assertEquals(List.of("model:graphCollection"), result.untransferredExtensionKeys());
     }
 
     @Test
@@ -195,8 +192,9 @@ class AmirSafetensorsConversionExecutorTest {
                         List.of("tokenizer"), List.of(), Map.of("vendor.impl", "custom")))));
 
         Path output = temporaryDirectory.resolve("model-layers-roundtrip.safetensors");
-        new AmirSafetensorsConversionExecutor().execute(
+        var result = new AmirSafetensorsConversionExecutor().execute(
                 model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false);
+        assertTrue(result.untransferredExtensionKeys().isEmpty());
 
         ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
         assertEquals(model.assetCollection(), restored.assetCollection());
