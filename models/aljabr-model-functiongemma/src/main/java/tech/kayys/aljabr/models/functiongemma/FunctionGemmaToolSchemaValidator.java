@@ -27,6 +27,11 @@ public final class FunctionGemmaToolSchemaValidator {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
     }
 
+    /** Validates raw arguments against a raw parameter schema (legacy API). */
+    public ValidationResult validate(Map<String, ?> arguments, Map<String, ?> toolSchema) {
+        return adapt(delegate.validate(arguments, toolSchema));
+    }
+
     /** Validates a legacy FunctionGemma call against a raw parameter schema. */
     public ValidationResult validate(FunctionGemmaToolCallParser.FunctionCall call,
             Map<String, ?> toolSchema) {
