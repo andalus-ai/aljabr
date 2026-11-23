@@ -179,7 +179,9 @@ public final class TurboQuantMseKVCacheCodec implements KVCacheCompressionCodec 
 
             double norm = norms[vectorIndex];
             for (int i = 0; i < headDimension; i++) {
-                double value = transformed[i] * norm;
+                // A zero-norm input has no direction; publish canonical +0.0
+                // rather than preserving a sign bit from quantized reconstruction.
+                double value = norm == 0.0 ? 0.0 : transformed[i] * norm;
                 if (!Double.isFinite(value) || Math.abs(value) > Float.MAX_VALUE) {
                     throw new IllegalArgumentException("decoded value exceeds finite float range");
                 }
