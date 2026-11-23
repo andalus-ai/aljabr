@@ -200,7 +200,7 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         }
         if (hasUntransferredData(model)
                 && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("AMIR model or tensor extensions cannot be silently omitted; "
+            throw new IOException("Untransferred AMIR model or tensor data cannot be silently omitted; "
                     + "the plan must be PARTIAL");
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !acknowledgePartial) {
