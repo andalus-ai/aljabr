@@ -29,6 +29,12 @@ Do not turn Aljabr into a mandatory all-in-one runtime. Keep the foundational co
 - Keep one stable public Aljabr API independent of implementation libraries and execution providers.
 - Third-party libraries (for example, numerical, linear-algebra, or ML libraries) may be used behind internal adapters. Never leak their types, annotations, exceptions, or lifecycle assumptions into Aljabr's public API.
 - Prefer pure Java reference implementations for portability and as correctness oracles. Native libraries, Java Vector API, FFM integrations, GPU runtimes, and distributed execution are optional providers or modules, not mandatory core dependencies.
+
+- Treat zero-copy as a precise data-movement and ownership contract, not a synonym for off-heap or persistent storage. Document copies at every API/native/storage boundary; distinguish Java-heap-copy avoidance from end-to-end zero-copy.
+- Keep memory lifetime, allocation ownership, borrowing/aliasing, synchronization and reclamation semantics independent of a particular key-value database. A returned segment must never outlive its owning allocation, and compaction/reallocation must not invalidate outstanding views without an explicit lease or equivalent guarantee.
+- Durable key-value engines are optional storage adapters. They must not be the default memory manager, tensor allocator, model cache or inference KV-cache policy. Do not silently select a database when no provider is configured.
+- Keep ephemeral off-heap stores distinct from persistent databases in module names, documentation and diagnostics. Never describe an in-process arena-backed map as a database or as persistent.
+
 - Keep incubating/preview JDK APIs isolated in optional modules. Do not make core consumers adopt preview flags or a newer JDK solely to use an optional accelerator.
 - Treat FFM as an optional native interoperability mechanism. Do not make JNI or any native runtime a default requirement; retain compatibility paths only where justified and documented.
 - Preserve modular Gradle consumption. A BOM aligns versions; it must not pull every module transitively. Curated bundles/starters are optional convenience layers.
