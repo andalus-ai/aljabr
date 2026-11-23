@@ -37,7 +37,7 @@ public final class EmbeddingGemma2AudioProcessor {
             throw new IllegalArgumentException(
                     "only zero waveform padding is currently supported");
         }
-        this.maxInputSamples = maxInputSamples;
+        this.maxInputSamples = Math.min(maxInputSamples, maxSamplesForTokenBudget(config));
         this.featureExtractor = new EmbeddingGemma2AudioFeatureExtractor(
                 config.samplingRate(),
                 config.featureSize(),

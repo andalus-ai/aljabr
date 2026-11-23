@@ -40,6 +40,9 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
             throw new IllegalArgumentException("audioTokenId and padTokenId must be non-negative");
         }
         EmbeddingGemma2AudioConfig config = audioProcessor.config();
+        if (audioTokenId != config.audioTokenId()) {
+            throw new IllegalArgumentException("audioTokenId must match the audio processor configuration");
+        }
         if (audioEmbedder.multimodalHiddenSize() != config.outputProjectionSize()) {
             throw new IllegalArgumentException("audio bridge input size must match audio output projection size");
         }
