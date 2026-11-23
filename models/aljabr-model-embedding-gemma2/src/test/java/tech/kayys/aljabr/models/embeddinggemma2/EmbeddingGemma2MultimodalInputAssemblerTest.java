@@ -71,4 +71,19 @@ class EmbeddingGemma2MultimodalInputAssemblerTest {
                         -1,
                         List.of()));
     }
+    @Test
+    void replacesAudioPlaceholdersWithProjectedSoftTokens() {
+        float[][] text = {{1.0f, 2.0f}, {3.0f, 4.0f}, {5.0f, 6.0f}};
+        int[] ids = {7, 99, 99};
+        float[][] audio = {{0.25f, 0.5f}, {0.75f, 1.0f}};
+
+        float[][] result = EmbeddingGemma2MultimodalInputAssembler.replaceModalityPlaceholders(
+                text, ids, 99, List.of(audio), "audio");
+
+        assertArrayEquals(text[0], result[0]);
+        assertArrayEquals(audio[0], result[1]);
+        assertArrayEquals(audio[1], result[2]);
+        assertArrayEquals(new float[]{3.0f, 4.0f}, text[1]);
+    }
+
 }
