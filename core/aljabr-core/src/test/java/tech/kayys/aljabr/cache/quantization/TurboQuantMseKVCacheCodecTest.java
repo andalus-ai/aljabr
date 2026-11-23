@@ -36,6 +36,8 @@ class TurboQuantMseKVCacheCodecTest {
         assertEquals(TurboQuantMseKVCacheCodec.CODEC_ID, encoded.codecId());
         assertEquals(TurboQuantMseKVCacheCodec.CODEC_VERSION, encoded.codecVersion());
         assertEquals(context.elementCount(), encoded.elementCount());
+        int paddedIndexCount = context.tokenCount() * context.kvHeads() * 8;
+        assertEquals((paddedIndexCount * codec.bits() + 7) / 8, encoded.payloadSizeBytes());
         assertTrue(encoded.payloadSizeBytes() < original.length * Float.BYTES);
         assertEquals(123, destination[0]);
         assertEquals(123, destination[1]);
