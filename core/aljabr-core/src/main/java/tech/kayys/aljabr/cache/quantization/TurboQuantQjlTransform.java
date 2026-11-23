@@ -98,6 +98,10 @@ public final class TurboQuantQjlTransform {
             throw new IllegalArgumentException("residualNorm must be finite and non-negative");
         }
         checkRange(destination.length, offset, dimension, "offset");
+        if (residualNorm == 0.0) {
+            java.util.Arrays.fill(destination, offset, offset + dimension, 0.0f);
+            return;
+        }
         int[] signs = TurboQuantBitPacking.unpackIndices(packedSigns, dimension, 1);
         double scale = Math.sqrt(Math.PI / 2.0) * residualNorm / dimension;
         float[] reconstructed = new float[dimension];
