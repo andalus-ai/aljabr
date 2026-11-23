@@ -345,6 +345,7 @@ public final class DefaultTensor implements Tensor {
                 new Object[] { plan.axis() }, backend.indexAdd(this, plan.axis(), indices, source));
     }
 
+
     @Override
     public Tensor slice(long[] offsets, long[] sizes) {
         TensorOperationValidator.validateSlice(shape, offsets, sizes);
