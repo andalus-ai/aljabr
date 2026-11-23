@@ -49,6 +49,36 @@ class EmbeddingGemma2VisionPoolerTest {
     }
 
     @Test
+    void poolsValidRectangularGridAndLeavesPaddedSoftTokenSuffix() {
+        var pooler = new EmbeddingGemma2VisionPooler(1);
+        float[][] states = {
+                {1f}, {2f}, {3f}, {4f},
+                {5f}, {6f}, {7f}, {8f},
+                {0f}, {0f}, {0f}, {0f}
+        };
+        int[][] positions = {
+                {0, 0}, {1, 0}, {2, 0}, {3, 0},
+                {0, 1}, {1, 1}, {2, 1}, {3, 1},
+                {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1}
+        };
+        boolean[] padding = {
+                false, false, false, false,
+                false, false, false, false,
+                true, true, true, true
+        };
+
+        var result = pooler.pool(states, positions, padding, 3);
+
+        assertArrayEquals(new float[]{3.5f, 5.5f, 0f},
+                new float[]{
+                        result.hiddenStates()[0][0],
+                        result.hiddenStates()[1][0],
+                        result.hiddenStates()[2][0]
+                }, 1e-6f);
+        assertArrayEquals(new boolean[]{false, false, true}, result.paddingMask());
+    }
+
+    @Test
     void rejectsGridDimensionsThatCannotBePartitionedIntoPoolingWindows() {
         var pooler = new EmbeddingGemma2VisionPooler(1);
         assertThrows(IllegalArgumentException.class, () -> pooler.pool(
