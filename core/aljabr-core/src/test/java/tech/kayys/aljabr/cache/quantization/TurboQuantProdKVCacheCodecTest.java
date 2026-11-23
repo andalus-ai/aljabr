@@ -60,7 +60,7 @@ class TurboQuantProdKVCacheCodecTest {
 
         // Five sign bits are rounded to one byte per vector; no MSE indices are present.
         assertEquals(2, encoded.payloadSizeBytes());
-        assertEquals(52 + 2 * Double.BYTES, encoded.metadataSizeBytes());
+        assertEquals(56 + 2 * Double.BYTES, encoded.metadataSizeBytes());
         for (float value : decoded) {
             assertTrue(Float.isFinite(value));
         }
@@ -105,6 +105,21 @@ class TurboQuantProdKVCacheCodecTest {
                 new KVCacheCompressionContext(1, 5, 1, 1, 4, KVCacheTensorKind.KEY);
         assertThrows(IllegalArgumentException.class,
                 () -> codec.decode(encoded, destination, 0, wrongPosition));
+    }
+
+    @Test
+    void pureQjlRejectsKeyValueTensorKindMismatch() {
+        KVCacheCompressionContext keyContext =
+                new KVCacheCompressionContext(0, 3, 1, 1, 5, KVCacheTensorKind.KEY);
+        KVCacheCompressionContext valueContext =
+                new KVCacheCompressionContext(0, 3, 1, 1, 5, KVCacheTensorKind.VALUE);
+        TurboQuantProdKVCacheCodec codec = new TurboQuantProdKVCacheCodec(1, 19L);
+        KVCacheEncodedBlock encoded = codec.encode(new float[]{1, 2, 3, 4, 5}, 0, keyContext);
+
+        float[] destination = {9, 9, 9, 9, 9};
+        assertThrows(IllegalArgumentException.class,
+                () -> codec.decode(encoded, destination, 0, valueContext));
+        assertArrayEquals(new float[]{9, 9, 9, 9, 9}, destination);
     }
 
     @Test

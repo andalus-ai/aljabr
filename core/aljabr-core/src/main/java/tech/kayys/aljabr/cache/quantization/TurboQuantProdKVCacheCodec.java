@@ -3,6 +3,7 @@ package tech.kayys.aljabr.cache.quantization;
 import tech.kayys.aljabr.cache.KVCacheCompressionCodec;
 import tech.kayys.aljabr.cache.KVCacheCompressionContext;
 import tech.kayys.aljabr.cache.KVCacheEncodedBlock;
+import tech.kayys.aljabr.cache.KVCacheTensorKind;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -27,7 +28,7 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
 
     private static final int METADATA_MAGIC = 0x54515052; // "TQPR"
     private static final int METADATA_VERSION = 1;
-    private static final int METADATA_HEADER_BYTES = 52;
+    private static final int METADATA_HEADER_BYTES = 56;
     private static final long QJL_SEED_MIX = 0x6A09E667F3BCC909L;
 
     private final int bits;
@@ -224,6 +225,7 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
         metadata.putInt(context.kvHeads());
         metadata.putInt(context.headDimension());
         metadata.putInt(bits);
+        metadata.putInt(tensorKindCode(context.tensorKind()));
         metadata.putLong(qjlSeed);
         metadata.putInt(basePayloadLength);
         metadata.putInt(baseMetadata.length);
@@ -252,6 +254,7 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
                 || metadata.getInt() != context.kvHeads()
                 || metadata.getInt() != context.headDimension()
                 || metadata.getInt() != bits
+                || metadata.getInt() != tensorKindCode(context.tensorKind())
                 || metadata.getLong() != qjlSeed) {
             throw new IllegalArgumentException("encoded metadata does not match codec configuration or KV geometry");
         }
@@ -277,6 +280,13 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
             residualNorms[i] = norm;
         }
         return new DecodedMetadata(basePayloadLength, baseMetadata, residualNorms);
+    }
+
+    private static int tensorKindCode(KVCacheTensorKind tensorKind) {
+        return switch (tensorKind) {
+            case KEY -> 1;
+            case VALUE -> 2;
+        };
     }
 
     private static int packedSignBytes(int dimension) {
