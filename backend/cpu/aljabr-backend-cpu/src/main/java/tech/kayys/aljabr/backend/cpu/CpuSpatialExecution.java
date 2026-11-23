@@ -80,9 +80,9 @@ final class CpuSpatialExecution {
         long outputBytes = Math.multiplyExact(outputShape.numel(), Float.BYTES);
         HostAccessibleStorage output = outputAllocator.apply(outputBytes);
 
-        MemorySegment inputSegment = seg(input);
-        MemorySegment weightSegment = seg(weight);
-        MemorySegment biasSegment = bias == null ? null : seg(bias);
+        MemorySegment inputSegment = CpuTensorStorageAccess.segment(input);
+        MemorySegment weightSegment = CpuTensorStorageAccess.segment(weight);
+        MemorySegment biasSegment = bias == null ? null : CpuTensorStorageAccess.segment(bias);
         MemorySegment outputSegment = output.segment();
         long[] inputDimensions = input.shape().dims();
         long[] weightDimensions = weight.shape().dims();
@@ -149,7 +149,7 @@ final class CpuSpatialExecution {
 
         Shape outputShape = new Shape(batch, channels, outputH, outputW);
         HostAccessibleStorage output = outputAllocator.apply(Math.multiplyExact(outputShape.numel(), Float.BYTES));
-        MemorySegment source = seg(input);
+        MemorySegment source = CpuTensorStorageAccess.segment(input);
         MemorySegment destination = output.segment();
         long[] dimensions = input.shape().dims();
         TensorLayout layout = input.layout();
@@ -188,7 +188,7 @@ final class CpuSpatialExecution {
 
         Shape outputShape = new Shape(nSize, channels, outH, outW);
         HostAccessibleStorage output = outputAllocator.apply(Math.multiplyExact(outputShape.numel(), Float.BYTES));
-        MemorySegment source = seg(input);
+        MemorySegment source = CpuTensorStorageAccess.segment(input);
         MemorySegment destination = output.segment();
         long[] dimensions = input.shape().dims();
         TensorLayout layout = input.layout();
@@ -233,7 +233,7 @@ final class CpuSpatialExecution {
 
         Shape outputShape = new Shape(nSize, channels, outputH, outputW);
         HostAccessibleStorage output = outputAllocator.apply(Math.multiplyExact(outputShape.numel(), Float.BYTES));
-        MemorySegment source = seg(input);
+        MemorySegment source = CpuTensorStorageAccess.segment(input);
         MemorySegment destination = output.segment();
         long[] dimensions = input.shape().dims();
         TensorLayout layout = input.layout();
