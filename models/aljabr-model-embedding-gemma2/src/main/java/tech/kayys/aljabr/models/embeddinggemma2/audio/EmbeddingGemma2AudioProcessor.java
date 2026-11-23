@@ -120,6 +120,22 @@ public final class EmbeddingGemma2AudioProcessor {
         return expanded;
     }
 
+    /**
+     * Returns the sample limit implied by the configured audio soft-token budget.
+     * One soft-token slot represents {@code audioMillisecondsPerToken} milliseconds.
+     * The published 30-second processor limit remains an independent upper bound.
+     */
+    private static int maxSamplesForTokenBudget(EmbeddingGemma2AudioConfig config) {
+        long budgetMillis = Math.multiplyExact(
+                (long) config.audioSequenceLength(), (long) config.audioMillisecondsPerToken());
+        long budgetSamples = Math.multiplyExact(budgetMillis, (long) config.samplingRate()) / 1_000L;
+        long boundedSamples = Math.min((long) PUBLISHED_MAX_INPUT_SAMPLES, budgetSamples);
+        if (boundedSamples <= 0L) {
+            throw new IllegalArgumentException("audio token budget must allow at least one input sample");
+        }
+        return Math.toIntExact(boundedSamples);
+    }
+
     public EmbeddingGemma2AudioConfig config() {
         return config;
     }
