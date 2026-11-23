@@ -4,11 +4,15 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+
 import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 
 class CpuIndexSelectTest {
 
@@ -45,7 +49,13 @@ class CpuIndexSelectTest {
                 Tensor selected = transposed.indexSelect(0, indices)) {
             assertEquals(DType.I32, selected.dtype());
             assertArrayEquals(new long[] {2, 2}, selected.shape().dims());
-            assertArrayEquals(new int[] {3, 6, 1, 4}, selected.toIntArray());
+            HostAccessibleStorage storage = (HostAccessibleStorage) selected.storage();
+            MemorySegment values = storage.segment();
+            int[] actual = new int[Math.toIntExact(selected.numel())];
+            for (int i = 0; i < actual.length; i++) {
+                actual[i] = values.get(ValueLayout.JAVA_INT, (long) i * Integer.BYTES);
+            }
+            assertArrayEquals(new int[] {3, 6, 1, 4}, actual);
         }
     }
 
