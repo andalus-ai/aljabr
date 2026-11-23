@@ -92,6 +92,15 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     }
 
     public synchronized GgufBackend loadModel(String modelId, Path modelPath, Map<String, Object> config) throws Exception {
+        Objects.requireNonNull(modelId, "modelId");
+        if (modelId.isBlank()) {
+            throw new IllegalArgumentException("modelId must not be blank");
+        }
+        if (backends.containsKey(modelId)) {
+            throw new IllegalStateException(
+                    "A GGUF backend is already registered for model ID '" + modelId
+                            + "'; unload it before loading a replacement");
+        }
         GgufBackendSelection selection = GgufBackendSelection.resolve(config);
         GgufBackendProvider provider = selectProvider(modelPath, selection);
         if (executionObserver == ExecutionObserver.NOOP) {
