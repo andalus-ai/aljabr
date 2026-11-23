@@ -125,7 +125,8 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
             String outputKey = key.startsWith("safetensors.")
                     ? key.substring("safetensors.".length()) : key;
             if (outputKey.startsWith(AmirTypedMetadataCodec.PREFIX)
-                    || AmirTensorTypeCodec.isEncodedKey(outputKey)) {
+                    || AmirTensorTypeCodec.isEncodedKey(outputKey)
+                    || AmirModelLayerCodec.isEncodedKey(outputKey)) {
                 throw new IOException("Source metadata key uses a reserved AMIR envelope namespace: " + outputKey);
             }
             String previous = metadata.putIfAbsent(outputKey, entry.getValue());
