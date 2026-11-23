@@ -78,7 +78,7 @@ class EmbeddingGemma2AudioProcessorTest {
         var processed = processor.process(new float[1_600], 1, 16_000);
 
         assertEquals(3, processor.audioPlaceholderCount(processed));
-        assertArrayEquals(new int[]{11, 1, 1, 1, 12},
+        assertArrayEquals(new int[]{11, 2, 1, 1, 1, 3, 12},
                 processor.expandAudioPlaceholders(new int[]{11, 1, 12}, processed));
     }
 
@@ -94,6 +94,7 @@ class EmbeddingGemma2AudioProcessorTest {
                 features, 16_000, 1, 16_000, 480_000, false);
 
         assertEquals(280, processor.audioPlaceholderCount(thirtySeconds));
+        assertEquals(179_200, processor.maxInputSamples());
     }
 
     @Test
