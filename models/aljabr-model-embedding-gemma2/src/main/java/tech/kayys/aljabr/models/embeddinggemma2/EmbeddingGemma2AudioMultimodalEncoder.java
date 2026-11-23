@@ -3,6 +3,7 @@ package tech.kayys.aljabr.models.embeddinggemma2;
 import java.util.List;
 import java.util.Objects;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioEncoder;
+import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioFeatureExtractor;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioProcessor;
 import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2AudioConfig;
 import tech.kayys.aljabr.models.embeddinggemma2.vision.EmbeddingGemma2MultimodalEmbedder;
