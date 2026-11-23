@@ -44,6 +44,24 @@ public final class ManagedArena implements AutoCloseable {
         this.arena = Objects.requireNonNull(arena, "arena must not be null");
     }
 
+    /**
+     * Creates a new managed arena backed by a shared arena.
+     *
+     * <p>Compatibility factory retained for callers of the original core API.
+     */
+    public static ManagedArena create() {
+        return ofShared();
+    }
+
+    /**
+     * Wraps an existing arena. The arena is closed when the final reference is released.
+     *
+     * <p>Compatibility factory retained for callers of the original core API.
+     */
+    public static ManagedArena wrap(Arena arena) {
+        return new ManagedArena(arena);
+    }
+
     /** Creates a new shared (thread-safe) arena with ref-count 1. */
     public static ManagedArena ofShared() {
         return new ManagedArena(Arena.ofShared());
@@ -69,6 +87,15 @@ public final class ManagedArena implements AutoCloseable {
 
     /** Returns the underlying {@link Arena}. */
     public Arena arena() {
+        return arena;
+    }
+
+    /**
+     * Returns the underlying Java arena.
+     *
+     * <p>Alias retained for compatibility with the original core API.
+     */
+    public Arena raw() {
         return arena;
     }
 
@@ -112,9 +139,27 @@ public final class ManagedArena implements AutoCloseable {
             int next = current - 1;
             if (refCount.compareAndSet(current, next)) {
                 if (next == 0) {
-                    arena.close();
+                    closeArenaIfAlive();
                 }
                 return;
+            }
+        }
+    }
+
+    /**
+     * Closes the arena unless a caller that supplied it through {@link #wrap(Arena)}
+     * has already closed it independently.
+     */
+    private void closeArenaIfAlive() {
+        if (!arena.scope().isAlive()) {
+            return;
+        }
+        try {
+            arena.close();
+        } catch (IllegalStateException exception) {
+            // An externally owned arena may be closed concurrently after isAlive().
+            if (arena.scope().isAlive()) {
+                throw exception;
             }
         }
     }
@@ -124,8 +169,8 @@ public final class ManagedArena implements AutoCloseable {
         return refCount.get();
     }
 
-    /** {@code true} if the underlying arena is still open. */
+    /** {@code true} if the reference count and underlying arena scope are still open. */
     public boolean isOpen() {
-        return refCount.get() > 0;
+        return refCount.get() > 0 && arena.scope().isAlive();
     }
 }

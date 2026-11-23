@@ -266,6 +266,7 @@ public interface ComputeBackend extends AutoCloseable {
                 "Index addition is not supported by backend " + getClass().getName());
     }
 
+
     /**
      * Returns equal, non-empty slices along an axis. Negative axes count from
      * the final dimension; the axis size must be evenly divisible by parts.
