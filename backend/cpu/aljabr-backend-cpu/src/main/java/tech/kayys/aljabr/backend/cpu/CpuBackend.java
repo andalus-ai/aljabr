@@ -654,16 +654,17 @@ public final class CpuBackend implements ComputeBackend {
                 TensorOperationValidator.validateTranspose(a.shape(), d0, d1);
         d0 = plan.axis0();
         d1 = plan.axis1();
-        if (a.dtype() != DType.F32) {
+        if (a.dtype().isQuantized()) {
             throw new UnsupportedOperationException(
-                    "CPU transpose currently supports F32 tensors only; actual dtype is " + a.dtype());
+                    "CPU transpose does not yet support block-quantized tensors; actual dtype is " + a.dtype());
         }
 
         int rank = a.shape().rank();
         Shape outShape = plan.outputShape();
         long[] outDims = outShape.dims();
         long total = outShape.numel();
-        long outputBytes = Math.multiplyExact(total, Float.BYTES);
+        int elementBytes = a.dtype().blockByteSize();
+        long outputBytes = a.dtype().memoryFootprintBytes(total);
         HostAccessibleStorage outBuf = allocateOutput(outputBytes);
         try {
             TensorLayout inputLayout = a.layout();
@@ -685,10 +686,9 @@ public final class CpuBackend implements ComputeBackend {
                     outputIndex = Math.addExact(outputIndex,
                             Math.multiplyExact(cursor[dimension], outputStrides[dimension]));
                 }
-                long inputByteOffset = Math.multiplyExact(inputIndex, Float.BYTES);
-                long outputByteOffset = Math.multiplyExact(outputIndex, Float.BYTES);
-                dst.set(ValueLayout.JAVA_FLOAT, outputByteOffset,
-                        src.get(ValueLayout.JAVA_FLOAT, inputByteOffset));
+                long inputByteOffset = Math.multiplyExact(inputIndex, elementBytes);
+                long outputByteOffset = Math.multiplyExact(outputIndex, elementBytes);
+                MemorySegment.copy(src, inputByteOffset, dst, outputByteOffset, elementBytes);
 
                 for (int dimension = rank - 1; dimension >= 0; dimension--) {
                     if (++cursor[dimension] < outDims[dimension]) {
@@ -697,7 +697,7 @@ public final class CpuBackend implements ComputeBackend {
                     cursor[dimension] = 0;
                 }
             }
-            return out(outShape, outBuf);
+            return new DefaultTensor(outShape, a.dtype(), a.device(), outBuf, this);
         } catch (RuntimeException | Error failure) {
             outBuf.release();
             throw failure;
