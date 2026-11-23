@@ -63,12 +63,12 @@ public final class GgufTargetCapability implements TargetFormatCapability {
         }
 
         if (source.graphCollection().isPresent()
-                || source.assetCollection().isPresent()
-                || source.componentCollection().isPresent()) {
+                || source.componentCollection().filter(collection ->
+                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent()) {
             diagnostics.add(diagnostic(CompatibilityReport.Severity.WARNING,
                     "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
-                    "GGUF conversion preserves the typed architecture descriptor, but cannot encode "
-                            + "computation graphs, assets, or components."));
+                    "GGUF conversion preserves assets and unbound components, but graph collections and "
+                            + "components with graph bindings are not yet encoded."));
             partial = true;
         }
 
