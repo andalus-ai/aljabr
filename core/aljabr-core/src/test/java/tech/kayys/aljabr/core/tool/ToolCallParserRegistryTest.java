@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.core.tool;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.spi.inference.ToolCallProtocolDescriptor;
 
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,16 @@ class ToolCallParserRegistryTest {
                 () -> builder.register(" ", NO_CALLS));
         assertThrows(NullPointerException.class,
                 () -> builder.register("protocol-b", null));
+    }
+
+    @Test
+    void resolvesParserUsingInferenceSpiProtocolDescriptor() {
+        var protocol = ToolCallProtocolDescriptor.of("functiongemma-native");
+        var registry = ToolCallParserRegistry.builder().register(protocol, NO_CALLS).build();
+
+        assertSame(NO_CALLS, registry.find(ToolCallProtocolDescriptor.of("functiongemma-native")).orElseThrow());
+        assertSame(NO_CALLS, registry.require(protocol));
+        assertEquals(List.of(protocol), List.copyOf(registry.protocols()));
     }
 
     @Test

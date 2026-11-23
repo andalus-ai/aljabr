@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.core.tool;
 
+import tech.kayys.aljabr.spi.inference.ToolCallProtocolDescriptor;
+
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -10,7 +12,7 @@ import java.util.Set;
 
 /**
  * Immutable registry of tool-call parsers keyed by an application-defined
- * protocol descriptor.
+ * inference-SPI protocol descriptor.
  *
  * <p>Applications decide which descriptor applies to a model or response
  * format. This registry does not inspect model metadata, discover plugins,
