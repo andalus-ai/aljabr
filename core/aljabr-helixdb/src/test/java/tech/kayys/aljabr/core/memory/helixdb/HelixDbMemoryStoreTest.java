@@ -29,7 +29,7 @@ class HelixDbMemoryStoreTest {
                 store.put(key, input);
 
                 // Get Zero Copy
-                Optional<MemorySegment> outputOpt = store.getZeroCopy(key, 150, arena.raw());
+                Optional<MemorySegment> outputOpt = store.getZeroCopy(key, 150, arena);
                 assertTrue(outputOpt.isPresent());
 
                 MemorySegment output = outputOpt.get();
@@ -60,13 +60,13 @@ class HelixDbMemoryStoreTest {
             v2.set(ValueLayout.JAVA_INT, 0, 0xBEEF);
             store.put(key, v2);
 
-            Optional<MemorySegment> result = store.getZeroCopy(key, 4, arena.raw());
+            Optional<MemorySegment> result = store.getZeroCopy(key, 4, arena);
             assertTrue(result.isPresent());
             assertEquals(0xBEEF, result.get().get(ValueLayout.JAVA_INT, 0));
 
             // Delete
             store.delete(key);
-            Optional<MemorySegment> afterDelete = store.getZeroCopy(key, 4, arena.raw());
+            Optional<MemorySegment> afterDelete = store.getZeroCopy(key, 4, arena);
             assertTrue(afterDelete.isEmpty());
 
             // Stats: deletedBytes should be non-zero
@@ -105,12 +105,12 @@ class HelixDbMemoryStoreTest {
 
             // B should still be readable
             Optional<MemorySegment> bResult = store.getZeroCopy(
-                    "B".getBytes(), data.length, arena.raw());
+                    "B".getBytes(), data.length, arena);
             assertTrue(bResult.isPresent(), "Key B should survive compaction");
 
             // A should be gone
             Optional<MemorySegment> aResult = store.getZeroCopy(
-                    "A".getBytes(), data.length, arena.raw());
+                    "A".getBytes(), data.length, arena);
             assertTrue(aResult.isEmpty(), "Key A should not survive compaction after delete");
 
             System.out.println("After compaction: " + store.stats());
