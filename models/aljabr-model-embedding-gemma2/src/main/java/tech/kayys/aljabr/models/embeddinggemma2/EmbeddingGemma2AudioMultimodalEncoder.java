@@ -1,6 +1,5 @@
 package tech.kayys.aljabr.models.embeddinggemma2;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioEncoder;
