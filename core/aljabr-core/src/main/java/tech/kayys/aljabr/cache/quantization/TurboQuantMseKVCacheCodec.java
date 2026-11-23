@@ -89,12 +89,13 @@ public final class TurboQuantMseKVCacheCodec implements KVCacheCompressionCodec 
         int paddedDimension = paddedDimension(headDimension);
         int vectorCount = Math.multiplyExact(context.tokenCount(), context.kvHeads());
         int elementCount = context.elementCount();
+        int encodedIndexCount = Math.multiplyExact(vectorCount, paddedDimension);
 
         TurboQuantScalarCodebook codebook = codebooks.computeIfAbsent(
                 paddedDimension, dimension -> TurboQuantScalarCodebook.forDimension(dimension, bits));
         TurboQuantHadamardTransform transform = new TurboQuantHadamardTransform(paddedDimension, seed);
         float[] vector = new float[paddedDimension];
-        int[] indices = new int[elementCount];
+        int[] indices = new int[encodedIndexCount];
         double[] norms = new double[vectorCount];
         double coordinateScale = Math.sqrt(paddedDimension);
 
@@ -158,7 +159,8 @@ public final class TurboQuantMseKVCacheCodec implements KVCacheCompressionCodec 
         int paddedDimension = paddedDimension(headDimension);
         int vectorCount = Math.multiplyExact(context.tokenCount(), context.kvHeads());
         double[] norms = decodeMetadata(encoded.metadata(), context, paddedDimension, vectorCount);
-        int[] indices = TurboQuantBitPacking.unpackIndices(encoded.payload(), context.elementCount(), bits);
+        int encodedIndexCount = Math.multiplyExact(vectorCount, paddedDimension);
+        int[] indices = TurboQuantBitPacking.unpackIndices(encoded.payload(), encodedIndexCount, bits);
 
         TurboQuantScalarCodebook codebook = codebooks.computeIfAbsent(
                 paddedDimension, dimension -> TurboQuantScalarCodebook.forDimension(dimension, bits));
