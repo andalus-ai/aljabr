@@ -2,7 +2,7 @@ package tech.kayys.aljabr.core.memory.helixdb;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import tech.kayys.aljabr.core.memory.ManagedArena;
+import java.lang.foreign.Arena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -18,7 +18,7 @@ class HelixDbMemoryStoreTest {
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString())) {
             byte[] key = "test-key-helix".getBytes();
 
-            try (ManagedArena arena = ManagedArena.create()) {
+            try (Arena arena = Arena.ofShared()) {
                 // Prepare some data
                 MemorySegment input = arena.allocate(150);
                 for (int i = 0; i < 150; i++) {
@@ -48,7 +48,7 @@ class HelixDbMemoryStoreTest {
     @Test
     void testOverwriteAndDelete(@TempDir Path tempDir) {
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString());
-                ManagedArena arena = ManagedArena.create()) {
+                Arena arena = Arena.ofShared()) {
 
             byte[] key = "mykey".getBytes();
 
@@ -81,7 +81,7 @@ class HelixDbMemoryStoreTest {
                 .build();
 
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString(), cfg);
-                ManagedArena arena = ManagedArena.create()) {
+                Arena arena = Arena.ofShared()) {
 
             byte[] data = new byte[1024 * 512]; // 512 KiB
 
@@ -120,7 +120,7 @@ class HelixDbMemoryStoreTest {
     @Test
     void testStats(@TempDir Path tempDir) {
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString());
-                ManagedArena arena = ManagedArena.create()) {
+                Arena arena = Arena.ofShared()) {
 
             MemorySegment seg = arena.allocate(1024);
             store.put("stats-key".getBytes(), seg);
