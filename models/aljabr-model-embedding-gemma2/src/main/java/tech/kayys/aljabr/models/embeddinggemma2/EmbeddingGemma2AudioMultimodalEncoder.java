@@ -78,7 +78,7 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
         float[][] textEmbeddings = EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
                 textBackbone, inputIds, audioTokenId, padTokenId);
         float[][] mergedEmbeddings = EmbeddingGemma2MultimodalInputAssembler.replaceModalityPlaceholders(
-                textEmbeddings, inputIds, audioTokenId, List.of(projectedAudioStates), "audio");
+                textEmbeddings, inputIds, audioTokenId, List.<float[][]>of(projectedAudioStates), "audio");
         return textBackbone.encodeEmbeddings(mergedEmbeddings, validTokens, positionIds);
     }
 
