@@ -110,6 +110,12 @@ public final class Gemma3TextBackbone {
         private final int maximumPositions = config.maxPositionEmbeddings();
         private final KVCacheStorage cacheStorage;
         private final KVCacheSession cacheSession;
+        // Decode sessions are sequence-confined, so these per-layer workspaces
+        // can be reused safely across token steps instead of allocated per token.
+        private final float[][] currentKeys;
+        private final float[][] currentValues;
+        private final float[][] visibleKeys;
+        private final float[][] visibleValues;
         private boolean closed;
 
         private DecodeSession() {
@@ -127,6 +133,11 @@ public final class Gemma3TextBackbone {
                         "KV cache storage factory returned storage with incompatible geometry");
             }
             cacheSession = new KVCacheSession(cacheStorage);
+            int layerCount = weights.layers().size();
+            currentKeys = new float[layerCount][cacheWidth];
+            currentValues = new float[layerCount][cacheWidth];
+            visibleKeys = new float[layerCount][];
+            visibleValues = new float[layerCount][];
         }
 
         /** Processes a prompt on a fresh session and returns logits for every prompt token. */
@@ -306,11 +317,12 @@ public final class Gemma3TextBackbone {
                     config.ropeThetaForLayer(layerIndex),
                     config.partialRotaryFactorForLayer(layerIndex));
 
-            float[] currentKey = new float[cacheWidth];
-            float[] currentValue = valueFlat[0].clone();
+            float[] currentKey = currentKeys[layerIndex];
+            float[] currentValue = currentValues[layerIndex];
             for (int head = 0; head < kvHeads; head++) {
                 System.arraycopy(key[0][head], 0, currentKey, head * headDim, headDim);
             }
+            System.arraycopy(valueFlat[0], 0, currentValue, 0, cacheWidth);
             cacheSession.write(layerIndex, absolutePosition,
                     currentKey, 0, currentValue, 0);
 
@@ -322,12 +334,17 @@ public final class Gemma3TextBackbone {
             Double configuredSoftcap = config.attnLogitSoftcapping();
             double softcap = configuredSoftcap == null ? 0.0d : configuredSoftcap;
             int visibleTokenCount = absolutePosition - firstVisible + 1;
-            float[] visibleKeys = new float[Math.multiplyExact(visibleTokenCount, cacheWidth)];
-            float[] visibleValues = new float[visibleKeys.length];
+            int visibleElements = Math.multiplyExact(visibleTokenCount, cacheWidth);
+            if (visibleKeys[layerIndex] == null || visibleKeys[layerIndex].length < visibleElements) {
+                visibleKeys[layerIndex] = new float[visibleElements];
+                visibleValues[layerIndex] = new float[visibleElements];
+            }
+            float[] layerVisibleKeys = visibleKeys[layerIndex];
+            float[] layerVisibleValues = visibleValues[layerIndex];
             cacheSession.readKeyRangeForAttention(
-                    layerIndex, firstVisible, visibleTokenCount, visibleKeys, 0);
+                    layerIndex, firstVisible, visibleTokenCount, layerVisibleKeys, 0);
             cacheSession.readValueRangeForAttention(
-                    layerIndex, firstVisible, visibleTokenCount, visibleValues, 0);
+                    layerIndex, firstVisible, visibleTokenCount, layerVisibleValues, 0);
             for (int head = 0; head < queryHeads; head++) {
                 int kvHead = head / groups;
                 double maximum = Double.NEGATIVE_INFINITY;
@@ -337,7 +354,7 @@ public final class Gemma3TextBackbone {
                     double dot = 0.0d;
                     for (int dimension = 0; dimension < headDim; dimension++) {
                         dot += (double) query[0][head][dimension]
-                                * visibleKeys[sourceOffset + dimension];
+                                * layerVisibleKeys[sourceOffset + dimension];
                     }
                     double score = dot * scoreScale;
                     if (softcap > 0.0d) score = Math.tanh(score / softcap) * softcap;
@@ -351,7 +368,7 @@ public final class Gemma3TextBackbone {
                     double probability = Math.exp(scores[source - firstVisible] - maximum) / denominator;
                     for (int dimension = 0; dimension < headDim; dimension++) {
                         attended[0][head][dimension] +=
-                                (float) (probability * visibleValues[sourceOffset + dimension]);
+                                (float) (probability * layerVisibleValues[sourceOffset + dimension]);
                     }
                 }
             }
