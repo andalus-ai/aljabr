@@ -44,6 +44,24 @@ public final class ManagedArena implements AutoCloseable {
         this.arena = Objects.requireNonNull(arena, "arena must not be null");
     }
 
+    /**
+     * Creates a new managed arena backed by a shared arena.
+     *
+     * <p>Compatibility factory retained for callers of the original core API.
+     */
+    public static ManagedArena create() {
+        return ofShared();
+    }
+
+    /**
+     * Wraps an existing arena. The arena is closed when the final reference is released.
+     *
+     * <p>Compatibility factory retained for callers of the original core API.
+     */
+    public static ManagedArena wrap(Arena arena) {
+        return new ManagedArena(arena);
+    }
+
     /** Creates a new shared (thread-safe) arena with ref-count 1. */
     public static ManagedArena ofShared() {
         return new ManagedArena(Arena.ofShared());
@@ -69,6 +87,15 @@ public final class ManagedArena implements AutoCloseable {
 
     /** Returns the underlying {@link Arena}. */
     public Arena arena() {
+        return arena;
+    }
+
+    /**
+     * Returns the underlying Java arena.
+     *
+     * <p>Alias retained for compatibility with the original core API.
+     */
+    public Arena raw() {
         return arena;
     }
 
@@ -124,8 +151,8 @@ public final class ManagedArena implements AutoCloseable {
         return refCount.get();
     }
 
-    /** {@code true} if the underlying arena is still open. */
+    /** {@code true} if the reference count and underlying arena scope are still open. */
     public boolean isOpen() {
-        return refCount.get() > 0;
+        return refCount.get() > 0 && arena.scope().isAlive();
     }
 }
