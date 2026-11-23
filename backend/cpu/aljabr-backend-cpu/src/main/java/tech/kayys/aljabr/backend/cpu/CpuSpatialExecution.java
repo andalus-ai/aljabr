@@ -243,9 +243,13 @@ final class CpuSpatialExecution {
                 for (int oh = 0; oh < outputH; oh++) {
                     for (int ow = 0; ow < outputW; ow++) {
                         long hStart = (long) oh * height / outputH;
-                        long hEnd = (long) (oh + 1) * height / outputH;
+                        long hEndNumerator = (long) (oh + 1) * height;
+                        long hEnd = hEndNumerator / outputH
+                                + (hEndNumerator % outputH == 0 ? 0 : 1);
                         long wStart = (long) ow * width / outputW;
-                        long wEnd = (long) (ow + 1) * width / outputW;
+                        long wEndNumerator = (long) (ow + 1) * width;
+                        long wEnd = wEndNumerator / outputW
+                                + (wEndNumerator % outputW == 0 ? 0 : 1);
                         double sum = 0d;
                         long count = 0;
                         for (long ih = hStart; ih < hEnd; ih++) {
