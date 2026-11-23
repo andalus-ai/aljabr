@@ -125,20 +125,20 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
 
         int featureCount = 0;
         for (int sequence = 0; sequence < modalityFeatures.size(); sequence++) {
-            float[][] features = modalityFeatures.get(image);
+            float[][] features = modalityFeatures.get(sequence);
             if (features == null || features.length == 0) {
-                throw new IllegalArgumentException("modality + " feature sequence " + sequence + " must be non-empty");
+                throw new IllegalArgumentException(modality + " feature sequence " + sequence + " must be non-empty");
             }
             featureCount = Math.addExact(featureCount, features.length);
             for (int token = 0; token < features.length; token++) {
                 float[] row = features[token];
                 if (row == null || row.length != hiddenSize) {
-                    throw new IllegalArgumentException("modality + " feature " + sequence + ":" + token
+                    throw new IllegalArgumentException(modality + " feature " + sequence + ":" + token
                             + " must have text hidden size " + hiddenSize);
                 }
                 for (float value : row) {
                     if (!Float.isFinite(value)) {
-                        throw new IllegalArgumentException("modality features must contain only finite values");
+                        throw new IllegalArgumentException(modality + " features must contain only finite values");
                     }
                 }
             }
