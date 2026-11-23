@@ -530,8 +530,7 @@ public final class CpuBackend implements ComputeBackend {
                                 sourceDimensions, sourceLayout, logicalIndex);
                         long sourceByteOffset = Math.multiplyExact(sourceElementOffset, elementBytes);
                         long destinationByteOffset = Math.multiplyExact(destinationIndex++, elementBytes);
-                        source.asSlice(sourceByteOffset, elementBytes)
-                                .copyTo(destination.asSlice(destinationByteOffset, elementBytes));
+                        MemorySegment.copy(source, sourceByteOffset, destination, destinationByteOffset, elementBytes);
                     }
                 }
             }
