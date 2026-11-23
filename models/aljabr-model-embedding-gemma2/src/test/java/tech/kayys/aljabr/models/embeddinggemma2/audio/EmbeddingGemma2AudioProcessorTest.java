@@ -83,13 +83,41 @@ class EmbeddingGemma2AudioProcessorTest {
     }
 
     @Test
-    void computesDurationBasedAudioPlaceholderCountAndExpandsOneMarker() {
+    void derivesAudioPlaceholderCountFromTowerMaskAndExpandsOneMarker() {
         var processor = new EmbeddingGemma2AudioProcessor(config());
         var processed = processor.process(new float[1_600], 1, 16_000);
 
         assertEquals(3, processor.audioPlaceholderCount(processed));
-        assertArrayEquals(new int[]{11, 1, 1, 1, 12},
+        assertArrayEquals(new int[]{11, 2, 1, 1, 1, 3, 12},
                 processor.expandAudioPlaceholders(new int[]{11, 1, 12}, processed));
+    }
+
+    @Test
+    void derivesPlaceholderCountFromDownsampledFeatureMaskRatherThanDurationEstimate() {
+        var processor = new EmbeddingGemma2AudioProcessor(config());
+        boolean[] frameMask = {
+                true, false, true, false, false, false, true, false, true
+        };
+        var features = new EmbeddingGemma2AudioFeatureExtractor.Features(
+                new float[frameMask.length][128], frameMask, 1_600, 1_600);
+        var processed = new EmbeddingGemma2AudioProcessor.ProcessedAudio(
+                features, 16_000, 1, 16_000, 1_600, false);
+
+        // The two stride-2 reductions select [0,2,4,6,8], then [0,2,4].
+        // Only the first and last selected positions are valid.
+        assertEquals(2, processor.audioPlaceholderCount(processed));
+    }
+
+    @Test
+    void rejectsFeatureMasksWithNoValidSoftTokenSlots() {
+        var processor = new EmbeddingGemma2AudioProcessor(config());
+        boolean[] frameMask = new boolean[9];
+        var features = new EmbeddingGemma2AudioFeatureExtractor.Features(
+                new float[frameMask.length][128], frameMask, 1_600, 1_600);
+        var processed = new EmbeddingGemma2AudioProcessor.ProcessedAudio(
+                features, 16_000, 1, 16_000, 1_600, false);
+
+        assertThrows(IllegalArgumentException.class, () -> processor.audioPlaceholderCount(processed));
     }
 
     @Test
