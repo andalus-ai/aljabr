@@ -32,6 +32,25 @@ class CpuBatchedAttentionTest {
     }
 
     @Test
+    void groupedQueryAttentionSharesEachKeyValueHeadAcrossItsQueryHeads() {
+        CpuBackend backend = new CpuBackend();
+        Tensor query = TensorFactory.of(new float[2], backend, 1, 2, 1, 1);
+        Tensor key = TensorFactory.of(new float[2], backend, 1, 1, 2, 1);
+        Tensor value = TensorFactory.of(new float[] {2f, 8f}, backend, 1, 1, 2, 1);
+        Tensor output = null;
+        try {
+            output = backend.attentionGqa(query, key, value, null, false);
+            assertArrayEquals(new float[] {5f, 5f}, output.toFloatArray(), 1e-6f);
+        } finally {
+            if (output != null) output.release();
+            value.release();
+            key.release();
+            query.release();
+            backend.close();
+        }
+    }
+
+    @Test
     void rejectsIncompatibleBatchHeadAndFeatureDimensions() {
         CpuBackend backend = new CpuBackend();
         Tensor query = TensorFactory.of(new float[8], backend, 1, 2, 2, 2);
