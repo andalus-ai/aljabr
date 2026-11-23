@@ -269,7 +269,7 @@ class TensorOperationValidatorTest {
         TensorOperationValidator.BroadcastPlan plan = TensorOperationValidator.validateBroadcast(
                 new Shape(0, 3), new Shape(1, 3));
         assertThat(plan.outputDimensions()).containsExactly(0, 3);
-        assertThat(plan.elementCount()).isZero();
+        assertThat(plan.outputElements()).isZero();
     }
 
     @Test
