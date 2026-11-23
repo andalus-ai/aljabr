@@ -297,6 +297,40 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ3XXSBlockUsingPackedGridSignsAndScale() throws Exception {
+        byte[] block = new byte[98];
+        block[1] = 0x3c; // fp16 scale = 1
+        block[2] = 1; // grid 1 = [4, 4, 4, 20]
+        block[3] = 0; // grid 0 = [4, 4, 4, 4]
+        // aux32: sign codes in seven-bit fields; high nibble sets scale = 0.5.
+        // A single low sign bit yields parity-expanded mask 0x81.
+        block[66] = 1;
+        block[69] = 0x10; // group scale nibble = 1 => d * 0.75
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ3_XXS", List.of(256L), source, 8L, block.length);
+        var model = model("iq3_xxs", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq3_xxs.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        float[] expected = {-15.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, -3.0f};
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], values.getFloat(i * Float.BYTES), 0.0f);
+        }
+        // The next 32-value group retains the default 0.5 multiplier.
+        assertEquals(1.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+    }
+
+    @Test
     void dequantizesIQ3SBlockUsingGridHighBitsPackedSignsAndGroupScales() throws Exception {
         byte[] block = new byte[110];
         block[1] = 0x3c; // fp16 scale = 1

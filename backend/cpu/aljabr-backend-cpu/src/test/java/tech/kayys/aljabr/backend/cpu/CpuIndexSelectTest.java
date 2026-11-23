@@ -45,7 +45,9 @@ class CpuIndexSelectTest {
                 Tensor selected = transposed.indexSelect(0, indices)) {
             assertEquals(DType.I32, selected.dtype());
             assertArrayEquals(new long[] {2, 2}, selected.shape().dims());
-            assertArrayEquals(new int[] {3, 6, 1, 4}, selected.toIntArray());
+            try (Tensor asFloat = selected.cast(DType.F32)) {
+                assertArrayEquals(new float[] {3, 6, 1, 4}, asFloat.toFloatArray());
+            }
         }
     }
 
