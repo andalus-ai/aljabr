@@ -517,6 +517,8 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - GGUF synchronous inference emits one `gguf.infer` lifecycle scope with an opaque generated correlation ID and backend identity. Do not attach prompts, request messages, user/session IDs, model paths or arbitrary request metadata to the event context.
 - Keep execution-observer failures isolated from inference and expose an engine-level failure count. Do not silently turn observer failures into inference failures.
 - Streaming lifecycle scopes must be added only with correct subscription, cancellation, failure and termination semantics; do not close a stream scope when the `Multi` is merely constructed.
+- GGUF `infer(...)` and `executeAsync(...)` are adapters over the same synchronous `execute(...)` boundary. Keep exactly one `gguf.infer` lifecycle scope in that boundary; do not add a second async-wrapper scope or duplicate correlation IDs.
+- The current worker-pool async adapter does not promise interruption of an in-progress backend call when its subscription is cancelled. Do not report backend cancellation as ABANDONED unless the backend execution itself is actually cancelled; document the limitation and preserve the eventual synchronous success/failure observation.
 
 
 #### Reactive streaming lifecycle requirements
@@ -565,3 +567,13 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Emit one `gguf.model.unload` lifecycle scope per backend when execution observation is enabled; one failed unload must not suppress later unload attempts or their events.
 - Preserve the direct no-op observer path while applying the same all-backends cleanup guarantee.
 - Test multiple backends, a failure before a successful close, lifecycle terminal outcomes, repeated close, and no-op observer behavior.
+
+### 19.4 Backend facade size and responsibility boundaries
+
+- Backend implementations may expose a broad operation surface because they implement a shared backend contract; that is not permission for one concrete backend class to own every numerical algorithm, storage detail, validation path, kernel dispatch rule and execution policy.
+- Keep a backend implementation as the composition/facade point for backend identity, capabilities, lifecycle, storage allocation and delegation. Extract cohesive operation families and kernel responsibilities when they have independent reasons to change or can be tested meaningfully in isolation.
+- Before extracting code, inventory existing helpers, operation contracts, callers, tests, storage ownership and failure cleanup. Reuse existing boundaries; do not create duplicate kernels, validators or speculative one-class-per-method hierarchies.
+- Keep numerical kernels separate from tensor-level semantics and output-storage lifecycle. Keep storage/layout access centralized and preserve contiguous, strided and offset tensor behavior.
+- Prefer package-private composition over new public SPIs. Introduce an interface only for a demonstrated extension point, multiple real implementations or a valuable stable test seam.
+- Perform structural extraction independently from numerical optimization. Each extraction must preserve shape/dtype/error semantics, precision, resource ownership, release-on-failure behavior and backend conformance tests.
+- Apply these rules to every backend (CPU, Metal, CUDA, Vulkan, OpenCL, HAT and future providers); do not make the public tensor API depend on a concrete backend implementation.

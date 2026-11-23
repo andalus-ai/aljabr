@@ -110,16 +110,20 @@ class HatComputeProviderTest {
             }
             assertInstanceOf(CpuBackend.class,
                     session.computeBackends().get(HatComputeProvider.CPU_FALLBACK_BACKEND_ID));
-            assertEquals(OperationSupport.DELEGATED,
-                    session.operationSupport("tensor.reshape", Map.of()).support());
-            assertEquals(OperationSupport.DELEGATED,
-                    session.operationSupport("tensor.reshape", Map.of("dtype", "Q4_0")).support());
-            assertEquals(OperationSupport.DELEGATED,
-                    session.operationSupport("tensor.flatten", Map.of()).support());
-            assertEquals(OperationSupport.DELEGATED,
-                    session.operationSupport("tensor.unsqueeze", Map.of()).support());
-            assertEquals(OperationSupport.DELEGATED,
-                    session.operationSupport("tensor.squeeze", Map.of()).support());
+            for (String operation : Set.of(
+                    "tensor.reshape", "tensor.flatten", "tensor.unsqueeze", "tensor.squeeze")) {
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of()).support(), operation);
+                assertEquals(OperationSupport.UNKNOWN,
+                        session.operationSupport(operation, Map.of("contiguous", "maybe")).support(), operation);
+                assertEquals(OperationSupport.DELEGATED,
+                        session.operationSupport(operation, Map.of("contiguous", "true")).support(), operation);
+                assertEquals(HatComputeProvider.CPU_FALLBACK_BACKEND_ID,
+                        session.operationSupport(operation, Map.of("contiguous", "true")).effectiveBackendId(),
+                        operation);
+                assertEquals(OperationSupport.UNSUPPORTED,
+                        session.operationSupport(operation, Map.of("contiguous", "false")).support(), operation);
+            }
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.slice", Map.of()).support());
             assertEquals(OperationSupport.UNSUPPORTED,
@@ -308,10 +312,13 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.dropout", Map.of()).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.dropout", Map.of("training", "true", "p", "0.25")).support());
-            assertEquals(OperationSupport.DELEGATED,
+            assertEquals(OperationSupport.NATIVE,
                     session.operationSupport("tensor.dropout", Map.of(
                             "training", "false", "p", "0.25", "dtype", "Q4_0")).support());
-            assertEquals(OperationSupport.DELEGATED,
+            assertEquals(null,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "false", "p", "0.25", "dtype", "Q4_0")).effectiveBackendId());
+            assertEquals(OperationSupport.NATIVE,
                     session.operationSupport("tensor.dropout", Map.of(
                             "training", "true", "p", "0", "dtype", "Q4_0")).support());
             assertEquals(OperationSupport.DELEGATED,

@@ -220,3 +220,33 @@ Consequences:
 - The absence of references in the accessible Andalus repositories is useful internal evidence, but it does not establish that no external repository or consumer depends on the package.
 - Keep the source deprecation in place while this release-compatibility check is completed. The quantization module is being decoupled separately so reusable compute capabilities no longer require the REST artifact.
 
+### F-005 quantization follow-up — Preserve compute, isolate orchestration
+
+The quantization module is a separate artifact and must not be removed with the deprecated REST artifact. The source audit confirms reusable quantization functionality exists here:
+
+`engine/safetensor/aljabr-safetensor-quantization`
+
+**Keep in Aljabr**
+
+- `QuantConfig`, `QuantResult`, and `QuantStats` are plain Java value/configuration/result types with no JAX-RS or JSON transport annotations.
+- `Quantizer`, `GPTQQuantizer`, `INT8Quantizer`, and `FP8Quantizer` implement compute-side quantization behavior.
+- `SafeTensorQuantizedReader` and `SafeTensorQuantizedWriter` perform format-specific metadata and tensor I/O. Jackson in the reader is used to parse the SafeTensors JSON header; this is format parsing, not REST serialization.
+- Quantization metadata descriptors and the tensor bridge are format/model transformation concerns.
+
+**Boundary issues to address separately**
+
+- `QuantizationEngine` currently combines model loading, quantizer selection/registry access, tensor iteration, execution/cache management, output writing, statistics, async scheduling, and progress streaming in one application-scoped class.
+- The engine directly depends on CDI (`@ApplicationScoped`, `@Inject`, `@PreDestroy`) and Mutiny (`Uni`, `Multi`). These are framework/orchestration choices, not requirements of the quantization algorithms themselves. Keep a synchronous, framework-neutral compute contract as the stable Aljabr API; place CDI lifecycle and reactive/progress adapters at an appropriate integration boundary after consumer tracing.
+- `QuantConfig` and quantizer APIs refer to `QuantizationEngine.QuantStrategy`, coupling otherwise plain data/configuration contracts to the orchestration class. A later focused refactor should move the strategy type to a neutral quantization model type, preserving compatibility with a deprecation bridge if public consumers require it.
+- `AccelWeightBridge` in this module is explicitly a deprecated compatibility wrapper delegating to the canonical `aljabr-safetensor-bridge` implementation. Avoid expanding it; remove only after checking consumers.
+- The module build includes CDI, Mutiny, Jackson and JBoss Logging. Jackson is justified by the SafeTensors reader. CDI/Mutiny are currently used by the orchestration engine and CDI bridge; their removal must follow an API split/consumer migration, not an indiscriminate dependency deletion.
+- The existing test source tree contains focused config, stats, descriptor, registry and quantizer tests. The build currently excludes `QuantizationRoundTripTest.java`; do not treat round-trip coverage as active until that exclusion is resolved and the test passes.
+
+**Documentation drift**
+
+The README still describes the module as part of the "Aljabr inference engine", demonstrates CDI injection and Mutiny progress streams as the primary API, and includes stale Maven module paths and historical integration claims. Refresh it after the API boundary is settled; do not copy those historical claims into the target architecture.
+
+**Disposition**
+
+Retain the quantization module and compute algorithms. Do not move quantizers to AQLI or delete the module with `aljabr-safetensor-api`. The next implementation should first map all quantization consumers and separate the pure quantizer/config/result contract from the application-scoped orchestration surface. Preserve SafeTensors I/O and existing algorithm behavior, and add active round-trip tests before changing the writer/reader contract.
+

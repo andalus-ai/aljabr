@@ -79,11 +79,27 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
             int[] inputIds,
             int imageTokenId,
             List<float[][]> imageFeatures) {
+        return replaceModalityPlaceholders(textEmbeddings, inputIds, imageTokenId, imageFeatures, "image");
+    }
+
+    /**
+     * Replaces ordered modality placeholder rows with projected text-space soft tokens.
+     * The modality label is used only for diagnostics; modality-specific processing
+     * and token policy remain outside this sequence assembly utility.
+     */
+    public static float[][] replaceModalityPlaceholders(
+            float[][] textEmbeddings,
+            int[] inputIds,
+            int placeholderTokenId,
+            List<float[][]> modalityFeatures,
+            String modality) {
         Objects.requireNonNull(textEmbeddings, "textEmbeddings must not be null");
         Objects.requireNonNull(inputIds, "inputIds must not be null");
-        Objects.requireNonNull(imageFeatures, "imageFeatures must not be null");
-        if (imageTokenId < 0) {
-            throw new IllegalArgumentException("imageTokenId must be non-negative");
+        Objects.requireNonNull(modalityFeatures, "modalityFeatures must not be null");
+        Objects.requireNonNull(modality, "modality must not be null");
+        if (modality.isBlank()) throw new IllegalArgumentException("modality must not be blank");
+        if (placeholderTokenId < 0) {
+            throw new IllegalArgumentException("placeholderTokenId must be non-negative");
         }
         if (inputIds.length == 0 || textEmbeddings.length != inputIds.length) {
             throw new IllegalArgumentException("text embeddings and input IDs must have equal non-zero length");
@@ -104,44 +120,44 @@ public final class EmbeddingGemma2MultimodalInputAssembler {
                 }
             }
             output[token] = row.clone();
-            if (inputIds[token] == imageTokenId) placeholderCount++;
+            if (inputIds[token] == placeholderTokenId) placeholderCount++;
         }
 
         int featureCount = 0;
-        for (int image = 0; image < imageFeatures.size(); image++) {
-            float[][] features = imageFeatures.get(image);
+        for (int sequence = 0; sequence < modalityFeatures.size(); sequence++) {
+            float[][] features = modalityFeatures.get(sequence);
             if (features == null || features.length == 0) {
-                throw new IllegalArgumentException("image feature sequence " + image + " must be non-empty");
+                throw new IllegalArgumentException(modality + " feature sequence " + sequence + " must be non-empty");
             }
             featureCount = Math.addExact(featureCount, features.length);
             for (int token = 0; token < features.length; token++) {
                 float[] row = features[token];
                 if (row == null || row.length != hiddenSize) {
-                    throw new IllegalArgumentException("image feature " + image + ":" + token
+                    throw new IllegalArgumentException(modality + " feature " + sequence + ":" + token
                             + " must have text hidden size " + hiddenSize);
                 }
                 for (float value : row) {
                     if (!Float.isFinite(value)) {
-                        throw new IllegalArgumentException("image features must contain only finite values");
+                        throw new IllegalArgumentException(modality + " features must contain only finite values");
                     }
                 }
             }
         }
         if (placeholderCount != featureCount) {
-            throw new IllegalArgumentException("image placeholder count (" + placeholderCount
-                    + ") must equal projected image soft-token count (" + featureCount + ")");
+            throw new IllegalArgumentException("modality placeholder count (" + placeholderCount
+                    + ") must equal projected modality soft-token count (" + featureCount + ")");
         }
 
-        int imageIndex = 0;
-        int imageTokenIndex = 0;
+        int sequenceIndex = 0;
+        int sequenceTokenIndex = 0;
         for (int token = 0; token < inputIds.length; token++) {
-            if (inputIds[token] != imageTokenId) continue;
-            while (imageIndex < imageFeatures.size()
-                    && imageTokenIndex == imageFeatures.get(imageIndex).length) {
-                imageIndex++;
-                imageTokenIndex = 0;
+            if (inputIds[token] != placeholderTokenId) continue;
+            while (sequenceIndex < modalityFeatures.size()
+                    && sequenceTokenIndex == modalityFeatures.get(sequenceIndex).length) {
+                sequenceIndex++;
+                sequenceTokenIndex = 0;
             }
-            output[token] = imageFeatures.get(imageIndex)[imageTokenIndex++].clone();
+            output[token] = modalityFeatures.get(sequenceIndex)[sequenceTokenIndex++].clone();
         }
         return output;
     }

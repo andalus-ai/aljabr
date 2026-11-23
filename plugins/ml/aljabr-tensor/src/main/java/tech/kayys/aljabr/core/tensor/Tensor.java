@@ -107,9 +107,11 @@ public interface Tensor extends AutoCloseable {
      * Index order and duplicates are preserved; indices must be in
      * {@code [0, shape().dim(axis))}. Negative axes count from the end.
      *
-     * <p>The initial CPU implementation supports F32 source tensors.
-     * Reverse-mode differentiation scatters gradients back with indexed
-     * addition, so repeated indices accumulate their contributions.</p>
+     * <p>The CPU implementation preserves scalar, non-quantized dtypes
+     * (F32, F16, BF16, I32, I8, and INT8). Block-quantized tensors are not
+     * supported yet. Reverse-mode differentiation scatters gradients back
+     * with indexed addition, so repeated indices accumulate their
+     * contributions.</p>
      */
     Tensor indexSelect(int axis, Tensor indices);
 

@@ -216,8 +216,7 @@ public final class HatComputeProvider implements ComputeProvider {
             }
 
             if (CPU_DTYPE_PRESERVING_OPERATIONS.contains(operationId)) {
-                return new OperationSupportDescriptor(
-                        operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+                return contiguousShapeOperationSupport(operationId, constraints);
             }
 
             if ("tensor.rope".equals(operationId)) {
@@ -361,6 +360,26 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+        }
+
+        /**
+         * CPU reshape and its shape-only wrappers preserve dtype, but currently
+         * require a contiguous input layout. Missing layout metadata must not
+         * cause the planner to assume that a non-contiguous view is executable.
+         */
+        private OperationSupportDescriptor contiguousShapeOperationSupport(
+                String operationId, Map<String, String> constraints) {
+            String contiguous = constraints.get("contiguous");
+            if (contiguous == null
+                    || (!"true".equalsIgnoreCase(contiguous)
+                    && !"false".equalsIgnoreCase(contiguous))) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (!Boolean.parseBoolean(contiguous)) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            return new OperationSupportDescriptor(
+                    operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
         /**
@@ -1020,7 +1039,9 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             if (!Boolean.parseBoolean(training) || p == 0f) {
-                return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+                // Identity dropout is handled by the selected backend without
+                // executing a CPU kernel or changing tensor ownership.
+                return new OperationSupportDescriptor(operationId, OperationSupport.NATIVE, null);
             }
             if (p == 1f) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);

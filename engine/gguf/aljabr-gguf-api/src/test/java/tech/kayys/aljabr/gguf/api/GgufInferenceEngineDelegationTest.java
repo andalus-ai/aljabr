@@ -27,6 +27,39 @@ import static org.junit.jupiter.api.Assertions.*;
 class GgufInferenceEngineDelegationTest {
 
     @Test
+    void asyncInferenceUsesOneDeferredSynchronousLifecycleScope() throws Exception {
+        Path model = Files.createTempFile("gguf-async-infer-lifecycle", ".gguf");
+        List<ExecutionEvent> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicBoolean executeCalled = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public InferenceResponse execute(InferenceRequest request) {
+                executeCalled.set(true);
+                return response("async");
+            }
+        };
+
+        try (GgufInferenceEngine engine = engine(model, backend, events::add)) {
+            Uni<InferenceResponse> inference = engine.executeAsync("model", request());
+
+            assertTrue(events.isEmpty(), "async inference must remain lazy until subscription");
+            assertFalse(executeCalled.get());
+
+            InferenceResponse result = inference.await().indefinitely();
+
+            assertTrue(executeCalled.get());
+            assertEquals("async", result.getContent());
+            assertEquals(2, events.size(), "the async adapter must not add a duplicate lifecycle scope");
+            assertEquals(ExecutionEvent.Type.STARTED, events.get(0).type());
+            assertEquals(ExecutionEvent.Type.SUCCEEDED, events.get(1).type());
+            assertEquals("gguf.infer", events.get(1).context().operation());
+            assertEquals(events.get(0).context().correlationId(), events.get(1).context().correlationId());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
     void delegatesStreamingToBackend() throws Exception {
         Path model = Files.createTempFile("gguf-stream", ".gguf");
         AtomicBoolean streamCalled = new AtomicBoolean();
