@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. IQ3_S, IQ4_NL, IQ4_XS, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -161,6 +161,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
             case "IQ3_S" -> TensorEncoding.dequantized("IQ3_S", 110, 256);
+            case "IQ3_XXS" -> TensorEncoding.dequantized("IQ3_XXS", 98, 256);
             case "IQ4_NL" -> TensorEncoding.dequantized("IQ4_NL", 18, 32);
             case "IQ4_XS" -> TensorEncoding.dequantized("IQ4_XS", 136, 256);
             case "Q2_K" -> TensorEncoding.dequantized("Q2_K", 84, 256);
@@ -180,7 +181,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "IQ3_S", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -281,6 +282,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("IQ3_XXS")) {
+                    dequantizeIQ3XXSBlock(source, base, values);
+                    continue;
+                }
                 if (type.equals("IQ3_S")) {
                     dequantizeIQ3SBlock(source, base, values);
                     continue;
@@ -355,6 +360,39 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             }
             writeFully(output, values);
             block += count;
+        }
+    }
+
+    /**
+     * GGML block_iq3_xxs layout: fp16 block scale followed by 96 bytes.
+     * The first 64 payload bytes contain eight groups of eight grid indices;
+     * the final 32 bytes pack each group's four sign codes and scale nibble.
+     */
+    private static void dequantizeIQ3XXSBlock(byte[] source, int base, ByteBuffer output) {
+        float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        int qsOffset = base + 2;
+        int scalesAndSignsOffset = qsOffset + 64;
+        for (int group = 0; group < 8; group++) {
+            int aux = (source[scalesAndSignsOffset + group * 4] & 0xff)
+                    | ((source[scalesAndSignsOffset + group * 4 + 1] & 0xff) << 8)
+                    | ((source[scalesAndSignsOffset + group * 4 + 2] & 0xff) << 16)
+                    | ((source[scalesAndSignsOffset + group * 4 + 3] & 0xff) << 24);
+            float groupScale = scale * (0.5f + ((aux >>> 28) & 0x0f)) * 0.5f;
+            for (int pair = 0; pair < 4; pair++) {
+                int signs = decodeIQ3SSignMask((aux >>> (pair * 7)) & 0x7f);
+                int firstGrid = source[qsOffset + group * 8 + pair * 2] & 0xff;
+                int secondGrid = source[qsOffset + group * 8 + pair * 2 + 1] & 0xff;
+                writeIQ3XXSGrid(firstGrid, signs, groupScale, output, 0);
+                writeIQ3XXSGrid(secondGrid, signs, groupScale, output, 4);
+            }
+        }
+    }
+
+    private static void writeIQ3XXSGrid(
+            int gridIndex, int signs, float scale, ByteBuffer output, int signOffset) {
+        for (int lane = 0; lane < 4; lane++) {
+            float sign = (signs & (1 << (signOffset + lane))) != 0 ? -1.0f : 1.0f;
+            output.putFloat(scale * Iq3XXSGrid.value(gridIndex, lane) * sign);
         }
     }
 
