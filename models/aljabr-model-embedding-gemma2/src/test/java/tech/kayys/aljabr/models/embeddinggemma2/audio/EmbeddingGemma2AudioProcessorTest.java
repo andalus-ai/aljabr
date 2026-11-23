@@ -73,6 +73,16 @@ class EmbeddingGemma2AudioProcessorTest {
                 () -> new EmbeddingGemma2AudioProcessor(withDither));
     }
     @Test
+    void capsWaveformAtConfiguredAudioSoftTokenBudgetBeforeFeatureExtraction() {
+        var processor = new EmbeddingGemma2AudioProcessor(config());
+        var result = processor.process(new float[EmbeddingGemma2AudioProcessor.PUBLISHED_MAX_INPUT_SAMPLES], 1, 16_000);
+
+        assertTrue(result.truncated());
+        assertEquals(280 * 40 * 16, result.processedSampleCount());
+        assertEquals(280, processor.audioPlaceholderCount(result));
+    }
+
+    @Test
     void computesDurationBasedAudioPlaceholderCountAndExpandsOneMarker() {
         var processor = new EmbeddingGemma2AudioProcessor(config());
         var processed = processor.process(new float[1_600], 1, 16_000);
