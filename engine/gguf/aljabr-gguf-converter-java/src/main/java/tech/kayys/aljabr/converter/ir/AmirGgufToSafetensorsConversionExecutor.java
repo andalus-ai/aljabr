@@ -40,8 +40,9 @@ import java.util.Objects;
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
  * Safetensors metadata envelope. Opaque AMIR extensions are retained as
- * namespaced strings. Typed graph, asset, and component layers are not
- * representable in the Safetensors file and are reported.
+ * namespaced strings. Versioned envelopes preserve typed assets and
+ * components without graph bindings; graph collections and graph-bound
+ * components remain explicitly reported.
  */
 public final class AmirGgufToSafetensorsConversionExecutor implements ModelConversionExecutor {
 
@@ -761,6 +762,8 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed metadata"));
         AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
                 AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors typed tensor metadata"));
+        AmirModelLayerCodec.encode(model).forEach((key, value) ->
+                AmirSourceMetadataCodec.putUnique(values, key, value, "Safetensors model layer metadata"));
         for (TensorDescriptor tensor : model.tensors()) {
             tensor.extensions().forEach((key, value) -> AmirSourceMetadataCodec.putUnique(values,
                     "aljabr.source.tensor." + keyPart(tensor.name()) + "." + keyPart(key), value,
@@ -775,14 +778,16 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean hasUnrepresentableLayers(ModelDescriptor model) {
         return model.graphCollection().isPresent()
-                || model.assetCollection().isPresent() || model.componentCollection().isPresent();
+                || model.componentCollection().filter(collection ->
+                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent();
     }
 
     private static List<String> untransferredKeys(ModelDescriptor model) {
         List<String> keys = new ArrayList<>();
         model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
-        model.assetCollection().ifPresent(ignored -> keys.add("model:assetCollection"));
-        model.componentCollection().ifPresent(ignored -> keys.add("model:componentCollection"));
+        model.componentCollection().filter(collection ->
+                !AmirModelLayerCodec.hasNoGraphBindings(collection))
+                .ifPresent(ignored -> keys.add("model:componentCollection"));
         model.extensions().keySet().stream()
                 .filter(key -> key.startsWith("gguf.metadata."))
                 .sorted()

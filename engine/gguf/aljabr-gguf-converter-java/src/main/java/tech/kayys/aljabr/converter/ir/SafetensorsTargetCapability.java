@@ -68,12 +68,13 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
         }
 
         if (source.graphCollection().isPresent()
-                || source.assetCollection().isPresent() || source.componentCollection().isPresent()) {
+                || source.componentCollection().filter(collection ->
+                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent()) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
                     "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
-                    "Safetensors preserves the typed architecture descriptor, but cannot encode computation "
-                            + "graphs, assets, or components."));
+                    "Safetensors preserves assets and unbound components, but graph collections and "
+                            + "components with graph bindings are not yet encoded."));
             partial = true;
         }
 

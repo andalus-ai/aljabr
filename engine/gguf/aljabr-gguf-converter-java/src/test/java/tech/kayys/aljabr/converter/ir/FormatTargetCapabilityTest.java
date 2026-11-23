@@ -1,6 +1,11 @@
 package tech.kayys.aljabr.converter.ir;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.spi.model.ir.AssetCollection;
+import tech.kayys.aljabr.spi.model.ir.AssetReference;
+import tech.kayys.aljabr.spi.model.ir.ComponentCollection;
+import tech.kayys.aljabr.spi.model.ir.ModelComponent;
+import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
@@ -123,6 +128,19 @@ class FormatTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL,
                 new SafetensorsTargetCapability().assess(source).fidelity());
+    }
+
+    @Test
+    void ggufClassifiesAssetAndUnboundComponentEnvelopesAsFullyPreserved() {
+        var source = new ModelDescriptor(ModelIdentity.of("model-layers"), "llama", "safetensors",
+                Map.of(), Map.of(), List.of())
+                .withAssetCollection(new AssetCollection(List.of(
+                        AssetReference.of("tokenizer", "assets/tokenizer.json"))))
+                .withComponentCollection(new ComponentCollection(List.of(
+                        ModelComponent.of("tokenizer", ModelComponentKind.TOKENIZER))));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL,
+                new GgufTargetCapability().assess(source).fidelity());
     }
 
     private static ModelDescriptor model(String architecture, String format, TensorDescriptor tensor) {
