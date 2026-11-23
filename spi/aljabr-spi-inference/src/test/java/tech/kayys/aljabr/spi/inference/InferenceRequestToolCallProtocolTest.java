@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.spi.inference;
 
 import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.spi.Message;
 
 import static org.junit.jupiter.api.Assertions.*;
 
