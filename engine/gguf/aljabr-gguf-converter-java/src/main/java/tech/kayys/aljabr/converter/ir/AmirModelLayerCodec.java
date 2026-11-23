@@ -35,7 +35,7 @@ final class AmirModelLayerCodec {
     static Map<String, String> encode(ModelDescriptor model) {
         Map<String, String> result = new LinkedHashMap<>();
         model.assetCollection().ifPresent(collection -> result.put(ASSETS_KEY, encodeAssets(collection)));
-        model.componentCollection().ifPresent(collection ->
+        model.componentCollection().filter(AmirModelLayerCodec::hasNoGraphBindings).ifPresent(collection ->
                 result.put(COMPONENTS_KEY, encodeComponents(collection)));
         return Map.copyOf(result);
     }
@@ -47,6 +47,10 @@ final class AmirModelLayerCodec {
         if (assets != null) restored = restored.withAssetCollection(decodeAssets(assets));
         if (components != null) restored = restored.withComponentCollection(decodeComponents(components));
         return restored;
+    }
+
+    static boolean hasNoGraphBindings(ComponentCollection collection) {
+        return collection.components().stream().allMatch(component -> component.graphBindings().isEmpty());
     }
 
     static boolean isEncodedKey(String key) {
