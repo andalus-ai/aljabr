@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 public class HatComputeBackendTest {
 
@@ -295,6 +296,14 @@ public class HatComputeBackendTest {
     public void testMatmulRejectsNonMatrixInputs() {
         try (Tensor a = TensorFactory.ones(3); Tensor b = TensorFactory.ones(3, 2)) {
             assertThrows(IllegalArgumentException.class, () -> backend.matmul(a, b));
+        }
+    }
+
+    @Test
+    public void testDropoutIdentityPreservesSelectedBackendOwnership() {
+        try (Tensor input = TensorFactory.of(new float[] { 1.0f, 2.0f }, backend, 2)) {
+            assertSame(input, backend.dropout(input, 0.25f, false));
+            assertSame(input, backend.dropout(input, 0.0f, true));
         }
     }
 
