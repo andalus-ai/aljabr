@@ -33,7 +33,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            if (Set.of("IQ3_S", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
+            if (Set.of("IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.WARNING,
                         "GGML_QUANTIZATION_DEQUANTIZED",
@@ -68,12 +68,13 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
         }
 
         if (source.graphCollection().isPresent()
-                || source.assetCollection().isPresent() || source.componentCollection().isPresent()) {
+                || source.componentCollection().filter(collection ->
+                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent()) {
             diagnostics.add(new CompatibilityReport.Diagnostic(
                     CompatibilityReport.Severity.WARNING,
                     "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
-                    "Safetensors preserves the typed architecture descriptor, but cannot encode computation "
-                            + "graphs, assets, or components."));
+                    "Safetensors preserves assets and unbound components, but graph collections and "
+                            + "components with graph bindings are not yet encoded."));
             partial = true;
         }
 
