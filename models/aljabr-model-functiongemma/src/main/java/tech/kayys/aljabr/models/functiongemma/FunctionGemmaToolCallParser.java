@@ -4,7 +4,7 @@ import tech.kayys.aljabr.core.tool.ToolCall;
 import tech.kayys.aljabr.core.tool.ToolCallParseDiagnostic;
 import tech.kayys.aljabr.core.tool.ToolCallParseResult;
 import tech.kayys.aljabr.core.tool.ToolCallParser;
-import tech.kayys.aljabr.core.tool.ToolCallProtocolDescriptor;
+import tech.kayys.aljabr.spi.inference.ToolCallProtocolDescriptor;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
