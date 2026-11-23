@@ -108,4 +108,16 @@ class EmbeddingGemma2AudioProcessorTest {
                 () -> processor.expandAudioPlaceholders(new int[]{1, 1, 12}, processed));
     }
 
+    @Test
+    void rejectsAudioFeaturesWithoutAnyValidSoftTokens() {
+        var processor = new EmbeddingGemma2AudioProcessor(config());
+        var features = new EmbeddingGemma2AudioFeatureExtractor.Features(
+                new float[][]{{0f}, {0f}, {0f}, {0f}},
+                new boolean[]{false, false, false, false}, 640, 640);
+        var processed = new EmbeddingGemma2AudioProcessor.ProcessedAudio(
+                features, 16_000, 1, 16_000, 640, false);
+
+        assertThrows(IllegalArgumentException.class, () -> processor.audioPlaceholderCount(processed));
+    }
+
 }
