@@ -853,6 +853,7 @@ public final class HatComputeProvider implements ComputeProvider {
                 String firstKey, String secondKey, String nonNegativeKey) {
             OperationSupportDescriptor input = floatInputSupport(operationId, constraints, 4);
             if (input.support() != OperationSupport.DELEGATED) return input;
+
             OperationSupport first = positiveIntegerConstraint(constraints, firstKey);
             if (first != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, first, null);
             OperationSupport second = positiveIntegerConstraint(constraints, secondKey);
@@ -861,7 +862,43 @@ public final class HatComputeProvider implements ComputeProvider {
                 OperationSupport padding = nonNegativeIntegerConstraint(constraints, nonNegativeKey);
                 if (padding != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, padding, null);
             }
+
+            Long inputHeight = parseLong(constraints.get("input_height"));
+            Long inputWidth = parseLong(constraints.get("input_width"));
+            if (inputHeight == null || inputWidth == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (inputHeight <= 0 || inputWidth <= 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+
+            if ("tensor.max_pool2d".equals(operationId)) {
+                long kernel = Long.parseLong(constraints.get(firstKey));
+                long stride = Long.parseLong(constraints.get(secondKey));
+                long padding = Long.parseLong(constraints.get(nonNegativeKey));
+                try {
+                    long paddedHeight = Math.addExact(inputHeight, Math.multiplyExact(2L, padding));
+                    long paddedWidth = Math.addExact(inputWidth, Math.multiplyExact(2L, padding));
+                    long outputHeight = (paddedHeight - kernel) / stride + 1;
+                    long outputWidth = (paddedWidth - kernel) / stride + 1;
+                    if (outputHeight <= 0 || outputWidth <= 0) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
+                } catch (ArithmeticException overflow) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
+            }
+
             return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private Long parseLong(String value) {
+            if (value == null) return null;
+            try {
+                return Long.valueOf(value);
+            } catch (NumberFormatException invalid) {
+                return null;
+            }
         }
 
         private OperationSupportDescriptor floatInputSupport(String operationId, Map<String, String> constraints, int requiredRank) {
