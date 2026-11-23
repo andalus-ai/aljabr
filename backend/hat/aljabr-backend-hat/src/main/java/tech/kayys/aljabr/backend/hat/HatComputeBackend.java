@@ -369,7 +369,10 @@ public class HatComputeBackend implements ComputeBackend {
 
     @Override
     public Tensor dropout(Tensor input, float p, boolean training) {
-        return cpuFallback.dropout(input, p, training);
+        if (!training || p == 0f) {
+            return input;
+        }
+        return cpuFallback.dropout(input, p, true);
     }
 
     @Override

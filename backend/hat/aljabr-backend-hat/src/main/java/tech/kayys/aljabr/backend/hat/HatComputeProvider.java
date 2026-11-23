@@ -1039,7 +1039,9 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
             if (!Boolean.parseBoolean(training) || p == 0f) {
-                return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+                // Identity dropout is handled by the selected backend without
+                // executing a CPU kernel or changing tensor ownership.
+                return new OperationSupportDescriptor(operationId, OperationSupport.NATIVE, null);
             }
             if (p == 1f) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);

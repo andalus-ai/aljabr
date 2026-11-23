@@ -312,10 +312,13 @@ class HatComputeProviderTest {
                     session.operationSupport("tensor.dropout", Map.of()).support());
             assertEquals(OperationSupport.UNKNOWN,
                     session.operationSupport("tensor.dropout", Map.of("training", "true", "p", "0.25")).support());
-            assertEquals(OperationSupport.DELEGATED,
+            assertEquals(OperationSupport.NATIVE,
                     session.operationSupport("tensor.dropout", Map.of(
                             "training", "false", "p", "0.25", "dtype", "Q4_0")).support());
-            assertEquals(OperationSupport.DELEGATED,
+            assertEquals(null,
+                    session.operationSupport("tensor.dropout", Map.of(
+                            "training", "false", "p", "0.25", "dtype", "Q4_0")).effectiveBackendId());
+            assertEquals(OperationSupport.NATIVE,
                     session.operationSupport("tensor.dropout", Map.of(
                             "training", "true", "p", "0", "dtype", "Q4_0")).support());
             assertEquals(OperationSupport.DELEGATED,
