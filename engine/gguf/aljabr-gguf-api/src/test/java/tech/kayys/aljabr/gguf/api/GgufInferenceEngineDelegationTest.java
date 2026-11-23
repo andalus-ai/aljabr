@@ -510,7 +510,7 @@ class GgufInferenceEngineDelegationTest {
             @Override public void close() { closed.set(true); }
         };
         GgufBackendProvider provider = provider((path, config) -> {
-            if (replacementCreated.get()) {
+            if (replacementCreated.getAndSet(true)) {
                 throw new AssertionError("duplicate registration must be rejected before provider creation");
             }
             return original;
