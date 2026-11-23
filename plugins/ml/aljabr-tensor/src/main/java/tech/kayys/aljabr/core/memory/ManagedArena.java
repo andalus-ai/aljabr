@@ -139,9 +139,27 @@ public final class ManagedArena implements AutoCloseable {
             int next = current - 1;
             if (refCount.compareAndSet(current, next)) {
                 if (next == 0) {
-                    arena.close();
+                    closeArenaIfAlive();
                 }
                 return;
+            }
+        }
+    }
+
+    /**
+     * Closes the arena unless a caller that supplied it through {@link #wrap(Arena)}
+     * has already closed it independently.
+     */
+    private void closeArenaIfAlive() {
+        if (!arena.scope().isAlive()) {
+            return;
+        }
+        try {
+            arena.close();
+        } catch (IllegalStateException exception) {
+            // An externally owned arena may be closed concurrently after isAlive().
+            if (arena.scope().isAlive()) {
+                throw exception;
             }
         }
     }
