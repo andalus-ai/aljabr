@@ -51,10 +51,22 @@ fun includeDirectProjectsUnder(
 val withLegacyPluginCore = providers.gradleProperty("withLegacyPluginCore")
     .map(String::toBoolean)
     .getOrElse(false)
-includeDirectProjectsUnder(
-    "core",
-    excludedRelativePaths = if (withLegacyPluginCore) emptySet() else setOf("aljabr-plugin-core")
-)
+// Storage adapters are optional capabilities, not foundational core dependencies.
+// RocksDB provides durable key-value storage; the legacy HelixDB-named module is
+// currently an in-process FFM off-heap store, not a persistent database.
+// Include either only when explicitly requested.
+val withRocksDb = providers.gradleProperty("withRocksDb")
+   .map(String::toBoolean)
+   .getOrElse(false)
+val withHelixDb = providers.gradleProperty("withHelixDb")
+   .map(String::toBoolean)
+   .getOrElse(false)
+val excludedCoreProjects = buildSet {
+   if (!withLegacyPluginCore) add("aljabr-plugin-core")
+   if (!withRocksDb) add("aljabr-rocksdb")
+   if (!withHelixDb) add("aljabr-helixdb")
+}
+includeDirectProjectsUnder("core", excludedRelativePaths = excludedCoreProjects)
 includeDirectProjectsUnder("spi")
 
 // Format engines and independently installable scientific/ML extensions.
