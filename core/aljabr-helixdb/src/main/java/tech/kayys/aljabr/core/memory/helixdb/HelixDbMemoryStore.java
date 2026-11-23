@@ -1,6 +1,5 @@
 package tech.kayys.aljabr.core.memory.helixdb;
 
-import tech.kayys.aljabr.core.memory.ManagedArena;
 import tech.kayys.aljabr.core.memory.UnifiedMemoryStore;
 
 import java.lang.foreign.Arena;
@@ -25,7 +24,7 @@ import java.util.logging.Logger;
  *
  * <p>
  * All values are stored directly in off-heap memory managed by a shared
- * {@link ManagedArena} (the <em>storage arena</em>). Callers that need to read
+ * {@link Arena} (the <em>storage arena</em>). Callers that need to read
  * values receive a <em>slice</em> of the storage segment — a true pointer alias
  * with no bytes copied. The caller must not outlive the store's storage arena.
  *
@@ -53,14 +52,14 @@ public final class HelixDbMemoryStore implements UnifiedMemoryStore {
 
     private static final Logger LOG = Logger.getLogger(HelixDbMemoryStore.class.getName());
 
-    // ── Index: key → (storedSegment, ManagedArena that owns it) ──────────────
-    private record Entry(MemorySegment segment, ManagedArena arena) {
+    // ── Index: key → (storedSegment, Arena that owns it) ──────────────
+    private record Entry(MemorySegment segment, Arena arena) {
     }
 
     private final ConcurrentSkipListMap<String, Entry> index = new ConcurrentSkipListMap<>(Comparator.naturalOrder());
 
     // ── Storage arena (shared) ────────────────────────────────────────────────
-    private volatile ManagedArena storageArena;
+    private volatile Arena storageArena;
 
     // ── Stats ─────────────────────────────────────────────────────────────────
     private final AtomicLong storedBytes = new AtomicLong(0);
@@ -92,7 +91,7 @@ public final class HelixDbMemoryStore implements UnifiedMemoryStore {
      */
     public HelixDbMemoryStore(String dbPath, Config config) {
         this.config = config;
-        this.storageArena = ManagedArena.create();
+        this.storageArena = Arena.ofShared();
         LOG.info("HelixDbMemoryStore initialized [maxStorage=" + config.maxStorageMiB() + " MiB]");
     }
 
@@ -233,7 +232,7 @@ public final class HelixDbMemoryStore implements UnifiedMemoryStore {
      */
     private void compact() {
         LOG.info("HelixDB compaction starting — " + stats());
-        ManagedArena newArena = ManagedArena.create();
+        Arena newArena = Arena.ofShared();
 
         // Rebuild the entire index into a fresh map backed by newArena.
         ConcurrentSkipListMap<String, Entry> newIndex = new ConcurrentSkipListMap<>(Comparator.naturalOrder());
@@ -249,7 +248,7 @@ public final class HelixDbMemoryStore implements UnifiedMemoryStore {
         index.clear();
         index.putAll(newIndex);
 
-        ManagedArena old = storageArena;
+        Arena old = storageArena;
         storageArena = newArena;
         old.close();
 
