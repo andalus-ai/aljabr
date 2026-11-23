@@ -9,6 +9,7 @@ java { withSourcesJar() }
 
 dependencies {
     api(project(":spi:aljabr-spi-model"))
+    api(project(":spi:aljabr-spi-inference"))
     testImplementation(project(":plugins:ml:aljabr-tensor"))
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
