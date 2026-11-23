@@ -32,9 +32,9 @@ import java.util.Objects;
  * Executes AMIR conversions to GGUF without materializing tensor payloads.
  *
  * <p>Source metadata and opaque model/tensor extensions are carried as
- * namespaced GGUF string metadata. Typed graph, asset, and component layers
- * have no GGUF representation in this writer and therefore require an
- * explicitly acknowledged PARTIAL conversion plan.
+ * namespaced GGUF string metadata. Versioned envelopes preserve typed assets
+ * and components without graph bindings. Graph collections and graph-bound
+ * components remain untransferred and require an acknowledged PARTIAL plan.
  */
 public final class AmirGgufConversionExecutor implements ModelConversionExecutor {
 
