@@ -1,6 +1,8 @@
 package tech.kayys.aljabr.core.memory.helixdb;
 
 import org.junit.jupiter.api.Test;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.io.TempDir;
 import java.lang.foreign.Arena;
 
@@ -114,6 +116,57 @@ class HelixDbMemoryStoreTest {
             assertTrue(aResult.isEmpty(), "Key A should not survive compaction after delete");
 
             System.out.println("After compaction: " + store.stats());
+        }
+    }
+
+
+    @Test
+    void borrowPinsStorageUntilLeaseIsClosed(@TempDir Path tempDir) throws Exception {
+        try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString());
+                Arena inputArena = Arena.ofConfined()) {
+            byte[] key = "leased-value".getBytes();
+            MemorySegment input = inputArena.allocate(8);
+            input.set(ValueLayout.JAVA_LONG, 0, 0x1020304050607080L);
+            store.put(key, input);
+
+            var lease = store.borrow(key).orElseThrow();
+            assertEquals(8, lease.segment().byteSize());
+            assertEquals(0x1020304050607080L,
+                    lease.segment().get(ValueLayout.JAVA_LONG, 0));
+
+            CountDownLatch flushStarted = new CountDownLatch(1);
+            CountDownLatch flushFinished = new CountDownLatch(1);
+            Thread compactor = new Thread(() -> {
+                flushStarted.countDown();
+                store.flush();
+                flushFinished.countDown();
+            });
+            compactor.start();
+
+            assertTrue(flushStarted.await(1, TimeUnit.SECONDS));
+            assertFalse(flushFinished.await(100, TimeUnit.MILLISECONDS),
+                    "compaction must wait while a lease is open");
+            assertEquals(0x1020304050607080L,
+                    lease.segment().get(ValueLayout.JAVA_LONG, 0));
+
+            lease.close();
+            assertTrue(flushFinished.await(2, TimeUnit.SECONDS),
+                    "compaction should proceed after the lease closes");
+            assertTrue(lease.isClosed());
+            assertThrows(IllegalStateException.class, lease::segment);
+            compactor.join();
+        }
+    }
+
+    @Test
+    void zeroExpectedSizeReturnsWholeLegacyValue(@TempDir Path tempDir) {
+        try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString());
+                Arena arena = Arena.ofConfined()) {
+            MemorySegment input = arena.allocate(32);
+            store.put("whole-value".getBytes(), input);
+
+            MemorySegment output = store.getZeroCopy("whole-value".getBytes(), 0, arena).orElseThrow();
+            assertEquals(32, output.byteSize());
         }
     }
 
