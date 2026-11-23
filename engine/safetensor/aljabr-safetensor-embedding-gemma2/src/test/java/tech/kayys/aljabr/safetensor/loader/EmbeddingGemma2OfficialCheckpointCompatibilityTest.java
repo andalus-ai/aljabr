@@ -46,7 +46,8 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
         Assumptions.assumeTrue("true".equalsIgnoreCase(System.getenv(FORWARD_ENV)),
                 () -> "Set " + FORWARD_ENV + "=true to run the full official-checkpoint vision forward pass");
 
-        EmbeddingGemma2VisionImagePipeline pipeline = loadPipeline(configuredCheckpoint());
+        LoadedPipeline loaded = loadPipeline(configuredCheckpoint());
+        EmbeddingGemma2VisionImagePipeline pipeline = loaded.pipeline();
         EmbeddingGemma2VisionImageProcessor.RgbImage image = gradientImage(16, 16);
 
         int expectedSoftTokens = pipeline.preprocess(List.of(image)).numSoftTokensPerImage()[0];
@@ -55,7 +56,8 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
         assertEquals(expectedSoftTokens, features.length,
                 "vision output must preserve the processor's actual per-image soft-token count");
         assertTrue(features.length > 0, "vision output must contain image tokens");
-        assertTrue(features[0].length > 0, "vision output must use the configured text hidden size");
+        assertEquals(loaded.textHiddenSize(), features[0].length,
+                "vision output width must equal text_config.hidden_size");
 
         boolean hasNonZeroFeature = false;
         for (float[] token : features) {
@@ -79,7 +81,7 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
         return checkpoint;
     }
 
-    private static EmbeddingGemma2VisionImagePipeline loadPipeline(Path checkpoint) throws Exception {
+    private static LoadedPipeline loadPipeline(Path checkpoint) throws Exception {
         Path directory = checkpoint.getParent();
         Path modelConfigPath = directory.resolve("config.json");
         Path processorConfigPath = directory.resolve("processor_config.json");
@@ -98,9 +100,13 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
         int textHiddenSize = textConfig.path("hidden_size").asInt(0);
         assertTrue(textHiddenSize > 0, "text_config.hidden_size must be positive");
 
-        return new EmbeddingGemma2VisionSafetensorLoader(testShardLoader(json))
-                .load(checkpoint, visionConfig, textHiddenSize, 1e-6f);
+        EmbeddingGemma2VisionImagePipeline pipeline =
+                new EmbeddingGemma2VisionSafetensorLoader(testShardLoader(json))
+                        .load(checkpoint, visionConfig, textHiddenSize, 1e-6f);
+        return new LoadedPipeline(pipeline, textHiddenSize);
     }
+
+    private record LoadedPipeline(EmbeddingGemma2VisionImagePipeline pipeline, int textHiddenSize) {}
 
     /**
      * Builds the same loader graph as CDI for this plain JUnit test. The
