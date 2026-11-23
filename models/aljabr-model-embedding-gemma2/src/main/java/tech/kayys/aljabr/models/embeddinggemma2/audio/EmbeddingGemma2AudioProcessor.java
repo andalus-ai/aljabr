@@ -74,17 +74,33 @@ public final class EmbeddingGemma2AudioProcessor {
     }
 
     /**
-     * Computes the number of audio soft-token slots from the processed waveform duration.
-     * The published processor uses ceil(duration_ms / audio_ms_per_token), capped
-     * by audio_seq_length.
+     * Computes the number of audio soft-token slots from the feature mask.
+     * The audio tower downsamples its time mask twice by taking every second
+     * element, so this count is exactly the number of valid tower positions.
      */
     public int audioPlaceholderCount(ProcessedAudio audio) {
         Objects.requireNonNull(audio, "audio must not be null");
-        long numerator = Math.multiplyExact((long) audio.processedSampleCount(), 1_000L);
-        long denominator = Math.multiplyExact(
-                (long) config.samplingRate(), (long) config.audioMillisecondsPerToken());
-        long count = Math.floorDiv(Math.addExact(numerator, denominator - 1L), denominator);
-        return (int) Math.min((long) config.audioSequenceLength(), Math.max(1L, count));
+        boolean[] frameMask = audio.features().inputFeaturesMask();
+        if (frameMask == null || frameMask.length == 0) {
+            throw new IllegalArgumentException("audio feature mask must contain at least one frame");
+        }
+        boolean[] downsampled = downsampleMask(downsampleMask(frameMask));
+        int validTokens = 0;
+        for (boolean valid : downsampled) {
+            if (valid) validTokens++;
+        }
+        if (validTokens == 0) {
+            throw new IllegalArgumentException("audio input produced no valid soft-token slots");
+        }
+        return Math.min(config.audioSequenceLength(), validTokens);
+    }
+
+    private static boolean[] downsampleMask(boolean[] mask) {
+        boolean[] downsampled = new boolean[(mask.length + 1) / 2];
+        for (int index = 0; index < downsampled.length; index++) {
+            downsampled[index] = mask[index * 2];
+        }
+        return downsampled;
     }
 
     /**
@@ -111,11 +127,15 @@ public final class EmbeddingGemma2AudioProcessor {
                     "exactly one audio placeholder is required for one waveform; found " + markerCount);
         }
         int expandedCount = audioPlaceholderCount(audio);
-        int outputLength = Math.addExact(inputIds.length - 1, expandedCount);
+        int replacementLength = Math.addExact(expandedCount, 2);
+        int outputLength = Math.addExact(inputIds.length - 1, replacementLength);
         int[] expanded = new int[outputLength];
         System.arraycopy(inputIds, 0, expanded, 0, markerIndex);
-        java.util.Arrays.fill(expanded, markerIndex, markerIndex + expandedCount, config.audioTokenId());
-        System.arraycopy(inputIds, markerIndex + 1, expanded, markerIndex + expandedCount,
+        expanded[markerIndex] = config.beginAudioTokenId();
+        java.util.Arrays.fill(expanded, markerIndex + 1, markerIndex + 1 + expandedCount,
+                config.audioTokenId());
+        expanded[markerIndex + 1 + expandedCount] = config.endAudioTokenId();
+        System.arraycopy(inputIds, markerIndex + 1, expanded, markerIndex + replacementLength,
                 inputIds.length - markerIndex - 1);
         return expanded;
     }
