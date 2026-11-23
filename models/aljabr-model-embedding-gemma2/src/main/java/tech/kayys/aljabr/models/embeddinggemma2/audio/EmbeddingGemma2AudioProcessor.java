@@ -104,9 +104,9 @@ public final class EmbeddingGemma2AudioProcessor {
     }
 
     /**
-     * Replaces exactly one audio marker in a prompt with the configured number
-     * of repeated audio placeholder IDs. Tokenization and chat-template policy
-     * remain outside this processor.
+     * Replaces exactly one audio marker with the model-defined audio token block:
+     * begin-audio, one audio token per valid tower state, and end-audio.
+     * Tokenization and chat-template policy remain outside this processor.
      */
     public int[] expandAudioPlaceholders(int[] inputIds, ProcessedAudio audio) {
         Objects.requireNonNull(inputIds, "inputIds must not be null");
