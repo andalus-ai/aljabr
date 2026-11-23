@@ -78,7 +78,7 @@ class EmbeddingGemma2MultimodalInputAssemblerTest {
         float[][] audio = {{0.25f, 0.5f}, {0.75f, 1.0f}};
 
         float[][] result = EmbeddingGemma2MultimodalInputAssembler.replaceModalityPlaceholders(
-                text, ids, 99, List.<float[][]>of(audio), "audio");
+                text, ids, 99, java.util.Collections.singletonList(audio), "audio");
 
         assertArrayEquals(text[0], result[0]);
         assertArrayEquals(audio[0], result[1]);
