@@ -4,6 +4,12 @@ import tech.kayys.aljabr.converter.java.gguf.GgufReader;
 import tech.kayys.aljabr.gguf.core.GgufModel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import tech.kayys.aljabr.spi.model.ir.AssetCollection;
+import tech.kayys.aljabr.spi.model.ir.AssetReference;
+import tech.kayys.aljabr.spi.model.ir.ComponentCollection;
+import tech.kayys.aljabr.spi.model.ir.ConfigurationValue;
+import tech.kayys.aljabr.spi.model.ir.ModelComponent;
+import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
 import tech.kayys.aljabr.spi.model.ir.ConversionRequest;
@@ -76,6 +82,32 @@ class AmirGgufConversionExecutorTest {
         assertArrayEquals(new byte[] {1, 2, 3, 4, 5, 6, 7, 8},
                 java.util.Arrays.copyOfRange(written, Math.toIntExact(dataStart),
                         Math.toIntExact(dataStart + 8)));
+    }
+
+    @Test
+    void roundTripsTypedAssetsAndComponentsThroughGguf() throws Exception {
+        Path source = writeSafetensors();
+        var payload = new PayloadReference(source.toUri(), source.getFileName().toString(),
+                0L, 8L, PayloadReference.OffsetBasis.DATA_SECTION);
+        var tensor = new TensorDescriptor("weight", "F32", List.of(2L), "contiguous", null, payload);
+        var model = new ModelDescriptor(ModelIdentity.of("model-layers"), "decoder", "safetensors",
+                Map.of(), Map.of(), List.of(tensor))
+                .withAssetCollection(new AssetCollection(List.of(
+                        AssetReference.of("tokenizer", "assets/tokenizer.json"))))
+                .withComponentCollection(new ComponentCollection(List.of(new ModelComponent(
+                        "text-tokenizer", ModelComponentKind.TOKENIZER,
+                        Map.of("normalization", new ConfigurationValue.StringValue("NFKC")),
+                        List.of("tokenizer"), List.of(), Map.of("vendor.impl", "custom")))));
+        Path output = temporaryDirectory.resolve("model-layers.gguf");
+
+        var result = new AmirGgufConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.FULL),
+                ConversionRequest.to(output.toUri()));
+
+        assertTrue(result.untransferredMetadataKeys().isEmpty());
+        ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
+        assertEquals(model.assetCollection(), restored.assetCollection());
+        assertEquals(model.componentCollection(), restored.componentCollection());
     }
 
     @Test

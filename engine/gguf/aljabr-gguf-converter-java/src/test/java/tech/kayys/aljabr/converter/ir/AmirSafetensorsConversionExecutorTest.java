@@ -10,6 +10,12 @@ import tech.kayys.aljabr.spi.model.ir.GraphDescriptor;
 import tech.kayys.aljabr.spi.model.ir.GraphSignature;
 import tech.kayys.aljabr.spi.model.ir.ModelComponent;
 import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
+import tech.kayys.aljabr.spi.model.ir.AssetCollection;
+import tech.kayys.aljabr.spi.model.ir.AssetReference;
+import tech.kayys.aljabr.spi.model.ir.ComponentCollection;
+import tech.kayys.aljabr.spi.model.ir.ConfigurationValue;
+import tech.kayys.aljabr.spi.model.ir.ModelComponent;
+import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ConversionExecutionResult;
 import tech.kayys.aljabr.spi.model.ir.ConversionPlan;
@@ -161,10 +167,40 @@ class AmirSafetensorsConversionExecutorTest {
 
         var result = executor.execute(
                 model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL), output, true);
-        assertEquals(List.of(
-                "model:graphCollection",
-                "model:assetCollection",
-                "model:componentCollection"), result.untransferredExtensionKeys());
+        assertEquals(List.of("model:graphCollection"), result.untransferredExtensionKeys());
+    }
+
+    @Test
+    void roundTripsTypedAssetsAndComponentsThroughSafetensors() throws Exception {
+        Path source = writeSource("model-layers-source.safetensors");
+        AssetReference tokenizerAsset = new AssetReference(
+                "tokenizer", "assets/tokenizer.json",
+                java.util.Optional.of("application/json"), java.util.OptionalLong.of(128L),
+                java.util.Optional.of("abc123"), java.util.Optional.of("sha256"),
+                Map.of("vendor.role", "vocabulary"));
+        ModelDescriptor model = model(source, Map.of(), Map.of())
+                .withAssetCollection(new AssetCollection(List.of(tokenizerAsset)))
+                .withComponentCollection(new ComponentCollection(List.of(new ModelComponent(
+                        "text-tokenizer", ModelComponentKind.TOKENIZER,
+                        Map.of("normalization", new ConfigurationValue.StringValue("NFKC"),
+                                "revision", new ConfigurationValue.IntegerValue(7L),
+                                "temperature", new ConfigurationValue.DecimalValue(
+                                        new java.math.BigDecimal("0.1250")),
+                                "useCache", new ConfigurationValue.BooleanValue(true),
+                                "specialTokens", new ConfigurationValue.StringListValue(List.of("bos", "eos")),
+                                "tokenIds", new ConfigurationValue.IntegerListValue(List.of(1L, 2L))),
+                        List.of("tokenizer"), List.of(), Map.of("vendor.impl", "custom")))));
+
+        Path output = temporaryDirectory.resolve("model-layers-roundtrip.safetensors");
+        var result = new AmirSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false);
+        assertTrue(result.untransferredExtensionKeys().isEmpty());
+
+        ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
+        assertEquals(model.assetCollection(), restored.assetCollection());
+        assertEquals(model.componentCollection(), restored.componentCollection());
+        assertFalse(restored.metadata().containsKey(AmirModelLayerCodec.ASSETS_KEY));
+        assertFalse(restored.metadata().containsKey(AmirModelLayerCodec.COMPONENTS_KEY));
     }
 
     private ModelDescriptor model(Path source, Map<String, String> metadata, Map<String, String> extensions) {
