@@ -73,6 +73,51 @@ public final class EmbeddingGemma2AudioProcessor {
                 truncated);
     }
 
+    /**
+     * Counts valid audio soft tokens using the same two stride-2 mask reductions
+     * as the audio tower. The processor sequence-length setting is the upper bound.
+     */
+    public int audioPlaceholderCount(ProcessedAudio audio) {
+        Objects.requireNonNull(audio, "audio must not be null");
+        boolean[] mask = audio.features().inputFeaturesMask();
+        for (int layer = 0; layer < 2; layer++) {
+            boolean[] downsampled = new boolean[(mask.length + 1) / 2];
+            for (int index = 0; index < downsampled.length; index++) {
+                downsampled[index] = mask[index * 2];
+            }
+            mask = downsampled;
+        }
+        int validTokens = 0;
+        for (boolean valid : mask) if (valid) validTokens++;
+        return Math.min(validTokens, config.audioSequenceLength());
+    }
+
+    /** Expands exactly one audio marker into the number of soft-token slots for this waveform. */
+    public int[] expandAudioPlaceholders(int[] inputIds, ProcessedAudio audio) {
+        Objects.requireNonNull(inputIds, "inputIds must not be null");
+        Objects.requireNonNull(audio, "audio must not be null");
+        if (inputIds.length == 0) throw new IllegalArgumentException("inputIds must not be empty");
+        int markerCount = 0;
+        int markerIndex = -1;
+        for (int index = 0; index < inputIds.length; index++) {
+            if (inputIds[index] == config.audioTokenId()) {
+                markerCount++;
+                markerIndex = index;
+            }
+        }
+        if (markerCount != 1) {
+            throw new IllegalArgumentException(
+                    "exactly one audio placeholder is required for one waveform; found " + markerCount);
+        }
+        int expandedCount = audioPlaceholderCount(audio);
+        int[] expanded = new int[Math.addExact(inputIds.length - 1, expandedCount)];
+        System.arraycopy(inputIds, 0, expanded, 0, markerIndex);
+        java.util.Arrays.fill(expanded, markerIndex, markerIndex + expandedCount, config.audioTokenId());
+        System.arraycopy(inputIds, markerIndex + 1, expanded, markerIndex + expandedCount,
+                inputIds.length - markerIndex - 1);
+        return expanded;
+    }
+
     public EmbeddingGemma2AudioConfig config() {
         return config;
     }
