@@ -514,3 +514,20 @@ Engine shutdown now detaches the loaded-backend registry and marks the engine un
 ### Validation
 
 Tests cover an early backend failure followed by a successful cleanup, lifecycle STARTED/FAILED/SUCCEEDED outcomes, repeated close, and the no-op observer path. CI remains the authority for compile and test validation.
+
+
+## 22. GGUF asynchronous inference lifecycle semantics — implementation slice 9
+
+The GGUF `infer(...)` and `executeAsync(...)` methods schedule the existing synchronous `execute(...)` operation on Mutiny's worker pool. They do not introduce a separate model-execution boundary.
+
+### Behavior
+
+- The async `Uni` remains lazy: backend execution and the `gguf.infer` lifecycle scope begin only when a subscriber triggers execution.
+- The synchronous execution boundary emits the single STARTED and terminal event pair. The async adapter must not create a duplicate scope or correlation ID.
+- The lifecycle duration describes the backend execution performed by `execute(...)`, not time spent waiting in the worker-pool queue.
+- Cancelling the async subscription is not currently a guarantee that an in-progress backend call is interrupted. Therefore the adapter must not report ABANDONED as if the backend operation had stopped; the synchronous operation records its eventual success or failure.
+- A future cancellable async backend contract may add true cancellation observation, but it must preserve exactly-once terminal and active-accounting semantics.
+
+### Validation
+
+A delegation test verifies that async inference is lazy and emits exactly one correlated `gguf.infer` STARTED/SUCCEEDED pair. CI must validate the test on the supported JDK baseline.
