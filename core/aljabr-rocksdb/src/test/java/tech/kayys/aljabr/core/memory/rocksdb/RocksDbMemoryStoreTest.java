@@ -30,7 +30,7 @@ class RocksDbMemoryStoreTest {
                 store.put(key, input);
 
                 // Get Zero Copy
-                Optional<MemorySegment> outputOpt = store.getZeroCopy(key, 100, arena.raw());
+                Optional<MemorySegment> outputOpt = store.getZeroCopy(key, 100, arena);
                 assertTrue(outputOpt.isPresent());
 
                 MemorySegment output = outputOpt.get();
