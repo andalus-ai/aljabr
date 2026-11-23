@@ -89,6 +89,9 @@ public final class EmbeddingGemma2AudioProcessor {
         }
         int validTokens = 0;
         for (boolean valid : mask) if (valid) validTokens++;
+        if (validTokens == 0) {
+            throw new IllegalArgumentException("audio input produced no valid soft tokens");
+        }
         return Math.min(validTokens, config.audioSequenceLength());
     }
 
@@ -110,10 +113,13 @@ public final class EmbeddingGemma2AudioProcessor {
                     "exactly one audio placeholder is required for one waveform; found " + markerCount);
         }
         int expandedCount = audioPlaceholderCount(audio);
-        int[] expanded = new int[Math.addExact(inputIds.length - 1, expandedCount)];
+        int[] expanded = new int[Math.addExact(inputIds.length + 1, expandedCount)];
         System.arraycopy(inputIds, 0, expanded, 0, markerIndex);
-        java.util.Arrays.fill(expanded, markerIndex, markerIndex + expandedCount, config.audioTokenId());
-        System.arraycopy(inputIds, markerIndex + 1, expanded, markerIndex + expandedCount,
+        expanded[markerIndex] = config.beginAudioTokenId();
+        java.util.Arrays.fill(expanded, markerIndex + 1,
+                markerIndex + 1 + expandedCount, config.audioTokenId());
+        expanded[markerIndex + 1 + expandedCount] = config.endAudioTokenId();
+        System.arraycopy(inputIds, markerIndex + 1, expanded, markerIndex + expandedCount + 2,
                 inputIds.length - markerIndex - 1);
         return expanded;
     }
