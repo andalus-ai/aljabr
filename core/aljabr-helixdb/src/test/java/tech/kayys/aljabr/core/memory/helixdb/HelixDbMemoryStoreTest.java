@@ -2,7 +2,7 @@ package tech.kayys.aljabr.core.memory.helixdb;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import tech.kayys.aljabr.core.memory.ManagedArena;
+import java.lang.foreign.Arena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -18,7 +18,7 @@ class HelixDbMemoryStoreTest {
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString())) {
             byte[] key = "test-key-helix".getBytes();
 
-            try (ManagedArena arena = ManagedArena.create()) {
+            try (Arena arena = Arena.ofShared()) {
                 // Prepare some data
                 MemorySegment input = arena.allocate(150);
                 for (int i = 0; i < 150; i++) {
@@ -29,7 +29,7 @@ class HelixDbMemoryStoreTest {
                 store.put(key, input);
 
                 // Get Zero Copy
-                Optional<MemorySegment> outputOpt = store.getZeroCopy(key, 150, arena.raw());
+                Optional<MemorySegment> outputOpt = store.getZeroCopy(key, 150, arena);
                 assertTrue(outputOpt.isPresent());
 
                 MemorySegment output = outputOpt.get();
@@ -48,7 +48,7 @@ class HelixDbMemoryStoreTest {
     @Test
     void testOverwriteAndDelete(@TempDir Path tempDir) {
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString());
-                ManagedArena arena = ManagedArena.create()) {
+                Arena arena = Arena.ofShared()) {
 
             byte[] key = "mykey".getBytes();
 
@@ -60,13 +60,13 @@ class HelixDbMemoryStoreTest {
             v2.set(ValueLayout.JAVA_INT, 0, 0xBEEF);
             store.put(key, v2);
 
-            Optional<MemorySegment> result = store.getZeroCopy(key, 4, arena.raw());
+            Optional<MemorySegment> result = store.getZeroCopy(key, 4, arena);
             assertTrue(result.isPresent());
             assertEquals(0xBEEF, result.get().get(ValueLayout.JAVA_INT, 0));
 
             // Delete
             store.delete(key);
-            Optional<MemorySegment> afterDelete = store.getZeroCopy(key, 4, arena.raw());
+            Optional<MemorySegment> afterDelete = store.getZeroCopy(key, 4, arena);
             assertTrue(afterDelete.isEmpty());
 
             // Stats: deletedBytes should be non-zero
@@ -81,7 +81,7 @@ class HelixDbMemoryStoreTest {
                 .build();
 
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString(), cfg);
-                ManagedArena arena = ManagedArena.create()) {
+                Arena arena = Arena.ofShared()) {
 
             byte[] data = new byte[1024 * 512]; // 512 KiB
 
@@ -105,12 +105,12 @@ class HelixDbMemoryStoreTest {
 
             // B should still be readable
             Optional<MemorySegment> bResult = store.getZeroCopy(
-                    "B".getBytes(), data.length, arena.raw());
+                    "B".getBytes(), data.length, arena);
             assertTrue(bResult.isPresent(), "Key B should survive compaction");
 
             // A should be gone
             Optional<MemorySegment> aResult = store.getZeroCopy(
-                    "A".getBytes(), data.length, arena.raw());
+                    "A".getBytes(), data.length, arena);
             assertTrue(aResult.isEmpty(), "Key A should not survive compaction after delete");
 
             System.out.println("After compaction: " + store.stats());
@@ -120,7 +120,7 @@ class HelixDbMemoryStoreTest {
     @Test
     void testStats(@TempDir Path tempDir) {
         try (HelixDbMemoryStore store = new HelixDbMemoryStore(tempDir.toString());
-                ManagedArena arena = ManagedArena.create()) {
+                Arena arena = Arena.ofShared()) {
 
             MemorySegment seg = arena.allocate(1024);
             store.put("stats-key".getBytes(), seg);
