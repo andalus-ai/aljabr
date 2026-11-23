@@ -14,7 +14,7 @@ class InferenceRequestToolCallProtocolTest {
                 .message(Message.user("hello"))
                 .build();
 
-        assertTrue(request.getToolCallProtocol().isEmpty());
+        assertNull(request.getToolCallProtocol());
     }
 
     @Test
@@ -26,8 +26,8 @@ class InferenceRequestToolCallProtocolTest {
                 .toolCallProtocol(protocol)
                 .build();
 
-        assertEquals(protocol, request.getToolCallProtocol().orElseThrow());
-        assertEquals(protocol, request.toBuilder().build().getToolCallProtocol().orElseThrow());
+        assertEquals(protocol, request.getToolCallProtocol());
+        assertEquals(protocol, request.toBuilder().build().getToolCallProtocol());
     }
 
     @Test
