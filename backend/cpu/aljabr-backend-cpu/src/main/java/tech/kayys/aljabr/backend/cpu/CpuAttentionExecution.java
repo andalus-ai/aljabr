@@ -7,6 +7,7 @@ import java.util.function.LongFunction;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
+import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
 
