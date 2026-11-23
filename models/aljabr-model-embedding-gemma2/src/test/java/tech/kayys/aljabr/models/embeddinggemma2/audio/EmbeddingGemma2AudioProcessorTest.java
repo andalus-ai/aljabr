@@ -72,4 +72,36 @@ class EmbeddingGemma2AudioProcessorTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new EmbeddingGemma2AudioProcessor(withDither));
     }
+    @Test
+    void computesDurationBasedAudioPlaceholderCountAndExpandsOneMarker() {
+        var processor = new EmbeddingGemma2AudioProcessor(config());
+        var processed = processor.process(new float[1_600], 1, 16_000);
+
+        assertEquals(3, processor.audioPlaceholderCount(processed));
+        assertArrayEquals(new int[]{11, 1, 1, 1, 12},
+                processor.expandAudioPlaceholders(new int[]{11, 1, 12}, processed));
+    }
+
+    @Test
+    void capsAudioPlaceholderCountAtConfiguredSequenceLength() {
+        var processor = new EmbeddingGemma2AudioProcessor(config());
+        var features = new EmbeddingGemma2AudioFeatureExtractor.Features(
+                new float[][]{{0f}}, new boolean[]{true}, 480_000, 480_000);
+        var thirtySeconds = new EmbeddingGemma2AudioProcessor.ProcessedAudio(
+                features, 16_000, 1, 16_000, 480_000, false);
+
+        assertEquals(280, processor.audioPlaceholderCount(thirtySeconds));
+    }
+
+    @Test
+    void requiresExactlyOneAudioMarkerForOneWaveform() {
+        var processor = new EmbeddingGemma2AudioProcessor(config());
+        var processed = processor.process(new float[1_600], 1, 16_000);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> processor.expandAudioPlaceholders(new int[]{11, 12}, processed));
+        assertThrows(IllegalArgumentException.class,
+                () -> processor.expandAudioPlaceholders(new int[]{1, 1, 12}, processed));
+    }
+
 }
