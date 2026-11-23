@@ -517,6 +517,8 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - GGUF synchronous inference emits one `gguf.infer` lifecycle scope with an opaque generated correlation ID and backend identity. Do not attach prompts, request messages, user/session IDs, model paths or arbitrary request metadata to the event context.
 - Keep execution-observer failures isolated from inference and expose an engine-level failure count. Do not silently turn observer failures into inference failures.
 - Streaming lifecycle scopes must be added only with correct subscription, cancellation, failure and termination semantics; do not close a stream scope when the `Multi` is merely constructed.
+- GGUF `infer(...)` and `executeAsync(...)` are adapters over the same synchronous `execute(...)` boundary. Keep exactly one `gguf.infer` lifecycle scope in that boundary; do not add a second async-wrapper scope or duplicate correlation IDs.
+- The current worker-pool async adapter does not promise interruption of an in-progress backend call when its subscription is cancelled. Do not report backend cancellation as ABANDONED unless the backend execution itself is actually cancelled; document the limitation and preserve the eventual synchronous success/failure observation.
 
 
 #### Reactive streaming lifecycle requirements
