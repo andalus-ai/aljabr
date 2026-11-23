@@ -759,6 +759,7 @@ public final class InferenceRequest {
                 messages.equals(that.messages) &&
                 Objects.equals(tools, that.tools) &&
                 Objects.equals(toolChoice, that.toolChoice) &&
+                Objects.equals(toolCallProtocol, that.toolCallProtocol) &&
                 Objects.equals(requestContext.userId(), that.requestContext.userId()) &&
                 Objects.equals(requestContext.sessionId(), that.requestContext.sessionId()) &&
                 Objects.equals(requestContext.traceId(), that.requestContext.traceId());
@@ -766,7 +767,7 @@ public final class InferenceRequest {
 
     @Override
     public int hashCode() {
-        return Objects.hash(requestId, model, messages, tools, toolChoice, streaming, priority, 
+        return Objects.hash(requestId, model, messages, tools, toolChoice, toolCallProtocol, streaming, priority, 
                 requestContext.userId(), requestContext.sessionId(), requestContext.traceId());
     }
 
