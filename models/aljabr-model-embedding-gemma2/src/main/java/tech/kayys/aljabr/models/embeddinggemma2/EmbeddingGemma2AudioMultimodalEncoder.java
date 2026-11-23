@@ -67,12 +67,46 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
         Objects.requireNonNull(inputIds, "inputIds must not be null");
         EmbeddingGemma2AudioProcessor.ProcessedAudio processed =
                 audioProcessor.process(interleavedPcm, channels, sourceSampleRate);
-        var features = processed.features();
+        return encodeProcessed(inputIds, processed, validTokens, positionIds);
+    }
+
+    /**
+     * Convenience path: expands one audio marker using the processor-owned
+     * feature-mask policy and generates sequential text positions.
+     */
+    public float[][] encode(int[] inputIds, float[] interleavedPcm, int channels, int sourceSampleRate) {
+        Objects.requireNonNull(inputIds, "inputIds must not be null");
+        EmbeddingGemma2AudioProcessor.ProcessedAudio processed =
+                audioProcessor.process(interleavedPcm, channels, sourceSampleRate);
+        int[] expandedIds = audioProcessor.expandAudioPlaceholders(inputIds, processed);
+        int[] positions = new int[expandedIds.length];
+        for (int i = 0; i < positions.length; i++) positions[i] = i;
+        return encodeProcessed(expandedIds, processed, null, positions);
+    }
+
+    private float[][] encodeProcessed(
+            int[] inputIds,
+            EmbeddingGemma2AudioProcessor.ProcessedAudio processed,
+            boolean[] validTokens,
+            int[] positionIds) {
+        int expectedAudioTokens = audioProcessor.audioPlaceholderCount(processed);
+        EmbeddingGemma2AudioFeatureExtractor.Features features = processed.features();
         float[][][] batchFeatures = {features.inputFeatures()};
         boolean[][] batchMask = {features.inputFeaturesMask()};
         EmbeddingGemma2AudioEncoder.Output towerOutput = audioEncoder.compute(batchFeatures, batchMask);
         float[][] audioStates = selectValidStates(
                 towerOutput.lastHiddenState()[0], towerOutput.attentionMask()[0]);
+        if (audioStates.length != expectedAudioTokens) {
+            throw new IllegalStateException("audio tower produced " + audioStates.length
+                    + " valid soft tokens, but processor policy requires " + expectedAudioTokens
+                    + "; verify audio subsampling and processor configuration");
+        }
+        int actualPlaceholders = 0;
+        for (int tokenId : inputIds) if (tokenId == audioTokenId) actualPlaceholders++;
+        if (actualPlaceholders != expectedAudioTokens) {
+            throw new IllegalArgumentException("expanded prompt must contain " + expectedAudioTokens
+                    + " audio placeholders; found " + actualPlaceholders);
+        }
         float[][] projectedAudioStates = audioEmbedder.project(audioStates);
 
         float[][] textEmbeddings = EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
@@ -80,14 +114,6 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
         float[][] mergedEmbeddings = EmbeddingGemma2MultimodalInputAssembler.replaceModalityPlaceholders(
                 textEmbeddings, inputIds, audioTokenId, List.<float[][]>of(projectedAudioStates), "audio");
         return textBackbone.encodeEmbeddings(mergedEmbeddings, validTokens, positionIds);
-    }
-
-    /** Encodes with sequential text positions and no text padding. */
-    public float[][] encode(int[] inputIds, float[] interleavedPcm, int channels, int sourceSampleRate) {
-        Objects.requireNonNull(inputIds, "inputIds must not be null");
-        int[] positions = new int[inputIds.length];
-        for (int i = 0; i < positions.length; i++) positions[i] = i;
-        return encode(inputIds, interleavedPcm, channels, sourceSampleRate, null, positions);
     }
 
     private static float[][] selectValidStates(float[][] states, boolean[] mask) {
