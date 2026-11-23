@@ -58,7 +58,7 @@ class TurboQuantQjlTransformTest {
         double residualNorm = new TurboQuantQjlTransform(dimension, 1L).residualNorm(residual, 0);
         double expected = dot(query, residual);
         double estimateSum = 0.0;
-        int trials = 1024;
+        int trials = 4096;
         for (int trial = 0; trial < trials; trial++) {
             TurboQuantQjlTransform transform = new TurboQuantQjlTransform(dimension, trial + 100L);
             byte[] signs = transform.quantize(residual, 0);
@@ -79,7 +79,7 @@ class TurboQuantQjlTransformTest {
         assertThrows(IllegalArgumentException.class,
                 () -> transform.quantize(new float[]{1.0f, Float.NaN, 2.0f}, 0));
         assertThrows(IllegalArgumentException.class,
-                () -> transform.reconstruct(new byte[]{0}, 1.0, new float[3], 0));
+                () -> transform.reconstruct(new byte[]{0, 0}, 1.0, new float[3], 0));
 
         float[] destination = {4.0f, 5.0f, 6.0f};
         assertThrows(IllegalArgumentException.class,
