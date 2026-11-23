@@ -345,25 +345,6 @@ public final class DefaultTensor implements Tensor {
                 new Object[] { plan.axis() }, backend.indexAdd(this, plan.axis(), indices, source));
     }
 
-    @Override
-    public Tensor indexAdd(int axis, Tensor indices, Tensor source) {
-        ensureOpen();
-        Objects.requireNonNull(indices, "indices");
-        Objects.requireNonNull(source, "source");
-        TensorOperationValidator.IndexAddPlan plan =
-                TensorOperationValidator.validateIndexAdd(shape, indices.shape(), source.shape(), axis);
-        if (indices.dtype() != DType.I32) {
-            throw new IllegalArgumentException("index-add indices must use I32; actual dtype=" + indices.dtype());
-        }
-        if (indices.requiresGrad()) {
-            throw new IllegalArgumentException("index-add indices cannot require gradients");
-        }
-        if (requiresGrad() || source.requiresGrad()) {
-            throw new UnsupportedOperationException(
-                    "indexAdd autograd is not available until its vector-Jacobian products are implemented");
-        }
-        return backend.indexAdd(this, plan.axis(), indices, source);
-    }
 
     @Override
     public Tensor slice(long[] offsets, long[] sizes) {

@@ -125,8 +125,6 @@ public interface Tensor extends AutoCloseable {
         return backend().indexAdd(this, axis, indices, source);
     }
 
-    /** Adds source slices at rank-one I32 indices; repeated indices accumulate. */
-    Tensor indexAdd(int axis, Tensor indices, Tensor source);
 
 
     Tensor pow(float exponent);
