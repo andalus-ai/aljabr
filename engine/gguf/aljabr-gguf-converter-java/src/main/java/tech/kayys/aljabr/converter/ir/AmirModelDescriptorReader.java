@@ -96,6 +96,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
                     ? renderGgufMetadata(rawTypedMetadata.get(key)) : renderMetadata(value);
             metadata.put(key, rendered);
         });
+        Map<String, String> modelLayerMetadata = new LinkedHashMap<>(metadata);
         ArchitectureDescriptor architectureDescriptor = decodeArchitectureDescriptor(metadata);
         List<TensorDescriptor> typedTensors = AmirTensorTypeCodec.restore(metadata, tensors);
         AmirSourceMetadataCodec.Decoded sourceAttributes =
@@ -111,8 +112,8 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
         });
         ModelDescriptor descriptor = new ModelDescriptor(ModelIdentity.of(name), architecture, GGUF,
                 metadata, sourceAttributes.extensions(), tensors).withTypedMetadata(typedMetadata);
-        return architectureDescriptor == null ? descriptor
-                : descriptor.withArchitectureDescriptor(architectureDescriptor);
+        if (architectureDescriptor != null) descriptor = descriptor.withArchitectureDescriptor(architectureDescriptor);
+        return AmirModelLayerCodec.restore(modelLayerMetadata, descriptor);
     }
 
     private ModelDescriptor readSafetensors(Path file, String name) throws IOException {
@@ -151,6 +152,7 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
             throw new IOException("Invalid Safetensors model structure: " + file, e);
         }
 
+        Map<String, String> modelLayerMetadata = new LinkedHashMap<>(storedMetadata);
         ArchitectureDescriptor architectureDescriptor = decodeArchitectureDescriptor(storedMetadata);
         List<TensorDescriptor> typedTensors = AmirTensorTypeCodec.restore(storedMetadata, tensors);
         AmirSourceMetadataCodec.Decoded sourceAttributes =
@@ -161,8 +163,8 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
                 metadata.getOrDefault("aljabr.source.architecture", "unknown"));
         ModelDescriptor descriptor = new ModelDescriptor(ModelIdentity.of(name), architecture, SAFETENSORS,
                 metadata, sourceAttributes.extensions(), tensors).withTypedMetadata(typedMetadata);
-        return architectureDescriptor == null ? descriptor
-                : descriptor.withArchitectureDescriptor(architectureDescriptor);
+        if (architectureDescriptor != null) descriptor = descriptor.withArchitectureDescriptor(architectureDescriptor);
+        return AmirModelLayerCodec.restore(modelLayerMetadata, descriptor);
     }
 
     private static ArchitectureDescriptor decodeArchitectureDescriptor(Map<String, String> metadata) {

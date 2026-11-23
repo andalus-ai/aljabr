@@ -4,11 +4,15 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+
 import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 
 class CpuIndexSelectTest {
 

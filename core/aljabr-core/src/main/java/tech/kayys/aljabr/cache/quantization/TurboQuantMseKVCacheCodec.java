@@ -175,9 +175,17 @@ public final class TurboQuantMseKVCacheCodec implements KVCacheCompressionCodec 
             for (int i = 0; i < paddedDimension; i++) {
                 transformed[i] = (float) (codebook.reconstruct(indices[indexOffset++]) * inverseScale);
             }
+            double norm = norms[vectorIndex];
+            if (norm == 0.0d) {
+                // Canonicalize zero vectors instead of allowing signed zero from
+                // the inverse transform to leak into the decoded representation.
+                for (int i = 0; i < headDimension; i++) {
+                    reconstructed[outputOffset++] = 0.0f;
+                }
+                continue;
+            }
             transform.inverse(transformed, 0, transformed, 0);
 
-            double norm = norms[vectorIndex];
             for (int i = 0; i < headDimension; i++) {
                 // A zero-norm input has no direction; publish canonical +0.0
                 // rather than preserving a sign bit from quantized reconstruction.
@@ -185,7 +193,8 @@ public final class TurboQuantMseKVCacheCodec implements KVCacheCompressionCodec 
                 if (!Double.isFinite(value) || Math.abs(value) > Float.MAX_VALUE) {
                     throw new IllegalArgumentException("decoded value exceeds finite float range");
                 }
-                reconstructed[outputOffset++] = (float) value;
+                // Canonicalize the zero-vector case so decode does not expose signed -0.0 values.
+                reconstructed[outputOffset++] = norm == 0.0 ? 0.0f : (float) value;
             }
         }
 
