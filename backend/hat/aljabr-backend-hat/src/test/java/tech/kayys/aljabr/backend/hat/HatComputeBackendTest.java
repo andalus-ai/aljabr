@@ -34,7 +34,21 @@ public class HatComputeBackendTest {
 
     @AfterEach
     public void tearDown() {
-        // ComputeBackend interface does not currently define a close() method
+        backend.close();
+    }
+
+    @Test
+    public void closingBackendDoesNotCloseCallerOwnedCpuFallback() {
+        CpuBackend cpuFallback = new CpuBackend();
+        HatComputeBackend injectedBackend = new HatComputeBackend(cpuFallback);
+        injectedBackend.close();
+
+        try (Tensor input = TensorFactory.of(new float[] { 1.0f, 2.0f }, cpuFallback, 2);
+                Tensor result = cpuFallback.add(input, input)) {
+            assertArrayEquals(new float[] { 2.0f, 4.0f }, result.toFloatArray(), 1e-4f);
+        } finally {
+            cpuFallback.close();
+        }
     }
 
     @Test

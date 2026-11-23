@@ -48,6 +48,32 @@ class ManagedArenaTest {
         assertThrows(NullPointerException.class, () -> new ManagedArena(null));
     }
 
+
+    @Test
+    void preservesCoreCompatibilityFactoriesAndRawAccessor() {
+        ManagedArena created = ManagedArena.create();
+        assertSame(created.arena(), created.raw());
+        created.close();
+
+        Arena wrappedArena = Arena.ofShared();
+        ManagedArena wrapped = ManagedArena.wrap(wrappedArena);
+        assertSame(wrappedArena, wrapped.raw());
+        wrapped.close();
+        assertFalse(wrappedArena.scope().isAlive());
+    }
+
+    @Test
+    void reportsExternallyClosedWrappedArenaAsNotOpen() {
+        Arena external = Arena.ofShared();
+        ManagedArena managed = ManagedArena.wrap(external);
+        external.close();
+
+        assertFalse(managed.isOpen());
+        assertThrows(IllegalStateException.class, () -> managed.allocate(1));
+        // Release the wrapper's reference without attempting to close the arena twice.
+        managed.close();
+    }
+
     @Test
     void confinedArenaRemainsConfinedDespiteReferenceCounting() {
         ManagedArena managed = ManagedArena.ofConfined();

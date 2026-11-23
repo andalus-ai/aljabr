@@ -76,7 +76,7 @@ class TurboQuantBitPackingTest {
     @Test
     void rejectsWrongPayloadLengthAndNonZeroPaddingBits() {
         assertThrows(IllegalArgumentException.class,
-                () -> TurboQuantBitPacking.unpackIndices(new byte[]{0}, 1, 3));
+                () -> TurboQuantBitPacking.unpackIndices(new byte[0], 1, 3));
         assertThrows(IllegalArgumentException.class,
                 () -> TurboQuantBitPacking.unpackIndices(new byte[]{0, 0}, 1, 3));
         assertThrows(IllegalArgumentException.class,
