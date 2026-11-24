@@ -91,11 +91,13 @@ public final class AmirModelDescriptorReader implements ModelDescriptorReader {
         }
 
         Map<String, String> metadata = new LinkedHashMap<>();
-        rawMetadata.forEach((key, value) -> {
+        for (Map.Entry<String, Object> entry : rawMetadata.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
             String rendered = rawTypedMetadata.containsKey(key)
                     ? renderGgufMetadata(rawTypedMetadata.get(key)) : renderMetadata(value);
             metadata.put(key, rendered);
-        });
+        }
         Map<String, String> modelLayerMetadata = new LinkedHashMap<>(metadata);
         ArchitectureDescriptor architectureDescriptor = decodeArchitectureDescriptor(metadata);
         List<TensorDescriptor> typedTensors = AmirTensorTypeCodec.restore(metadata, tensors);
