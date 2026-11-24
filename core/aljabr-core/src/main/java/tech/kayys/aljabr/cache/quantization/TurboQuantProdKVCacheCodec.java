@@ -8,6 +8,8 @@ import tech.kayys.aljabr.cache.KVCacheTensorKind;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Pure-Java reference implementation of the TurboQuant-prod KV-cache codec.
@@ -35,6 +37,8 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
     private final long seed;
     private final long qjlSeed;
     private final TurboQuantMseKVCacheCodec mseCodec;
+    private final ConcurrentMap<Integer, TurboQuantQjlTransform> qjlTransforms =
+            new ConcurrentHashMap<>();
 
     /**
      * @param bits total encoded width per coordinate, including the QJL bit
@@ -95,7 +99,7 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
             baseMetadata = new byte[0];
         }
 
-        TurboQuantQjlTransform qjl = new TurboQuantQjlTransform(headDimension, qjlSeed);
+        TurboQuantQjlTransform qjl = qjlTransform(headDimension);
         byte[] qjlPayload = new byte[qjlPayloadLength];
         double[] residualNorms = new double[vectorCount];
         float[] residual = new float[headDimension];
@@ -179,7 +183,7 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
             mseCodec.decode(base, reconstructed, 0, context);
         }
 
-        TurboQuantQjlTransform qjl = new TurboQuantQjlTransform(headDimension, qjlSeed);
+        TurboQuantQjlTransform qjl = qjlTransform(headDimension);
         int payloadOffset = decodedMetadata.basePayloadLength();
         int outputOffset = 0;
         float[] correction = new float[headDimension];
@@ -201,6 +205,11 @@ public final class TurboQuantProdKVCacheCodec implements KVCacheCompressionCodec
 
         // Publish only after the complete block has passed validation and reconstruction.
         System.arraycopy(reconstructed, 0, destination, destinationOffset, reconstructed.length);
+    }
+
+    private TurboQuantQjlTransform qjlTransform(int dimension) {
+        return qjlTransforms.computeIfAbsent(
+                dimension, value -> new TurboQuantQjlTransform(value, qjlSeed));
     }
 
     private byte[] encodeMetadata(

@@ -8,7 +8,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 MODEL_DIR="${ALJABR_EMBEDDING_GEMMA2_DIR:-"${REPO_ROOT}/.cache/models/embeddinggemma-2"}"
 CHECKPOINT="${MODEL_DIR}/model.safetensors"
-MODEL_URL="https://huggingface.co/google/embeddinggemma-2/resolve/main"
+# Pin model weights and both configuration files to one immutable Hugging Face snapshot.
+MODEL_REVISION="914f7f89142e33e77833254d9c9b90c3cef7303b"
+MODEL_URL="https://huggingface.co/google/embeddinggemma-2/resolve/${MODEL_REVISION}"
 CHECKPOINT_SHA256="197a32965d4b1105faf060417baa899e193fb73cd401f42ec9295234d5553d79"
 
 usage() {
