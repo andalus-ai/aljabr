@@ -156,8 +156,9 @@ class GgufInferenceEngineProviderSelectionTest {
                     .build();
 
             assertThrows(InferenceException.class, () -> engine.execute("model", request));
-            // The observer fails independently during provider probing and inference.
-            assertEquals(2, engine.executionObserverFailureCount());
+            // The observer fails independently during provider probing, model loading,
+            // and inference execution. Each lifecycle scope is counted once.
+            assertEquals(3, engine.executionObserverFailureCount());
         } finally {
             Files.deleteIfExists(model);
         }
