@@ -119,6 +119,7 @@ class GgufInferenceEngineProviderSelectionTest {
         try (GgufInferenceEngine engine = new GgufInferenceEngine(
                 List.of(ready), event -> { }, events::add)) {
             engine.loadModel("model", model, Map.of());
+            events.clear(); // Exclude model setup; this test asserts inference lifecycle only.
             InferenceRequest request = InferenceRequest.builder()
                     .model("model")
                     .prompt("private prompt must not be captured")
@@ -155,7 +156,8 @@ class GgufInferenceEngineProviderSelectionTest {
                     .build();
 
             assertThrows(InferenceException.class, () -> engine.execute("model", request));
-            assertEquals(1, engine.executionObserverFailureCount());
+            // The observer fails independently during provider probing and inference.
+            assertEquals(2, engine.executionObserverFailureCount());
         } finally {
             Files.deleteIfExists(model);
         }
