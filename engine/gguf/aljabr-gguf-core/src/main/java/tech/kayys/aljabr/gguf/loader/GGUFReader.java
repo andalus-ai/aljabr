@@ -21,7 +21,7 @@ public final class GGUFReader implements AutoCloseable {
     private final boolean ownArena;
 
     public GGUFReader(Path path) throws IOException {
-        this(path, Arena.ofAuto(), true);
+        this(path, Arena.ofShared(), true);
     }
 
     public GGUFReader(Path path, Arena arena) throws IOException {
