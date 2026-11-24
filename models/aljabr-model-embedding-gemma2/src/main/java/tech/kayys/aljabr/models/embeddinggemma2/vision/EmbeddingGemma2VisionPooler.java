@@ -70,16 +70,17 @@ public final class EmbeddingGemma2VisionPooler {
             for (boolean padding : paddingPositions) {
                 if (!padding) validPatchCount++;
             }
-            if (validPatchCount % maxX != 0) {
-                throw new IllegalArgumentException("valid patch positions do not define a rectangular row-major grid");
-            }
-            int gridHeight = validPatchCount / maxX;
-            if (maxX % kernel != 0 || gridHeight % kernel != 0) {
+            // Valid patches form a row-major prefix. The final pooling row may be
+            // partial: padded patch slots still contribute zero to the fixed
+            // kernel-area denominator and must not be mistaken for valid rows.
+            int gridHeight = Math.toIntExact(
+                    ((long) validPatchCount + maxX - 1L) / maxX);
+            if (maxX % kernel != 0) {
                 throw new IllegalArgumentException(
-                        "patch grid dimensions must be divisible by the spatial pooling kernel");
+                        "patch grid width must be divisible by the spatial pooling kernel");
             }
             int cellsPerRow = maxX / kernel;
-            int cellsPerColumn = gridHeight / kernel;
+            int cellsPerColumn = (gridHeight + kernel - 1) / kernel;
             int validOutputLength = Math.multiplyExact(cellsPerRow, cellsPerColumn);
             if (cellsPerRow <= 0 || validOutputLength > outputLength) {
                 throw new IllegalArgumentException(
