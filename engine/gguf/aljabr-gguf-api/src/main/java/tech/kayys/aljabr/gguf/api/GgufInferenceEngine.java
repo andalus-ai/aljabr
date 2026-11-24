@@ -558,7 +558,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         ExecutionScope scope = ExecutionScope.start(context, executionObserver);
         try (scope) {
             try {
-                GgufBackendCapability capability = probeProvider(provider, modelPath);
+                GgufBackendCapability capability = provider.probe(modelPath);
                 scope.succeed();
                 return capability;
             } catch (Exception | Error failure) {
@@ -610,7 +610,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 continue;
             }
             try {
-                GgufBackendCapability capability = provider.probe(modelPath);
+                GgufBackendCapability capability = probeProvider(provider, modelPath);
                 if (capability != null && capability.generationReady()) {
                     String reason = skipped == 0
                             ? "provider is generation-ready and has the highest available priority"
