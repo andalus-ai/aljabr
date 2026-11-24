@@ -558,7 +558,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         ExecutionScope scope = ExecutionScope.start(context, executionObserver);
         try (scope) {
             try {
-                GgufBackendCapability capability = provider.probe(modelPath);
+                GgufBackendCapability capability = probeProvider(provider, modelPath);
                 scope.succeed();
                 return capability;
             } catch (Exception | Error failure) {
