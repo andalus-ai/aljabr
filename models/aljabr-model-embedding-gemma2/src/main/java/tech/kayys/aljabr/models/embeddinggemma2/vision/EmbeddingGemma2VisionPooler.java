@@ -63,47 +63,47 @@ public final class EmbeddingGemma2VisionPooler {
                     maxX = Math.max(maxX, pixelPositionIds[i][0] + 1);
                 }
             }
-            if (maxX <= 0 || inputLength % maxX != 0) {
-                throw new IllegalArgumentException("patch positions do not define a rectangular row-major grid");
+            if (maxX <= 0) {
+                throw new IllegalArgumentException("valid patch positions do not define a rectangular row-major grid");
             }
-            int gridHeight = inputLength / maxX;
+            int validPatchCount = 0;
+            for (boolean padding : paddingPositions) {
+                if (!padding) validPatchCount++;
+            }
+            if (validPatchCount % maxX != 0) {
+                throw new IllegalArgumentException("valid patch positions do not define a rectangular row-major grid");
+            }
+            int gridHeight = validPatchCount / maxX;
             if (maxX % kernel != 0 || gridHeight % kernel != 0) {
                 throw new IllegalArgumentException(
                         "patch grid dimensions must be divisible by the spatial pooling kernel");
             }
             int cellsPerRow = maxX / kernel;
-            if (cellsPerRow <= 0) {
-                throw new IllegalArgumentException("valid patch positions do not define a pooling grid");
+            int cellsPerColumn = gridHeight / kernel;
+            int validOutputLength = Math.multiplyExact(cellsPerRow, cellsPerColumn);
+            if (cellsPerRow <= 0 || validOutputLength > outputLength) {
+                throw new IllegalArgumentException(
+                        "valid patch grid exceeds the configured pooled sequence");
             }
-            for (int patch = 0; patch < inputLength; patch++) {
-                if (!paddingPositions[patch]) {
-                    int expectedX = patch % maxX;
-                    int expectedY = patch / maxX;
-                    if (pixelPositionIds[patch][0] != expectedX
-                            || pixelPositionIds[patch][1] != expectedY) {
-                        throw new IllegalArgumentException(
-                                "valid patch positions must form a row-major rectangular grid");
-                    }
+            for (int patch = 0; patch < validPatchCount; patch++) {
+                int expectedX = patch % maxX;
+                int expectedY = patch / maxX;
+                if (pixelPositionIds[patch][0] != expectedX
+                        || pixelPositionIds[patch][1] != expectedY) {
+                    throw new IllegalArgumentException(
+                            "valid patch positions must form a row-major rectangular grid");
                 }
             }
 
             pooled = new float[outputLength][hiddenSize];
             boolean[] hasValidPatch = new boolean[outputLength];
-            for (int patch = 0; patch < inputLength; patch++) {
-                // Padding entries use the flattened patch slot to retain their
-                // place in the fixed-size spatial grid despite the (-1,-1) sentinel.
-                int x = patch % maxX;
-                int y = patch / maxX;
+            for (int patch = 0; patch < validPatchCount; patch++) {
+                int x = pixelPositionIds[patch][0];
+                int y = pixelPositionIds[patch][1];
                 int cell = (x / kernel) + cellsPerRow * (y / kernel);
-                if (cell < 0 || cell >= outputLength) {
-                    throw new IllegalArgumentException(
-                            "patch position maps outside the configured pooled sequence at patch " + patch);
-                }
-                if (!paddingPositions[patch]) {
-                    hasValidPatch[cell] = true;
-                    for (int d = 0; d < hiddenSize; d++) {
-                        pooled[cell][d] += hiddenStates[patch][d] / kernelArea;
-                    }
+                hasValidPatch[cell] = true;
+                for (int d = 0; d < hiddenSize; d++) {
+                    pooled[cell][d] += hiddenStates[patch][d] / kernelArea;
                 }
             }
             outputPadding = new boolean[outputLength];
