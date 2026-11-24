@@ -831,13 +831,7 @@ public final class HatComputeProvider implements ComputeProvider {
             String weightDtype = constraints.get("weight_dtype");
             if (weightDtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
             if (!isF32(weightDtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
-            String groups = constraints.get("groups");
-            if (groups == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
-            try {
-                if (Integer.parseInt(groups) != 1) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
-            } catch (NumberFormatException invalidGroups) {
-                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
-            }
+
             OperationSupport bias = optionalNormalizationTensorSupport(constraints, "bias", false);
             if (bias != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, bias, null);
             for (String key : new String[]{"stride", "dilation"}) {
@@ -846,6 +840,21 @@ public final class HatComputeProvider implements ComputeProvider {
             }
             OperationSupport padding = nonNegativeIntegerConstraint(constraints, "padding");
             if (padding != OperationSupport.DELEGATED) return new OperationSupportDescriptor(operationId, padding, null);
+
+            Long groups = parseLong(constraints.get("groups"));
+            Long inputChannels = parseLong(constraints.get("input_channels"));
+            Long outputChannels = parseLong(constraints.get("output_channels"));
+            Long weightInputChannels = parseLong(constraints.get("weight_input_channels"));
+            if (groups == null || inputChannels == null || outputChannels == null || weightInputChannels == null) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
+            if (groups <= 0 || inputChannels <= 0 || outputChannels <= 0 || weightInputChannels <= 0) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (inputChannels % groups != 0 || outputChannels % groups != 0
+                    || weightInputChannels != inputChannels / groups) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
             return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
         }
 
