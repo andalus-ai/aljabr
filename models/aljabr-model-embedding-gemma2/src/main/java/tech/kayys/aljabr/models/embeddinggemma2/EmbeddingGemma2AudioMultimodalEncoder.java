@@ -11,11 +11,12 @@ import tech.kayys.aljabr.models.embeddinggemma2.vision.EmbeddingGemma2Multimodal
 /**
  * End-to-end waveform-and-text encoder for EmbeddingGemma 2 audio inputs.
  *
- * <p>PCM decoding/container I/O and prompt expansion remain caller-owned.
- * The caller supplies an already-expanded text sequence with one configured
- * audio placeholder for every valid audio soft token produced by the audio
- * tower. This composition performs waveform preprocessing, audio encoding,
- * modality-to-text projection, placeholder assembly, and text encoding.</p>
+ * <p>PCM decoding/container I/O and chat-template tokenization remain caller-owned.
+ * Callers may supply an already-expanded sequence containing one audio token
+ * per valid tower state, or use the convenience overload to expand one marker
+ * into the configured begin/audio/end token sequence. This composition performs
+ * waveform preprocessing, audio encoding, modality-to-text projection,
+ * placeholder assembly, and text encoding.</p>
  */
 public final class EmbeddingGemma2AudioMultimodalEncoder {
     private final EmbeddingGemma2TextBackbone textBackbone;
@@ -76,7 +77,7 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
 
     /**
      * Convenience path: expands one audio marker using the processor's
-     * duration-based soft-token policy and generates sequential text positions.
+     * feature-mask-derived soft-token count and generates sequential positions.
      */
     public float[][] encode(int[] inputIds, float[] interleavedPcm, int channels, int sourceSampleRate) {
         Objects.requireNonNull(inputIds, "inputIds must not be null");
