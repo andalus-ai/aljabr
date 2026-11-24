@@ -48,8 +48,9 @@ import org.slf4j.LoggerFactory;
  * <ul>
  * <li><b>Safetensors input:</b> Uses {@link SafetensorToGgufConverter} for pure
  * Java-based conversion</li>
- * <li><b>PyTorch/TensorFlow input:</b> Uses native GGUF bridge (gguf_bridge)
- * via FFM</li>
+ * <li><b>PyTorch checkpoints:</b> Detected for diagnostics but rejected; no Python,
+ * PyTorch runtime, or native bridge fallback is used</li>
+ * <li><b>Other legacy formats:</b> May use the optional native bridge</li>
  * <li><b>GGUF input:</b> Direct quantization via llama.cpp FFM bindings</li>
  * </ul>
  *
@@ -276,9 +277,16 @@ public class GGUFConverter {
         log.info("Is SAFETENSORS: " + (format == ModelFormat.SAFETENSORS));
 
         if (format == ModelFormat.SAFETENSORS) {
-            // Use pure Java Safetensors converter
-            log.info("Detected Safetensors format, using Java FFM converter");
+            // Use the Java-native Safetensors conversion path.
+            log.info("Detected Safetensors format, using Java converter");
             return convertSafetensors(params, progressCallback);
+        }
+
+        if (format == ModelFormat.PYTORCH) {
+            throw new GGUFException(
+                    "PyTorch checkpoint input (.bin/.pt/.pth) is not supported by the Java-native converter. "
+                            + "No Python, PyTorch runtime, or native GGUF bridge fallback is attempted. "
+                            + "Use a Safetensors checkpoint or a supported Java-native model format.");
         }
 
         // Native conversion is an optional capability. Fail before entering the FFM

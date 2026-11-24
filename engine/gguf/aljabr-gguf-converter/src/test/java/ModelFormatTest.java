@@ -21,9 +21,9 @@ class ModelFormatTest {
         ModelFormat pytorch = ModelFormat.PYTORCH;
 
         assertEquals("pytorch", pytorch.getId());
-        assertEquals("PyTorch", pytorch.getDisplayName());
-        assertTrue(pytorch.isConvertible());
-        assertTrue(pytorch.requiresConversion());
+        assertEquals("PyTorch checkpoint (unsupported)", pytorch.getDisplayName());
+        assertFalse(pytorch.isConvertible());
+        assertFalse(pytorch.requiresConversion());
         assertTrue(pytorch.getFileExtensions().contains(".bin"));
         assertTrue(pytorch.getFileExtensions().contains(".pt"));
         assertTrue(pytorch.getFileExtensions().contains(".pth"));
@@ -83,12 +83,13 @@ class ModelFormatTest {
     void testConvertibleFormats() {
         Set<ModelFormat> convertible = ModelFormat.getConvertibleFormats();
 
-        assertTrue(convertible.contains(ModelFormat.PYTORCH));
+        assertFalse(convertible.contains(ModelFormat.PYTORCH));
         assertTrue(convertible.contains(ModelFormat.SAFETENSORS));
         assertTrue(convertible.contains(ModelFormat.TENSORFLOW));
         assertTrue(convertible.contains(ModelFormat.FLAX));
         assertFalse(convertible.contains(ModelFormat.GGUF)); // Already in GGUF
         assertFalse(convertible.contains(ModelFormat.UNKNOWN));
+        assertFalse(ModelFormat.getNativeFormats().contains(ModelFormat.PYTORCH));
     }
 
     @Test
@@ -110,7 +111,7 @@ class ModelFormatTest {
     @Test
     @DisplayName("Should identify convertible status correctly")
     void testConvertibleStatus() {
-        assertTrue(ModelFormat.PYTORCH.isConvertible());
+        assertFalse(ModelFormat.PYTORCH.isConvertible());
         assertTrue(ModelFormat.SAFETENSORS.isConvertible());
         assertTrue(ModelFormat.TENSORFLOW.isConvertible());
         assertTrue(ModelFormat.FLAX.isConvertible());
@@ -121,7 +122,7 @@ class ModelFormatTest {
     @Test
     @DisplayName("Should identify requires conversion status correctly")
     void testRequiresConversionStatus() {
-        assertTrue(ModelFormat.PYTORCH.requiresConversion());
+        assertFalse(ModelFormat.PYTORCH.requiresConversion());
         assertTrue(ModelFormat.SAFETENSORS.requiresConversion());
         assertTrue(ModelFormat.TENSORFLOW.requiresConversion());
         assertTrue(ModelFormat.FLAX.requiresConversion());
