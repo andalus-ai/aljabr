@@ -135,15 +135,22 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
             }
         }
 
-        AmirTypedMetadataCodec.encode(model.typedMetadata()).forEach((key, value) ->
-                putUniqueMetadata(metadata, key, value));
-        AmirTensorTypeCodec.encode(model.tensors()).forEach((key, value) ->
-                putUniqueMetadata(metadata, key, value));
-        model.architectureDescriptor().ifPresent(descriptor ->
-                putUniqueMetadata(metadata, AmirArchitectureDescriptorCodec.KEY,
-                        AmirArchitectureDescriptorCodec.encode(descriptor)));
-        AmirModelLayerCodec.encode(model).forEach((key, value) ->
-                putUniqueMetadata(metadata, key, value));
+        for (Map.Entry<String, String> entry
+                : AmirTypedMetadataCodec.encode(model.typedMetadata()).entrySet()) {
+            putUniqueMetadata(metadata, entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<String, String> entry
+                : AmirTensorTypeCodec.encode(model.tensors()).entrySet()) {
+            putUniqueMetadata(metadata, entry.getKey(), entry.getValue());
+        }
+        if (model.architectureDescriptor().isPresent()) {
+            putUniqueMetadata(metadata, AmirArchitectureDescriptorCodec.KEY,
+                    AmirArchitectureDescriptorCodec.encode(model.architectureDescriptor().orElseThrow()));
+        }
+        for (Map.Entry<String, String> entry
+                : AmirModelLayerCodec.encode(model).entrySet()) {
+            putUniqueMetadata(metadata, entry.getKey(), entry.getValue());
+        }
 
         Path parent = target.getParent();
         Files.createDirectories(parent);
