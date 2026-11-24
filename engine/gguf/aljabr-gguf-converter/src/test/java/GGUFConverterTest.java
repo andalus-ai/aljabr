@@ -174,7 +174,7 @@ class GGUFConverterTest {
             return; // This contract specifically covers native-free CI/runtime environments.
         }
 
-        Path input = tempDir.resolve("input.bin");
+        Path input = tempDir.resolve("input.unknown");
         Path output = tempDir.resolve("output.gguf");
         Files.write(input, new byte[] { 1, 2, 3 });
 
