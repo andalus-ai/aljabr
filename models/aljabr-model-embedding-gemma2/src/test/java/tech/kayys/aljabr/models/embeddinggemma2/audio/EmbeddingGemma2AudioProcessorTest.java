@@ -123,8 +123,12 @@ class EmbeddingGemma2AudioProcessorTest {
     @Test
     void capsAudioPlaceholderCountAtConfiguredSequenceLength() {
         var processor = new EmbeddingGemma2AudioProcessor(config());
+        // More than 280 valid tower positions after the two stride-2
+        // mask reductions; the configured sequence length must cap the result.
+        boolean[] frameMask = new boolean[1_124];
+        java.util.Arrays.fill(frameMask, true);
         var features = new EmbeddingGemma2AudioFeatureExtractor.Features(
-                new float[][]{{0f}}, new boolean[]{true}, 480_000, 480_000);
+                new float[frameMask.length][128], frameMask, 480_000, 480_000);
         var thirtySeconds = new EmbeddingGemma2AudioProcessor.ProcessedAudio(
                 features, 16_000, 1, 16_000, 480_000, false);
 
