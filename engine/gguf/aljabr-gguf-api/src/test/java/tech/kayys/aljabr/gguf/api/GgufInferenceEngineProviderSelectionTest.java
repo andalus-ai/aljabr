@@ -150,7 +150,6 @@ class GgufInferenceEngineProviderSelectionTest {
                     throw new IllegalStateException("observer failed");
                 })) {
             engine.loadModel("model", model, Map.of());
-            events.clear(); // Exclude model setup; this test asserts inference lifecycle only.
             InferenceRequest request = InferenceRequest.builder()
                     .model("model")
                     .prompt("safe test prompt")
