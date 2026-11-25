@@ -105,6 +105,34 @@ public final class KVCacheSession {
         storage.readValueRange(layer, firstPosition, tokenCount, destination, destinationOffset);
     }
 
+    /**
+     * Delivers the requested attention-visible range as contiguous K/V blocks.
+     *
+     * <p>Storage implementations with {@link KVCacheAttentionBlockReader}
+     * support can decode their native blocks once and deliver both tensors
+     * together. Other storage implementations use a single range read for K
+     * and V as a compatibility fallback. The callback arrays are ephemeral
+     * and read-only; copy them if they must outlive the callback.</p>
+     */
+    public void readBlocksForAttention(
+            int layer,
+            int firstPosition,
+            int tokenCount,
+            KVCacheAttentionBlockConsumer consumer) {
+        Objects.requireNonNull(consumer, "consumer");
+        checkAttentionReadRange(layer, firstPosition, tokenCount);
+        if (storage instanceof KVCacheAttentionBlockReader blockReader) {
+            blockReader.readAttentionBlocks(layer, firstPosition, tokenCount, consumer);
+            return;
+        }
+        int elements = Math.multiplyExact(tokenCount, layout().layerStride(layer));
+        float[] keys = new float[elements];
+        float[] values = new float[elements];
+        storage.readKeyRange(layer, firstPosition, tokenCount, keys, 0);
+        storage.readValueRange(layer, firstPosition, tokenCount, values, 0);
+        consumer.accept(firstPosition, tokenCount, keys, values, 0);
+    }
+
     private void checkAttentionReadRange(int layer, int firstPosition, int tokenCount) {
         int checkedLayer = checkedLayer(layer);
         int visibleLimit = committedLength + 1;

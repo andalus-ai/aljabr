@@ -12,12 +12,13 @@ import java.util.stream.Collectors;
  */
 public enum ModelFormat {
 
-        // Convertible formats (can be converted to GGUF)
-        PYTORCH("pytorch", "PyTorch",
+        // Recognized legacy checkpoint format. It is deliberately not advertised as
+        // convertible until a safe Java-native PyTorch archive reader exists.
+        PYTORCH("pytorch", "PyTorch checkpoint (unsupported)",
                         Set.of(".bin", ".pt", ".pth"),
-                        Set.of("pytorch_model.bin", "model.safetensors"),
-                        true,
-                        "PyTorch"),
+                        Set.of("pytorch_model.bin"),
+                        false,
+                        "Unsupported legacy checkpoint"),
 
         SAFETENSORS("safetensors", "SafeTensors",
                         Set.of(".safetensors"),
@@ -187,7 +188,7 @@ public enum ModelFormat {
         }
 
         public static Set<ModelFormat> getNativeFormats() {
-                return Arrays.stream(values()).filter(f -> !f.requiresConversion && f != UNKNOWN)
+                return Arrays.stream(values()).filter(f -> !f.requiresConversion && f != UNKNOWN && f != PYTORCH)
                                 .collect(Collectors.toUnmodifiableSet());
         }
 

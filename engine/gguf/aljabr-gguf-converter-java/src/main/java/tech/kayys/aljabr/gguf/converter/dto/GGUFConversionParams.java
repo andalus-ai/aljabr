@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.converter.model;
 
+import tech.kayys.aljabr.spi.conversion.QuantizationType;
+
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.HashMap;

@@ -21,7 +21,7 @@ class AmirSourceMetadataCodecTest {
                 "aljabr.source.metadata.vendor.metadata/key", "metadata-value",
                 "aljabr.source.extension.vendor.extension", "extension-value",
                 "aljabr.source.tensor." + tensor + "." + extension, "tensor-value",
-                AmirTypedMetadataCodec.PREFIX + "dGVzdA", "{\\"kind\\":\\"STRING\\",\\"value\\":\\"typed\\"}"),
+                AmirTypedMetadataCodec.PREFIX + "dGVzdA", "{\"kind\":\"STRING\",\"value\":\"typed\"}"),
                 List.of(new TensorDescriptor("weight/主", "F32", List.of(2L),
                         "contiguous", null, null)));
 

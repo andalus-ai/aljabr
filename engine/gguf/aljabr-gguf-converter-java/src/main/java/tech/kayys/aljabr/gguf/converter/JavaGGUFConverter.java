@@ -7,11 +7,10 @@ import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.infrastructure.Infrastructure;
 import tech.kayys.aljabr.converter.java.gguf.SafetensorToGgufConverter;
 
-import tech.kayys.aljabr.converter.model.ConversionProgress;
-import tech.kayys.aljabr.converter.model.ConversionResult;
+import tech.kayys.aljabr.spi.conversion.ConversionProgress;
+import tech.kayys.aljabr.spi.conversion.ConversionResult;
 import tech.kayys.aljabr.converter.model.GGUFConversionParams;
-import tech.kayys.aljabr.converter.model.ModelMetadata;
-import tech.kayys.aljabr.converter.model.QuantizationType;
+import tech.kayys.aljabr.spi.conversion.QuantizationType;
 import tech.kayys.aljabr.core.model.ModelFormat;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

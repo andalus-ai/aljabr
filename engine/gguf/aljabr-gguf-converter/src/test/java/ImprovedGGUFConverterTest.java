@@ -68,6 +68,7 @@ class ImprovedGGUFConverterTest {
 
         ModelFormat format = converter.detectFormat(modelDir);
         assertThat(format).isEqualTo(ModelFormat.PYTORCH);
+        assertThat(format.isConvertible()).isFalse();
     }
 
     @Test
