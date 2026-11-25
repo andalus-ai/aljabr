@@ -22,14 +22,17 @@ public final class WhisperSafetensorLoader {
     }
 
     /**
-     * Opens a large-v3 checkpoint directory or a Safetensors file belonging to
-     * a directory that contains its Hugging Face config.json.
+     * Opens a large-v3 Hugging Face model directory containing config.json
+     * and single-file or indexed-sharded Safetensors weights.
      *
      * <p>For model directories, the architecture is validated before any
      * weight shard is mapped. The returned checkpoint owns the shard session.</p>
      */
     public WhisperSafetensorCheckpoint open(Path checkpointDirectory) {
         Objects.requireNonNull(checkpointDirectory, "checkpointDirectory");
+        if (!java.nio.file.Files.isDirectory(checkpointDirectory)) {
+            throw new IllegalArgumentException("Whisper checkpoint must be a model directory containing config.json");
+        }
         WhisperLargeV3Config config = WhisperLargeV3Config.fromCheckpoint(checkpointDirectory);
         config.requireLargeV3Architecture();
         return new WhisperSafetensorCheckpoint(shardLoader.open(checkpointDirectory));
