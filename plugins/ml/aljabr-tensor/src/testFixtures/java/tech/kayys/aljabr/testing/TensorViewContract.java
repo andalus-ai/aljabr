@@ -86,4 +86,37 @@ public abstract class TensorViewContract {
         }
     }
 
+
+    @Test
+    public final void siblingViewsRetainSharedStorageIndependently() {
+        ComputeBackend backend = createBackend();
+        Tensor source = TensorFactory.of(
+                new float[] {0, 1, 2, 3, 4, 5}, backend, 2, 3);
+        Tensor firstView = null;
+        Tensor secondView = null;
+        try {
+            TensorStorage sharedStorage = source.storage();
+            firstView = source.slice(new long[] {0, 0}, new long[] {1, 3});
+            secondView = source.slice(new long[] {1, 0}, new long[] {1, 3});
+
+            assertSame(sharedStorage, firstView.storage());
+            assertSame(sharedStorage, secondView.storage());
+
+            // Each view owns a reference to the shared allocation. Releasing
+            // the source and one view must not invalidate the sibling view.
+            source.release();
+            firstView.release();
+            firstView = null;
+
+            assertSame(sharedStorage, secondView.storage());
+            assertEquals(new Shape(1, 3), secondView.shape());
+            assertArrayEquals(new float[] {3f, 4f, 5f}, secondView.toFloatArray());
+        } finally {
+            if (secondView != null) secondView.release();
+            if (firstView != null) firstView.release();
+            source.release();
+            backend.close();
+        }
+    }
+
 }
