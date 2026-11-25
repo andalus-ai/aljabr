@@ -30,7 +30,7 @@ class WhisperTokenizerTest {
         writeTokenizer();
         WhisperTokenizer tokenizer = WhisperTokenizer.load(modelDirectory);
 
-        String decoded = tokenizer.decodeGeneratedText(new long[]{1, 2, 10, 11, 12, 16, 3});
+        String decoded = tokenizer.decodeGeneratedText(new long[]{1, 2, 3, 10, 11, 12, 16});
 
         assertEquals("hi!", decoded);
     }
