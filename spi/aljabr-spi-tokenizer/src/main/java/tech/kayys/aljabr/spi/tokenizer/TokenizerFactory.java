@@ -47,6 +47,12 @@ public class TokenizerFactory {
     }
 
     private static Tokenizer loadHuggingFaceTokenizer(Path path) {
+        HuggingFaceWordPieceLoader wordPieceLoader = new HuggingFaceWordPieceLoader();
+        try {
+            if (wordPieceLoader.supports(path)) return wordPieceLoader.load(path);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to inspect tokenizer pipeline: " + path, e);
+        }
         HuggingFaceGemmaBpeLoader gemmaLoader = new HuggingFaceGemmaBpeLoader();
         try {
             if (gemmaLoader.supports(path)) return gemmaLoader.load(path);

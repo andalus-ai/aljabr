@@ -619,6 +619,33 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIq2XsUsingCanonicalGridAndSubgroupScale() throws Exception {
+        byte[] block = new byte[74];
+        block[1] = 0x3c; // fp16 scale = 1
+        block[4] = 1; // second vector uses grid entry 1 (first lane = 43)
+        // All packed scale nibbles are zero: effective scale = 0.125.
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ2_XS", List.of(256L), source, 8L, block.length);
+        var model = model("iq2_xs", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq2_xs.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        assertEquals(1.0f, values.getFloat(0), 0.0001f);
+        assertEquals(5.375f, values.getFloat(Float.BYTES), 0.0001f);
+        for (int i = 8; i < 256; i++) {
+            assertEquals(1.0f, values.getFloat(i * Float.BYTES), 0.0001f);
+        }
+    }
+
+    @Test
     void rejectsUnsupportedQuantizationWithoutCreatingOutput() throws Exception {
         byte[] payload = new byte[66];
         Path source = writeContainer(payload);
