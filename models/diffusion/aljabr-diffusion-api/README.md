@@ -20,4 +20,17 @@ A family module can publish a `DiffusionFamilyProvider` implementation through J
 
 Keep repository access separate from format parsing and model-family semantics.
 Resolvers must verify declared checksums before returning a materialized file.
+
+
+## Request conditioning inputs
+
+- `DiffusionConditioningInput` describes one caller-supplied input by stable ID,
+  modality, opaque source reference, optional frame sequence index, and
+  application metadata.
+- `DiffusionConditioningSet` preserves input order, rejects duplicate IDs and
+  duplicate video-frame indices, and supports modality filtering.
+
+The source reference is intentionally opaque. The API does not fetch, decode,
+preprocess, embed, or transfer the input. Video-frame indices describe caller
+ordering; temporal sampling and preprocessing remain execution-layer concerns.
 A family module can publish a DiffusionFamilyProvider implementation through Java ServiceLoader metadata, or an application can inject providers directly.
