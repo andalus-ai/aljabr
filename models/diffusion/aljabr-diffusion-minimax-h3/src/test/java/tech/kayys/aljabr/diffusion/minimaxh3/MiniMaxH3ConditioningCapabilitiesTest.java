@@ -54,9 +54,28 @@ class MiniMaxH3ConditioningCapabilitiesTest {
     }
 
     @Test
-    void permitsEmptyConditioningSetWithoutImplyingInputRequirements() {
-        assertDoesNotThrow(() ->
+    void requiresPromptForTextToVideo() {
+        assertThrows(IllegalArgumentException.class, () ->
                 MiniMaxH3ConditioningCapabilities.validate(
                         MiniMaxH3Task.TEXT_TO_VIDEO, new DiffusionConditioningSet(List.of())));
+    }
+
+    @Test
+    void requiresImageForImageToVideo() {
+        var promptOnly = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:animate this")));
+        assertThrows(IllegalArgumentException.class, () ->
+                MiniMaxH3ConditioningCapabilities.validate(MiniMaxH3Task.IMAGE_TO_VIDEO, promptOnly));
+    }
+
+    @Test
+    void requiresFramesForMultiframeTask() {
+        var promptOnly = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:animate this")));
+        assertThrows(IllegalArgumentException.class, () ->
+                MiniMaxH3ConditioningCapabilities.validate(
+                        MiniMaxH3Task.MULTIFRAME_REFERENCE_TO_VIDEO, promptOnly));
     }
 }
