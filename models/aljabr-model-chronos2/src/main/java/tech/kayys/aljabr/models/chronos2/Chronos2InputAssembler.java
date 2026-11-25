@@ -139,12 +139,28 @@ public final class Chronos2InputAssembler {
             futureFeatures = deepCopy(futureFeatures);
             futureCovariateMask = Objects.requireNonNull(futureCovariateMask, "futureCovariateMask").clone();
             Objects.requireNonNull(normalizationState, "normalizationState");
-            if (contextFeatures.length != contextAttentionMask.length
+            if (contextFeatures.length == 0 || contextFeatures[0].length == 0
+                    || contextFeatures.length != contextAttentionMask.length
                     || futureFeatures.length == 0
                     || contextPatchCount != contextFeatures.length
-                    || outputPatchCount != futureFeatures.length
-                    || futureCovariateMask.length != futureFeatures.length * (contextFeatures[0].length / 3)) {
+                    || outputPatchCount != futureFeatures.length) {
                 throw new IllegalArgumentException("encoder input dimensions are inconsistent");
+            }
+            int featureWidth = contextFeatures[0].length;
+            int patchSize = featureWidth / 3;
+            if (featureWidth % 3 != 0
+                    || futureCovariateMask.length != futureFeatures.length * patchSize) {
+                throw new IllegalArgumentException("encoder feature dimensions are inconsistent");
+            }
+            for (double[] row : contextFeatures) {
+                if (row.length != featureWidth) {
+                    throw new IllegalArgumentException("context feature rows must have equal width");
+                }
+            }
+            for (double[] row : futureFeatures) {
+                if (row.length != featureWidth) {
+                    throw new IllegalArgumentException("future feature rows must have equal width");
+                }
             }
         }
 
