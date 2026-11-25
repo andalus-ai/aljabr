@@ -35,11 +35,7 @@ declared by `MiniMaxH3Task`.
 
 ## Deliberate support boundary
 
-This artifact currently provides **family identification and capability
-metadata only**. It does not claim to load MiniMax-H3 checkpoints or execute
-generation. The existing diffusion API does not yet define model construction,
-multimodal conditioning, video/audio latent state, component loading or
-pipeline execution contracts.
+This artifact currently provides **family identification, component requirement profiles, and conditioning capability metadata**. It does not claim to load MiniMax-H3 checkpoints or execute generation. Model construction, modality-specific preprocessing, video/audio latent state, and pipeline execution remain outside this increment.
 
 A complete native Aljabr implementation still requires, in dependency order:
 
@@ -67,3 +63,93 @@ implementation("tech.kayys.aljabr:aljabr-diffusion-minimax-h3:0.1.0-SNAPSHOT")
 
 The module is independently included by the existing nested diffusion project
 discovery in `settings.gradle.kts`.
+
+
+## Task component requirements
+
+`MiniMaxH3PipelineRequirements` translates a task plus explicit runtime
+conditioning/output choices into the family-neutral
+`DiffusionComponentRequirement` contract. The generic
+`DiffusionPipelineLoader` remains responsible for resolution, artifact
+materialization, format loading and resource ownership.
+
+```java
+var requirements = MiniMaxH3PipelineRequirements.forTask(
+    MiniMaxH3Task.TEXT_TO_VIDEO,
+    MiniMaxH3PipelineRequirements.Conditioning.LOCAL_TEXT_ENCODER,
+    MiniMaxH3PipelineRequirements.Output.VIDEO);
+
+// Include this only when the requested result contains generated audio.
+requirements = MiniMaxH3PipelineRequirements.withAudioOutput(requirements);
+
+var loaded = pipelineLoader.load(manifest, requirements, resolutionContext);
+try (loaded) {
+    // Pass loaded components to the selected execution implementation.
+}
+```
+
+The profile always requires the diffusion model. It selects either a local text
+encoder or precomputed prompt embeddings, and requires the video autoencoder
+only for video output. Audio decoding is opt-in. Reference images and frames
+are request inputs, not checkpoint components in this role inventory; their
+conditioning path remains a separate execution capability. These profiles
+describe component prerequisites and do not claim that generation is
+implemented.
+
+
+## Request conditioning capabilities
+
+The family module maps tasks onto the generic request-input descriptors in the
+diffusion API:
+
+| Task | Declared request inputs |
+|---|---|
+| Text-to-video | Prompt |
+| Image-to-video | Prompt, image |
+| Reference-to-video | Prompt, reference image |
+| Multiframe reference-to-video | Prompt, reference image, ordered video frames |
+| Text-to-image | Prompt |
+| Image edit | Prompt, image |
+
+Use `DiffusionConditioningSet` to pass ordered inputs, then validate the
+declared modality compatibility:
+
+```java
+var conditioning = new DiffusionConditioningSet(List.of(
+    new DiffusionConditioningInput("prompt",
+        DiffusionConditioningInput.Modality.PROMPT, "text:describe the motion"),
+    new DiffusionConditioningInput("ref-0",
+        DiffusionConditioningInput.Modality.REFERENCE_IMAGE,
+        "file:///inputs/reference.png"),
+    new DiffusionConditioningInput("frame-0", "file:///inputs/frame-0.png", 0),
+    new DiffusionConditioningInput("frame-1", "file:///inputs/frame-1.png", 1)));
+
+MiniMaxH3ConditioningCapabilities.validate(
+    MiniMaxH3Task.MULTIFRAME_REFERENCE_TO_VIDEO, conditioning);
+```
+
+The capability check rejects unsupported modalities; it deliberately does not
+infer cardinality, prompt requirements, frame sampling, image preprocessing,
+or tensor layouts. Those belong to later execution and conditioning adapters.
+
+
+### Required and optional conditioning inputs
+
+The generic API also models modality cardinality with
+`DiffusionConditioningRequirement`. A task declares which modalities are
+required (minimum one), optional (minimum zero), and unsupported (not listed).
+`DiffusionConditioningSet.validateAgainst(...)` enforces the declaration
+without interpreting the opaque source references.
+
+MiniMax-H3 task requirements currently declare:
+
+- All tasks: at least one prompt input.
+- Image-to-video and image-edit: at least one image input.
+- Reference-to-video: at least one reference image.
+- Multiframe reference-to-video: at least one ordered video frame; a reference
+  image is optional.
+- Text-to-video and text-to-image: prompt-only conditioning.
+
+These are task input contracts, not preprocessing rules. The API does not
+choose image resolution, frame sampling, temporal stride, crop policy, or
+tensor representation.

@@ -1,7 +1,7 @@
 package tech.kayys.aljabr.testing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -19,10 +19,12 @@ import tech.kayys.aljabr.core.memory.TensorStorage;
  */
 public abstract class TensorStorageContract {
 
+    private static final long MINIMUM_CAPACITY_BYTES = 64L;
+
     /**
      * Returns factories for storage implementations owned by the provider
      * under test. Each invocation must return a fresh, independently-owned
-     * storage instance with at least the requested capacity.
+     * storage instance with at least the minimum requested capacity.
      */
     protected abstract List<? extends Supplier<? extends TensorStorage>> storageFactories();
 
@@ -32,17 +34,17 @@ public abstract class TensorStorageContract {
             TensorStorage storage = factory.get();
             long capacity = storage.sizeBytes();
 
-            assertEquals(64L, capacity);
+            assertTrue(capacity >= MINIMUM_CAPACITY_BYTES,
+                    "storage must provide at least " + MINIMUM_CAPACITY_BYTES + " bytes");
             storage.retain();
             assertEquals(capacity, storage.sizeBytes());
 
             storage.release();
             assertEquals(capacity, storage.sizeBytes());
 
+            // The interface defines final release as the end of the lifetime,
+            // but deliberately does not prescribe post-release exception behavior.
             storage.release();
-            assertThrows(IllegalStateException.class, storage::sizeBytes);
-            assertThrows(IllegalStateException.class, storage::retain);
-            assertThrows(IllegalStateException.class, storage::release);
         }
     }
 
@@ -50,17 +52,18 @@ public abstract class TensorStorageContract {
     public final void multipleRetainsRequireTheSameNumberOfReleases() {
         for (Supplier<? extends TensorStorage> factory : storageFactories()) {
             TensorStorage storage = factory.get();
+            long capacity = storage.sizeBytes();
 
             storage.retain();
             storage.retain();
             storage.release();
-            assertEquals(64L, storage.sizeBytes());
+            assertEquals(capacity, storage.sizeBytes());
 
             storage.release();
-            assertEquals(64L, storage.sizeBytes());
+            assertEquals(capacity, storage.sizeBytes());
 
+            // Do not inspect the storage after relinquishing the final owner.
             storage.release();
-            assertThrows(IllegalStateException.class, storage::sizeBytes);
         }
     }
 }

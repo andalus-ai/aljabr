@@ -186,6 +186,12 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
+    public Tensor contiguous() {
+        ensureOpen();
+        return record(OpType.CONTIGUOUS, new Tensor[] { this }, new Object[0], backend.contiguous(this));
+    }
+
+    @Override
     public Tensor eval() {
         return this;
     }
@@ -337,6 +343,11 @@ public final class DefaultTensor implements Tensor {
         if (indices.dtype() != DType.I32) {
             throw new IllegalArgumentException(
                     "index-add indices must use I32; actual dtype=" + indices.dtype());
+        }
+        if (source.dtype() != dtype()) {
+            throw new IllegalArgumentException(
+                    "index-add source dtype " + source.dtype()
+                            + " must match destination dtype " + dtype());
         }
         if (indices.requiresGrad()) {
             throw new IllegalArgumentException("index-add indices cannot require gradients");

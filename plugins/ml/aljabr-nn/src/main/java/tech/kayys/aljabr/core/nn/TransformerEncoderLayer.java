@@ -9,7 +9,8 @@ import tech.kayys.aljabr.core.tensor.Tensor;
  * Post-norm transformer encoder layer with batch-first sequence layout.
  *
  * <p>The layer composes reusable attention, linear, and layer-normalization
- * modules. An optional additive attention mask uses {@code [sequence, sequence]}
+ * modules. An optional additive attention mask supports either shared
+ * {@code [sequence, sequence]} or per-example {@code [batch, sequence, sequence]}
  * layout, matching {@link MultiheadAttention}. Dropout is currently not
  * applied; callers should use this implementation for deterministic inference
  * until a backend-neutral dropout operation is available.</p>
@@ -73,7 +74,8 @@ public class TransformerEncoderLayer extends NNModule {
      * Runs a bidirectional encoder layer.
      *
      * @param input batch-first hidden states {@code [batch, sequence, dModel]}
-     * @param additiveAttentionMask optional additive mask {@code [sequence, sequence]}
+     * @param additiveAttentionMask optional additive mask {@code [sequence, sequence]} or
+     *        per-example {@code [batch, sequence, sequence]}
      * @return newly owned hidden states with the same shape as {@code input}
      */
     public Tensor forward(Tensor input, Tensor additiveAttentionMask) {
@@ -85,6 +87,19 @@ public class TransformerEncoderLayer extends NNModule {
         }
         if (additiveAttentionMask != null) {
             validateInputBackend(additiveAttentionMask);
+            long batch = input.shape().dim(0);
+            long sequence = input.shape().dim(1);
+            boolean sharedMask = additiveAttentionMask.shape().rank() == 2
+                    && additiveAttentionMask.shape().dim(0) == sequence
+                    && additiveAttentionMask.shape().dim(1) == sequence;
+            boolean perExampleMask = additiveAttentionMask.shape().rank() == 3
+                    && additiveAttentionMask.shape().dim(0) == batch
+                    && additiveAttentionMask.shape().dim(1) == sequence
+                    && additiveAttentionMask.shape().dim(2) == sequence;
+            if (!sharedMask && !perExampleMask) {
+                throw new IllegalArgumentException(
+                        "additiveAttentionMask must have shape [sequence, sequence] or [batch, sequence, sequence]");
+            }
         }
 
         Tensor attentionOutput = null;

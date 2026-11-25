@@ -74,8 +74,11 @@ public class MultiheadAttention extends NNModule {
                 || key.shape().dim(1)!=value.shape().dim(1))
             throw new IllegalArgumentException("query/key/value batch sizes and key/value sequence lengths must match");
         long batch=query.shape().dim(0), queryLength=query.shape().dim(1), keyLength=key.shape().dim(1);
-        if(attnMask!=null && (attnMask.shape().rank()!=2 || attnMask.shape().dim(0)!=queryLength || attnMask.shape().dim(1)!=keyLength))
-            throw new IllegalArgumentException("attention mask must have shape [querySequence, keySequence]");
+        if(attnMask!=null && !((attnMask.shape().rank()==2 && attnMask.shape().dim(0)==queryLength
+                && attnMask.shape().dim(1)==keyLength)
+                || (attnMask.shape().rank()==3 && attnMask.shape().dim(0)==batch
+                && attnMask.shape().dim(1)==queryLength && attnMask.shape().dim(2)==keyLength)))
+            throw new IllegalArgumentException("attention mask must have shape [querySequence, keySequence] or [batch, querySequence, keySequence]");
         Tensor q=projectAndSplit(queryProjection,query,batch,queryLength);
         Tensor k=projectAndSplit(keyProjection,key,batch,keyLength);
         Tensor v=projectAndSplit(valueProjection,value,batch,keyLength);

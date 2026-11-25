@@ -44,6 +44,17 @@ public final class Chronos2SafetensorCheckpoint implements AutoCloseable {
         return binding.tensorForParameter(parameterName);
     }
 
+    /**
+     * Opens a logical parameter as a regular Aljabr tensor backed by the mapped
+     * checkpoint bytes. The returned tensor retains its own shard lease and may
+     * outlive this checkpoint; the caller must close the tensor.
+     */
+    public Tensor openTensor(String parameterName, ComputeBackend backend) {
+        ensureOpen();
+        String checkpointName = binding.checkpointNameForParameter(parameterName);
+        return SafetensorTensorBinding.openTensor(session, checkpointName, backend);
+    }
+
     /** Validated checkpoint name to logical parameter name bindings. */
     public Map<String, String> parameterBindings() {
         ensureOpen();
