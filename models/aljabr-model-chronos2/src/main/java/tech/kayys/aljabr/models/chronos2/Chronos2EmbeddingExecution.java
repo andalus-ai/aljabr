@@ -23,6 +23,10 @@ public final class Chronos2EmbeddingExecution {
         this.config = Objects.requireNonNull(config, "config");
         this.inputEmbedding = Objects.requireNonNull(inputEmbedding, "inputEmbedding");
         this.outputEmbedding = Objects.requireNonNull(outputEmbedding, "outputEmbedding");
+        validateProjection(inputEmbedding, Math.multiplyExact(config.inputPatchSize(), 3),
+                config.feedForwardDimension(), config.modelDimension(), "input embedding");
+        validateProjection(outputEmbedding, config.modelDimension(), config.feedForwardDimension(),
+                Math.multiplyExact(config.quantiles().size(), config.outputPatchSize()), "output embedding");
         this.sharedTokenEmbeddings = copy(Objects.requireNonNull(sharedTokenEmbeddings, "sharedTokenEmbeddings"));
         int expectedTokens = config.useRegressionToken() ? 2 : 1;
         if (this.sharedTokenEmbeddings.length != expectedTokens) {
@@ -113,6 +117,18 @@ public final class Chronos2EmbeddingExecution {
             validateRows(future[series], futurePatches, width, "future");
         }
         return new Shape(context.length, contextPatches, futurePatches);
+    }
+
+    private static void validateProjection(Weights weights, int inputWidth, int hiddenWidth,
+            int outputWidth, String name) {
+        float[][] hidden = weights.hiddenWeight();
+        float[][] output = weights.outputWeight();
+        float[][] residual = weights.residualWeight();
+        if (hidden.length != hiddenWidth || hidden[0].length != inputWidth
+                || output.length != outputWidth || output[0].length != hiddenWidth
+                || residual.length != outputWidth || residual[0].length != inputWidth) {
+            throw new IllegalArgumentException(name + " weights do not match configured dimensions");
+        }
     }
 
     private static void validateRows(float[][] rows, int expected, int width, String name) {
