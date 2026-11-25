@@ -63,12 +63,20 @@ final class CpuAttentionExecution {
                 || V.shape().dim(0)!=batch || V.shape().dim(1)!=heads || V.shape().dim(2)!=keyLength || V.shape().dim(3)!=headDim)
             throw new IllegalArgumentException("rank-4 attention expects Q[B,H,Sq,D], K/V[B,H,Sk,D] with matching B/H/D");
         if (additiveMask != null && (additiveMask.backend()!=backend || additiveMask.dtype()!=DType.F32
-                || additiveMask.shape().rank()!=2 || additiveMask.shape().dim(0)!=queryLength
-                || additiveMask.shape().dim(1)!=keyLength))
-            throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] on this backend");
+                || (additiveMask.shape().rank()!=2 && additiveMask.shape().rank()!=3)
+                || (additiveMask.shape().rank()==2 && (additiveMask.shape().dim(0)!=queryLength
+                    || additiveMask.shape().dim(1)!=keyLength))
+                || (additiveMask.shape().rank()==3 && (additiveMask.shape().dim(0)!=batch
+                    || additiveMask.shape().dim(1)!=queryLength || additiveMask.shape().dim(2)!=keyLength))))
+            throw new IllegalArgumentException("additive attention mask must be F32 [queryLength, keyLength] or [batch, queryLength, keyLength] on this backend");
         MemorySegment mask = additiveMask == null ? null : CpuTensorLayoutAccess.contiguousF32(additiveMask);
+        long maskBatchStride = additiveMask != null && additiveMask.shape().rank()==3
+                ? Math.multiplyExact(Math.multiplyExact(queryLength, keyLength), Float.BYTES) : 0L;
         if (mask != null) {
-            validateAttentionMask(mask, queryLength, keyLength);
+            validateAttentionMask(mask,
+                    additiveMask.shape().rank() == 3
+                            ? Math.multiplyExact(queryLength, batch) : queryLength,
+                    keyLength);
         }
         Shape outputShape=new Shape(batch,heads,queryLength,headDim);
         HostAccessibleStorage output=outputAllocator.apply(Math.multiplyExact(outputShape.numel(),Float.BYTES));
@@ -82,10 +90,12 @@ final class CpuAttentionExecution {
                 // across backend instances and concurrent inference requests.
                 java.util.stream.IntStream.range(0, groupCount).parallel().forEach(group ->
                         computeAttentionGroup(q, k, v, mask, out, group, group,
+                                (group / Math.toIntExact(heads)) * maskBatchStride,
                                 queryLength, keyLength, headDim, scale, causal));
             } else {
                 for (int group = 0; group < groupCount; group++) {
                     computeAttentionGroup(q, k, v, mask, out, group, group,
+                            (group / Math.toIntExact(heads)) * maskBatchStride,
                             queryLength, keyLength, headDim, scale, causal);
                 }
             }
@@ -157,7 +167,7 @@ final class CpuAttentionExecution {
                     computeAttentionGroup(q, k, v, mask, out, group,
                             (group / Math.toIntExact(queryHeads))
                                     * Math.toIntExact(keyValueHeads) + keyValueHead,
-                            queryLength, keyLength, headDim, scale, causal);
+                            0L, queryLength, keyLength, headDim, scale, causal);
                 });
             } else {
                 for (int group = 0; group < groupCount; group++) {
@@ -166,7 +176,7 @@ final class CpuAttentionExecution {
                     computeAttentionGroup(q, k, v, mask, out, group,
                             (group / Math.toIntExact(queryHeads))
                                     * Math.toIntExact(keyValueHeads) + keyValueHead,
-                            queryLength, keyLength, headDim, scale, causal);
+                            0L, queryLength, keyLength, headDim, scale, causal);
                 }
             }
             return outputFactory.create(outputShape, output);
@@ -227,6 +237,7 @@ final class CpuAttentionExecution {
             MemorySegment out,
             int group,
             int keyGroup,
+            long maskBatchOffset,
             long queryLength,
             long keyLength,
             long headDim,
@@ -242,7 +253,7 @@ final class CpuAttentionExecution {
             float runningMax = Float.NEGATIVE_INFINITY;
             double denominator = 0d;
             long causalLimit = keyLength - queryLength + qi;
-            long maskRowOffset = qi * keyLength * Float.BYTES;
+            long maskRowOffset = maskBatchOffset + qi * keyLength * Float.BYTES;
 
             // Online softmax: keep only the running normalization and weighted
             // value sum; no query-sized score/probability array is allocated.
