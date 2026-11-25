@@ -48,28 +48,44 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
 
         LoadedPipeline loaded = loadPipeline(configuredCheckpoint());
         EmbeddingGemma2VisionImagePipeline pipeline = loaded.pipeline();
-        EmbeddingGemma2VisionImageProcessor.RgbImage image = gradientImage(16, 16);
+        List<EmbeddingGemma2VisionImageProcessor.RgbImage> images = List.of(
+                gradientImage(16, 16),
+                gradientImage(31, 19));
 
-        int expectedSoftTokens = pipeline.preprocess(List.of(image)).numSoftTokensPerImage()[0];
-        float[][] features = pipeline.encode(image);
+        int[] expectedSoftTokens = pipeline.preprocess(images).numSoftTokensPerImage();
+        List<float[][]> batchFeatures = pipeline.encodeBatch(images);
 
+        assertEquals(images.size(), batchFeatures.size(),
+                "vision output must preserve the number and boundaries of input images");
+        assertEquals(images.size(), expectedSoftTokens.length,
+                "processor must report one soft-token count per image");
+        for (int imageIndex = 0; imageIndex < images.size(); imageIndex++) {
+            assertOfficialImageFeatures(batchFeatures.get(imageIndex),
+                    expectedSoftTokens[imageIndex], loaded.textHiddenSize(), imageIndex);
+        }
+    }
+
+    private static void assertOfficialImageFeatures(
+            float[][] features, int expectedSoftTokens, int textHiddenSize, int imageIndex) {
         assertEquals(expectedSoftTokens, features.length,
-                "vision output must preserve the processor's actual per-image soft-token count");
-        assertTrue(features.length > 0, "vision output must contain image tokens");
-        assertEquals(loaded.textHiddenSize(), features[0].length,
-                "vision output width must equal text_config.hidden_size");
+                "image " + imageIndex + " must preserve its actual per-image soft-token count");
+        assertTrue(features.length > 0, "image " + imageIndex + " must contain image tokens");
+        assertEquals(textHiddenSize, features[0].length,
+                "image " + imageIndex + " output width must equal text_config.hidden_size");
 
         boolean hasNonZeroFeature = false;
         for (float[] token : features) {
-            assertEquals(features[0].length, token.length, "all image tokens must have the same text width");
+            assertEquals(textHiddenSize, token.length,
+                    "all image " + imageIndex + " tokens must have the same text width");
             for (float value : token) {
-                assertTrue(Float.isFinite(value), "official checkpoint output must be finite");
+                assertTrue(Float.isFinite(value),
+                        "official checkpoint image " + imageIndex + " output must be finite");
                 hasNonZeroFeature |= Math.abs(value) > 1e-7f;
             }
         }
-        assertTrue(hasNonZeroFeature, "official checkpoint must produce non-zero image features");
+        assertTrue(hasNonZeroFeature,
+                "official checkpoint image " + imageIndex + " must produce non-zero image features");
     }
-
     private static Path configuredCheckpoint() {
         String configuredPath = System.getenv(CHECKPOINT_ENV);
         Assumptions.assumeTrue(configuredPath != null && !configuredPath.isBlank(),
