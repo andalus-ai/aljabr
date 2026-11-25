@@ -52,6 +52,19 @@ class Chronos2CheckpointMapperTest {
     }
 
     @Test
+    void validatesSafetensorsDtypeMetadata() {
+        var mapper = new Chronos2CheckpointMapper();
+        Map<String, Chronos2CheckpointMapper.TensorMetadata> metadata = new LinkedHashMap<>();
+        mapper.expectedTensors(config()).forEach((name, spec) ->
+                metadata.put(name, new Chronos2CheckpointMapper.TensorMetadata("F32", spec.shape())));
+        assertEquals(metadata.size(), mapper.mapMetadata(config(), metadata).parameterBindings().size());
+
+        metadata.put("shared.weight",
+                new Chronos2CheckpointMapper.TensorMetadata("F16", new long[] {2, 8}));
+        assertThrows(IllegalArgumentException.class, () -> mapper.mapMetadata(config(), metadata));
+    }
+
+    @Test
     void tensorShapesAreDefensivelyCopied() {
         var spec = new Chronos2CheckpointMapper().expectedTensors(config()).get("shared.weight");
         long[] shape = spec.shape();
