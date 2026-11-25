@@ -50,9 +50,9 @@ public record GgufModelDescriptor(
         tensorNames = immutableSorted(tensorNames, "tensorNames");
         Objects.requireNonNull(tensorDescriptors, "tensorDescriptors");
         TreeMap<String, GgufTensorDescriptor> descriptors = new TreeMap<>();
-        tensorDescriptors.forEach((name, descriptor) -> {
-            Objects.requireNonNull(name, "tensor descriptor name");
-            Objects.requireNonNull(descriptor, "tensor descriptor");
+        for (Map.Entry<String, GgufTensorDescriptor> entry : tensorDescriptors.entrySet()) {
+            String name = Objects.requireNonNull(entry.getKey(), "tensor descriptor name");
+            GgufTensorDescriptor descriptor = Objects.requireNonNull(entry.getValue(), "tensor descriptor");
             if (!name.equals(descriptor.name())) {
                 throw new IllegalArgumentException("Tensor descriptor key does not match its name: " + name);
             }
@@ -60,7 +60,7 @@ public record GgufModelDescriptor(
                 throw new IllegalArgumentException("Tensor descriptor is absent from tensorNames: " + name);
             }
             descriptors.put(name, descriptor);
-        });
+        }
         tensorDescriptors = Collections.unmodifiableMap(descriptors);
     }
 
