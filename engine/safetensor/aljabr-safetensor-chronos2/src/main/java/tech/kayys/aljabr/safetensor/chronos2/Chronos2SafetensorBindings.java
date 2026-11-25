@@ -82,18 +82,15 @@ public final class Chronos2SafetensorBindings {
             }
         }
 
-        public String checkpointNameForParameter(String parameterName) {
+        public SafetensorTensor tensorForParameter(String parameterName) {
             Objects.requireNonNull(parameterName, "parameterName");
-            return mapping.parameterBindings().entrySet().stream()
+            String checkpointName = mapping.parameterBindings().entrySet().stream()
                     .filter(entry -> entry.getValue().equals(parameterName))
                     .map(Map.Entry::getKey)
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException(
                             "unknown Chronos-2 parameter: " + parameterName));
-        }
-
-        public SafetensorTensor tensorForParameter(String parameterName) {
-            return tensorsByCheckpointName.get(checkpointNameForParameter(parameterName));
+            return tensorsByCheckpointName.get(checkpointName);
         }
     }
 }
