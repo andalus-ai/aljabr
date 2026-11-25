@@ -209,3 +209,23 @@ required processing assets, and a provider must independently establish
 execution support before declaring capabilities. The descriptor is evidence
 collection, not a model-family adapter or a substitute for a real-artifact
 compatibility test.
+
+### M2 — Model-family adapter SPI
+
+The inference-facing GGUF API now defines `GgufModelFamilyAdapter` and
+`GgufModelFamilyInspection` as a reusable extension contract:
+
+- Independently installable model-family modules implement the adapter and
+  inspect an already parsed `GgufModelDescriptor`.
+- Inspection returns a typed status: `MATCH`, `UNSUPPORTED_ARCHITECTURE`,
+  `INCOMPLETE_ARTIFACT`, or `UNSUPPORTED_ARTIFACT`.
+- Rejected inspections must carry actionable diagnostics; successful matches
+  cannot carry failure diagnostics.
+- Inspection is metadata/artifact validation only. It must not load tensors,
+  allocate native resources, or claim provider execution or modality support.
+
+This deliberately keeps architecture recognition separate from provider
+capability matching. The next slice can add family-specific tensor-shape and
+processing-asset validation once a real artifact's metadata and tensor
+inventory are available. No Saina adapter is registered yet because its
+architecture and tensor contract remain unverified.
