@@ -242,10 +242,7 @@ public final class BlockCompressedKVCacheStorage implements KVCacheStorage, KVCa
                 }
             }
             int offset = localFirst * stride;
-            int length = count * stride;
-            float[] keys = java.util.Arrays.copyOfRange(blockKeys, offset, offset + length);
-            float[] values = java.util.Arrays.copyOfRange(blockValues, offset, offset + length);
-            consumer.accept(position, count, keys, values);
+            consumer.accept(position, count, blockKeys, blockValues, offset);
             completed += count;
         }
     }
