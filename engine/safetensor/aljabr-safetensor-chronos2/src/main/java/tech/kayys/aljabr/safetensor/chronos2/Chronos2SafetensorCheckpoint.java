@@ -28,8 +28,7 @@ public final class Chronos2SafetensorCheckpoint implements AutoCloseable {
         Objects.requireNonNull(binder, "binder");
         try {
             Map<String, SafetensorTensor> tensors = new LinkedHashMap<>();
-            for (String name : new tech.kayys.aljabr.models.chronos2.Chronos2CheckpointMapper()
-                    .expectedTensors(config).keySet()) {
+            for (String name : binder.expectedTensors(config).keySet()) {
                 tensors.put(name, session.tensor(name));
             }
             this.binding = binder.bind(config, tensors, session.tensorCount());
