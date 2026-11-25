@@ -187,3 +187,25 @@ The model requirement is passed explicitly as a typed `GgufCapabilitySet`;
 the engine does not infer unsupported modalities from a model name or metadata
 heuristic. A Saina-specific profile remains gated on verified upstream model
 metadata and a real GGUF artifact.
+
+## 10. M2 artifact-inspection contract
+
+The inference-facing GGUF API now includes `GgufModelDescriptor`, an immutable
+metadata-only view that can be constructed from the existing parser's metadata
+map and tensor-name inventory:
+
+- Captures `general.architecture` and `general.name` only when their values
+  are strings.
+- Retains deterministic, immutable metadata-key and tensor-name sets.
+- Reports whether known tokenizer metadata keys and a nonblank
+  `tokenizer.chat_template` are present.
+- Provides tensor-prefix inspection for model-family adapters and a concise
+  artifact summary.
+
+This descriptor intentionally does **not** infer modality/task support from
+architecture names, tensor-name fragments, tokenizer presence or chat-template
+presence. A family adapter must validate its expected tensor shapes and
+required processing assets, and a provider must independently establish
+execution support before declaring capabilities. The descriptor is evidence
+collection, not a model-family adapter or a substitute for a real-artifact
+compatibility test.
