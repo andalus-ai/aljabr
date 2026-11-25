@@ -45,7 +45,7 @@ class Chronos2ConfigTest {
         assertThrows(IllegalArgumentException.class, () -> Chronos2Config.fromHuggingFaceConfig(Map.of(
                 "architectures", List.of("T5EncoderModel"),
                 "model_type", "t5",
-                "chronos_config", Map.of()))));
+                "chronos_config", Map.of())));
     }
 
     @Test
