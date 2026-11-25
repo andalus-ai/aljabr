@@ -338,6 +338,11 @@ public final class DefaultTensor implements Tensor {
             throw new IllegalArgumentException(
                     "index-add indices must use I32; actual dtype=" + indices.dtype());
         }
+        if (source.dtype() != dtype()) {
+            throw new IllegalArgumentException(
+                    "index-add source dtype " + source.dtype()
+                            + " must match destination dtype " + dtype());
+        }
         if (indices.requiresGrad()) {
             throw new IllegalArgumentException("index-add indices cannot require gradients");
         }
