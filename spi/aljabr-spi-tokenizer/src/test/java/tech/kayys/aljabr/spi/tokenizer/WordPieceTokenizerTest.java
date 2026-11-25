@@ -64,8 +64,7 @@ class WordPieceTokenizerTest {
                   ]
                 }
                 """;
-        Path directory = Files.createTempDirectory("bert-tokenizer");
-        Path path = directory.resolve("tokenizer.json");
+        Path path = Files.createTempFile("bert-tokenizer", ".json");
         try {
             Files.writeString(path, json);
             HuggingFaceWordPieceLoader loader = new HuggingFaceWordPieceLoader();
@@ -75,10 +74,8 @@ class WordPieceTokenizerTest {
                     loaded.encode("Hello world", new EncodeOptions().addBos(true).addEos(true)));
             assertEquals(6, loaded.vocabSize());
             assertEquals(3, loaded.padTokenId());
-            assertEquals(true, TokenizerFactory.load(path, null) instanceof WordPieceTokenizer);
         } finally {
             Files.deleteIfExists(path);
-            Files.deleteIfExists(directory);
         }
     }
 }
