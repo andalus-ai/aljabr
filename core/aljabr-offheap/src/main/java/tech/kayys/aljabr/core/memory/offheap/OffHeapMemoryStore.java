@@ -24,7 +24,7 @@ import java.util.logging.Logger;
  *
  * <p>This implementation is not persistent; values do not survive JVM restarts.
  */
-public final class OffHeapMemoryStore implements BorrowableMemoryStore {
+public class OffHeapMemoryStore implements BorrowableMemoryStore {
 
     private static final Logger LOG = Logger.getLogger(OffHeapMemoryStore.class.getName());
     private record Entry(MemorySegment segment, Arena arena) {}
