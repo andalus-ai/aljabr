@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.models.chronos2;
 
 import java.util.Objects;
+import tech.kayys.aljabr.models.common.transformer.GroupAttentionMask;
 import tech.kayys.aljabr.models.common.transformer.RmsNormReference;
 import tech.kayys.aljabr.models.common.transformer.RotaryPositionEmbeddingReference;
 
@@ -28,7 +29,10 @@ public final class Chronos2Encoder {
         if (this.layers.length != config.layerCount()) {
             throw new IllegalArgumentException("layer weight count must equal configured layer count");
         }
-        for (LayerWeights layer : this.layers) Objects.requireNonNull(layer, "layer weights");
+        for (LayerWeights layer : this.layers) {
+            Objects.requireNonNull(layer, "layer weights");
+            validateLayer(layer);
+        }
         requireVector(finalNormScale, config.modelDimension(), "finalNormScale");
         this.finalNormScale = finalNormScale.clone();
     }
@@ -45,6 +49,7 @@ public final class Chronos2Encoder {
     public float[][][] encode(float[][][] inputs, int[] groupIds,
             boolean[][] validPatches, int[] positionIds) {
         Shape shape = validateInputs(inputs, groupIds, validPatches, positionIds);
+        float[][][] groupVisibility = GroupAttentionMask.build(groupIds, validPatches);
         float[][][] hidden = copy(inputs);
         for (LayerWeights layer : layers) {
             // Time self-attention: independent temporal sequence per series.
@@ -65,7 +70,7 @@ public final class Chronos2Encoder {
                 }
                 float[][] normalized = normalize(slice, layer.groupAttention().normScale());
                 float[][] attended = attention(normalized, validKeys, null,
-                        layer.groupAttention().projections(), false, groupIds);
+                        layer.groupAttention().projections(), false, groupVisibility[patch]);
                 for (int series = 0; series < shape.series; series++) {
                     addInPlace(hidden[series][patch], attended[series]);
                 }
@@ -97,7 +102,7 @@ public final class Chronos2Encoder {
     }
 
     private float[][] attention(float[][] input, boolean[] validKeys, int[] positions,
-            AttentionWeights weights, boolean useRope, int[] groupIds) {
+            AttentionWeights weights, boolean useRope, boolean[][] visibility) {
         int sequence = input.length;
         int model = config.modelDimension();
         int heads = config.headCount();
@@ -121,7 +126,7 @@ public final class Chronos2Encoder {
                 double[] scores = new double[sequence];
                 for (int key = 0; key < sequence; key++) {
                     boolean visible = validKeys[key]
-                            && (groupIds == null || groupIds[query] == groupIds[key]);
+                            && (visibility == null || visibility[query][key]);
                     if (!visible) {
                         scores[key] = Double.NEGATIVE_INFINITY;
                         continue;
@@ -239,6 +244,40 @@ public final class Chronos2Encoder {
             }
         }
         return new Shape(inputs.length, patches, dimension);
+    }
+
+    private void validateLayer(LayerWeights layer) {
+        int model = config.modelDimension();
+        int inner = Math.multiplyExact(config.headCount(), config.keyValueDimension());
+        int feedForward = config.feedForwardDimension();
+        validateAttention(layer.timeAttention(), model, inner, "timeAttention");
+        validateAttention(layer.groupAttention(), model, inner, "groupAttention");
+        requireVector(layer.feedForward().normScale(), model, "feedForward.normScale");
+        requireMatrix(layer.feedForward().wi(), feedForward, model, "feedForward.wi");
+        requireMatrix(layer.feedForward().wo(), model, feedForward, "feedForward.wo");
+    }
+
+    private static void validateAttention(AttentionLayerWeights layer, int model, int inner, String name) {
+        requireVector(layer.normScale(), model, name + ".normScale");
+        AttentionWeights weights = layer.projections();
+        requireMatrix(weights.query(), inner, model, name + ".query");
+        requireMatrix(weights.key(), inner, model, name + ".key");
+        requireMatrix(weights.value(), inner, model, name + ".value");
+        requireMatrix(weights.output(), model, inner, name + ".output");
+    }
+
+    private static void requireMatrix(float[][] matrix, int rows, int columns, String name) {
+        if (matrix == null || matrix.length != rows) {
+            throw new IllegalArgumentException(name + " must have shape [" + rows + "][" + columns + "]");
+        }
+        for (float[] row : matrix) {
+            if (row == null || row.length != columns) {
+                throw new IllegalArgumentException(name + " must have shape [" + rows + "][" + columns + "]");
+            }
+            for (float value : row) {
+                if (!Float.isFinite(value)) throw new IllegalArgumentException(name + " must contain finite values");
+            }
+        }
     }
 
     private record Shape(int series, int patches, int dimension) { }
