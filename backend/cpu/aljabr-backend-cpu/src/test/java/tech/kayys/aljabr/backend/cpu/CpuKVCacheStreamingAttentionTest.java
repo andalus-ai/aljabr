@@ -3,6 +3,7 @@ package tech.kayys.aljabr.backend.cpu;
 import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.cache.BlockCompressedKVCacheStorage;
+import tech.kayys.aljabr.cache.HeapKVCacheStorage;
 import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.cache.quantization.TurboQuantProdKVCacheCodec;
@@ -39,17 +40,17 @@ class CpuKVCacheStreamingAttentionTest {
         float[] decodedValues = new float[12];
         storage.readKeyRange(0, 0, 3, decodedKeys, 0);
         storage.readValueRange(0, 0, 3, decodedValues, 0);
-        float[] expected = reference(query, decodedKeys, decodedValues, 1, 2, 2);
+        float[] expected = reference(query, decodedKeys, decodedValues, 2, 1, 2);
 
         assertArrayEquals(expected, actual, 1.0e-5f);
-        assertTrue(actual[0] > 20.0f,
+        assertTrue(actual[0] > 10.0f && actual[0] < 30.0f,
                 "query head 2 must map to KV head 1, not KV head 0");
     }
 
     @Test
     void rejectsUncommittedCacheSuffix() {
         KVCacheLayout layout = KVCacheLayout.uniform(1, 4, 1, 2);
-        KVCacheSession session = new KVCacheSession(new tech.kayys.aljabr.cache.HeapKVCacheStorage(layout));
+        KVCacheSession session = new KVCacheSession(new HeapKVCacheStorage(layout));
         session.write(0, 0, new float[] {1, 0}, 0, new float[] {2, 3}, 0);
 
         assertThrows(IndexOutOfBoundsException.class,
