@@ -52,10 +52,13 @@ val withLegacyPluginCore = providers.gradleProperty("withLegacyPluginCore")
     .map(String::toBoolean)
     .getOrElse(false)
 // Storage adapters are optional capabilities, not foundational core dependencies.
-// RocksDB provides durable key-value storage; the legacy HelixDB-named module is
-// currently an in-process FFM off-heap store, not a persistent database.
-// Include either only when explicitly requested.
+// RocksDB provides durable key-value storage. The off-heap provider is ephemeral
+// in-process FFM memory; the HelixDB-named module is only a deprecated adapter.
+// Include providers only when explicitly requested.
 val withRocksDb = providers.gradleProperty("withRocksDb")
+   .map(String::toBoolean)
+   .getOrElse(false)
+val withOffHeapStore = providers.gradleProperty("withOffHeapStore")
    .map(String::toBoolean)
    .getOrElse(false)
 val withHelixDb = providers.gradleProperty("withHelixDb")
@@ -64,6 +67,7 @@ val withHelixDb = providers.gradleProperty("withHelixDb")
 val excludedCoreProjects = buildSet {
    if (!withLegacyPluginCore) add("aljabr-plugin-core")
    if (!withRocksDb) add("aljabr-rocksdb")
+   if (!withOffHeapStore) add("aljabr-offheap")
    if (!withHelixDb) add("aljabr-helixdb")
 }
 includeDirectProjectsUnder("core", excludedRelativePaths = excludedCoreProjects)
