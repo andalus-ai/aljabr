@@ -1,6 +1,6 @@
 package tech.kayys.aljabr.models.embeddinggemma2;
 
-import java.util.List;
+import java.util.Collections;
 import java.util.Objects;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioEncoder;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioFeatureExtractor;
@@ -117,7 +117,7 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
         float[][] textEmbeddings = EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
                 textBackbone, inputIds, audioTokenId, padTokenId);
         float[][] mergedEmbeddings = EmbeddingGemma2MultimodalInputAssembler.replaceModalityPlaceholders(
-                textEmbeddings, inputIds, audioTokenId, List.<float[][]>of(projectedAudioStates), "audio");
+                textEmbeddings, inputIds, audioTokenId, Collections.singletonList(projectedAudioStates), "audio");
         return textBackbone.encodeEmbeddings(mergedEmbeddings, validTokens, positionIds);
     }
 

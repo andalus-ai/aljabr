@@ -116,6 +116,34 @@ public final class InstanceNormalizer {
             }
         }
 
+        /**
+         * Applies this series' fitted transform to additional observations,
+         * such as known-future covariates, without refitting its statistics.
+         */
+        public double[] transform(double[] values, boolean[] observedMask) {
+            Objects.requireNonNull(values, "values");
+            if (observedMask != null && observedMask.length != values.length) {
+                throw new IllegalArgumentException("observation mask length must match values");
+            }
+            double[] transformed = new double[values.length];
+            for (int i = 0; i < values.length; i++) {
+                if (Double.isInfinite(values[i])) {
+                    throw new IllegalArgumentException("infinite values are not supported");
+                }
+                boolean observed = observedMask == null ? !Double.isNaN(values[i]) : observedMask[i];
+                if (observed && Double.isNaN(values[i])) {
+                    throw new IllegalArgumentException("an observed value cannot be NaN");
+                }
+                if (!observed) {
+                    transformed[i] = Double.NaN;
+                } else {
+                    double standardized = (values[i] - location) / scale;
+                    transformed[i] = arcsinh ? asinh(standardized) : standardized;
+                }
+            }
+            return transformed;
+        }
+
         public double[] inverse(double[] normalizedValues) {
             Objects.requireNonNull(normalizedValues, "normalizedValues");
             double[] restored = normalizedValues.clone();

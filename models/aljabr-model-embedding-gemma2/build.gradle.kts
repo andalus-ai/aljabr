@@ -10,6 +10,7 @@ dependencies {
     api(project(":spi:aljabr-spi-model"))
     implementation(project(":spi:aljabr-spi-inference"))
     implementation(project(":spi:aljabr-spi-tokenizer"))
+    implementation(project(":models:aljabr-model-common"))
     implementation(project(":models:aljabr-model-embedding-common"))
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")

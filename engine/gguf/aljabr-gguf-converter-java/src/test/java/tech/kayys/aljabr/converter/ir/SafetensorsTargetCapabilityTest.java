@@ -71,6 +71,17 @@ class SafetensorsTargetCapabilityTest {
     }
 
     @Test
+    void classifiesIQ2XXSAsPartialBecauseQuantizedStorageIsExpanded() {
+        var tensor = new TensorDescriptor("weight", "IQ2_XXS", List.of(256L),
+                "contiguous", null, null, Map.of());
+        var model = new ModelDescriptor(ModelIdentity.of("iq2_xxs"), "llama", "gguf",
+                Map.of("general.architecture", "llama"), Map.of(), List.of(tensor));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL,
+                new SafetensorsTargetCapability().assess(model).fidelity());
+    }
+
+    @Test
     void marksLegacyFlattenedGgufMetadataAsPartial() {
         var model = new ModelDescriptor(
                 ModelIdentity.of("legacy-typed-metadata"),
