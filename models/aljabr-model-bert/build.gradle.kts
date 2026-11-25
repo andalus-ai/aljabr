@@ -8,6 +8,7 @@ java { toolchain { languageVersion.set(JavaLanguageVersion.of(25)) } }
 repositories { mavenCentral(); mavenLocal() }
 dependencies {
     api("tech.kayys.aljabr:aljabr-spi-model:0.1.0-SNAPSHOT")
+    api(project(":plugins:ml:aljabr-nn"))
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")
     implementation(group = "jakarta.inject", name = "jakarta.inject-api")
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
