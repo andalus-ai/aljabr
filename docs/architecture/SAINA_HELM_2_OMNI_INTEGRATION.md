@@ -161,3 +161,29 @@ provider selection or execution; that integration requires a follow-up change
 that preserves the existing AUTO-selection behavior and introduces explicit
 task requirements. No Saina-specific capability profile is declared until the
 upstream artifact is verified.
+
+## 9. M3 provider-selection integration
+
+A follow-up implementation now connects the reusable capability profile to
+GGUF provider selection:
+
+- `GgufBackendCapability` carries a `GgufCapabilitySet` returned by the
+  provider's existing cheap probe.
+- The original five-argument constructor and existing `ready(...)` factory
+  remain source-compatible. Legacy ready providers conservatively advertise
+  text generation only; providers must opt in explicitly to additional tasks.
+- `GgufInferenceEngine.loadModel(..., requiredCapabilities)` adds an opt-in
+  capability-aware loading path. The original overload preserves existing
+  behavior.
+- AUTO selection skips generation-ready providers that do not satisfy the
+  requested modalities/tasks, then continues to lower-priority providers.
+- Explicit provider selection retains its deliberate probe bypass when no
+  requirements are supplied. When requirements are supplied, it probes and
+  rejects incompatible or unverifiable providers before backend creation.
+- Decision-observer events distinguish capability rejection, probe failure
+  and successful selection.
+
+The model requirement is passed explicitly as a typed `GgufCapabilitySet`;
+the engine does not infer unsupported modalities from a model name or metadata
+heuristic. A Saina-specific profile remains gated on verified upstream model
+metadata and a real GGUF artifact.
