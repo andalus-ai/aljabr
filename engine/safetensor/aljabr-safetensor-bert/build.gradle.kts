@@ -13,6 +13,8 @@ java {
 dependencies {
     api(project(":models:aljabr-model-bert"))
     api(project(":engine:safetensor:aljabr-safetensor-loader"))
+    api(project(":spi:aljabr-spi-tokenizer"))
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api")
     implementation("jakarta.inject:jakarta.inject-api")
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
