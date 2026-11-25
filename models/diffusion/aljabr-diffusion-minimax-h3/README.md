@@ -67,3 +67,35 @@ implementation("tech.kayys.aljabr:aljabr-diffusion-minimax-h3:0.1.0-SNAPSHOT")
 
 The module is independently included by the existing nested diffusion project
 discovery in `settings.gradle.kts`.
+
+
+## Task component requirements
+
+`MiniMaxH3PipelineRequirements` translates a task plus explicit runtime
+conditioning/output choices into the family-neutral
+`DiffusionComponentRequirement` contract. The generic
+`DiffusionPipelineLoader` remains responsible for resolution, artifact
+materialization, format loading and resource ownership.
+
+```java
+var requirements = MiniMaxH3PipelineRequirements.forTask(
+    MiniMaxH3Task.TEXT_TO_VIDEO,
+    MiniMaxH3PipelineRequirements.Conditioning.LOCAL_TEXT_ENCODER,
+    MiniMaxH3PipelineRequirements.Output.VIDEO);
+
+// Include this only when the requested result contains generated audio.
+requirements = MiniMaxH3PipelineRequirements.withAudioOutput(requirements);
+
+var loaded = pipelineLoader.load(manifest, requirements, resolutionContext);
+try (loaded) {
+    // Pass loaded components to the selected execution implementation.
+}
+```
+
+The profile always requires the diffusion model. It selects either a local text
+encoder or precomputed prompt embeddings, and requires the video autoencoder
+only for video output. Audio decoding is opt-in. Reference images and frames
+are request inputs, not checkpoint components in this role inventory; their
+conditioning path remains a separate execution capability. These profiles
+describe component prerequisites and do not claim that generation is
+implemented.
