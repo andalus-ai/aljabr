@@ -7,8 +7,9 @@ package tech.kayys.aljabr.core.memory;
  * module to the runtime classpath and either call its explicit factory method or
  * configure {@value #PROPERTY_KEY}/{@value #ENV_KEY} before calling {@link #open(String)}.
  *
- * <p>RocksDB is a durable key-value adapter. The off-heap provider is an in-process FFM implementation and does not persist
- * data across JVM restarts. The HelixDB-named provider is a deprecated compatibility adapter.
+ * <p>RocksDB is a durable key-value adapter. The off-heap provider is an
+ * in-process FFM implementation and does not persist data across JVM restarts.
+ * The HelixDB-named provider is a deprecated compatibility adapter.
  */
 public final class MemoryStoreFactory {
 
@@ -76,7 +77,6 @@ public final class MemoryStoreFactory {
     }
 
     /** @deprecated use {@link #openOffHeap(String)} */
-    @Deprecated(forRemoval = true)
     @Deprecated(forRemoval = true)
     public static UnifiedMemoryStore createHelixDb(String dbPath) {
         return openHelixDb(dbPath);
