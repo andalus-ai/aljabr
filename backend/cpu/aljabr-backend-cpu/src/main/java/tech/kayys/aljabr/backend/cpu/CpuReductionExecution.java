@@ -5,6 +5,7 @@ import java.lang.foreign.ValueLayout;
 import java.util.Objects;
 import java.util.function.LongFunction;
 
+import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
