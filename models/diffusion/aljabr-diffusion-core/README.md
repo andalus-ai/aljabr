@@ -2,11 +2,11 @@
 
 Family-neutral diffusion orchestration primitives.
 
-The initial core provides an immutable, explicitly supplied family-provider
-registry. It does not perform global registration, load model weights, select
-hardware backends or implement a serving lifecycle. Applications may construct
-the registry from providers discovered through `ServiceLoader` or explicit
-dependency injection.
+The core provides:
 
-Future additions must remain family-neutral and reuse Aljabr tensor, model and
-backend APIs rather than introducing a parallel compute stack.
+- An explicitly supplied registry of optional diffusion-family providers.
+- `DiffusionComponentResolver`, which resolves capability requirements against an immutable component manifest with deterministic variant selection.
+
+Resolution is metadata-only. It does not fetch artifacts, parse checkpoints, allocate tensors, select hardware backends or implement a serving lifecycle. Format-specific loaders and storage adapters remain separate capabilities and should reuse Aljabr's existing model and Safetensors APIs.
+
+Applications may construct registries and resolvers explicitly; there is no global registration.
