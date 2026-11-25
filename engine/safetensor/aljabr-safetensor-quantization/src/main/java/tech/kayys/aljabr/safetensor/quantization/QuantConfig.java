@@ -22,7 +22,7 @@ public class QuantConfig {
     /**
      * Target quantization strategy.
      */
-    private final QuantizationEngine.QuantStrategy strategy;
+    private final QuantizationStrategy strategy;
 
     /**
      * Group size for GPTQ quantization (e.g., 128).
@@ -73,7 +73,7 @@ public class QuantConfig {
      * Default constructor with sensible defaults for INT4 GPTQ.
      */
     public QuantConfig() {
-        this(QuantizationEngine.QuantStrategy.INT4, 128, 4, false, true, false, 0.01, 128, 2048, false);
+        this(QuantizationStrategy.INT4, 128, 4, false, true, false, 0.01, 128, 2048, false);
     }
 
     /**
@@ -92,6 +92,13 @@ public class QuantConfig {
      */
     public QuantConfig(QuantizationEngine.QuantStrategy strategy, int groupSize, int bits, boolean symmetric,
             boolean perChannel, boolean actOrder, double dampPercent, int numSamples, int seqLen, boolean descAct) {
+        this(QuantizationStrategyCompatibility.fromLegacy(strategy), groupSize, bits, symmetric, perChannel,
+                actOrder, dampPercent, numSamples, seqLen, descAct);
+    }
+
+    private QuantConfig(QuantizationStrategy strategy, int groupSize, int bits, boolean symmetric,
+            boolean perChannel, boolean actOrder, double dampPercent, int numSamples, int seqLen,
+            boolean descAct) {
         this.strategy = Objects.requireNonNull(strategy, "strategy cannot be null");
         this.groupSize = groupSize;
         this.bits = bits;
@@ -119,7 +126,7 @@ public class QuantConfig {
      * @return INT4 GPTQ configuration
      */
     public static QuantConfig int4Gptq() {
-        return builder().strategy(QuantizationEngine.QuantStrategy.INT4).build();
+        return builder().quantizationStrategy(QuantizationStrategy.INT4).build();
     }
 
     /**
@@ -128,7 +135,7 @@ public class QuantConfig {
      * @return INT8 configuration
      */
     public static QuantConfig int8() {
-        return builder().strategy(QuantizationEngine.QuantStrategy.INT8).bits(8).perChannel(true).build();
+        return builder().quantizationStrategy(QuantizationStrategy.INT8).bits(8).perChannel(true).build();
     }
 
     /**
@@ -137,7 +144,7 @@ public class QuantConfig {
      * @return FP8 configuration
      */
     public static QuantConfig fp8() {
-        return builder().strategy(QuantizationEngine.QuantStrategy.FP8).symmetric(true).build();
+        return builder().quantizationStrategy(QuantizationStrategy.FP8).symmetric(true).build();
     }
 
     /**
@@ -148,7 +155,7 @@ public class QuantConfig {
      * @return AWQ configuration
      */
     public static QuantConfig awq(int bits, int groupSize) {
-        return builder().strategy(QuantizationEngine.QuantStrategy.AWQ).bits(bits).groupSize(groupSize).build();
+        return builder().quantizationStrategy(QuantizationStrategy.AWQ).bits(bits).groupSize(groupSize).build();
     }
 
     /**
@@ -157,7 +164,7 @@ public class QuantConfig {
      * @return TurboQuant configuration
      */
     public static QuantConfig turbo() {
-        return builder().strategy(QuantizationEngine.QuantStrategy.TURBO).build();
+        return builder().quantizationStrategy(QuantizationStrategy.TURBO).build();
     }
 
     /**
@@ -166,7 +173,7 @@ public class QuantConfig {
      * @return BNB configuration
      */
     public static QuantConfig bnb() {
-        return builder().strategy(QuantizationEngine.QuantStrategy.BNB).build();
+        return builder().quantizationStrategy(QuantizationStrategy.BNB).build();
     }
 
     /**
@@ -175,10 +182,17 @@ public class QuantConfig {
      * @return AutoRound configuration
      */
     public static QuantConfig autoRound() {
-        return builder().strategy(QuantizationEngine.QuantStrategy.INT4).build();
+        return builder().quantizationStrategy(QuantizationStrategy.INT4).build();
     }
 
     public QuantizationEngine.QuantStrategy getStrategy() {
+        return QuantizationStrategyCompatibility.toLegacy(strategy);
+    }
+
+    /**
+     * Returns the neutral quantization strategy.
+     */
+    public QuantizationStrategy getQuantizationStrategy() {
         return strategy;
     }
 
@@ -222,7 +236,7 @@ public class QuantConfig {
      * Builder for QuantConfig.
      */
     public static class Builder {
-        private QuantizationEngine.QuantStrategy strategy = QuantizationEngine.QuantStrategy.INT4;
+        private QuantizationStrategy strategy = QuantizationStrategy.INT4;
         private int groupSize = 128;
         private int bits = 4;
         private boolean symmetric = false;
@@ -233,11 +247,21 @@ public class QuantConfig {
         private int seqLen = 2048;
         private boolean descAct = false;
 
+        /**
+         * Compatibility entry point for callers using the engine-scoped strategy.
+         */
         public Builder strategy(QuantizationEngine.QuantStrategy strategy) {
-            this.strategy = strategy;
-            if (strategy == QuantizationEngine.QuantStrategy.INT8 || strategy == QuantizationEngine.QuantStrategy.FP8) {
+            return quantizationStrategy(QuantizationStrategy.fromLegacy(strategy));
+        }
+
+        /**
+         * Sets the neutral quantization strategy.
+         */
+        public Builder quantizationStrategy(QuantizationStrategy strategy) {
+            this.strategy = Objects.requireNonNull(strategy, "strategy cannot be null");
+            if (strategy == QuantizationStrategy.INT8 || strategy == QuantizationStrategy.FP8) {
                 this.bits = 8;
-            } else if (strategy == QuantizationEngine.QuantStrategy.INT4) {
+            } else if (strategy == QuantizationStrategy.INT4) {
                 this.bits = 4;
             }
             return this;
