@@ -3,12 +3,10 @@ package tech.kayys.aljabr.core.memory.offheap;
 import org.junit.jupiter.api.Test;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.io.TempDir;
 import java.lang.foreign.Arena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.file.Path;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,8 +14,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class OffHeapMemoryStoreTest {
 
     @Test
-    void testZeroCopyGet(@TempDir Path tempDir) {
-        try (OffHeapMemoryStore store = new OffHeapMemoryStore(tempDir.toString())) {
+    void testZeroCopyGet {
+        try (OffHeapMemoryStore store = new OffHeapMemoryStore()) {
             byte[] key = "test-key-offheap".getBytes();
 
             try (Arena arena = Arena.ofConfined()) {
@@ -48,8 +46,8 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void testOverwriteAndDelete(@TempDir Path tempDir) {
-        try (OffHeapMemoryStore store = new OffHeapMemoryStore(tempDir.toString());
+    void testOverwriteAndDelete {
+        try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena arena = Arena.ofConfined()) {
 
             byte[] key = "mykey".getBytes();
@@ -77,12 +75,12 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void testCompactionReclaimsMemory(@TempDir Path tempDir) {
+    void testCompactionReclaimsMemory {
         OffHeapMemoryStore.Config cfg = OffHeapMemoryStore.Config.builder()
                 .maxStorageMiB(1L) // 1 MiB — tiny; compaction should trigger quickly
                 .build();
 
-        try (OffHeapMemoryStore store = new OffHeapMemoryStore(tempDir.toString(), cfg);
+        try (OffHeapMemoryStore store = new OffHeapMemoryStore(cfg);
                 Arena arena = Arena.ofConfined()) {
 
             byte[] data = new byte[1024 * 512]; // 512 KiB
@@ -121,8 +119,8 @@ class OffHeapMemoryStoreTest {
 
 
     @Test
-    void borrowPinsStorageUntilLeaseIsClosed(@TempDir Path tempDir) throws Exception {
-        try (OffHeapMemoryStore store = new OffHeapMemoryStore(tempDir.toString());
+    void borrowPinsStorageUntilLeaseIsClosed throws Exception {
+        try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena inputArena = Arena.ofConfined()) {
             byte[] key = "leased-value".getBytes();
             MemorySegment input = inputArena.allocate(8);
@@ -159,8 +157,8 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void zeroExpectedSizeReturnsWholeLegacyValue(@TempDir Path tempDir) {
-        try (OffHeapMemoryStore store = new OffHeapMemoryStore(tempDir.toString());
+    void zeroExpectedSizeReturnsWholeLegacyValue {
+        try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena arena = Arena.ofConfined()) {
             MemorySegment input = arena.allocate(32);
             store.put("whole-value".getBytes(), input);
@@ -171,8 +169,8 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void testStats(@TempDir Path tempDir) {
-        try (OffHeapMemoryStore store = new OffHeapMemoryStore(tempDir.toString());
+    void testStats {
+        try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena arena = Arena.ofConfined()) {
 
             MemorySegment seg = arena.allocate(1024);
