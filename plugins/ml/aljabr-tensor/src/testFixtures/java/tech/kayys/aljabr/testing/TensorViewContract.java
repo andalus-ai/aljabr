@@ -82,6 +82,12 @@ public abstract class TensorViewContract {
             if (slice != null) {
                 slice.release();
             }
+            source.release();
+            backend.close();
+        }
+    }
+
+    @Test
     public final void contiguousMaterializationCopiesLogicalValuesIntoIndependentStorage() {
         ComputeBackend backend = createBackend();
         Tensor source = TensorFactory.of(
