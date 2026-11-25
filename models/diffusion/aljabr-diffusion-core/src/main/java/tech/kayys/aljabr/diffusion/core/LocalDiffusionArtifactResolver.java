@@ -43,7 +43,11 @@ public final class LocalDiffusionArtifactResolver implements DiffusionArtifactRe
             }
             String digest = null;
             if (Files.isRegularFile(path)) {
-                digest = sha256(path);
+                // Avoid a full checkpoint read when verification was not requested
+                // and the manifest does not declare a digest.
+                if (context.verifyChecksum() || artifact.sha256() != null) {
+                    digest = sha256(path);
+                }
                 if (artifact.sha256() != null && !artifact.sha256().equalsIgnoreCase(digest)) {
                     throw new IOException("Local artifact does not match its declared SHA-256");
                 }
