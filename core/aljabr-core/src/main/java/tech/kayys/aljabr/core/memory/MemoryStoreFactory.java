@@ -41,7 +41,7 @@ public final class MemoryStoreFactory {
     public static UnifiedMemoryStore open(String dbPath) {
         return switch (resolvedBackend()) {
             case BACKEND_ROCKSDB -> openRocksDb(dbPath);
-            case BACKEND_OFFHEAP -> openOffHeap(dbPath);
+            case BACKEND_OFFHEAP -> openOffHeap();
             case BACKEND_HELIXDB -> openHelixDb(dbPath);
             default -> throw new IllegalArgumentException(
                     "Unsupported memory store '" + resolvedBackend()
@@ -55,8 +55,14 @@ public final class MemoryStoreFactory {
     }
 
     /** Opens the canonical in-process FFM off-heap provider. */
+    public static UnifiedMemoryStore openOffHeap() {
+        return instantiateWithoutPath(OFFHEAP_CLASS, "aljabr-offheap");
+    }
+
+    /** @deprecated the in-process provider does not use a filesystem path. */
+    @Deprecated(forRemoval = true)
     public static UnifiedMemoryStore openOffHeap(String ignoredPath) {
-        return instantiate(OFFHEAP_CLASS, ignoredPath, "aljabr-offheap");
+        return openOffHeap();
     }
 
     /**
@@ -132,6 +138,22 @@ public final class MemoryStoreFactory {
         return environment == null || environment.isBlank()
                 ? null
                 : environment.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static UnifiedMemoryStore instantiateWithoutPath(String className, String module) {
+        try {
+            Class<?> providerClass = Class.forName(className);
+            return (UnifiedMemoryStore) providerClass.getConstructor().newInstance();
+        } catch (ClassNotFoundException exception) {
+            throw new IllegalStateException(
+                    "Provider class '" + className + "' is unavailable. Add the '"
+                            + module + "' module to the runtime classpath.",
+                    exception);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(
+                    "Failed to initialize memory store provider '" + module + "'.",
+                    exception);
+        }
     }
 
     private static UnifiedMemoryStore instantiate(String className, String dbPath, String module) {
