@@ -4,41 +4,72 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * A backend's answer to "can you actually generate for this specific model?"
+ * A backend's answer to whether it can execute a specific GGUF model.
  *
- * <p>{@link GgufBackendProvider#probe} must answer this from GGUF header
- * metadata only (architecture string, tensor names/types, quantization
- * formats present) — never by loading full tensor data or running the
- * model — so that {@link GgufInferenceEngine}'s AUTO selection stays cheap
- * even for large models and can probe every available provider on every
- * load.</p>
+ * <p>Providers should derive this profile from inexpensive GGUF metadata and
+ * tensor inventory inspection. Probing must not load full weights or execute
+ * the model.</p>
  *
- * <p>{@code diagnostics} is an open bag for whatever readiness signals a
- * backend already tracks internally (e.g. the Java engine's
- * {@code rowDotReady} / {@code decoderTensorsReady} / {@code knownTensorTypeRatio}
- * flags) so they keep flowing through to {@code ModelHandle} metadata for
- * operational visibility, without the API module needing to know what any
- * particular backend tracks.</p>
+ * <p>The five-argument constructor is retained for source compatibility.
+ * Legacy ready capabilities conservatively advertise text generation only;
+ * providers must use the six-argument constructor to advertise other tasks.</p>
  */
 public record GgufBackendCapability(
         boolean generationReady,
         String architecture,
         Set<String> quantizationTypes,
         String reason,
-        Map<String, Object> diagnostics) {
+        Map<String, Object> diagnostics,
+        GgufCapabilitySet capabilities) {
 
     public GgufBackendCapability {
         quantizationTypes = quantizationTypes == null ? Set.of() : Set.copyOf(quantizationTypes);
         diagnostics = diagnostics == null ? Map.of() : Map.copyOf(diagnostics);
+        capabilities = capabilities == null
+                ? (generationReady ? GgufCapabilitySet.textGeneration() : GgufCapabilitySet.none())
+                : capabilities;
+    }
+
+    /**
+     * Backward-compatible constructor for providers written against the
+     * original five-component capability record.
+     */
+    public GgufBackendCapability(
+            boolean generationReady,
+            String architecture,
+            Set<String> quantizationTypes,
+            String reason,
+            Map<String, Object> diagnostics) {
+        this(generationReady, architecture, quantizationTypes, reason, diagnostics, null);
     }
 
     public static GgufBackendCapability ready(
             String architecture, Set<String> quantizationTypes, Map<String, Object> diagnostics) {
-        return new GgufBackendCapability(true, architecture, quantizationTypes, null, diagnostics);
+        return ready(architecture, quantizationTypes, diagnostics, GgufCapabilitySet.textGeneration());
+    }
+
+    public static GgufBackendCapability ready(
+            String architecture,
+            Set<String> quantizationTypes,
+            Map<String, Object> diagnostics,
+            GgufCapabilitySet capabilities) {
+        return new GgufBackendCapability(
+                true, architecture, quantizationTypes, null, diagnostics, capabilities);
     }
 
     public static GgufBackendCapability notReady(
             String architecture, Set<String> quantizationTypes, String reason, Map<String, Object> diagnostics) {
-        return new GgufBackendCapability(false, architecture, quantizationTypes, reason, diagnostics);
+        return new GgufBackendCapability(
+                false, architecture, quantizationTypes, reason, diagnostics, GgufCapabilitySet.none());
+    }
+
+    public static GgufBackendCapability notReady(
+            String architecture,
+            Set<String> quantizationTypes,
+            String reason,
+            Map<String, Object> diagnostics,
+            GgufCapabilitySet detectedCapabilities) {
+        return new GgufBackendCapability(
+                false, architecture, quantizationTypes, reason, diagnostics, detectedCapabilities);
     }
 }

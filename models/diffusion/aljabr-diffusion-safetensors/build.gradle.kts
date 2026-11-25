@@ -22,8 +22,16 @@ dependencies {
 }
 
 publishing {
-    publications { create<MavenPublication>("mavenJava") { from(components["java"]) } }
-    repositories { mavenLocal() }
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+        }
+    }
+    repositories {
+        mavenLocal()
+    }
 }
 
-tasks.withType<Test>().configureEach { useJUnitPlatform() }
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+}

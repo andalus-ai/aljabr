@@ -1,16 +1,17 @@
 {
   "id": "model-family/whisper",
-  "name": "Whisper Model Family",
+  "name": "OpenAI Whisper Model Family",
   "version": "0.1.0-SNAPSHOT",
-  "description": "Whisper audio encoder-decoder model-family metadata and tokenizer routing",
+  "description": "Whisper model-family metadata and Hugging Face checkpoint recognition, including large-v3 validation",
   "vendor": "Kayys.tech",
   "mainClass": "tech.kayys.aljabr.models.whisper.WhisperModelFamilyPlugin",
   "dependencies": [],
   "optionalDependencies": [],
   "properties": {
     "extensionPoint": "model-family",
-    "bundleProfile": "metadata_only",
-    "families": ["whisper"],
-    "tokenizerKind": "hf-bpe"
+    "bundleProfile": "optional",
+    "capabilities": ["audio", "tokenizer"],
+    "largeV3ModelId": "openai/whisper-large-v3",
+    "directSafetensorInference": "pending_encoder_decoder_audio_runtime"
   }
 }

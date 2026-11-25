@@ -64,6 +64,17 @@ class CpuIndexAddTest {
     }
 
     @Test
+    void rejectsSourceWithDifferentDtypeBeforeBackendExecution() {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor destination = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 2, 2);
+                Tensor indices = TensorFactory.of(new int[] {0}, backend, 1);
+                Tensor integerSource = TensorFactory.of(new int[] {10, 20}, backend, 2, 1)) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> destination.indexAdd(1, indices, integerSource));
+        }
+    }
+
+    @Test
     void rejectsNonVectorIndices() {
         try (CpuBackend backend = new CpuBackend();
                 Tensor destination = TensorFactory.of(new float[] {1, 2, 3, 4}, backend, 2, 2);

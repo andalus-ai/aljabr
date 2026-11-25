@@ -161,3 +161,51 @@ provider selection or execution; that integration requires a follow-up change
 that preserves the existing AUTO-selection behavior and introduces explicit
 task requirements. No Saina-specific capability profile is declared until the
 upstream artifact is verified.
+
+## 9. M3 provider-selection integration
+
+A follow-up implementation now connects the reusable capability profile to
+GGUF provider selection:
+
+- `GgufBackendCapability` carries a `GgufCapabilitySet` returned by the
+  provider's existing cheap probe.
+- The original five-argument constructor and existing `ready(...)` factory
+  remain source-compatible. Legacy ready providers conservatively advertise
+  text generation only; providers must opt in explicitly to additional tasks.
+- `GgufInferenceEngine.loadModel(..., requiredCapabilities)` adds an opt-in
+  capability-aware loading path. The original overload preserves existing
+  behavior.
+- AUTO selection skips generation-ready providers that do not satisfy the
+  requested modalities/tasks, then continues to lower-priority providers.
+- Explicit provider selection retains its deliberate probe bypass when no
+  requirements are supplied. When requirements are supplied, it probes and
+  rejects incompatible or unverifiable providers before backend creation.
+- Decision-observer events distinguish capability rejection, probe failure
+  and successful selection.
+
+The model requirement is passed explicitly as a typed `GgufCapabilitySet`;
+the engine does not infer unsupported modalities from a model name or metadata
+heuristic. A Saina-specific profile remains gated on verified upstream model
+metadata and a real GGUF artifact.
+
+## 10. M2 artifact-inspection contract
+
+The inference-facing GGUF API now includes `GgufModelDescriptor`, an immutable
+metadata-only view that can be constructed from the existing parser's metadata
+map and tensor-name inventory:
+
+- Captures `general.architecture` and `general.name` only when their values
+  are strings.
+- Retains deterministic, immutable metadata-key and tensor-name sets.
+- Reports whether known tokenizer metadata keys and a nonblank
+  `tokenizer.chat_template` are present.
+- Provides tensor-prefix inspection for model-family adapters and a concise
+  artifact summary.
+
+This descriptor intentionally does **not** infer modality/task support from
+architecture names, tensor-name fragments, tokenizer presence or chat-template
+presence. A family adapter must validate its expected tensor shapes and
+required processing assets, and a provider must independently establish
+execution support before declaring capabilities. The descriptor is evidence
+collection, not a model-family adapter or a substitute for a real-artifact
+compatibility test.

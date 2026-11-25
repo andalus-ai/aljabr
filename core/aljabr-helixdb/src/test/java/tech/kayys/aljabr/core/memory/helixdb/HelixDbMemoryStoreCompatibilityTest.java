@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class HelixDbMemoryStoreCompatibilityTest {
     @Test
-    void legacyNameDelegatesToOffHeapImplementation() {
+    void legacyNameDelegatesToOffHeapImplementation() throws Exception {
         try (BorrowableMemoryStore store = new HelixDbMemoryStore("ignored");
              Arena arena = Arena.ofConfined()) {
             MemorySegment input = arena.allocate(4);
