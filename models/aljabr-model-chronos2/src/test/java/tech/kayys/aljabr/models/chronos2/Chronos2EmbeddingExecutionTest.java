@@ -23,8 +23,8 @@ class Chronos2EmbeddingExecutionTest {
     @Test
     void embedsContextRegressionTokenAndFuturePatches() {
         Chronos2Config config = config(true);
-        Weights input = identityResidual(3, 2);
-        Weights output = identityResidual(2, 2);
+        Weights input = identityResidual(3, 2, 2);
+        Weights output = identityResidual(2, 2, 2);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
         float[][][] embedded = execution.embed(
@@ -71,13 +71,13 @@ class Chronos2EmbeddingExecutionTest {
                 new float[4][2], new float[4]);
     }
 
-    private static Weights identityResidual(int input, int output) {
-        float[][] hidden = new float[input][input];
-        float[][] projected = new float[output][input];
+    private static Weights identityResidual(int input, int hiddenWidth, int output) {
+        float[][] hidden = new float[hiddenWidth][input];
+        float[][] projected = new float[output][hiddenWidth];
         float[][] residual = new float[output][input];
-        for (int i = 0; i < input; i++) hidden[i][i] = 1f;
+        for (int i = 0; i < Math.min(input, hiddenWidth); i++) hidden[i][i] = 1f;
         for (int i = 0; i < Math.min(input, output); i++) residual[i][i] = 1f;
-        return new Weights(hidden, new float[input], projected, new float[output],
+        return new Weights(hidden, new float[hiddenWidth], projected, new float[output],
                 residual, new float[output]);
     }
 }
