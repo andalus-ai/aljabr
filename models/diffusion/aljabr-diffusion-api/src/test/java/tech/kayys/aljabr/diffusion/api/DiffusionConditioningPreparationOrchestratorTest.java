@@ -4,15 +4,14 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class DiffusionConditioningPreparationOrchestratorTest {
 
-    private static final var PROMPT = DiffusionConditioningInput.Modality.PROMPT;
-    private static final var IMAGE = DiffusionConditioningInput.Modality.IMAGE;
+    private static final DiffusionConditioningInput.Modality PROMPT = DiffusionConditioningInput.Modality.PROMPT;
+    private static final DiffusionConditioningInput.Modality IMAGE = DiffusionConditioningInput.Modality.IMAGE;
 
     @Test
     void preparesInInputOrderAndClosesInReverseOrder() throws Exception {
@@ -72,7 +71,7 @@ class DiffusionConditioningPreparationOrchestratorTest {
     @Test
     void cleansUpPartialResultsInReverseOrderAndSuppressesCleanupFailures() {
         var events = new ArrayList<String>();
-        var first = new RecordingPreprocessor("prompt", PROMPT, events);
+        var first = new RecordingPreprocessor("prompt", PROMPT, events, true);
         var second = new FailingPreprocessor("image", IMAGE, events);
         var orchestrator = orchestrator(first, second);
 
@@ -115,13 +114,20 @@ class DiffusionConditioningPreparationOrchestratorTest {
     private static class RecordingPreprocessor implements DiffusionConditioningPreprocessor {
         private final String id;
         private final DiffusionConditioningInput.Modality modality;
+        private final boolean failOnClose;
         protected final List<String> events;
 
         private RecordingPreprocessor(
                 String id, DiffusionConditioningInput.Modality modality, List<String> events) {
+            this(id, modality, events, false);
+        }
+
+        private RecordingPreprocessor(String id, DiffusionConditioningInput.Modality modality,
+                                      List<String> events, boolean failOnClose) {
             this.id = id;
             this.modality = modality;
             this.events = events;
+            this.failOnClose = failOnClose;
         }
 
         @Override public String id() { return id; }
@@ -131,7 +137,7 @@ class DiffusionConditioningPreparationOrchestratorTest {
         public DiffusionConditioningData prepare(
                 DiffusionConditioningInput input, DiffusionConditioningPreparationContext context) {
             events.add("prepare:" + input.id());
-            return new TestData(input.id(), input.modality(), events);
+            return new TestData(input.id(), input.modality(), events, failOnClose);
         }
     }
 
@@ -150,11 +156,11 @@ class DiffusionConditioningPreparationOrchestratorTest {
     }
 
     private record TestData(String inputId, DiffusionConditioningInput.Modality modality,
-                            List<String> events) implements DiffusionConditioningData {
+                            List<String> events, boolean failOnClose) implements DiffusionConditioningData {
         @Override
         public void close() {
             events.add("close:" + inputId);
-            if ("prompt".equals(inputId)) {
+            if (failOnClose) {
                 throw new IllegalStateException("cleanup:" + inputId);
             }
         }
