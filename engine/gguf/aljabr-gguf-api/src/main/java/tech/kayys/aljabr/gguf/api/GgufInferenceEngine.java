@@ -92,6 +92,19 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     }
 
     public synchronized GgufBackend loadModel(String modelId, Path modelPath, Map<String, Object> config) throws Exception {
+        return loadModel(modelId, modelPath, config, null);
+    }
+
+    /**
+     * Load a model while requiring the selected provider to implement the
+     * supplied modalities and tasks. A null requirement preserves legacy
+     * generation-only provider selection.
+     */
+    public synchronized GgufBackend loadModel(
+            String modelId,
+            Path modelPath,
+            Map<String, Object> config,
+            GgufCapabilitySet requiredCapabilities) throws Exception {
         Objects.requireNonNull(modelId, "modelId");
         if (modelId.isBlank()) {
             throw new IllegalArgumentException("modelId must not be blank");
@@ -102,7 +115,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                             + "'; unload it before loading a replacement");
         }
         GgufBackendSelection selection = GgufBackendSelection.resolve(config);
-        GgufBackendProvider provider = selectProvider(modelPath, selection);
+        GgufBackendProvider provider = selectProvider(modelPath, selection, requiredCapabilities);
         if (executionObserver == ExecutionObserver.NOOP) {
             GgufBackend backend = provider.create(modelPath, config);
             backends.put(modelId, backend);
@@ -572,7 +585,8 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         }
     }
 
-    private GgufBackendProvider selectProvider(Path modelPath, GgufBackendSelection selection) {
+    private GgufBackendProvider selectProvider(
+            Path modelPath, GgufBackendSelection selection, GgufCapabilitySet requiredCapabilities) {
         if (selection.explicit()) {
             for (GgufBackendProvider provider : providers) {
                 if (!matches(provider, selection.normalizedValue())) {
@@ -586,9 +600,32 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                             "Requested GGUF backend '" + selection.requestedValue()
                                     + "' is not available. Available: " + availableIds());
                 }
-                observe(provider, ProviderDecisionEvent.Decision.SELECTED,
-                        "explicit provider selection; readiness probe intentionally bypassed",
-                        ProviderDecisionEvent.SelectionMode.EXPLICIT);
+                if (requiredCapabilities != null) {
+                    try {
+                        GgufBackendCapability capability = probeProvider(provider, modelPath);
+                        String incompatibility = incompatibilityReason(capability, requiredCapabilities);
+                        if (incompatibility != null) {
+                            observe(provider, ProviderDecisionEvent.Decision.NOT_READY,
+                                    incompatibility, ProviderDecisionEvent.SelectionMode.EXPLICIT);
+                            throw new InferenceException(
+                                    "Explicitly requested GGUF backend '" + provider.id()
+                                            + "' does not satisfy required capabilities: " + incompatibility);
+                        }
+                    } catch (InferenceException failure) {
+                        throw failure;
+                    } catch (Exception failure) {
+                        observe(provider, ProviderDecisionEvent.Decision.PROBE_FAILED,
+                                "required-capability probe failed: " + failure.getClass().getSimpleName(),
+                                ProviderDecisionEvent.SelectionMode.EXPLICIT);
+                        throw new InferenceException(
+                                "Could not verify required capabilities for explicitly requested GGUF backend '"
+                                        + provider.id() + "'", failure);
+                    }
+                } else {
+                    observe(provider, ProviderDecisionEvent.Decision.SELECTED,
+                            "explicit provider selection; readiness probe intentionally bypassed",
+                            ProviderDecisionEvent.SelectionMode.EXPLICIT);
+                }
                 return provider;
             }
             observe(selection.normalizedValue(), 0, ProviderDecisionEvent.Decision.REJECTED,
@@ -611,20 +648,23 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             }
             try {
                 GgufBackendCapability capability = probeProvider(provider, modelPath);
-                if (capability != null && capability.generationReady()) {
+                String incompatibility = incompatibilityReason(capability, requiredCapabilities);
+                if (capability != null && capability.generationReady() && incompatibility == null) {
                     String reason = skipped == 0
-                            ? "provider is generation-ready and has the highest available priority"
-                            : "provider is generation-ready; selected after " + skipped
-                                    + " higher-priority candidate(s) were skipped";
+                            ? "provider is ready and satisfies required GGUF capabilities"
+                            : "provider is ready and satisfies required GGUF capabilities after "
+                                    + skipped + " higher-priority candidate(s) were skipped";
                     observe(provider, ProviderDecisionEvent.Decision.SELECTED,
                             reason, ProviderDecisionEvent.SelectionMode.AUTO);
                     return provider;
                 }
-                String reason = capability == null
-                        ? "probe returned no capability"
-                        : capability.reason() == null || capability.reason().isBlank()
-                                ? "generation is not ready"
-                                : capability.reason();
+                String reason = incompatibility != null
+                        ? incompatibility
+                        : capability == null
+                                ? "probe returned no capability"
+                                : capability.reason() == null || capability.reason().isBlank()
+                                        ? "generation is not ready"
+                                        : capability.reason();
                 readiness.add(provider.id() + ": " + reason);
                 observe(provider, ProviderDecisionEvent.Decision.NOT_READY,
                         "provider is not generation-ready", ProviderDecisionEvent.SelectionMode.AUTO);
@@ -642,6 +682,24 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 "No GGUF backend reports generation readiness for model: " + modelPath
                         + ". Provider readiness: " + String.join("; ", readiness)
                         + ". Select a provider explicitly only for deliberate testing, or install a compatible backend.");
+    }
+
+    private static String incompatibilityReason(
+            GgufBackendCapability capability, GgufCapabilitySet requiredCapabilities) {
+        if (capability == null) {
+            return "provider probe returned no capability";
+        }
+        if (!capability.generationReady()) {
+            return capability.reason() == null || capability.reason().isBlank()
+                    ? "provider is not generation-ready"
+                    : capability.reason();
+        }
+        if (requiredCapabilities == null) {
+            return null;
+        }
+        GgufCapabilityMatch match = GgufCapabilityMatcher.match(
+                requiredCapabilities, capability.capabilities());
+        return match.compatible() ? null : match.diagnostic();
     }
 
     private void observe(
