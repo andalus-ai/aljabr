@@ -13,6 +13,8 @@ class MiniMaxH3ConditioningCapabilitiesTest {
     @Test
     void acceptsOrderedReferenceFramesForMultiframeTask() {
         var inputs = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:motion"),
                 new DiffusionConditioningInput("frame-0", "file:///0.png", 0),
                 new DiffusionConditioningInput("frame-1", "file:///1.png", 1),
                 new DiffusionConditioningInput("frame-2", "file:///2.png", 2)));
@@ -35,6 +37,8 @@ class MiniMaxH3ConditioningCapabilitiesTest {
     void acceptsSingleImageForImageToVideoAndEdit() {
         var inputs = new DiffusionConditioningSet(List.of(
                 new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:motion"),
+                new DiffusionConditioningInput(
                         "source", DiffusionConditioningInput.Modality.IMAGE, "file:///source.png")));
 
         assertDoesNotThrow(() ->
@@ -54,9 +58,28 @@ class MiniMaxH3ConditioningCapabilitiesTest {
     }
 
     @Test
-    void permitsEmptyConditioningSetWithoutImplyingInputRequirements() {
-        assertDoesNotThrow(() ->
+    void requiresPromptForTextToVideo() {
+        assertThrows(IllegalArgumentException.class, () ->
                 MiniMaxH3ConditioningCapabilities.validate(
                         MiniMaxH3Task.TEXT_TO_VIDEO, new DiffusionConditioningSet(List.of())));
+    }
+
+    @Test
+    void requiresImageForImageToVideo() {
+        var promptOnly = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:animate this")));
+        assertThrows(IllegalArgumentException.class, () ->
+                MiniMaxH3ConditioningCapabilities.validate(MiniMaxH3Task.IMAGE_TO_VIDEO, promptOnly));
+    }
+
+    @Test
+    void requiresFramesForMultiframeTask() {
+        var promptOnly = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:animate this")));
+        assertThrows(IllegalArgumentException.class, () ->
+                MiniMaxH3ConditioningCapabilities.validate(
+                        MiniMaxH3Task.MULTIFRAME_REFERENCE_TO_VIDEO, promptOnly));
     }
 }

@@ -53,4 +53,37 @@ class DiffusionConditioningSetTest {
                         "frame", DiffusionConditioningInput.Modality.VIDEO_FRAME,
                         "file:///frame.png"));
     }
+
+    @Test
+    void validatesRequiredAndOptionalModalityCardinality() {
+        var inputs = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:walk forward"),
+                new DiffusionConditioningInput(
+                        "image", DiffusionConditioningInput.Modality.IMAGE, "file:///image.png")));
+
+        assertDoesNotThrow(() -> inputs.validateAgainst(List.of(
+                DiffusionConditioningRequirement.required(DiffusionConditioningInput.Modality.PROMPT),
+                DiffusionConditioningRequirement.optional(DiffusionConditioningInput.Modality.IMAGE))));
+    }
+
+    @Test
+    void rejectsMissingRequiredAndUndeclaredModalities() {
+        var empty = new DiffusionConditioningSet(List.of());
+        assertThrows(IllegalArgumentException.class, () -> empty.validateAgainst(List.of(
+                DiffusionConditioningRequirement.required(DiffusionConditioningInput.Modality.PROMPT))));
+
+        var image = new DiffusionConditioningSet(List.of(new DiffusionConditioningInput(
+                "image", DiffusionConditioningInput.Modality.IMAGE, "file:///image.png")));
+        assertThrows(IllegalArgumentException.class, () -> image.validateAgainst(List.of(
+                DiffusionConditioningRequirement.required(DiffusionConditioningInput.Modality.PROMPT))));
+    }
+
+    @Test
+    void rejectsDuplicateRequirements() {
+        var empty = new DiffusionConditioningSet(List.of());
+        assertThrows(IllegalArgumentException.class, () -> empty.validateAgainst(List.of(
+                DiffusionConditioningRequirement.optional(DiffusionConditioningInput.Modality.PROMPT),
+                DiffusionConditioningRequirement.required(DiffusionConditioningInput.Modality.PROMPT))));
+    }
 }

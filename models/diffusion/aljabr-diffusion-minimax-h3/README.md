@@ -116,6 +116,8 @@ declared modality compatibility:
 
 ```java
 var conditioning = new DiffusionConditioningSet(List.of(
+    new DiffusionConditioningInput("prompt",
+        DiffusionConditioningInput.Modality.PROMPT, "text:describe the motion"),
     new DiffusionConditioningInput("ref-0",
         DiffusionConditioningInput.Modality.REFERENCE_IMAGE,
         "file:///inputs/reference.png"),
@@ -129,3 +131,25 @@ MiniMaxH3ConditioningCapabilities.validate(
 The capability check rejects unsupported modalities; it deliberately does not
 infer cardinality, prompt requirements, frame sampling, image preprocessing,
 or tensor layouts. Those belong to later execution and conditioning adapters.
+
+
+### Required and optional conditioning inputs
+
+The generic API also models modality cardinality with
+`DiffusionConditioningRequirement`. A task declares which modalities are
+required (minimum one), optional (minimum zero), and unsupported (not listed).
+`DiffusionConditioningSet.validateAgainst(...)` enforces the declaration
+without interpreting the opaque source references.
+
+MiniMax-H3 task requirements currently declare:
+
+- All tasks: at least one prompt input.
+- Image-to-video and image-edit: at least one image input.
+- Reference-to-video: at least one reference image.
+- Multiframe reference-to-video: at least one ordered video frame; a reference
+  image is optional.
+- Text-to-video and text-to-image: prompt-only conditioning.
+
+These are task input contracts, not preprocessing rules. The API does not
+choose image resolution, frame sampling, temporal stride, crop policy, or
+tensor representation.
