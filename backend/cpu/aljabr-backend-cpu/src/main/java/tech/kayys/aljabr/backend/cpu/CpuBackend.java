@@ -960,17 +960,7 @@ public final class CpuBackend implements ComputeBackend {
         }
     }
 
-    private static void validateBatchNormVector(Tensor tensor, long channels, String name) {
-        if (tensor == null) return;
-        CpuTensorLayoutAccess.requireF32(tensor);
-        if (tensor.shape().rank() != 1 || tensor.shape().dim(0) != channels) {
-            throw new IllegalArgumentException(name + " must be a rank-1 vector of length " + channels);
-        }
-        TensorLayout layout = tensor.layout();
-        if (!layout.isContiguous() || layout.storageOffset() != 0) {
-            throw new IllegalArgumentException(name + " must use contiguous zero-offset storage");
-        }
-    }
+
 
     // ── Reductions ────────────────────────────────────────────────────────────
 
