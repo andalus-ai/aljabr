@@ -1368,6 +1368,19 @@ public final class CpuBackend implements ComputeBackend {
     // ── Misc ──────────────────────────────────────────────────────────────────
 
     @Override
+    public Tensor contiguous(Tensor input) {
+        Objects.requireNonNull(input, "input must not be null");
+        long[] dimensions = input.shape().dims();
+        return switch (input.dtype()) {
+            case F32 -> TensorFactory.of(input.toFloatArray(), this, dimensions);
+            case I32 -> TensorFactory.of(input.toIntArray(), this, dimensions);
+            default -> throw new UnsupportedOperationException(
+                    "CPU contiguous materialization currently supports F32 and I32; actual dtype="
+                            + input.dtype());
+        };
+    }
+
+    @Override
     public long numel(Tensor a) {
         return a.numel();
     }
