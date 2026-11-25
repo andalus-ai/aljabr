@@ -14,6 +14,7 @@ java {
 
 dependencies {
     api(project(":plugins:ml:aljabr-tensor"))
+    api(project(":plugins:ml:aljabr-nn"))
     api(project(":engine:safetensor:aljabr-safetensor-loader"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
