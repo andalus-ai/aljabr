@@ -1367,6 +1367,30 @@ class CpuBackendStorageTest {
 
 
     @Test
+    void indexSelectPreservesDuplicateIndicesAndRequestedOrderWithNegativeAxis() {
+        HostStorage sourceStorage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        HostStorage indexStorage = new HostStorage(0f, 0f, 0f);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 2);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 4, 2);
+        indexStorage.segment().set(java.lang.foreign.ValueLayout.JAVA_INT, 8, 0);
+        DefaultTensor source = tensor(sourceStorage, 2, 3);
+        DefaultTensor indices = new DefaultTensor(
+                new Shape(3), DType.I32, DeviceType.CPU, (TensorStorage) indexStorage, backend);
+        Tensor selected = null;
+        try {
+            selected = backend.indexSelect(source, -1, indices);
+            assertArrayEquals(new long[] {2, 3}, selected.shape().dims());
+            assertArrayEquals(new float[] {3f, 3f, 1f, 6f, 6f, 4f}, selected.toFloatArray(), 0f);
+        } finally {
+            if (selected != null) selected.release();
+            indices.release();
+            source.release();
+        }
+        assertEquals(0, sourceStorage.references());
+        assertEquals(0, indexStorage.references());
+    }
+
+    @Test
     void indexAddAccumulatesRepeatedIndicesAndReadsOffsetStridedInputs() {
         HostStorage destinationStorage = new HostStorage(99f, 10f, 20f, 30f, 40f, 50f, 60f);
         HostStorage sourceStorage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f);
