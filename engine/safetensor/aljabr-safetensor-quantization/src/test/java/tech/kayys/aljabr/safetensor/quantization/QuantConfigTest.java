@@ -24,6 +24,7 @@ class QuantConfigTest {
         QuantConfig config = new QuantConfig();
 
         assertEquals(QuantStrategy.INT4, config.getStrategy());
+        assertEquals(QuantizationStrategy.INT4, config.getQuantizationStrategy());
         assertEquals(128, config.getGroupSize());
         assertEquals(4, config.getBits());
         assertFalse(config.isSymmetric());
