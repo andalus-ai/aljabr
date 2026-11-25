@@ -139,3 +139,25 @@ The repository audit confirms that the existing GGUF API has a generation readin
 The Hugging Face model card and the model's actual GGUF metadata/tensor inventory were not available to this implementation environment during this change. Therefore this change does **not** claim Saina Helm 2 Omni execution support and intentionally does not guess its architecture identifier, tokenizer, audio frontend, tensor map, or supported tasks.
 
 The next implementation change must start from the upstream model card and a real GGUF metadata dump. This is a correctness gate, not a reason to create a model-specific placeholder implementation.
+
+## 8. M2 implementation progress
+
+The first reusable capability-contract slice is now implemented in
+`:engine:gguf:aljabr-gguf-api`:
+
+- `GgufModality` and `GgufTask` provide model-family-neutral identifiers.
+- `GgufCapabilitySet` describes input modalities, output modalities and tasks.
+- `GgufCapabilityMatcher` compares a model/task requirement with a provider's
+  independently declared capabilities.
+- `GgufCapabilityMatch` reports missing input, output and task capabilities
+  separately, so callers can produce actionable diagnostics.
+- Unit tests cover successful matching, modality/task mismatches, empty
+  requirements, defensive immutability and invalid null profiles.
+
+This is deliberately additive. The existing `GgufBackendCapability` record,
+provider SPI and text execution methods are unchanged, so current providers
+continue to compile without a migration. The new contract is not yet wired into
+provider selection or execution; that integration requires a follow-up change
+that preserves the existing AUTO-selection behavior and introduces explicit
+task requirements. No Saina-specific capability profile is declared until the
+upstream artifact is verified.
