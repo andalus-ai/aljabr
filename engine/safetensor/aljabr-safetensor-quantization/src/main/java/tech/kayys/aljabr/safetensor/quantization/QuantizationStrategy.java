@@ -5,8 +5,6 @@
  */
 package tech.kayys.aljabr.safetensor.quantization;
 
-import java.util.Objects;
-
 /**
  * Format- and provider-neutral quantization strategy identifier.
  *
@@ -22,24 +20,5 @@ public enum QuantizationStrategy {
     TURBO,
     AWQ,
     GPTQ,
-    BNB;
-
-    /**
-     * Maps the legacy engine-scoped strategy to the neutral strategy.
-     *
-     * @param strategy legacy strategy
-     * @return equivalent neutral strategy
-     */
-    public static QuantizationStrategy fromLegacy(QuantizationEngine.QuantStrategy strategy) {
-        return valueOf(Objects.requireNonNull(strategy, "strategy").name());
-    }
-
-    /**
-     * Maps this strategy to the legacy engine-scoped API.
-     *
-     * @return equivalent legacy strategy
-     */
-    public QuantizationEngine.QuantStrategy toLegacy() {
-        return QuantizationEngine.QuantStrategy.valueOf(name());
-    }
+    BNB
 }
