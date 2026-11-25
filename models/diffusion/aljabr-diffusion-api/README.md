@@ -34,3 +34,26 @@ The source reference is intentionally opaque. The API does not fetch, decode,
 preprocess, embed, or transfer the input. Video-frame indices describe caller
 ordering; temporal sampling and preprocessing remain execution-layer concerns.
 A family module can publish a DiffusionFamilyProvider implementation through Java ServiceLoader metadata, or an application can inject providers directly.
+
+
+## Conditioning preparation SPI
+
+`DiffusionConditioningPreprocessor` is the optional extension point for
+turning one opaque request input into a representation usable by a later
+conditioning or execution stage.
+
+- Implementations declare the modalities they can prepare and may further
+  inspect source schemes or input metadata in `supports(...)`.
+- `prepare(...)` receives immutable, caller-supplied options through
+  `DiffusionConditioningPreparationContext`.
+- The returned `DiffusionConditioningData` carries input provenance and an
+  explicit close lifecycle. Integration modules can implement typed
+  subinterfaces for decoded images, sampled frames, tokenized prompts, or
+  embeddings without adding those dependencies to this API.
+- The caller owns each prepared result and must close it. A preprocessor must
+  not return borrowed data whose backing resource can be closed independently
+  while the result is in use.
+
+The SPI deliberately does not define a registry, choose between competing
+preprocessors, impose image/video codecs, select a tokenizer, or allocate
+backend tensors. Those are separate integration and orchestration decisions.
