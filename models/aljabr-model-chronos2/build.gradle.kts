@@ -20,6 +20,7 @@ repositories {
 dependencies {
     api(project(":spi:aljabr-spi-model"))
     api(project(":engine:timeseries:aljabr-timeseries-api"))
+    implementation(project(":models:aljabr-model-common"))
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")
     implementation(group = "jakarta.inject", name = "jakarta.inject-api")
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
