@@ -31,5 +31,6 @@ class TimeSeriesTest {
                 "promotion", new long[] {1, 2, 3}, new String[] {"none", "sale", "sale"}, true);
         assertEquals(CovariateSeries.Type.CATEGORICAL, covariate.type());
         assertEquals("sale", covariate.categoricalValues()[2]);
+        assertFalse(covariate.isObserved(0) == false);
     }
 }

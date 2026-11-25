@@ -8,6 +8,8 @@ import java.util.Objects;
  * <p>Real and categorical covariates share one contract. A known-future
  * covariate may contain timestamps beyond the target context; a historical
  * covariate must not be interpreted as available in the forecast horizon.
+ * NaN (real) and null (categorical) values are missing unless explicitly
+ * marked otherwise by an observation mask.
  */
 public final class CovariateSeries {
     public enum Type { REAL, CATEGORICAL }
@@ -17,10 +19,11 @@ public final class CovariateSeries {
     private final long[] timestamps;
     private final double[] realValues;
     private final String[] categoricalValues;
+    private final boolean[] observed;
     private final boolean knownFuture;
 
     private CovariateSeries(String name, Type type, long[] timestamps,
-            double[] realValues, String[] categoricalValues, boolean knownFuture) {
+            double[] realValues, String[] categoricalValues, boolean[] observed, boolean knownFuture) {
         this.name = requireText(name);
         this.type = Objects.requireNonNull(type, "type");
         Objects.requireNonNull(timestamps, "timestamps");
@@ -33,27 +36,54 @@ public final class CovariateSeries {
         }
         this.realValues = realValues == null ? null : realValues.clone();
         this.categoricalValues = categoricalValues == null ? null : categoricalValues.clone();
+        int length = timestamps.length;
+        if (observed != null && observed.length != length) {
+            throw new IllegalArgumentException("observation mask length must match timestamps");
+        }
+        this.observed = observed == null ? new boolean[length] : observed.clone();
         if (type == Type.REAL) {
-            if (realValues == null || realValues.length != timestamps.length || categoricalValues != null) {
+            if (realValues == null || realValues.length != length || categoricalValues != null) {
                 throw new IllegalArgumentException("real covariates require one numeric value per timestamp");
             }
-            for (double value : realValues) {
+            for (int i = 0; i < length; i++) {
+                double value = realValues[i];
                 if (Double.isInfinite(value)) throw new IllegalArgumentException("infinite covariates are not supported");
+                if (observed == null) this.observed[i] = !Double.isNaN(value);
+                else if (this.observed[i] && Double.isNaN(value)) {
+                    throw new IllegalArgumentException("an observed real covariate cannot be NaN");
+                }
             }
-        } else if (categoricalValues == null || categoricalValues.length != timestamps.length || realValues != null) {
-            throw new IllegalArgumentException("categorical covariates require one category per timestamp");
+        } else {
+            if (categoricalValues == null || categoricalValues.length != length || realValues != null) {
+                throw new IllegalArgumentException("categorical covariates require one category per timestamp");
+            }
+            for (int i = 0; i < length; i++) {
+                if (observed == null) this.observed[i] = categoricalValues[i] != null;
+                else if (this.observed[i] && categoricalValues[i] == null) {
+                    throw new IllegalArgumentException("an observed categorical covariate cannot be null");
+                }
+            }
         }
         this.knownFuture = knownFuture;
     }
 
     public static CovariateSeries real(String name, long[] timestamps, double[] values, boolean knownFuture) {
-        return new CovariateSeries(name, Type.REAL, timestamps, values, null, knownFuture);
+        return real(name, timestamps, values, null, knownFuture);
     }
 
-    public static CovariateSeries categorical(String name, long[] timestamps, String[] values, boolean knownFuture) {
-        Objects.requireNonNull(values, "values");
-        for (String value : values) Objects.requireNonNull(value, "categorical value");
-        return new CovariateSeries(name, Type.CATEGORICAL, timestamps, null, values, knownFuture);
+    public static CovariateSeries real(
+            String name, long[] timestamps, double[] values, boolean[] observed, boolean knownFuture) {
+        return new CovariateSeries(name, Type.REAL, timestamps, values, null, observed, knownFuture);
+    }
+
+    public static CovariateSeries categorical(
+            String name, long[] timestamps, String[] values, boolean knownFuture) {
+        return categorical(name, timestamps, values, null, knownFuture);
+    }
+
+    public static CovariateSeries categorical(
+            String name, long[] timestamps, String[] values, boolean[] observed, boolean knownFuture) {
+        return new CovariateSeries(name, Type.CATEGORICAL, timestamps, null, values, observed, knownFuture);
     }
 
     public String name() { return name; }
@@ -61,10 +91,14 @@ public final class CovariateSeries {
     public boolean knownFuture() { return knownFuture; }
     public int length() { return timestamps.length; }
     public long[] timestamps() { return timestamps.clone(); }
+    public boolean isObserved(int index) { return observed[index]; }
+    public boolean[] observedMask() { return observed.clone(); }
+
     public double[] realValues() {
         if (type != Type.REAL) throw new IllegalStateException("not a real covariate");
         return realValues.clone();
     }
+
     public String[] categoricalValues() {
         if (type != Type.CATEGORICAL) throw new IllegalStateException("not a categorical covariate");
         return categoricalValues.clone();
