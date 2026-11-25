@@ -158,7 +158,8 @@ public final class CpuBuffer implements Buffer {
     }
 
     @Override
-    public long sizeBytes() {
+    public synchronized long sizeBytes() {
+        ensureLive();
         return segment.byteSize();
     }
 
