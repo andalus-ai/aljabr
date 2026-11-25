@@ -42,8 +42,8 @@ public final class Chronos2ModelFamilyPlugin implements ModelFamilyPlugin {
                         Map.entry("maximum_prediction_length", "1024"),
                         Map.entry("parameter_count", "120000000"),
                         Map.entry("default_dtype", "float32"),
-                        Map.entry("direct_safetensor", "pending_chronos2_forward_and_checkpoint_mapping"),
-                        Map.entry("runner_status", "metadata_and_config_validation_only"),
+                        Map.entry("direct_safetensor", "pending_encoder_execution_and_tensor_binding"),
+                        Map.entry("runner_status", "input_assembly_and_checkpoint_layout_validation"),
                         Map.entry("version", "0.1.0-SNAPSHOT")));
     }
 }

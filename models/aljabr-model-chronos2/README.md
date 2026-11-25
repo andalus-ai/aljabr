@@ -20,16 +20,20 @@ the GGUF decoder path.
 
 ## Current implementation status
 
-This first integration slice provides model-family discovery, a dedicated
-forecasting capability, and strict parsing/validation of the upstream
-`config.json` contract. It does **not** yet provide executable model inference
-or claim direct Safetensors support.
+This integration currently provides model-family discovery, a dedicated
+forecasting capability, strict parsing/validation of the upstream
+`config.json` contract, Chronos-2 encoder input assembly, and a checkpoint
+name/shape layout validator. The mapper validates Safetensors header metadata
+without owning or copying tensor payloads. This is **not** yet executable model
+inference or direct Safetensors runner support.
 
-The next implementation slice must add the Chronos-2 checkpoint tensor mapper
-and forward path: robust scaling/arcsinh preprocessing, patch/meta-feature
-encoding, rotary time attention, group attention, feed-forward blocks, and the
-quantile head. It must be validated against upstream reference outputs before
-the family advertises direct inference readiness.
+The input assembler uses the shared Time Series API for fitted normalization
+and patch extraction, then applies Chronos-2's three-channel time/value/mask
+feature layout. The checkpoint mapper declares the upstream tensor names and
+shapes for the embedding blocks, encoder attention/FFN layers, and quantile
+head. Rotary time attention, group attention, feed-forward execution, actual
+Safetensors tensor binding, and numerical parity against upstream reference
+outputs remain before the family can advertise inference readiness.
 
 ## Upstream
 

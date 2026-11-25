@@ -28,6 +28,17 @@ class InstanceNormalizerTest {
     }
 
     @Test
+    void fittedStateTransformsFutureValuesWithoutRefitting() {
+        var result = new InstanceNormalizer(1e-5, true).normalize(new double[] {1.0, 2.0, 3.0});
+        double[] future = result.state().transform(new double[] {4.0, Double.NaN}, null);
+        assertTrue(Double.isFinite(future[0]));
+        assertTrue(Double.isNaN(future[1]));
+        double[] restored = result.state().inverse(future);
+        assertEquals(4.0, restored[0], 1e-10);
+        assertTrue(Double.isNaN(restored[1]));
+    }
+
+    @Test
     void constantSeriesUsesConfiguredEpsilon() {
         var result = new InstanceNormalizer(1e-4, false).normalize(new double[] {7.0, 7.0});
         assertEquals(1e-4, result.state().scale(), 0.0);
