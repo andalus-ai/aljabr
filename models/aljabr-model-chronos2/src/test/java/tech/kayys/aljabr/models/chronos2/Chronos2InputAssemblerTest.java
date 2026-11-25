@@ -30,7 +30,8 @@ class Chronos2InputAssemblerTest {
         double[][] context = input.contextFeatures();
         assertEquals(12, context[0].length);
         assertEquals(-1.0, context[0][0], 1e-12);
-        assertEquals(1.0, context[0][3], 1e-12);
+        assertEquals(-5.0 / 8.0, context[0][3], 1e-12);
+        assertEquals(-Math.sqrt(2.0), context[0][7], 1e-12);
         assertEquals(0.0, context[0][8], 0.0);
         assertEquals(1.0, context[0][11], 0.0);
 
