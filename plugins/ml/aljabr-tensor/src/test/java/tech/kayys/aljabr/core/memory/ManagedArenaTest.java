@@ -3,6 +3,10 @@ package tech.kayys.aljabr.core.memory;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.lang.foreign.Arena;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 class ManagedArenaTest {
@@ -44,10 +48,52 @@ class ManagedArenaTest {
     }
 
     @Test
+    void retainRacingWithFinalCloseNeverResurrectsOrOverReleasesArena() throws Exception {
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            for (int iteration = 0; iteration < 64; iteration++) {
+                ManagedArena managed = ManagedArena.ofShared();
+                var segment = managed.allocate(8);
+                CountDownLatch ready = new CountDownLatch(2);
+                CountDownLatch start = new CountDownLatch(1);
+
+                var retainAndRelease = executor.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(2, TimeUnit.SECONDS)) {
+                        throw new AssertionError("timed out waiting for race start");
+                    }
+                    try {
+                        managed.retain();
+                        managed.close();
+                    } catch (IllegalStateException alreadyClosed) {
+                        // The competing final close linearized first.
+                    }
+                    return null;
+                });
+                var finalRelease = executor.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(2, TimeUnit.SECONDS)) {
+                        throw new AssertionError("timed out waiting for race start");
+                    }
+                    managed.close();
+                    return null;
+                });
+
+                assertTrue(ready.await(2, TimeUnit.SECONDS));
+                start.countDown();
+                retainAndRelease.get(2, TimeUnit.SECONDS);
+                finalRelease.get(2, TimeUnit.SECONDS);
+
+                assertEquals(0, managed.refCount(), "reference count at iteration " + iteration);
+                assertFalse(managed.isOpen(), "arena must be closed at iteration " + iteration);
+                assertFalse(segment.scope().isAlive(), "segment must be invalidated at iteration " + iteration);
+            }
+        }
+    }
+
+    @Test
     void rejectsNullArena() {
         assertThrows(NullPointerException.class, () -> new ManagedArena(null));
     }
-
 
     @Test
     void preservesCoreCompatibilityFactoriesAndRawAccessor() {
