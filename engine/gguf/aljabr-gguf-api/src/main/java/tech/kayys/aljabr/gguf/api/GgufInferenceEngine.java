@@ -670,7 +670,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                                         : capability.reason();
                 readiness.add(provider.id() + ": " + reason);
                 observe(provider, ProviderDecisionEvent.Decision.NOT_READY,
-                        "provider is not generation-ready", ProviderDecisionEvent.SelectionMode.AUTO);
+                        reason, ProviderDecisionEvent.SelectionMode.AUTO);
                 skipped++;
             } catch (Exception error) {
                 readiness.add(provider.id() + ": probe failed (" + error.getClass().getSimpleName() + ")");

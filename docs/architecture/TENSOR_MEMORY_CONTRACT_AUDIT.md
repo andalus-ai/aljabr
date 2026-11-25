@@ -98,20 +98,13 @@ Open questions:
 - Verify the race between final release and segment access across all storage implementations, not only the current host view.
 - Ensure device/provider storage has equivalent ownership tests even where it cannot expose a host segment.
 
-### 2.6 ManagedArena requires a focused correctness fix
+### 2.6 ManagedArena lifecycle is guarded; retain/close concurrency is now covered
 
-`ManagedArena` uses `AtomicInteger.getAndIncrement()` for retain and `decrementAndGet()` for close. It rejects retaining after the count has reached zero, but `close()` does not reject over-release. Calling close more times than the initial reference count can drive the count negative. It also lacks the explicit overflow guard used by `ArenaTensorStorage`.
+The current `ManagedArena` implementation uses a CAS loop for both `retain()` and `close()`. It rejects retain after the reference count reaches zero, rejects over-release without decrementing below zero, and guards reference-count overflow. Final release transitions the count to zero exactly once before closing the underlying arena. The existing tests cover over-release, retain-after-close, externally closed wrapped arenas, and shared versus confined arena behavior.
 
-This is a concrete lifecycle inconsistency, not just a documentation issue.
+A concurrent regression test now races a retained release against the producer's final release. It verifies that the reference count always settles at zero, the arena is not resurrected, and the allocated segment is invalidated after both operations complete.
 
-**Recommended next code change:** make `ManagedArena` reject over-release and reference-count overflow with a CAS-based transition (or an equivalent atomic state protocol), validate the wrapped arena, and add tests for:
-- Double close / over-release.
-- Retain after close.
-- Retain at reference-count overflow (using a testable counter strategy rather than billions of calls).
-- Concurrent retain versus final close.
-- Exactly-once underlying arena closure.
-
-Keep its intended shared and confined arena thread-access rules explicit. Reference counting does not make a confined FFM arena safe to access from other threads.
+Remaining contract caveat: reference counting protects the arena lifetime only when each consumer retains before handoff and releases exactly once. It does not make a confined FFM arena safe to access from another thread. The compatibility accessors `arena()` and `raw()` also expose the underlying arena directly, so callers must not treat them as independent ownership handles.
 
 ### 2.7 Layout and indexing are missing as first-class tensor metadata
 
@@ -176,7 +169,7 @@ Remaining audit requirements:
 | Ownership | Owned, borrowed, retained, transferred | Partially documented |
 | Views | Parent retention, aliasing, mutation and view range | Host storage views present; tensor view contract incomplete |
 | Copy | Explicit copy/materialization/transfer semantics | Backend copy APIs present; observability needed |
-| Lifecycle | Idempotence, use-after-close and cleanup | DefaultTensor/storage mostly guarded; ManagedArena over-release gap |
+| Lifecycle | Idempotence, use-after-close and cleanup | ManagedArena CAS lifecycle and over-release guards implemented; concurrent retain/final-close regression test added |
 | Backend | Semantic operations vs provider identity/lifecycle | Coupled through Tensor.backend() |
 | Eager/lazy | Evaluation, placement, input lifetime and ownership | Different semantics; contract incomplete |
 | Autograd | Gradient ownership, shape/device validation, accumulation | Partially documented |
@@ -185,9 +178,10 @@ Remaining audit requirements:
 
 ### P0 — Lifecycle correctness
 
-- `ManagedArena` double close and over-release.
+- `ManagedArena` double close, over-release and retain-after-close (covered).
+- `ManagedArena` concurrent retain versus final close (covered by race regression test).
 - Retain after final release for every storage implementation.
-- Concurrent retain/release and exactly-once destruction.
+- Concurrent retain/release and exactly-once destruction across all storage implementations.
 - `DefaultTensor` use-after-close behavior for every public data/operation method.
 - Constructor failure leaves caller ownership intact.
 - Gradient replacement and tensor close release each owned resource exactly once.
@@ -226,7 +220,7 @@ Remaining audit requirements:
 
 Keep each change small and independently reviewable.
 
-1. **Fix ManagedArena lifecycle** with tests. This is a concrete bug and does not require a public Tensor API redesign.
+1. **Keep ManagedArena lifecycle regression coverage** for over-release, retain-after-close and concurrent retain/final-close. The CAS implementation is already present; no API redesign is required.
 2. **Document ownership terminology** and correct any ambiguous public Javadocs, especially `Tensor.storage()`, `Tensor.grad()`, `setGrad()`, constructors and `eval()`.
 3. **Build a storage conformance test suite** reusable by host, device and view implementations.
 4. **Audit all Tensor implementations and backend callers** before introducing layout/capability interfaces.
@@ -248,7 +242,7 @@ Keep each change small and independently reviewable.
 ## 7. Exit criteria
 
 This audit phase is complete when:
-- The ManagedArena over-release inconsistency is fixed and tested.
+- ManagedArena rejects over-release and retain-after-close; concurrent retain/final-close behavior is regression-tested.
 - Owned/borrowed/transferred semantics are documented consistently.
 - A reusable storage lifecycle conformance suite covers all current implementations.
 - Tensor metadata gaps and migration options are mapped against all implementations and downstream callers.

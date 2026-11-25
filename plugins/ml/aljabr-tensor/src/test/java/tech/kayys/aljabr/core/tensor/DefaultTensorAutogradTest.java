@@ -10,6 +10,34 @@ import tech.kayys.aljabr.backend.cpu.CpuBackend;
 
 class DefaultTensorAutogradTest {
 
+
+    @Test
+    void contiguousMaterializationPreservesGradientFlowToTheOriginalView() {
+        CpuBackend backend = new CpuBackend();
+        Tensor input = TensorFactory.of(
+                new float[] { 1, 2, 3, 4, 5, 6 }, backend, 2, 3);
+        input.setRequiresGrad(true);
+        Tensor view = input.slice(new long[] { 1, 1 }, new long[] { 1, 2 });
+        Tensor contiguous = view.contiguous();
+        Tensor loss = contiguous.sum();
+
+        try {
+            assertEquals(true, contiguous.requiresGrad());
+            assertEquals(9.0f, loss.item(), 1.0e-6f);
+            loss.backward();
+            assertArrayEquals(
+                    new float[] { 0, 0, 0, 0, 1, 1 },
+                    input.grad().toFloatArray(),
+                    1.0e-6f);
+        } finally {
+            loss.release();
+            contiguous.release();
+            view.release();
+            input.release();
+            backend.close();
+        }
+    }
+
     @Test
     void eagerArithmeticRecordsGraphAndAccumulatesSharedLeafGradients() {
         CpuBackend backend = new CpuBackend();

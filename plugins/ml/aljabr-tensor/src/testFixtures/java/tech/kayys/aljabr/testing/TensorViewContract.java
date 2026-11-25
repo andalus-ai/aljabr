@@ -82,6 +82,61 @@ public abstract class TensorViewContract {
             if (slice != null) {
                 slice.release();
             }
+    public final void contiguousMaterializationCopiesLogicalValuesIntoIndependentStorage() {
+        ComputeBackend backend = createBackend();
+        Tensor source = TensorFactory.of(
+                new float[] {0, 1, 2, 3, 4, 5}, backend, 2, 3);
+        Tensor view = null;
+        Tensor contiguous = null;
+        try {
+            view = source.slice(new long[] {1, 1}, new long[] {1, 2});
+            contiguous = view.contiguous();
+
+            assertEquals(new Shape(1, 2), contiguous.shape());
+            assertArrayEquals(new long[] {2, 1}, contiguous.layout().strides());
+            assertEquals(0L, contiguous.layout().storageOffset());
+            assertTrue(contiguous.layout().isContiguous());
+            org.junit.jupiter.api.Assertions.assertNotSame(
+                    view.storage(), contiguous.storage(),
+                    "materialization must allocate independent storage");
+            assertArrayEquals(new float[] {4f, 5f}, contiguous.toFloatArray());
+            assertArrayEquals(new float[] {4f, 5f}, view.toFloatArray());
+        } finally {
+            if (contiguous != null) contiguous.release();
+            if (view != null) view.release();
+            source.release();
+            backend.close();
+        }
+    }
+
+
+    @Test
+    public final void siblingViewsRetainSharedStorageIndependently() {
+        ComputeBackend backend = createBackend();
+        Tensor source = TensorFactory.of(
+                new float[] {0, 1, 2, 3, 4, 5}, backend, 2, 3);
+        Tensor firstView = null;
+        Tensor secondView = null;
+        try {
+            TensorStorage sharedStorage = source.storage();
+            firstView = source.slice(new long[] {0, 0}, new long[] {1, 3});
+            secondView = source.slice(new long[] {1, 0}, new long[] {1, 3});
+
+            assertSame(sharedStorage, firstView.storage());
+            assertSame(sharedStorage, secondView.storage());
+
+            // Each view owns a reference to the shared allocation. Releasing
+            // the source and one view must not invalidate the sibling view.
+            source.release();
+            firstView.release();
+            firstView = null;
+
+            assertSame(sharedStorage, secondView.storage());
+            assertEquals(new Shape(1, 3), secondView.shape());
+            assertArrayEquals(new float[] {3f, 4f, 5f}, secondView.toFloatArray());
+        } finally {
+            if (secondView != null) secondView.release();
+            if (firstView != null) firstView.release();
             source.release();
             backend.close();
         }

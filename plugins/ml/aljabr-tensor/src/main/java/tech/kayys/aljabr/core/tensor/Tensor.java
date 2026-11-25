@@ -49,6 +49,23 @@ public interface Tensor extends AutoCloseable {
         return TensorLayout.contiguous(shape());
     }
 
+    /**
+     * Returns a newly owned tensor with canonical row-major layout and
+     * independent storage, preserving this tensor's logical values, shape,
+     * and dtype. The caller owns the returned tensor and must release it.
+     *
+     * <p>Unlike {@link #eval()}, this operation does not return a borrowed
+     * materialized value. Providers may reject dtypes or storage kinds for
+     * which they do not implement a correct logical copy.</p>
+     *
+     * @return an independently owned contiguous tensor
+     * @throws UnsupportedOperationException when the backend cannot
+     *         materialize this tensor's dtype or storage representation
+     */
+    default Tensor contiguous() {
+        return backend().contiguous(this);
+    }
+
     DeviceType device();
 
     DType dtype();

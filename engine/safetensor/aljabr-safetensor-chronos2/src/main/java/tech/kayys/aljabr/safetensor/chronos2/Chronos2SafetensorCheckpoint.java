@@ -5,9 +5,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.models.chronos2.Chronos2Config;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorTensor;
+import tech.kayys.aljabr.safetensor.tensor.SafetensorTensorBinding;
 
 /**
  * Open Chronos-2 checkpoint whose tensor views are backed by the shared
@@ -42,6 +45,17 @@ public final class Chronos2SafetensorCheckpoint implements AutoCloseable {
     public SafetensorTensor tensor(String parameterName) {
         ensureOpen();
         return binding.tensorForParameter(parameterName);
+    }
+
+    /**
+     * Opens a logical parameter as a regular Aljabr tensor backed by the mapped
+     * checkpoint bytes. The returned tensor retains its own shard lease and may
+     * outlive this checkpoint; the caller must close the tensor.
+     */
+    public Tensor openTensor(String parameterName, ComputeBackend backend) {
+        ensureOpen();
+        String checkpointName = binding.checkpointNameForParameter(parameterName);
+        return SafetensorTensorBinding.openTensor(session, checkpointName, backend);
     }
 
     /** Validated checkpoint name to logical parameter name bindings. */
