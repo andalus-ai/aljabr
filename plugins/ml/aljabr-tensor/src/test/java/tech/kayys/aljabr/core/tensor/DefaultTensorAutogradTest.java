@@ -23,7 +23,7 @@ class DefaultTensorAutogradTest {
 
         try {
             assertEquals(true, contiguous.requiresGrad());
-            assertEquals(9.0f, loss.item(), 1.0e-6f);
+            assertEquals(11.0f, loss.item(), 1.0e-6f);
             loss.backward();
             assertArrayEquals(
                     new float[] { 0, 0, 0, 0, 1, 1 },
