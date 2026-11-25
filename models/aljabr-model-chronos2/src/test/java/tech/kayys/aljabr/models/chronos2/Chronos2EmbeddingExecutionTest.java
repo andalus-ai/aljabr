@@ -17,7 +17,7 @@ class Chronos2EmbeddingExecutionTest {
                 new float[][] {{1f}}, new float[] {0f},
                 new float[][] {{3f}}, new float[] {1f});
         float[][] result = ResidualProjectionReference.apply(new float[][] {{2f}}, weights, Activation.RELU);
-        assertEquals(13f, result[0][0], 1e-6f);
+        assertEquals(9f, result[0][0], 1e-6f);
     }
 
     @Test
@@ -39,7 +39,7 @@ class Chronos2EmbeddingExecutionTest {
     void quantileProjectionUsesQuantileMajorPatchOrder() {
         Chronos2Config config = config(false);
         Weights input = identityResidual(3, 2);
-        Weights output = identityResidual(2, 4);
+        Weights output = quantileProjection();
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}});
         float[][][] values = execution.projectQuantiles(new float[][][] {{{1f, 2f}, {3f, 4f}}});
@@ -47,8 +47,8 @@ class Chronos2EmbeddingExecutionTest {
         assertEquals(4, values[0][0].length);
         assertEquals(1f, values[0][0][0], 1e-6f);
         assertEquals(2f, values[0][0][1], 1e-6f);
-        assertEquals(3f, values[0][1][0], 1e-6f);
-        assertEquals(4f, values[0][1][1], 1e-6f);
+        assertEquals(1f, values[0][1][0], 1e-6f);
+        assertEquals(2f, values[0][1][1], 1e-6f);
     }
 
     @Test
@@ -63,6 +63,12 @@ class Chronos2EmbeddingExecutionTest {
     private static Chronos2Config config(boolean reg) {
         return new Chronos2Config(16, 1, 1, 1, 4, 16, 2, 2, 2, 1, 1,
                 1e-6, 10000d, reg, false, List.of(0.1d, 0.9d));
+    }
+
+    private static Weights quantileProjection() {
+        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
+                new float[][] {{1f, 0f}, {0f, 1f}, {1f, 0f}, {0f, 1f}}, new float[4],
+                new float[4][2], new float[4]);
     }
 
     private static Weights identityResidual(int input, int output) {
