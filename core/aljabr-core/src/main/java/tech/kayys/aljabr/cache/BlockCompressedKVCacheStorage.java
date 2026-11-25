@@ -25,7 +25,7 @@ import java.util.Objects;
  * it is not yet a fused or zero-copy execution path. Callers must externally
  * synchronize concurrent access.</p>
  */
-public final class BlockCompressedKVCacheStorage implements KVCacheStorage {
+public final class BlockCompressedKVCacheStorage implements KVCacheStorage, KVCacheAttentionBlockReader {
 
     private final KVCacheLayout layout;
     private final KVCacheCompressionCodec codec;
@@ -204,6 +204,45 @@ public final class BlockCompressedKVCacheStorage implements KVCacheStorage {
                     }
                 }
             }
+            completed += count;
+        }
+    }
+
+    /**
+     * Decodes each intersecting block once for K and once for V, then
+     * delivers only the requested contiguous segment to the attention consumer.
+     */
+    @Override
+    public void readAttentionBlocks(
+            int layer, int firstPosition, int tokenCount,
+            KVCacheAttentionBlockConsumer consumer) {
+        ensureOpen();
+        Objects.requireNonNull(consumer, "consumer");
+        int stride = checkedRange(layer, firstPosition, tokenCount);
+        int completed = 0;
+        while (completed < tokenCount) {
+            int position = firstPosition + completed;
+            int blockIndex = position / blockSize;
+            int blockFirst = blockStart(blockIndex);
+            int blockTokens = blockTokenCount(blockFirst);
+            int localFirst = position - blockFirst;
+            int count = Math.min(blockTokens - localFirst, tokenCount - completed);
+            StoredBlock stored = layers.get(layer).get(blockIndex);
+            float[] blockKeys = new float[Math.multiplyExact(blockTokens, stride)];
+            float[] blockValues = new float[blockKeys.length];
+            if (stored != null) {
+                decode(stored, layer, blockFirst, blockTokens, blockKeys, blockValues);
+                BitSet written = stored.written();
+                for (int token = 0; token < blockTokens; token++) {
+                    if (!written.get(token)) {
+                        int offset = token * stride;
+                        java.util.Arrays.fill(blockKeys, offset, offset + stride, 0.0f);
+                        java.util.Arrays.fill(blockValues, offset, offset + stride, 0.0f);
+                    }
+                }
+            }
+            int offset = localFirst * stride;
+            consumer.accept(position, count, blockKeys, blockValues, offset);
             completed += count;
         }
     }
