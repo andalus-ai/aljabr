@@ -90,6 +90,7 @@ final class CpuAttentionExecution {
                 // across backend instances and concurrent inference requests.
                 java.util.stream.IntStream.range(0, groupCount).parallel().forEach(group ->
                         computeAttentionGroup(q, k, v, mask, out, group, group,
+                                (group / Math.toIntExact(heads)) * maskBatchStride,
                                 queryLength, keyLength, headDim, scale, causal));
             } else {
                 for (int group = 0; group < groupCount; group++) {
