@@ -86,7 +86,7 @@ class AmirModelConversionFacadeRoundTripTest {
     void safetensorsToSafetensorsPreservesTypedTensorInformation() throws Exception {
         byte[] payload = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
                 .putFloat(4.0f).putFloat(5.0f).array();
-        Path source = writeSafetensors("typed-source.safetensors", payload, false);
+        Path source = writeSafetensors("typed-source.safetensors", payload);
         Path output = temporaryDirectory.resolve("typed-copy.safetensors");
         ModelConversionFacade facade = facade();
 
@@ -113,7 +113,7 @@ class AmirModelConversionFacadeRoundTripTest {
                         Map.of("vendor.config", "opaque")),
                 java.util.Set.of("causal-attention"),
                 Map.of("vendor.architecture", "custom"));
-        Path source = writeSafetensors("architecture-source.safetensors", payload, false, architecture);
+        Path source = writeSafetensors("architecture-source.safetensors", payload, architecture);
         Path gguf = temporaryDirectory.resolve("architecture.gguf");
         Path restoredFile = temporaryDirectory.resolve("architecture-restored.safetensors");
         ModelConversionFacade facade = facade();
@@ -166,6 +166,11 @@ class AmirModelConversionFacadeRoundTripTest {
     }
 
     private Path writeSafetensors(String name, byte[] payload) throws Exception {
+        return writeSafetensors(name, payload, null);
+    }
+
+    private Path writeSafetensors(
+            String name, byte[] payload, ArchitectureDescriptor architecture) throws Exception {
         JsonObject tensor = new JsonObject();
         tensor.addProperty("dtype", "F32");
         var shape = new com.google.gson.JsonArray();
@@ -177,7 +182,12 @@ class AmirModelConversionFacadeRoundTripTest {
         tensor.add("data_offsets", offsets);
 
         JsonObject metadata = new JsonObject();
-        metadata.addProperty("general.architecture", "llama");
+        metadata.addProperty("general.architecture",
+                architecture == null ? "llama" : architecture.id());
+        if (architecture != null) {
+            metadata.addProperty(AmirArchitectureDescriptorCodec.KEY,
+                    AmirArchitectureDescriptorCodec.encode(architecture));
+        }
         metadata.addProperty("aljabr.source.metadata.vendor.metadata/key", "original-value");
         String tensorName = java.util.Base64.getUrlEncoder().withoutPadding()
                 .encodeToString("weight".getBytes(StandardCharsets.UTF_8));

@@ -746,8 +746,15 @@ class GgufInferenceEngineDelegationTest {
                 return backend;
             }
         };
+        // Model setup is outside the operation under test. Keep its load lifecycle
+        // from polluting assertions for inference, streaming, embedding, and unload.
+        ExecutionObserver operationObserver = event -> {
+            if (!"gguf.model.load".equals(event.context().operation())) {
+                observer.onEvent(event);
+            }
+        };
         GgufInferenceEngine engine = new GgufInferenceEngine(
-                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, observer);
+                List.of(provider), tech.kayys.aljabr.diagnostics.ProviderDecisionObserver.NOOP, operationObserver);
         engine.loadModel("model", model, Map.of("gguf.backend", "test"));
         return engine;
     }

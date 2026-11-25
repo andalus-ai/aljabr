@@ -69,6 +69,30 @@ class GGUFConverterTest {
 
         ModelFormat format = converter.detectFormat(modelDir);
         assertThat(format).isEqualTo(ModelFormat.PYTORCH);
+        assertThat(format.isConvertible()).isFalse();
+        assertThat(ModelFormat.getConvertibleFormats()).doesNotContain(ModelFormat.PYTORCH);
+        assertThat(ModelFormat.getNativeFormats()).doesNotContain(ModelFormat.PYTORCH);
+    }
+
+    @Test
+    @DisplayName("Should reject PyTorch checkpoints without invoking the native bridge")
+    void testPyTorchCheckpointDoesNotFallBackToNativeBridge() throws IOException {
+        Path modelDir = tempDir.resolve("pytorch-model");
+        Files.createDirectories(modelDir);
+        Files.write(modelDir.resolve("pytorch_model.bin"), new byte[] { 1, 2, 3 });
+        Path output = tempDir.resolve("must-not-be-created.gguf");
+
+        GGUFConversionParams params = GGUFConversionParams.builder()
+                .inputPath(modelDir)
+                .outputPath(output)
+                .quantization(QuantizationType.F16)
+                .build();
+
+        GGUFException error = assertThrows(GGUFException.class, () -> converter.convert(params, null));
+        assertThat(error.getMessage())
+                .contains("not supported by the Java-native converter")
+                .contains("No Python, PyTorch runtime, or native GGUF bridge fallback");
+        assertThat(Files.exists(output)).isFalse();
     }
 
     @Test
@@ -150,7 +174,7 @@ class GGUFConverterTest {
             return; // This contract specifically covers native-free CI/runtime environments.
         }
 
-        Path input = tempDir.resolve("input.bin");
+        Path input = tempDir.resolve("input.unknown");
         Path output = tempDir.resolve("output.gguf");
         Files.write(input, new byte[] { 1, 2, 3 });
 

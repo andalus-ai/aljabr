@@ -610,7 +610,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 continue;
             }
             try {
-                GgufBackendCapability capability = provider.probe(modelPath);
+                GgufBackendCapability capability = probeProvider(provider, modelPath);
                 if (capability != null && capability.generationReady()) {
                     String reason = skipped == 0
                             ? "provider is generation-ready and has the highest available priority"
