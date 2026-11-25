@@ -2,6 +2,9 @@ package tech.kayys.aljabr.gguf.api;
 
 import org.junit.jupiter.api.Test;
 import tech.kayys.aljabr.spi.exception.InferenceException;
+import tech.kayys.aljabr.diagnostics.ProviderDecisionEvent;
+
+import java.util.concurrent.atomic.AtomicReference;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -50,6 +53,26 @@ class GgufCapabilityAwareProviderSelectionTest {
             assertTrue(failure.getMessage().contains("missing GGUF capabilities"));
             assertTrue(failure.getMessage().contains("AUDIO"));
             assertTrue(failure.getMessage().contains("AUDIO_PERCEPTION"));
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void autoSelectionObserverReportsCapabilityMismatchReason() throws Exception {
+        Path model = Files.createTempFile("gguf-capabilities", ".gguf");
+        AtomicReference<ProviderDecisionEvent> decision = new AtomicReference<>();
+        GgufBackendProvider text = provider(
+                "text", 1, GgufCapabilitySet.textGeneration(), new AtomicBoolean());
+
+        try (GgufInferenceEngine engine = new GgufInferenceEngine(
+                List.of(text), decision::set)) {
+            assertThrows(InferenceException.class,
+                    () -> engine.loadModel("model", model, Map.of(), AUDIO_INPUT));
+            assertNotNull(decision.get());
+            assertEquals(ProviderDecisionEvent.Decision.NOT_READY, decision.get().decision());
+            assertTrue(decision.get().reason().contains("missing GGUF capabilities"));
+            assertTrue(decision.get().reason().contains("AUDIO_PERCEPTION"));
         } finally {
             Files.deleteIfExists(model);
         }
