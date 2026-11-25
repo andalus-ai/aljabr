@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.backend.cpu;
 
+import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
+
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Objects;
