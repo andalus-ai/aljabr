@@ -37,6 +37,16 @@ public final class TimeSeriesPatcher {
             throw new IllegalArgumentException("observation mask length must match values");
         }
 
+        for (int i = 0; i < values.length; i++) {
+            if (Double.isInfinite(values[i])) {
+                throw new IllegalArgumentException("infinite values are not supported");
+            }
+            boolean observed = observedMask == null ? !Double.isNaN(values[i]) : observedMask[i];
+            if (observed && Double.isNaN(values[i])) {
+                throw new IllegalArgumentException("an observed value cannot be NaN");
+            }
+        }
+
         int leftPadding = (patchSize - values.length % patchSize) % patchSize;
         int paddedLength = Math.addExact(leftPadding, values.length);
         int patchCount = 1 + (paddedLength - patchSize) / stride;
@@ -54,13 +64,7 @@ public final class TimeSeriesPatcher {
                     continue;
                 }
                 double value = values[sourceIndex];
-                if (Double.isInfinite(value)) {
-                    throw new IllegalArgumentException("infinite values are not supported");
-                }
                 boolean observed = observedMask == null ? !Double.isNaN(value) : observedMask[sourceIndex];
-                if (observed && Double.isNaN(value)) {
-                    throw new IllegalArgumentException("an observed value cannot be NaN");
-                }
                 patchValues[offset] = observed ? value : Double.NaN;
                 patchMask[offset] = observed;
             }
