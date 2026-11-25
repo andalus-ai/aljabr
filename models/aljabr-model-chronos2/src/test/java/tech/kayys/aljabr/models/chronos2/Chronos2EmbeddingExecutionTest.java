@@ -46,9 +46,9 @@ class Chronos2EmbeddingExecutionTest {
         assertEquals(2, values[0].length);
         assertEquals(4, values[0][0].length);
         assertEquals(1f, values[0][0][0], 1e-6f);
-        assertEquals(2f, values[0][0][1], 1e-6f);
-        assertEquals(1f, values[0][1][0], 1e-6f);
-        assertEquals(2f, values[0][1][1], 1e-6f);
+        assertEquals(3f, values[0][0][1], 1e-6f);
+        assertEquals(2f, values[0][1][0], 1e-6f);
+        assertEquals(4f, values[0][1][1], 1e-6f);
     }
 
     @Test
@@ -67,8 +67,8 @@ class Chronos2EmbeddingExecutionTest {
 
     private static Weights quantileProjection() {
         return new Weights(new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
-                new float[][] {{1f, 0f}, {0f, 1f}, {1f, 0f}, {0f, 1f}}, new float[4],
-                new float[4][2], new float[4]);
+                new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
+                new float[2][2], new float[2]);
     }
 
     private static Weights identityResidual(int input, int hiddenWidth, int output) {
