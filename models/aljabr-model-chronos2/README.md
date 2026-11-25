@@ -31,9 +31,7 @@ The input assembler uses the shared Time Series API for fitted normalization
 and patch extraction, then applies Chronos-2's three-channel time/value/mask
 feature layout. The checkpoint mapper declares the upstream tensor names and
 shapes for the embedding blocks, encoder attention/FFN layers, and quantile
-head. Rotary time attention, group attention, feed-forward execution, actual
-Safetensors tensor binding, and numerical parity against upstream reference
-outputs remain before the family can advertise inference readiness.
+head. Float32 reference execution for the encoder stack is now present: time self-attention with RoPE, same-group attention across series, position-wise ReLU feed-forward residuals, and final normalization. The implementation consumes explicit checkpoint-supplied weights and remains a correctness reference rather than an optimized backend. Actual Safetensors tensor binding, input/output residual embedding execution, quantile projection, batched covariate/group assembly, and numerical parity against upstream reference outputs remain before the family can advertise inference readiness.
 
 ## Upstream
 
