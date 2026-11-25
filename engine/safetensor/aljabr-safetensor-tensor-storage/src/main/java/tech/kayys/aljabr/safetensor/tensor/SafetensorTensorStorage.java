@@ -8,7 +8,6 @@ import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.TensorLayout;
-import tech.kayys.aljabr.safetensor.loader.SafetensorDType;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader.SafetensorShardSession;
 import tech.kayys.aljabr.safetensor.loader.SafetensorTensor;
 
