@@ -5,6 +5,7 @@ import tech.kayys.aljabr.spi.model.ModelFamilyCapability;
 import tech.kayys.aljabr.spi.model.ModelFamilyDescriptor;
 import tech.kayys.aljabr.spi.model.ModelFamilyPlugin;
 import tech.kayys.aljabr.spi.model.ModelTokenizerDescriptor;
+import tech.kayys.aljabr.spi.model.ModelTokenizerKind;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -55,6 +56,13 @@ public final class WhisperModelFamilyPlugin implements ModelFamilyPlugin {
 
     @Override
     public List<ModelTokenizerDescriptor> tokenizerDescriptors() {
-        return List.of(ModelTokenizerDescriptor.huggingFaceBpe("whisper-byte-level-bpe"));
+        return List.of(new ModelTokenizerDescriptor(
+                "whisper-byte-level-bpe",
+                ModelTokenizerKind.HUGGING_FACE_BPE,
+                List.of(List.of("tokenizer.json"), List.of("tokenizer/tokenizer.json")),
+                Map.of(
+                        "pre_tokenizer", "gpt2-byte-level",
+                        "task_prompt", "whisper",
+                        "supported_tasks", "transcribe,translate")));
     }
 }
