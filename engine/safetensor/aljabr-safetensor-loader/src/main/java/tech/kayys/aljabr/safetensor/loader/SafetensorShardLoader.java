@@ -317,7 +317,14 @@ public class SafetensorShardLoader {
         /** FFM loader used to open additional shards on demand. */
         private final SafetensorFFMLoader ffmLoader;
 
-        private volatile boolean closed = false;
+        /** Guards public session access after the caller closes its owner reference. */
+        private volatile boolean ownerClosed = false;
+
+        /** True only after all owners and retained leases have been released. */
+        private boolean resourcesClosed = false;
+
+        /** One initial reference belongs to the session creator. */
+        private int references = 1;
 
         // Single-file constructor
         private SafetensorShardSession(SafetensorLoadResult single) {
@@ -343,6 +350,30 @@ public class SafetensorShardLoader {
 
         static SafetensorShardSession sharded(SafetensorShardIndex index, SafetensorFFMLoader loader) {
             return new SafetensorShardSession(index, loader);
+        }
+
+        /**
+         * Retain the mapped shard resources beyond this session owner's lifetime.
+         *
+         * <p>The returned lease must be closed exactly once. It is intended for
+         * zero-copy consumers that capture tensor segments and need those
+         * segments to remain valid after the session owner closes. The lease
+         * does not permit further lookups through this session.</p>
+         *
+         * @return an independently closeable resource-lifetime lease
+         * @throws IllegalStateException if the session owner has already closed
+         */
+        public synchronized SessionLease retain() {
+            if (ownerClosed || resourcesClosed) {
+                throw new IllegalStateException("SafetensorShardSession is closed.");
+            }
+            references = Math.addExact(references, 1);
+            return new SessionLease(this);
+        }
+
+        /** Whether the underlying mapped resources have been physically released. */
+        public synchronized boolean resourcesClosed() {
+            return resourcesClosed;
         }
 
         // ── AccelTensor access ─────────────────────────────────────────────────────
@@ -401,10 +432,33 @@ public class SafetensorShardLoader {
 
         @Override
         public void close() {
-            if (closed)
-                return;
-            closed = true;
+            synchronized (this) {
+                if (ownerClosed) {
+                    return;
+                }
+                ownerClosed = true;
+            }
+            releaseReference();
+        }
 
+        private void releaseReference() {
+            boolean closeResources;
+            synchronized (this) {
+                if (references <= 0) {
+                    throw new IllegalStateException("SafetensorShardSession reference count underflow.");
+                }
+                references--;
+                closeResources = references == 0 && !resourcesClosed;
+                if (closeResources) {
+                    resourcesClosed = true;
+                }
+            }
+            if (closeResources) {
+                closeMappedResources();
+            }
+        }
+
+        private void closeMappedResources() {
             if (singleFile) {
                 safeClose(singleResult);
             } else {
@@ -414,8 +468,37 @@ public class SafetensorShardLoader {
         }
 
         private void checkOpen() {
-            if (closed)
+            if (ownerClosed || resourcesClosed) {
                 throw new IllegalStateException("SafetensorShardSession is closed.");
+            }
+        }
+
+        /**
+         * A retained reference to the session's mapped resources.
+         *
+         * <p>Closing the original session owner does not invalidate mapped
+         * tensors while a lease remains open. The final lease release closes
+         * all single-file or cached shard results.</p>
+         */
+        public static final class SessionLease implements AutoCloseable {
+            private final SafetensorShardSession session;
+            private final java.util.concurrent.atomic.AtomicBoolean released =
+                    new java.util.concurrent.atomic.AtomicBoolean();
+
+            private SessionLease(SafetensorShardSession session) {
+                this.session = session;
+            }
+
+            @Override
+            public void close() {
+                if (released.compareAndSet(false, true)) {
+                    session.releaseReference();
+                }
+            }
+
+            public boolean isClosed() {
+                return released.get();
+            }
         }
 
         private static void safeClose(AutoCloseable c) {
@@ -432,7 +515,9 @@ public class SafetensorShardLoader {
                     + (singleFile ? "file=" + singleResult.filePath()
                             : "shards=" + shardIndex.shardCount()
                                     + ", tensors=" + shardIndex.tensorCount())
-                    + ", closed=" + closed
+                    + ", ownerClosed=" + ownerClosed
+                    + ", resourcesClosed=" + resourcesClosed
+                    + ", references=" + references
                     + '}';
         }
     }
