@@ -36,6 +36,7 @@ class Chronos2SafetensorBindingsTest {
                     new Chronos2SafetensorBindings().bind(config(), tensors, tensors.size());
             String parameter = "encoder.block.0.layer.0.self_attention.q.weight";
             assertSame(tensors.get(parameter), binding.tensorForParameter(parameter));
+            org.junit.jupiter.api.Assertions.assertEquals(parameter, binding.checkpointNameForParameter(parameter));
         } finally {
             tensors.values().forEach(SafetensorTensor::close);
         }

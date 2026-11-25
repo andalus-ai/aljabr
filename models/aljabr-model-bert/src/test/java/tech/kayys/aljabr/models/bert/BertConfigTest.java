@@ -57,6 +57,13 @@ class BertConfigTest {
     }
 
     @Test
+    void rejectsActivationNotImplementedByInferenceEncoder() {
+        assertThrows(IllegalArgumentException.class, () -> BertConfig.from(Map.of(
+                "vocab_size", 100, "hidden_size", 32, "num_hidden_layers", 2,
+                "num_attention_heads", 4, "intermediate_size", 64, "hidden_act", "relu")));
+    }
+
+    @Test
     void rejectsFractionalDimensions() {
         assertThrows(IllegalArgumentException.class, () -> BertConfig.from(Map.of(
                 "vocab_size", 100, "hidden_size", 32.5, "num_hidden_layers", 2,

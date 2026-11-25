@@ -1,12 +1,20 @@
-# Aljabr Diffusion Core
+# Diffusion Core
 
-Family-neutral diffusion orchestration primitives.
+Family-neutral orchestration for diffusion model components.
 
-The core provides:
+## Component pipeline
 
-- An explicitly supplied registry of optional diffusion-family providers.
-- `DiffusionComponentResolver`, which resolves capability requirements against an immutable component manifest with deterministic variant selection.
+`DiffusionPipelineLoader` coordinates the existing capability-selection and format-loading contracts:
 
-Resolution is metadata-only. It does not fetch artifacts, parse checkpoints, allocate tensors, select hardware backends or implement a serving lifecycle. Format-specific loaders and storage adapters remain separate capabilities and should reuse Aljabr's existing model and Safetensors APIs.
+1. `DiffusionComponentResolver` selects artifacts for the requested component roles and validates all required roles before I/O.
+2. `DiffusionArtifactResolverRegistry` materializes each selected artifact using a URI-scheme resolver (for example, the local-file resolver or optional Hugging Face adapter).
+3. `DiffusionComponentLoaderRegistry` selects a format adapter (for example, the SafeTensors loader).
+4. `LoadedDiffusionPipeline` owns the loaded component handles and closes them in reverse load order.
 
-Applications may construct registries and resolvers explicitly; there is no global registration.
+The core module does not know about MiniMax-H3, other model families, Hugging Face APIs, tensor formats, or compute backends. Those remain independent providers.
+
+## Ownership
+
+The caller owns the returned `LoadedDiffusionPipeline` and must close it. Closing the pipeline closes every loaded component handle. If a later component fails to resolve or load, handles already opened by the pipeline are closed before the failure is propagated.
+
+Artifact files remain owned by their resolver/cache. Closing a loaded pipeline does not delete cached files.
