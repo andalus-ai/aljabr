@@ -67,7 +67,7 @@ val withHelixDb = providers.gradleProperty("withHelixDb")
 val excludedCoreProjects = buildSet {
    if (!withLegacyPluginCore) add("aljabr-plugin-core")
    if (!withRocksDb) add("aljabr-rocksdb")
-   if (!withOffHeapStore) add("aljabr-offheap")
+   if (!withOffHeapStore && !withHelixDb) add("aljabr-offheap")
    if (!withHelixDb) add("aljabr-helixdb")
 }
 includeDirectProjectsUnder("core", excludedRelativePaths = excludedCoreProjects)
