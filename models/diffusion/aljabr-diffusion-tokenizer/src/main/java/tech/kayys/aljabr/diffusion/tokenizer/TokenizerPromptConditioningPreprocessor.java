@@ -3,6 +3,7 @@ package tech.kayys.aljabr.diffusion.tokenizer;
 import java.util.Objects;
 import java.util.Set;
 
+import tech.kayys.aljabr.diffusion.api.DiffusionConditioningData;
 import tech.kayys.aljabr.diffusion.api.DiffusionConditioningInput;
 import tech.kayys.aljabr.diffusion.api.DiffusionConditioningPreparationContext;
 import tech.kayys.aljabr.diffusion.api.DiffusionConditioningPreparationException;
