@@ -127,6 +127,28 @@ public final class BertEncoder extends NNModule {
         }
     }
 
+    /**
+     * Loads a complete Hugging Face BERT encoder checkpoint after storage-specific
+     * readers have converted tensors to dense F32 payloads. The checkpoint is
+     * validated and copied into this module atomically by NNModule.loadStateDict.
+     */
+    public void loadCheckpoint(Map<String, BertCheckpointMapper.CheckpointTensor> checkpointTensors) {
+        BertCheckpointMapper mapper = new BertCheckpointMapper();
+        Map<String, BertCheckpointMapper.CheckpointTensor> mapped = mapper.map(config, checkpointTensors);
+        Map<String, Tensor> state = new java.util.LinkedHashMap<>();
+        try {
+            mapped.forEach((name, tensor) -> {
+                int[] shape = tensor.shape();
+                long[] dimensions = new long[shape.length];
+                for (int i = 0; i < shape.length; i++) dimensions[i] = shape[i];
+                state.put(name, TensorFactory.of(tensor.values(), computeBackend(), dimensions));
+            });
+            loadStateDict(state, true);
+        } finally {
+            state.values().forEach(Tensor::release);
+        }
+    }
+
     public BertConfig config() {
         return config;
     }
