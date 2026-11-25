@@ -73,7 +73,7 @@ public class QuantConfig {
      * Default constructor with sensible defaults for INT4 GPTQ.
      */
     public QuantConfig() {
-        this(QuantizationStrategy.INT4, 128, 4, false, true, false, 0.01, 128, 2048, false, true);
+        this(QuantizationStrategy.INT4, 128, 4, false, true, false, 0.01, 128, 2048, false);
     }
 
     /**
@@ -93,12 +93,12 @@ public class QuantConfig {
     public QuantConfig(QuantizationEngine.QuantStrategy strategy, int groupSize, int bits, boolean symmetric,
             boolean perChannel, boolean actOrder, double dampPercent, int numSamples, int seqLen, boolean descAct) {
         this(QuantizationStrategyCompatibility.fromLegacy(strategy), groupSize, bits, symmetric, perChannel,
-                actOrder, dampPercent, numSamples, seqLen, descAct, true);
+                actOrder, dampPercent, numSamples, seqLen, descAct);
     }
 
     private QuantConfig(QuantizationStrategy strategy, int groupSize, int bits, boolean symmetric,
             boolean perChannel, boolean actOrder, double dampPercent, int numSamples, int seqLen,
-            boolean descAct, boolean neutralStrategy) {
+            boolean descAct) {
         this.strategy = Objects.requireNonNull(strategy, "strategy cannot be null");
         this.groupSize = groupSize;
         this.bits = bits;
@@ -314,7 +314,7 @@ public class QuantConfig {
 
         public QuantConfig build() {
             return new QuantConfig(strategy, groupSize, bits, symmetric, perChannel, actOrder, dampPercent, numSamples,
-                    seqLen, descAct, true);
+                    seqLen, descAct);
         }
     }
 }
