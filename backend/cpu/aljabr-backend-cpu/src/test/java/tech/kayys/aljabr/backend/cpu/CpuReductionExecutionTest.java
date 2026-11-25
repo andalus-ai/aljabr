@@ -65,7 +65,7 @@ class CpuReductionExecutionTest {
             assertArrayEquals(new float[] {4f, 6f}, rowSums.toFloatArray(), 1.0e-6f);
             assertArrayEquals(new float[] {
                     0.11920292f, 0.8807971f,
-                    0.26894143f, 0.7310586f
+                    0.11920292f, 0.8807971f
             }, probabilities.toFloatArray(), 1.0e-6f);
         }
     }
