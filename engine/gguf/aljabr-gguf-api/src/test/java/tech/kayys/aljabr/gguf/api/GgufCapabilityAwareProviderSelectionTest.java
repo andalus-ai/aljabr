@@ -101,6 +101,10 @@ class GgufCapabilityAwareProviderSelectionTest {
                 created.set(true);
                 return new GgufBackend() {
                     @Override public String name() { return id; }
+                    @Override public tech.kayys.aljabr.spi.inference.InferenceResponse execute(
+                            tech.kayys.aljabr.spi.inference.InferenceRequest request) {
+                        throw new UnsupportedOperationException("test backend");
+                    }
                     @Override public void close() { }
                 };
             }
