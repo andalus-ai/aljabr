@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `java-test-fixtures`
 }
 
 group = "tech.kayys.aljabr"
@@ -13,6 +14,9 @@ dependencies {
     testImplementation(project(":plugins:ml:aljabr-tensor"))
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+
+    testFixturesApi(platform("org.junit:junit-bom:5.10.0"))
+    testFixturesApi("org.junit.jupiter:junit-jupiter-api")
 }
 
 tasks.test { useJUnitPlatform() }
