@@ -182,7 +182,7 @@ public class QuantConfig {
      * @return AutoRound configuration
      */
     public static QuantConfig autoRound() {
-        return builder().strategy(QuantizationEngine.QuantStrategy.INT4).build();
+        return builder().quantizationStrategy(QuantizationStrategy.INT4).build();
     }
 
     public QuantizationEngine.QuantStrategy getStrategy() {
