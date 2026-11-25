@@ -8,9 +8,9 @@ import tech.kayys.aljabr.core.memory.offheap.OffHeapMemoryStore;
  */
 @Deprecated(forRemoval = true)
 public final class HelixDbMemoryStore extends OffHeapMemoryStore {
-    public HelixDbMemoryStore(String ignoredPath) { super(ignoredPath); }
+    public HelixDbMemoryStore(String ignoredPath) { super(); }
     public HelixDbMemoryStore(String ignoredPath, Config config) {
-        super(ignoredPath, new OffHeapMemoryStore.Config(config.maxStorageMiB()));
+        super(new OffHeapMemoryStore.Config(config.maxStorageMiB()));
     }
     /** @deprecated use {@link OffHeapMemoryStore.Config}. */
     @Deprecated(forRemoval = true)
