@@ -1,0 +1,17 @@
+{
+  "id": "model-family/chronos2",
+  "name": "Chronos-2 Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Chronos-2 time-series forecasting model-family metadata and checkpoint configuration",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.chronos2.Chronos2ModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "optional",
+    "families": ["chronos2"],
+    "task": "time-series-forecasting",
+    "checkpointFormat": "safetensors"
+  }
+}

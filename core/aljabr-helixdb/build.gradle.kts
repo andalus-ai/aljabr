@@ -3,5 +3,5 @@ plugins {
 }
 
 dependencies {
-    api(project(":core:aljabr-core"))
+    api(project(":core:aljabr-offheap"))
 }

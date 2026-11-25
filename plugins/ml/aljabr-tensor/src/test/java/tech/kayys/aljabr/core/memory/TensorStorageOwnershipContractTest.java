@@ -1,62 +1,20 @@
 package tech.kayys.aljabr.core.memory;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-
 import java.util.List;
 import java.util.function.Supplier;
 
-import org.junit.jupiter.api.Test;
+import tech.kayys.aljabr.testing.TensorStorageContract;
 
 /**
- * Shared ownership contract checks for concrete TensorStorage implementations.
- *
- * <p>Keep these assertions implementation-neutral: provider-specific storage
- * behavior belongs in the implementation's own tests.</p>
+ * Applies the shared ownership contract to the tensor module's arena storage
+ * and retained host-storage view implementations.
  */
-class TensorStorageOwnershipContractTest {
+class TensorStorageOwnershipContractTest extends TensorStorageContract {
 
     private final ArenaTensorAllocator allocator = ArenaTensorAllocator.INSTANCE;
 
-    @Test
-    void implementationsHonorBalancedOwnershipAndFinalRelease() {
-        for (Supplier<TensorStorage> factory : storageFactories()) {
-            TensorStorage storage = factory.get();
-            long capacity = storage.sizeBytes();
-
-            assertEquals(64L, capacity);
-            storage.retain();
-            assertEquals(capacity, storage.sizeBytes());
-
-            storage.release();
-            assertEquals(capacity, storage.sizeBytes());
-
-            storage.release();
-            assertThrows(IllegalStateException.class, storage::sizeBytes);
-            assertThrows(IllegalStateException.class, storage::retain);
-            assertThrows(IllegalStateException.class, storage::release);
-        }
-    }
-
-    @Test
-    void multipleRetainsRequireTheSameNumberOfReleases() {
-        for (Supplier<TensorStorage> factory : storageFactories()) {
-            TensorStorage storage = factory.get();
-
-            storage.retain();
-            storage.retain();
-            storage.release();
-            assertEquals(64L, storage.sizeBytes());
-
-            storage.release();
-            assertEquals(64L, storage.sizeBytes());
-
-            storage.release();
-            assertThrows(IllegalStateException.class, storage::sizeBytes);
-        }
-    }
-
-    private List<Supplier<TensorStorage>> storageFactories() {
+    @Override
+    protected List<? extends Supplier<? extends TensorStorage>> storageFactories() {
         return List.of(
                 () -> allocator.allocate(64L),
                 this::newViewWithTransferredParentOwnership);

@@ -55,10 +55,11 @@ mkdir -p "$MODEL_DIR"
 
 download() {
     local name="$1"
+    local refresh="${2:-false}"
     local destination="${MODEL_DIR}/${name}"
     local temporary="${destination}.part"
 
-    if [[ -s "$destination" ]]; then
+    if [[ "$refresh" != true && -s "$destination" ]]; then
         if [[ "$name" != "model.safetensors" ]] || verify_checkpoint; then
             echo "Using verified cached ${name}"
             return
@@ -81,11 +82,13 @@ download() {
         echo "Downloaded file is empty: ${name}" >&2
         return 1
     fi
-    mv "$temporary" "$destination"
+    mv -f "$temporary" "$destination"
 }
 
-download config.json
-download processor_config.json
+# These small files define the checkpoint architecture and preprocessing.
+# Refresh them from the pinned snapshot rather than trusting an unverifiable cache.
+download config.json true
+download processor_config.json true
 download model.safetensors
 verify_checkpoint
 

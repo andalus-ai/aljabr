@@ -297,6 +297,37 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ2XXSBlockUsingPackedGridSignsAndScale() throws Exception {
+        byte[] block = new byte[66];
+        block[1] = 0x3c; // fp16 scale = 1
+        block[2] = 0; // grid 0: eight values of 8
+        block[3] = 1; // grid 1: [43, 8, 8, 8, 8, 8, 8, 8]
+        block[6] = 1; // first seven-bit sign code expands to 0x81
+        block[9] = 0x10; // group scale nibble = 1 => d * 0.375
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ2_XXS", List.of(256L), source, 8L, block.length);
+        var model = model("iq2_xxs", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq2_xxs.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        float[] expected = {-3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, -3.0f,
+                16.125f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f, 3.0f};
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], values.getFloat(i * Float.BYTES), 0.0f);
+        }
+    }
+
+    @Test
     void dequantizesIQ3XXSBlockUsingPackedGridSignsAndScale() throws Exception {
         byte[] block = new byte[98];
         block[1] = 0x3c; // fp16 scale = 1
@@ -585,6 +616,33 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                         model, plan(model, CompatibilityReport.ConversionFidelity.FULL),
                         new ConversionRequest(temporaryDirectory.resolve("incorrect-full.safetensors").toUri(),
                                 true, Map.of())));
+    }
+
+    @Test
+    void dequantizesIq2XsUsingCanonicalGridAndSubgroupScale() throws Exception {
+        byte[] block = new byte[74];
+        block[1] = 0x3c; // fp16 scale = 1
+        block[4] = 1; // second vector uses grid entry 1 (first lane = 43)
+        // All packed scale nibbles are zero: effective scale = 0.125.
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ2_XS", List.of(256L), source, 8L, block.length);
+        var model = model("iq2_xs", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq2_xs.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        assertEquals(1.0f, values.getFloat(0), 0.0001f);
+        assertEquals(5.375f, values.getFloat(Float.BYTES), 0.0001f);
+        for (int i = 8; i < 256; i++) {
+            assertEquals(1.0f, values.getFloat(i * Float.BYTES), 0.0001f);
+        }
     }
 
     @Test

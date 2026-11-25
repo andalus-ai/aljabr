@@ -3,6 +3,7 @@ package tech.kayys.aljabr.backend.cpu;
 import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
 import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
@@ -34,6 +35,8 @@ public final class CpuBackend implements ComputeBackend {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final CpuAttentionExecution attentionExecution;
     private final CpuSpatialExecution spatialExecution;
+    private final CpuReductionExecution reductionExecution;
+    private final CpuNormalizationExecution normalizationExecution;
 
     public CpuBackend() {
         this(null, PoolOwnership.BORROWED, null);
@@ -67,6 +70,8 @@ public final class CpuBackend implements ComputeBackend {
         this.outputAllocator = outputAllocator != null ? outputAllocator : this::allocate;
         this.attentionExecution = new CpuAttentionExecution(this, this::allocateOutput, this::out);
         this.spatialExecution = new CpuSpatialExecution(this::allocateOutput, this::out);
+        this.reductionExecution = new CpuReductionExecution(this::allocateOutput, this::out);
+        this.normalizationExecution = new CpuNormalizationExecution(this::allocateOutput, this::out);
     }
 
     @Override
@@ -543,6 +548,7 @@ public final class CpuBackend implements ComputeBackend {
         }
     }
 
+    @Override
     public Tensor indexAdd(Tensor input, int axis, Tensor indices, Tensor source) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(indices, "indices");
@@ -552,8 +558,15 @@ public final class CpuBackend implements ComputeBackend {
         if (input.backend() != this || indices.backend() != this || source.backend() != this) {
             throw new IllegalArgumentException("CPU indexAdd requires all tensors to use this backend");
         }
-        if (input.dtype() != DType.F32 || source.dtype() != DType.F32) {
-            throw new UnsupportedOperationException("CPU indexAdd currently supports F32 destination and source tensors");
+        if (input.dtype() != source.dtype()) {
+            throw new IllegalArgumentException(
+                    "CPU indexAdd source dtype " + source.dtype()
+                            + " must match destination dtype " + input.dtype());
+        }
+        if (input.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU indexAdd currently supports F32 destination and source tensors; actual dtype="
+                            + input.dtype());
         }
         if (indices.dtype() != DType.I32) {
             throw new IllegalArgumentException("CPU indexAdd indices must use I32; actual dtype=" + indices.dtype());
@@ -775,224 +788,29 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor softmax(Tensor a) {
-        Objects.requireNonNull(a, "tensor must not be null");
-        return softmax(a, a.shape().rank() - 1);
+        return reductionExecution.softmax(a);
     }
 
     @Override
     public Tensor softmax(Tensor a, int dim) {
-        return normalizeAlongSuffix(a, dim, false);
+        return reductionExecution.softmax(a, dim);
     }
 
     @Override
     public Tensor logSoftmax(Tensor a, int dim) {
-        return normalizeAlongSuffix(a, dim, true);
+        return reductionExecution.logSoftmax(a, dim);
     }
 
-    /**
-     * Computes softmax or log-softmax over the flattened suffix beginning at {@code dim}.
-     * This preserves the existing CPU backend axis convention while gathering inputs
-     * through their logical tensor layout.
-     */
-    private Tensor normalizeAlongSuffix(Tensor a, int dim, boolean logarithmic) {
-        Objects.requireNonNull(a, "tensor must not be null");
-        CpuTensorLayoutAccess.requireF32(a);
-        Shape shape = a.shape();
-        long[] dimensions = shape.dims();
-        int rank = dimensions.length;
-        if (rank == 0) {
-            throw new IllegalArgumentException("Normalization axis requires a tensor with rank greater than zero");
-        }
-        int normalizedDim = dim < 0 ? rank + dim : dim;
-        if (normalizedDim < 0 || normalizedDim >= rank) {
-            throw new IllegalArgumentException(
-                    "Normalization axis " + dim + " is out of range for tensor rank " + rank);
-        }
-
-        long rowLength = 1;
-        for (int axis = normalizedDim; axis < rank; axis++) {
-            rowLength = Math.multiplyExact(rowLength, dimensions[axis]);
-        }
-        long rowCount = 1;
-        for (int axis = 0; axis < normalizedDim; axis++) {
-            rowCount = Math.multiplyExact(rowCount, dimensions[axis]);
-        }
-
-        long elements = shape.numel();
-        HostAccessibleStorage output = allocateOutput(
-                Math.multiplyExact(elements, (long) Float.BYTES));
-        if (elements == 0) {
-            return out(shape, output);
-        }
-
-        MemorySegment source = seg(a);
-        MemorySegment destination = output.segment();
-        TensorLayout layout = a.layout();
-        if (!logarithmic && layout.isContiguous() && layout.storageOffset() == 0
-                && rowLength <= Integer.MAX_VALUE) {
-            int contiguousRowLength = Math.toIntExact(rowLength);
-            for (long row = 0; row < rowCount; row++) {
-                CpuOps.softmax(source, destination, Math.multiplyExact(row, rowLength),
-                        contiguousRowLength);
-            }
-            return out(shape, output);
-        }
-
-        for (long row = 0; row < rowCount; row++) {
-            long rowStart = Math.multiplyExact(row, rowLength);
-            float max = Float.NEGATIVE_INFINITY;
-            for (long column = 0; column < rowLength; column++) {
-                long logicalIndex = Math.addExact(rowStart, column);
-                max = Math.max(max, CpuTensorLayoutAccess.readLogical(
-                        source, dimensions, layout, logicalIndex));
-            }
-
-            double exponentialSum = 0d;
-            for (long column = 0; column < rowLength; column++) {
-                long logicalIndex = Math.addExact(rowStart, column);
-                float value = CpuTensorLayoutAccess.readLogical(
-                        source, dimensions, layout, logicalIndex);
-                exponentialSum += Math.exp((double) value - max);
-            }
-            double logNormalizer = Math.log(exponentialSum);
-            float inverseSum = (float) (1d / exponentialSum);
-            for (long column = 0; column < rowLength; column++) {
-                long logicalIndex = Math.addExact(rowStart, column);
-                float value = CpuTensorLayoutAccess.readLogical(
-                        source, dimensions, layout, logicalIndex);
-                float result = logarithmic
-                        ? (float) ((double) value - max - logNormalizer)
-                        : (float) (Math.exp((double) value - max) * inverseSum);
-                destination.set(ValueLayout.JAVA_FLOAT,
-                        Math.multiplyExact(logicalIndex, Float.BYTES), result);
-            }
-        }
-        return out(shape, output);
-    }
+    // ── Normalization ─────────────────────────────────────────────────────────
 
     @Override
     public Tensor layerNorm(Tensor input, long[] normalizedShape, Tensor weight, Tensor bias, float eps) {
-        Objects.requireNonNull(input, "input");
-        Objects.requireNonNull(normalizedShape, "normalizedShape");
-        CpuTensorLayoutAccess.requireF32(input);
-        requireNormalizationEpsilon(eps);
-        Shape shape = input.shape();
-        long[] dimensions = shape.dims();
-        if (normalizedShape.length == 0 || normalizedShape.length > dimensions.length) {
-            throw new IllegalArgumentException("normalizedShape must be a non-empty suffix of the input shape");
-        }
-        long hiddenDim = 1;
-        for (int i = 0; i < normalizedShape.length; i++) {
-            long expected = normalizedShape[i];
-            long actual = dimensions[dimensions.length - normalizedShape.length + i];
-            if (expected <= 0 || expected != actual) {
-                throw new IllegalArgumentException("normalizedShape must match the trailing input dimensions");
-            }
-            hiddenDim = Math.multiplyExact(hiddenDim, expected);
-        }
-        validateNormParameter(weight, hiddenDim, "weight");
-        validateNormParameter(bias, hiddenDim, "bias");
-        long elements = shape.numel();
-        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, (long) Float.BYTES));
-        if (elements == 0) return out(shape, output);
-
-        MemorySegment source = seg(input), destination = output.segment();
-        MemorySegment scale = weight == null ? null : seg(weight);
-        MemorySegment shift = bias == null ? null : seg(bias);
-        TensorLayout layout = input.layout();
-        long rows = elements / hiddenDim;
-        for (long row = 0; row < rows; row++) {
-            long rowStart = Math.multiplyExact(row, hiddenDim);
-            double sum = 0d;
-            for (long column = 0; column < hiddenDim; column++) {
-                sum += CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
-                        Math.addExact(rowStart, column));
-            }
-            double mean = sum / hiddenDim;
-            double squaredDifferenceSum = 0d;
-            for (long column = 0; column < hiddenDim; column++) {
-                double difference = CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
-                        Math.addExact(rowStart, column)) - mean;
-                squaredDifferenceSum += difference * difference;
-            }
-            float inverseStd = (float) (1d / Math.sqrt(squaredDifferenceSum / hiddenDim + eps));
-            for (long column = 0; column < hiddenDim; column++) {
-                long logicalIndex = Math.addExact(rowStart, column);
-                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex);
-                float normalized = (value - (float) mean) * inverseStd;
-                if (scale != null) normalized *= scale.get(ValueLayout.JAVA_FLOAT,
-                        Math.multiplyExact(column, Float.BYTES));
-                if (shift != null) normalized += shift.get(ValueLayout.JAVA_FLOAT,
-                        Math.multiplyExact(column, Float.BYTES));
-                destination.set(ValueLayout.JAVA_FLOAT,
-                        Math.multiplyExact(logicalIndex, Float.BYTES), normalized);
-            }
-        }
-        return out(shape, output);
+        return normalizationExecution.layerNorm(input, normalizedShape, weight, bias, eps);
     }
 
     @Override
     public Tensor rmsNorm(Tensor input, Tensor weight, float eps) {
-        Objects.requireNonNull(input, "input");
-        Objects.requireNonNull(weight, "weight");
-        CpuTensorLayoutAccess.requireF32(input);
-        CpuTensorLayoutAccess.requireF32(weight);
-        requireNormalizationEpsilon(eps);
-        if (weight.shape().rank() != 1) {
-            throw new IllegalArgumentException("RMSNorm weight must be a rank-1 vector");
-        }
-        long hiddenDim = weight.shape().dim(0);
-        if (hiddenDim <= 0 || input.shape().rank() == 0
-                || input.shape().dim(input.shape().rank() - 1) != hiddenDim) {
-            throw new IllegalArgumentException("RMSNorm weight length must match the input's final dimension");
-        }
-        validateNormParameter(weight, hiddenDim, "weight");
-        long elements = input.numel();
-        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, (long) Float.BYTES));
-        if (elements == 0) return out(input.shape(), output);
-
-        MemorySegment source = seg(input), scale = seg(weight), destination = output.segment();
-        long[] dimensions = input.shape().dims();
-        TensorLayout layout = input.layout();
-        long rows = elements / hiddenDim;
-        for (long row = 0; row < rows; row++) {
-            long rowStart = Math.multiplyExact(row, hiddenDim);
-            double sumSquares = 0d;
-            for (long column = 0; column < hiddenDim; column++) {
-                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
-                        Math.addExact(rowStart, column));
-                sumSquares += (double) value * value;
-            }
-            float inverseRms = (float) (1d / Math.sqrt(sumSquares / hiddenDim + eps));
-            for (long column = 0; column < hiddenDim; column++) {
-                long logicalIndex = Math.addExact(rowStart, column);
-                float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex);
-                float gamma = scale.get(ValueLayout.JAVA_FLOAT,
-                        Math.multiplyExact(column, Float.BYTES));
-                destination.set(ValueLayout.JAVA_FLOAT,
-                        Math.multiplyExact(logicalIndex, Float.BYTES), (value * inverseRms) * gamma);
-            }
-        }
-        return out(input.shape(), output);
-    }
-
-    private static void validateNormParameter(Tensor parameter, long expectedElements, String name) {
-        if (parameter == null) return;
-        CpuTensorLayoutAccess.requireF32(parameter);
-        if (parameter.numel() != expectedElements) {
-            throw new IllegalArgumentException(name + " must contain " + expectedElements
-                    + " elements; got " + parameter.numel());
-        }
-        TensorLayout layout = parameter.layout();
-        if (!layout.isContiguous() || layout.storageOffset() != 0) {
-            throw new IllegalArgumentException(name + " must use contiguous zero-offset storage");
-        }
-    }
-
-    private static void requireNormalizationEpsilon(float eps) {
-        if (!Float.isFinite(eps) || eps < 0f) {
-            throw new IllegalArgumentException("Normalization epsilon must be finite and non-negative");
-        }
+        return normalizationExecution.rmsNorm(input, weight, eps);
     }
 
     @Override
@@ -1137,110 +955,8 @@ public final class CpuBackend implements ComputeBackend {
     public Tensor batchNorm(Tensor input, Tensor weight, Tensor bias,
             Tensor runningMean, Tensor runningVar,
             boolean training, float momentum, float eps) {
-        Objects.requireNonNull(input, "input");
-        CpuTensorLayoutAccess.requireF32(input);
-        if (input.shape().rank() < 2) {
-            throw new IllegalArgumentException("BatchNorm input must have rank >= 2 ([N, C, ...])");
-        }
-        if (!Float.isFinite(momentum) || momentum < 0f || momentum > 1f) {
-            throw new IllegalArgumentException("BatchNorm momentum must be finite and in [0, 1]");
-        }
-        if (!Float.isFinite(eps) || eps < 0f) {
-            throw new IllegalArgumentException("BatchNorm epsilon must be finite and non-negative");
-        }
-
-        long[] dimensions = input.shape().dims();
-        long batches = dimensions[0];
-        long channels = dimensions[1];
-        if (channels <= 0) {
-            throw new IllegalArgumentException("BatchNorm channel dimension must be positive");
-        }
-        long spatialSize = 1;
-        for (int i = 2; i < dimensions.length; i++) {
-            spatialSize = Math.multiplyExact(spatialSize, dimensions[i]);
-        }
-        long samplesPerChannel = Math.multiplyExact(batches, spatialSize);
-        validateBatchNormVector(weight, channels, "weight");
-        validateBatchNormVector(bias, channels, "bias");
-        if ((runningMean == null) != (runningVar == null)) {
-            throw new IllegalArgumentException("runningMean and runningVar must either both be present or both be null");
-        }
-        validateBatchNormVector(runningMean, channels, "runningMean");
-        validateBatchNormVector(runningVar, channels, "runningVar");
-        long elements = input.numel();
-        HostAccessibleStorage output = allocateOutput(Math.multiplyExact(elements, (long) Float.BYTES));
-        if (elements == 0) return out(input.shape(), output);
-
-        MemorySegment source = seg(input);
-        MemorySegment destination = output.segment();
-        MemorySegment scale = weight == null ? null : seg(weight);
-        MemorySegment shift = bias == null ? null : seg(bias);
-        MemorySegment means = runningMean == null ? null : seg(runningMean);
-        MemorySegment variances = runningVar == null ? null : seg(runningVar);
-        TensorLayout layout = input.layout();
-
-        for (long channel = 0; channel < channels; channel++) {
-            double mean;
-            double variance;
-            if (training || means == null) {
-                double sum = 0d;
-                double sumSquares = 0d;
-                for (long batch = 0; batch < batches; batch++) {
-                    long base = Math.multiplyExact(
-                            Math.addExact(Math.multiplyExact(batch, channels), channel), spatialSize);
-                    for (long spatial = 0; spatial < spatialSize; spatial++) {
-                        float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout,
-                                Math.addExact(base, spatial));
-                        sum += value;
-                        sumSquares += (double) value * value;
-                    }
-                }
-                mean = sum / samplesPerChannel;
-                variance = Math.max(0d, sumSquares / samplesPerChannel - mean * mean);
-
-                if (training && means != null) {
-                    double runningVariance = samplesPerChannel > 1
-                            ? variance * samplesPerChannel / (samplesPerChannel - 1d)
-                            : variance;
-                    long parameterOffset = Math.multiplyExact(channel, Float.BYTES);
-                    float oldMean = means.get(ValueLayout.JAVA_FLOAT, parameterOffset);
-                    float oldVariance = variances.get(ValueLayout.JAVA_FLOAT, parameterOffset);
-                    if (!Float.isFinite(oldMean) || !Float.isFinite(oldVariance) || oldVariance < 0f) {
-                        throw new IllegalArgumentException(
-                                "BatchNorm running statistics must be finite and variance non-negative");
-                    }
-                    means.set(ValueLayout.JAVA_FLOAT, parameterOffset,
-                            (float) ((1d - momentum) * oldMean + momentum * mean));
-                    variances.set(ValueLayout.JAVA_FLOAT, parameterOffset,
-                            (float) ((1d - momentum) * oldVariance + momentum * runningVariance));
-                }
-            } else {
-                long parameterOffset = Math.multiplyExact(channel, Float.BYTES);
-                mean = means.get(ValueLayout.JAVA_FLOAT, parameterOffset);
-                variance = variances.get(ValueLayout.JAVA_FLOAT, parameterOffset);
-                if (!Double.isFinite(mean) || !Double.isFinite(variance) || variance < 0d) {
-                    throw new IllegalArgumentException("BatchNorm running statistics must be finite and variance non-negative");
-                }
-            }
-
-            float inverseStd = (float) (1d / Math.sqrt(variance + eps));
-            float gamma = scale == null ? 1f
-                    : scale.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(channel, Float.BYTES));
-            float beta = shift == null ? 0f
-                    : shift.get(ValueLayout.JAVA_FLOAT, Math.multiplyExact(channel, Float.BYTES));
-            for (long batch = 0; batch < batches; batch++) {
-                long base = Math.multiplyExact(
-                        Math.addExact(Math.multiplyExact(batch, channels), channel), spatialSize);
-                for (long spatial = 0; spatial < spatialSize; spatial++) {
-                    long logicalIndex = Math.addExact(base, spatial);
-                    float value = CpuTensorLayoutAccess.readLogical(source, dimensions, layout, logicalIndex);
-                    float normalized = (float) ((value - mean) * inverseStd) * gamma + beta;
-                    destination.set(ValueLayout.JAVA_FLOAT,
-                            Math.multiplyExact(logicalIndex, Float.BYTES), normalized);
-                }
-            }
-        }
-        return out(input.shape(), output);
+        return normalizationExecution.batchNorm(
+                input, weight, bias, runningMean, runningVar, training, momentum, eps);
     }
 
     private static void copyLogicalToContiguous(
@@ -1253,161 +969,33 @@ public final class CpuBackend implements ComputeBackend {
         }
     }
 
-    private static void validateBatchNormVector(Tensor tensor, long channels, String name) {
-        if (tensor == null) return;
-        CpuTensorLayoutAccess.requireF32(tensor);
-        if (tensor.shape().rank() != 1 || tensor.shape().dim(0) != channels) {
-            throw new IllegalArgumentException(name + " must be a rank-1 vector of length " + channels);
-        }
-        TensorLayout layout = tensor.layout();
-        if (!layout.isContiguous() || layout.storageOffset() != 0) {
-            throw new IllegalArgumentException(name + " must use contiguous zero-offset storage");
-        }
-    }
+
 
     // ── Reductions ────────────────────────────────────────────────────────────
 
     @Override
     public Tensor sum(Tensor a) {
-        Objects.requireNonNull(a, "tensor must not be null");
-        CpuTensorLayoutAccess.requireF32(a);
-        MemorySegment source = seg(a);
-        TensorLayout layout = a.layout();
-        float total;
-        if (layout.isContiguous() && layout.storageOffset() == 0) {
-            total = CpuOps.reduceSum(source, a.numel());
-        } else {
-            total = 0f;
-            long[] dimensions = a.shape().dims();
-            for (long i = 0; i < a.numel(); i++) {
-                total += CpuTensorLayoutAccess.readLogical(source, dimensions, layout, i);
-            }
-        }
-        HostAccessibleStorage o = allocateOutput(Float.BYTES);
-        o.segment().set(ValueLayout.JAVA_FLOAT, 0, total);
-        return out(new Shape(1), o);
+        return reductionExecution.sum(a);
     }
 
     @Override
     public Tensor sum(Tensor a, int dim, boolean keepDim) {
-        return reduceAlongDim(a, dim, keepDim, true);
+        return reductionExecution.sum(a, dim, keepDim);
     }
 
     @Override
     public Tensor mean(Tensor a) {
-        Objects.requireNonNull(a, "tensor must not be null");
-        if (a.numel() == 0) {
-            throw new IllegalArgumentException("Mean is undefined for an empty tensor");
-        }
-        CpuTensorLayoutAccess.requireF32(a);
-        MemorySegment source = seg(a);
-        TensorLayout layout = a.layout();
-        float total;
-        if (layout.isContiguous() && layout.storageOffset() == 0) {
-            total = CpuOps.reduceSum(source, a.numel());
-        } else {
-            total = 0f;
-            long[] dimensions = a.shape().dims();
-            for (long i = 0; i < a.numel(); i++) {
-                total += CpuTensorLayoutAccess.readLogical(source, dimensions, layout, i);
-            }
-        }
-        HostAccessibleStorage o = allocateOutput(Float.BYTES);
-        o.segment().set(ValueLayout.JAVA_FLOAT, 0, total / a.numel());
-        return out(new Shape(1), o);
+        return reductionExecution.mean(a);
     }
 
     @Override
     public Tensor mean(Tensor a, int dim, boolean keepDim) {
-        return reduceAlongDim(a, dim, keepDim, false);
+        return reductionExecution.mean(a, dim, keepDim);
     }
 
     @Override
     public Tensor max(Tensor a) {
-        Objects.requireNonNull(a, "tensor must not be null");
-        CpuTensorLayoutAccess.requireF32(a);
-        MemorySegment source = seg(a);
-        TensorLayout layout = a.layout();
-        float best;
-        if (layout.isContiguous() && layout.storageOffset() == 0) {
-            best = CpuOps.reduceMax(source, a.numel());
-        } else {
-            best = Float.NEGATIVE_INFINITY;
-            long[] dimensions = a.shape().dims();
-            for (long i = 0; i < a.numel(); i++) {
-                best = Math.max(best,
-                        CpuTensorLayoutAccess.readLogical(source, dimensions, layout, i));
-            }
-        }
-        HostAccessibleStorage o = allocateOutput(Float.BYTES);
-        o.segment().set(ValueLayout.JAVA_FLOAT, 0, best);
-        return out(new Shape(1), o);
-    }
-
-    /** Shared reduce-along-dim logic for sum and mean. */
-    private Tensor reduceAlongDim(Tensor a, int dim, boolean keepDim, boolean isSum) {
-        Objects.requireNonNull(a, "tensor must not be null");
-        CpuTensorLayoutAccess.requireF32(a);
-        long[] inDims = a.shape().dims();
-        int rank = inDims.length;
-        if (rank == 0) {
-            throw new IllegalArgumentException("Axis reduction requires a tensor with rank greater than zero");
-        }
-        int normalizedDim = dim < 0 ? rank + dim : dim;
-        if (normalizedDim < 0 || normalizedDim >= rank) {
-            throw new IllegalArgumentException(
-                    "Reduction axis " + dim + " is out of range for tensor rank " + rank);
-        }
-        dim = normalizedDim;
-        long dimLen = inDims[dim];
-        if (!isSum && dimLen == 0) {
-            throw new IllegalArgumentException("Mean is undefined for an empty reduction dimension");
-        }
-
-        long[] outDims = new long[keepDim ? rank : rank - 1];
-        int outIdx = 0;
-        for (int d = 0; d < rank; d++) {
-            if (d == dim && !keepDim) {
-                continue;
-            }
-            outDims[outIdx++] = (d == dim) ? 1 : inDims[d];
-        }
-        Shape outShape = new Shape(outDims);
-        HostAccessibleStorage outBuf = allocateOutput(
-                Math.multiplyExact(outShape.numel(), (long) Float.BYTES));
-        MemorySegment source = seg(a);
-        MemorySegment destination = outBuf.segment();
-        TensorLayout layout = a.layout();
-
-        long outerSize = 1;
-        long innerSize = 1;
-        for (int d = 0; d < dim; d++) {
-            outerSize = Math.multiplyExact(outerSize, inDims[d]);
-        }
-        for (int d = dim + 1; d < rank; d++) {
-            innerSize = Math.multiplyExact(innerSize, inDims[d]);
-        }
-
-        for (long outer = 0; outer < outerSize; outer++) {
-            for (long inner = 0; inner < innerSize; inner++) {
-                float accumulator = 0f;
-                for (long reduced = 0; reduced < dimLen; reduced++) {
-                    long logicalInputIndex = Math.addExact(
-                            Math.multiplyExact(Math.addExact(
-                                    Math.multiplyExact(outer, dimLen), reduced), innerSize), inner);
-                    accumulator += CpuTensorLayoutAccess.readLogical(
-                            source, inDims, layout, logicalInputIndex);
-                }
-                if (!isSum) {
-                    accumulator /= dimLen;
-                }
-                long outputIndex = Math.addExact(
-                        Math.multiplyExact(outer, innerSize), inner);
-                destination.set(ValueLayout.JAVA_FLOAT,
-                        Math.multiplyExact(outputIndex, Float.BYTES), accumulator);
-            }
-        }
-        return out(outShape, outBuf);
+        return reductionExecution.max(a);
     }
 
     // ── Math ─────────────────────────────────────────────────────────────────
@@ -1663,6 +1251,33 @@ public final class CpuBackend implements ComputeBackend {
         return attentionExecution.attentionGqa(Q, K, V, additiveMask, causal);
     }
 
+    /**
+     * Computes one CPU attention query head directly from a session-backed KV cache.
+     *
+     * <p>Unlike the tensor-based attention overloads, this path reads cache blocks
+     * incrementally and does not materialize dense K/V tensors. The cache session
+     * remains responsible for committed-prefix visibility and storage lifecycle.</p>
+     *
+     * @see CpuKVCacheStreamingAttention
+     */
+    public float[] attentionFromCache(
+            KVCacheSession session,
+            int layer,
+            float[] query,
+            int queryHeadIndex,
+            int queryHeadCount,
+            int queryPosition,
+            int firstKeyPosition,
+            int tokenCount,
+            boolean causal) {
+        if (closed.get()) {
+            throw new IllegalStateException("CPU backend is closed");
+        }
+        return CpuKVCacheStreamingAttention.compute(
+                session, layer, query, queryHeadIndex, queryHeadCount,
+                queryPosition, firstKeyPosition, tokenCount, causal);
+    }
+
     // ── Conv / Pool ───────────────────────────────────────────────────────────
 
     @Override
@@ -1759,6 +1374,19 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     // ── Misc ──────────────────────────────────────────────────────────────────
+
+    @Override
+    public Tensor contiguous(Tensor input) {
+        Objects.requireNonNull(input, "input must not be null");
+        long[] dimensions = input.shape().dims();
+        return switch (input.dtype()) {
+            case F32 -> TensorFactory.of(input.toFloatArray(), this, dimensions);
+            case I32 -> TensorFactory.of(input.toIntArray(), this, dimensions);
+            default -> throw new UnsupportedOperationException(
+                    "CPU contiguous materialization currently supports F32 and I32; actual dtype="
+                            + input.dtype());
+        };
+    }
 
     @Override
     public long numel(Tensor a) {

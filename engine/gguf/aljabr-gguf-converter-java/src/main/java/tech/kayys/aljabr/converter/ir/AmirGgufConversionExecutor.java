@@ -90,7 +90,7 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
             }
             tensors.add(new StreamingGgufWriter.TensorPayload(
                     tensor.name(),
-                    tensor.shape().stream().mapToLong(Long::longValue).toArray(),
+                    ggufShape(tensor),
                     type,
                     source,
                     offset,
@@ -269,6 +269,16 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         }
     }
 
+    /**
+     * GGUF represents scalar tensors as a one-element, one-dimensional tensor.
+     * AMIR keeps the source scalar shape empty; normalize only at this format boundary.
+     */
+    private static long[] ggufShape(TensorDescriptor tensor) {
+        return tensor.shape().isEmpty()
+                ? new long[] {1L}
+                : tensor.shape().stream().mapToLong(Long::longValue).toArray();
+    }
+
     private static void validatePayload(
             TensorDescriptor tensor, PayloadReference payload, Path source, long absoluteOffset, GgmlType type)
             throws IOException {
@@ -277,7 +287,7 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
             for (long dimension : tensor.shape()) {
                 elements = Math.multiplyExact(elements, dimension);
             }
-            if (tensor.shape().isEmpty() || tensor.shape().size() > 4
+            if (tensor.shape().size() > 4
                     || tensor.shape().stream().anyMatch(dimension -> dimension <= 0L)) {
                 throw new IOException("GGUF tensors require one to four positive dimensions: " + tensor.name());
             }

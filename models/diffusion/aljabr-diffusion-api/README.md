@@ -6,4 +6,18 @@ This module intentionally has no dependency on a concrete model family, schedule
 
 A family module declares semantic component roles and requirements. A format integration implements DiffusionComponentLoader<T> to open artifacts of its format and returns an explicitly owned, closeable handle. The caller owns that handle and must close it; tensor views must not outlive its backing resource. The API does not resolve locations, download files, parse checkpoints, or choose compute backends.
 
+A component's role is a stable semantic identifier, not a filename or concrete loader class. Its location is opaque to the API so local, repository and object-store resolution can be supplied by separate storage adapters.
+
+A family module can publish a `DiffusionFamilyProvider` implementation through Java `ServiceLoader`, or an application can inject providers directly. This API deliberately does not load files, parse Safetensors, allocate tensors, select devices or execute pipelines.
+
+## Artifact loading and resolution
+
+- `DiffusionComponentLoader` is the format adapter SPI (for example SafeTensors).
+- `DiffusionArtifactResolver` is the storage/repository materialization SPI.
+- `ResolvedDiffusionArtifact` records the local file, immutable repository
+  revision when available, checksum, and cache-hit status.
+- `DiffusionArtifactResolutionContext` carries cache and timeout policy.
+
+Keep repository access separate from format parsing and model-family semantics.
+Resolvers must verify declared checksums before returning a materialized file.
 A family module can publish a DiffusionFamilyProvider implementation through Java ServiceLoader metadata, or an application can inject providers directly.
