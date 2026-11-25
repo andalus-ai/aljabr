@@ -379,11 +379,11 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         int qsOffset = base + 2;
         for (int group = 0; group < 8; group++) {
             int groupOffset = qsOffset + group * 8;
-            int packedSignsAndScale = readUInt32LE(source, groupOffset + 4);
-            float groupScale = scale * (0.5f + ((packedSignsAndScale >>> 28) & 0x0f)) * 0.25f;
+            long packedSignsAndScale = readUInt32LE(source, groupOffset + 4);
+            float groupScale = scale * (0.5f + ((packedSignsAndScale >>> 28) & 0x0fL)) * 0.25f;
             for (int vector = 0; vector < 4; vector++) {
                 int gridIndex = source[groupOffset + vector] & 0xff;
-                int signs = decodeIQ3SSignMask((packedSignsAndScale >>> (vector * 7)) & 0x7f);
+                int signs = decodeIQ3SSignMask((int) ((packedSignsAndScale >>> (vector * 7)) & 0x7fL));
                 for (int lane = 0; lane < 8; lane++) {
                     float sign = (signs & (1 << lane)) != 0 ? -1.0f : 1.0f;
                     output.putFloat(groupScale * Iq2XXSGrid.value(gridIndex, lane) * sign);
