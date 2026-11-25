@@ -2,6 +2,8 @@ package tech.kayys.aljabr.diffusion.core;
 
 import tech.kayys.aljabr.diffusion.api.DiffusionComponentArtifact;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -16,7 +18,8 @@ public record DiffusionComponentResolution(
     public DiffusionComponentResolution {
         Objects.requireNonNull(modelId, "modelId");
         Objects.requireNonNull(revision, "revision");
-        selected = Map.copyOf(Objects.requireNonNull(selected, "selected"));
+        selected = Collections.unmodifiableMap(new LinkedHashMap<>(
+                Objects.requireNonNull(selected, "selected")));
         missingRequiredRoles = List.copyOf(Objects.requireNonNull(missingRequiredRoles, "missingRequiredRoles"));
     }
 
