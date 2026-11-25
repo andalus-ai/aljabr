@@ -23,6 +23,13 @@ public final class EmbeddingGemma2RotaryEmbedding {
      */
     public static float[][][] apply(float[][][] input, int[] positions,
             double theta, Double partialRotaryFactor) {
+        if (positions != null) {
+            for (int position : positions) {
+                if (position < 0) {
+                    throw new IllegalArgumentException("position ids must not be negative");
+                }
+            }
+        }
         return RotaryPositionEmbeddingReference.apply(input, positions, theta, partialRotaryFactor);
     }
 }
