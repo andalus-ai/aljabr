@@ -621,6 +621,9 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                                 "Could not verify required capabilities for explicitly requested GGUF backend '"
                                         + provider.id() + "'", failure);
                     }
+                    observe(provider, ProviderDecisionEvent.Decision.SELECTED,
+                            "explicit provider selection satisfies required GGUF capabilities",
+                            ProviderDecisionEvent.SelectionMode.EXPLICIT);
                 } else {
                     observe(provider, ProviderDecisionEvent.Decision.SELECTED,
                             "explicit provider selection; readiness probe intentionally bypassed",
