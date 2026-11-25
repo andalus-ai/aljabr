@@ -38,14 +38,26 @@ public class OffHeapMemoryStore implements BorrowableMemoryStore {
     private Arena storageArena;
     private boolean closed;
 
-    public OffHeapMemoryStore(String dbPath) {
-        this(dbPath, Config.defaults());
+    public OffHeapMemoryStore() {
+        this(Config.defaults());
     }
 
-    public OffHeapMemoryStore(String dbPath, Config config) {
-        this.config = config;
+    public OffHeapMemoryStore(Config config) {
+        this.config = java.util.Objects.requireNonNull(config, "config");
         this.storageArena = Arena.ofShared();
         LOG.info("In-process off-heap store initialized [maxStorage=" + config.maxStorageMiB() + " MiB]");
+    }
+
+    /** @deprecated this provider is ephemeral and does not use a filesystem path. */
+    @Deprecated(forRemoval = true)
+    public OffHeapMemoryStore(String ignoredPath) {
+        this();
+    }
+
+    /** @deprecated this provider is ephemeral and does not use a filesystem path. */
+    @Deprecated(forRemoval = true)
+    public OffHeapMemoryStore(String ignoredPath, Config config) {
+        this(config);
     }
 
     @Override
