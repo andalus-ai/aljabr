@@ -56,7 +56,7 @@ public final class DiffusionConditioningPreparationOrchestrator {
                 prepared.add(data);
             }
             return new PreparedDiffusionConditioningSet(prepared);
-        } catch (Throwable failure) {
+        } catch (RuntimeException | Error failure) {
             closeAfterFailure(prepared, failure);
             throw failure;
         }
