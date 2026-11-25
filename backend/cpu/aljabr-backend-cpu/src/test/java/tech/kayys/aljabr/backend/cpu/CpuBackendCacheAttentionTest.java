@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import tech.kayys.aljabr.cache.BlockCompressedKVCacheStorage;
 import tech.kayys.aljabr.cache.KVCacheLayout;
+import tech.kayys.aljabr.cache.KVCacheAttentionBackend;
 import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.cache.quantization.TurboQuantProdKVCacheCodec;
 
@@ -32,7 +33,9 @@ class CpuBackendCacheAttentionTest {
             session.writeRange(0, 0, 3, keys, 0, values, 0);
             session.commit(3);
 
-            float[] actual = backend.attentionFromCache(
+            KVCacheAttentionBackend cacheAttention = assertInstanceOf(
+                    KVCacheAttentionBackend.class, backend);
+            float[] actual = cacheAttention.attentionFromCache(
                     session, 0, new float[] {0.6f, -0.4f, 0.2f, 0.3f},
                     2, 4, 1, 0, 3, true);
 
