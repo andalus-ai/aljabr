@@ -20,7 +20,7 @@ class GroupAttentionMaskTest {
         assertTrue(mask[0][0][0]);
         assertTrue(mask[0][0][1]);
         assertFalse(mask[0][0][2]);
-        assertFalse(mask[1][0][1]);
+        assertFalse(mask[1][0][0]);
         assertTrue(mask[1][1][1]);
         assertTrue(mask[1][2][2]);
     }
