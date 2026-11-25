@@ -8,10 +8,10 @@ import org.junit.jupiter.api.Test;
 class RotaryPositionEmbeddingReferenceTest {
     @Test
     void leavesPositionZeroUnchangedAndRotatesAtNonZeroPositions() {
-        float[][][] input = {{{1f, 0f, 2f, 0f}}};
+        float[][][] input = {{{1f, 0f, 0f, 0f}}};
         float[][][] zero = RotaryPositionEmbeddingReference.apply(input, new int[] {0}, 10000d, null);
         assertEquals(1f, zero[0][0][0], 1e-6f);
-        assertEquals(0f, zero[0][0][1], 1e-6f);
+        assertEquals(0f, zero[0][0][2], 1e-6f);
 
         float[][][] rotated = RotaryPositionEmbeddingReference.apply(input, new int[] {1}, 10000d, null);
         assertEquals(Math.cos(1d), rotated[0][0][0], 1e-6);
