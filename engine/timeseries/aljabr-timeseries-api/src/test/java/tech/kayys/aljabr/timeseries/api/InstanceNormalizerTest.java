@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,7 @@ class InstanceNormalizerTest {
         assertEquals(2.0, result.state().location(), 1e-12);
         assertEquals(Math.sqrt(2.0 / 3.0), result.state().scale(), 1e-12);
         assertFalse(result.observedMask()[2]);
-        assertEquals(Double.NaN, result.values()[2]);
+        assertTrue(Double.isNaN(result.values()[2]));
     }
 
     @Test
