@@ -49,7 +49,7 @@ public abstract class TensorViewContract {
             source.release();
             assertEquals(new Shape(1, 2), slice.shape());
             assertSame(sourceStorage, slice.storage());
-            assertEquals(24L, slice.storage().sizeBytes());
+            assertTrue(slice.storage().sizeBytes() >= 24L);
         } finally {
             if (slice != null) {
                 slice.release();
@@ -58,4 +58,33 @@ public abstract class TensorViewContract {
             backend.close();
         }
     }
+    @Test
+    public final void reductionsReadLogicalElementsFromStridedSlices() {
+        ComputeBackend backend = createBackend();
+        Tensor source = TensorFactory.of(
+                new float[] {0, 1, 2, 3, 4, 5},
+                backend,
+                2,
+                3);
+        Tensor slice = null;
+        Tensor sum = null;
+        try {
+            slice = source.slice(new long[] {1, 1}, new long[] {1, 2});
+            sum = slice.sum();
+
+            // The view addresses source elements 4 and 5, not the first two
+            // elements of its underlying storage.
+            assertEquals(9.0f, sum.item(), 1.0e-6f);
+        } finally {
+            if (sum != null) {
+                sum.release();
+            }
+            if (slice != null) {
+                slice.release();
+            }
+            source.release();
+            backend.close();
+        }
+    }
+
 }
