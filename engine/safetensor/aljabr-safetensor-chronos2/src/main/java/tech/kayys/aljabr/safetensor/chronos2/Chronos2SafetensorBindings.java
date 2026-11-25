@@ -34,6 +34,11 @@ public final class Chronos2SafetensorBindings {
      * @param tensors tensor views keyed by their checkpoint names
      * @param checkpointTensorCount total tensor count across all checkpoint shards
      */
+    /** Expected source tensor specifications for the supplied model configuration. */
+    public Map<String, Chronos2CheckpointMapper.TensorSpec> expectedTensors(Chronos2Config config) {
+        return mapper.expectedTensors(Objects.requireNonNull(config, "config"));
+    }
+
     public Binding bind(Chronos2Config config, Map<String, SafetensorTensor> tensors,
             int checkpointTensorCount) {
         Objects.requireNonNull(config, "config");
