@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. IQ2_XXS, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. IQ2_XXS, IQ2_XS, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -162,6 +162,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
             case "IQ2_XXS" -> TensorEncoding.dequantized("IQ2_XXS", 66, 256);
+            case "IQ2_XS" -> TensorEncoding.dequantized("IQ2_XS", 74, 256);
             case "IQ3_S" -> TensorEncoding.dequantized("IQ3_S", 110, 256);
             case "IQ3_XXS" -> TensorEncoding.dequantized("IQ3_XXS", 98, 256);
             case "IQ4_NL" -> TensorEncoding.dequantized("IQ4_NL", 18, 32);
@@ -183,7 +184,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "IQ2_XXS", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "IQ2_XXS", "IQ2_XS", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -288,6 +289,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     dequantizeIQ2XXSBlock(source, base, values);
                     continue;
                 }
+                if (type.equals("IQ2_XS")) {
+                    dequantizeIQ2XSBlock(source, base, values);
+                    continue;
+                }
                 if (type.equals("IQ3_XXS")) {
                     dequantizeIQ3XXSBlock(source, base, values);
                     continue;
@@ -366,6 +371,35 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             }
             writeFully(output, values);
             block += count;
+        }
+    }
+
+    /**
+     * GGML block_iq2_xs layout: fp16 scale, 32 little-endian 16-bit
+     * grid/sign words, then eight packed scale bytes. Each scale byte
+     * supplies two four-bit subgroup scales.
+     */
+    private static void dequantizeIQ2XSBlock(byte[] source, int base, ByteBuffer output) {
+        float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        int qsOffset = base + 2;
+        int scalesOffset = base + 66;
+        for (int group = 0; group < 8; group++) {
+            int packedScales = source[scalesOffset + group] & 0xff;
+            float[] groupScales = {
+                    scale * (0.5f + (packedScales & 0x0f)) * 0.25f,
+                    scale * (0.5f + (packedScales >>> 4)) * 0.25f
+            };
+            for (int vector = 0; vector < 4; vector++) {
+                int wordOffset = qsOffset + (group * 4 + vector) * 2;
+                int packed = (source[wordOffset] & 0xff) | ((source[wordOffset + 1] & 0xff) << 8);
+                int gridIndex = packed & 0x1ff;
+                int signs = decodeIQ3SSignMask((packed >>> 9) & 0x7f);
+                float vectorScale = groupScales[vector / 2];
+                for (int lane = 0; lane < 8; lane++) {
+                    float sign = (signs & (1 << lane)) != 0 ? -1.0f : 1.0f;
+                    output.putFloat(vectorScale * Iq2XSGrid.value(gridIndex, lane) * sign);
+                }
+            }
         }
     }
 
