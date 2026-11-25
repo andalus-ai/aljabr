@@ -51,8 +51,6 @@ class KVCacheAttentionBlockReaderTest {
             int count = counts.get(block);
             int offset = offsets.get(block);
             for (int token = 0; token < count; token++) {
-                System.arraycopy(receivedKeys.get(block), offset + token * 4,
-                        expectedKeys, 0, 0); // bounds-check callback segment without mutating expected data
                 for (int d = 0; d < 4; d++) {
                     assertEquals(expectedKeys[target + d],
                             receivedKeys.get(block)[offset + token * 4 + d], 1.0e-6f);
