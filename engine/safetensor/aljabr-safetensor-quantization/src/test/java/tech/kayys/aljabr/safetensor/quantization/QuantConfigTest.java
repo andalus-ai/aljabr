@@ -104,4 +104,29 @@ class QuantConfigTest {
             new QuantConfig(null, 128, 4, false, true, false, 0.01, 128, 2048, false);
         });
     }
+
+    @Test
+    void neutralStrategyRoundTripsEveryLegacyValue() {
+        for (QuantStrategy legacy : QuantStrategy.values()) {
+            QuantizationStrategy neutral = QuantizationStrategy.fromLegacy(legacy);
+            assertEquals(legacy.name(), neutral.name());
+            assertEquals(legacy, neutral.toLegacy());
+        }
+    }
+
+    @Test
+    void builderAcceptsNeutralStrategyAndPreservesLegacyGetter() {
+        QuantConfig config = QuantConfig.builder()
+                .quantizationStrategy(QuantizationStrategy.BNB)
+                .build();
+
+        assertEquals(QuantizationStrategy.BNB, config.getQuantizationStrategy());
+        assertEquals(QuantStrategy.BNB, config.getStrategy());
+    }
+
+    @Test
+    void neutralStrategyRejectsNull() {
+        assertThrows(NullPointerException.class, () -> QuantizationStrategy.fromLegacy(null));
+        assertThrows(NullPointerException.class, () -> QuantConfig.builder().quantizationStrategy(null));
+    }
 }
