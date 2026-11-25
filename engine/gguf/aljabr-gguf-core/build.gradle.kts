@@ -38,7 +38,7 @@ sourceSets {
 }
 
 dependencies {
-    implementation(project(":engine:gguf:aljabr-gguf-api"))
+    api(project(":engine:gguf:aljabr-gguf-api"))
     api(project(":core:aljabr-core"))
     api(project(":plugins:ml:aljabr-nn"))
     api(project(":plugins:ml:aljabr-tensor"))
