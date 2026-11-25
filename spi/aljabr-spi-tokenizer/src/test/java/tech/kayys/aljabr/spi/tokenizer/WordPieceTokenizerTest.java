@@ -72,7 +72,7 @@ class WordPieceTokenizerTest {
             Tokenizer loaded = loader.load(path);
             assertArrayEquals(new long[] {1, 4, 5, 2},
                     loaded.encode("Hello world", new EncodeOptions().addBos(true).addEos(true)));
-            assertEquals(4, loaded.vocabSize());
+            assertEquals(6, loaded.vocabSize());
             assertEquals(3, loaded.padTokenId());
         } finally {
             Files.deleteIfExists(path);
