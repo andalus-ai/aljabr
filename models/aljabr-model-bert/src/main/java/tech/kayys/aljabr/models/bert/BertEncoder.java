@@ -122,7 +122,7 @@ public final class BertEncoder extends NNModule {
     }
 
     private void validateBackend(Tensor tensor, String name) {
-        if (tensor.backend() != backend()) {
+        if (tensor.backend() != computeBackend()) {
             throw new IllegalArgumentException(name + " must use the encoder's compute backend");
         }
     }
