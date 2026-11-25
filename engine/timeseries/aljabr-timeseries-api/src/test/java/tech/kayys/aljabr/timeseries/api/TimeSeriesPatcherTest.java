@@ -25,8 +25,8 @@ class TimeSeriesPatcherTest {
         List<TimeSeriesPatcher.Patch> patches =
                 new TimeSeriesPatcher(4, 2).patch(new double[] {1, 2, 3, 4, 5, 6, 7, 8});
         assertEquals(3, patches.size());
-        assertEquals(0, patches.get(1).startIndex());
-        assertEquals(2.0, patches.get(1).values()[0]);
+        assertEquals(2, patches.get(1).startIndex());
+        assertEquals(3.0, patches.get(1).values()[0]);
     }
 
     @Test
