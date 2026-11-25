@@ -40,6 +40,34 @@ public final class Chronos2CheckpointMapper {
         return new CheckpointMapping(bindings, expected.size(), checkpointShapes.size());
     }
 
+    /** Validates both shape and Safetensors dtype metadata. */
+    public CheckpointMapping mapMetadata(Chronos2Config config, Map<String, TensorMetadata> checkpointMetadata) {
+        Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(checkpointMetadata, "checkpointMetadata");
+        Map<String, TensorSpec> expected = expectedTensors(config);
+        Map<String, String> bindings = new LinkedHashMap<>();
+        Map<String, String> mismatches = new LinkedHashMap<>();
+        for (TensorSpec spec : expected.values()) {
+            TensorMetadata actual = checkpointMetadata.get(spec.checkpointName());
+            if (actual == null) {
+                mismatches.put(spec.checkpointName(), "missing; expected " + spec.dtype() + " " + format(spec.shape()));
+            } else if (!spec.dtype().equals(actual.dtype())) {
+                mismatches.put(spec.checkpointName(),
+                        "expected dtype " + spec.dtype() + " but found " + actual.dtype());
+            } else if (!java.util.Arrays.equals(spec.shape(), actual.shape())) {
+                mismatches.put(spec.checkpointName(),
+                        "expected " + spec.dtype() + " " + format(spec.shape())
+                                + " but found " + actual.dtype() + " " + format(actual.shape()));
+            } else {
+                bindings.put(spec.checkpointName(), spec.parameterName());
+            }
+        }
+        if (!mismatches.isEmpty()) {
+            throw new IllegalArgumentException("Invalid Chronos-2 checkpoint metadata: " + mismatches);
+        }
+        return new CheckpointMapping(bindings, expected.size(), checkpointMetadata.size());
+    }
+
     public Map<String, TensorSpec> expectedTensors(Chronos2Config config) {
         Objects.requireNonNull(config, "config");
         Map<String, TensorSpec> specs = new LinkedHashMap<>();
@@ -89,7 +117,7 @@ public final class Chronos2CheckpointMapper {
     }
 
     private static void add(Map<String, TensorSpec> specs, String name, long... shape) {
-        specs.put(name, new TensorSpec(name, name, shape));
+        specs.put(name, new TensorSpec(name, name, "F32", shape));
     }
 
     private static String format(long[] shape) {
@@ -97,18 +125,32 @@ public final class Chronos2CheckpointMapper {
     }
 
     /** A single source tensor and its destination logical parameter. */
-    public record TensorSpec(String checkpointName, String parameterName, long[] shape) {
+    public record TensorSpec(String checkpointName, String parameterName, String dtype, long[] shape) {
         public TensorSpec {
             Objects.requireNonNull(checkpointName, "checkpointName");
             Objects.requireNonNull(parameterName, "parameterName");
+            Objects.requireNonNull(dtype, "dtype");
             shape = Objects.requireNonNull(shape, "shape").clone();
-            if (checkpointName.isBlank() || parameterName.isBlank() || shape.length == 0) {
+            if (checkpointName.isBlank() || parameterName.isBlank() || dtype.isBlank() || shape.length == 0) {
                 throw new IllegalArgumentException("tensor names and shapes must be non-empty");
             }
             for (long dimension : shape) {
                 if (dimension < 1) {
                     throw new IllegalArgumentException("tensor dimensions must be positive");
                 }
+            }
+        }
+
+        @Override public long[] shape() { return shape.clone(); }
+    }
+
+    /** Safetensors header metadata for one tensor; payload bytes remain loader-owned. */
+    public record TensorMetadata(String dtype, long[] shape) {
+        public TensorMetadata {
+            Objects.requireNonNull(dtype, "dtype");
+            shape = Objects.requireNonNull(shape, "shape").clone();
+            if (dtype.isBlank() || shape.length == 0) {
+                throw new IllegalArgumentException("tensor dtype and shape must be non-empty");
             }
         }
 
