@@ -14,4 +14,17 @@ public enum MiniMaxH3ComponentRole {
     ADAPTER,
     MODEL_PATCH,
     PROMPT_EMBEDDING
+
+    /** Stable family-neutral role identifier used by diffusion manifests. */
+    public String roleId() {
+        return switch (this) {
+            case DIFFUSION_MODEL -> "diffusion-model";
+            case TEXT_ENCODER -> "text-encoder";
+            case VIDEO_AUTOENCODER -> "video-autoencoder";
+            case AUDIO_AUTOENCODER -> "audio-autoencoder";
+            case ADAPTER -> "adapter";
+            case MODEL_PATCH -> "model-patch";
+            case PROMPT_EMBEDDING -> "prompt-embedding";
+        };
+    }
 }
