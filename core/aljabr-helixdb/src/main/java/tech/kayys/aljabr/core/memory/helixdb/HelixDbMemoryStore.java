@@ -14,10 +14,7 @@ public final class HelixDbMemoryStore extends OffHeapMemoryStore {
     }
     /** @deprecated use {@link OffHeapMemoryStore.Config}. */
     @Deprecated(forRemoval = true)
-    public static final class Config {
-        private final long maxStorageMiB;
-        public Config(long maxStorageMiB) { this.maxStorageMiB = maxStorageMiB; }
-        public long maxStorageMiB() { return maxStorageMiB; }
+    public record Config(long maxStorageMiB) {
         public static Config defaults() { return new Config(512L); }
         public static Config forTest() { return new Config(32L); }
         public static Builder builder() { return new Builder(); }
