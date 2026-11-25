@@ -1,9 +1,8 @@
 package tech.kayys.aljabr.spi.model;
 
 /**
- * Enumeration of capabilities that a {@link ModelFamilyPlugin} may declare.
+ * Capabilities that a model-family plugin may declare.
  * These capability flags drive contract validation and runtime routing.
- * @author bhangun
  */
 public enum ModelFamilyCapability {
     /** The family supports causal-language-model (text-generation) inference. */
@@ -15,5 +14,7 @@ public enum ModelFamilyCapability {
     VISION,
     CHAT_TEMPLATE,
     AUDIO,
-    MOE
+    MOE,
+    /** The family performs forecasting over ordered temporal observations. */
+    TIME_SERIES_FORECASTING
 }
