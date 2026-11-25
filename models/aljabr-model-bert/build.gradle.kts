@@ -9,6 +9,7 @@ repositories { mavenCentral(); mavenLocal() }
 dependencies {
     api("tech.kayys.aljabr:aljabr-spi-model:0.1.0-SNAPSHOT")
     api(project(":plugins:ml:aljabr-nn"))
+    api(project(":models:aljabr-model-embedding-common"))
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")
     implementation(group = "jakarta.inject", name = "jakarta.inject-api")
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))

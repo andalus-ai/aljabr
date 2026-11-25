@@ -37,6 +37,10 @@ public record BertConfig(
         if (hiddenActivation.isEmpty()) {
             throw new IllegalArgumentException("hiddenActivation must not be blank");
         }
+        if (!"gelu".equalsIgnoreCase(hiddenActivation)) {
+            throw new IllegalArgumentException("this BERT encoder currently supports hidden_act=gelu, not "
+                    + hiddenActivation);
+        }
     }
 
     /** Reads canonical Hugging Face BERT config keys and documented defaults. */

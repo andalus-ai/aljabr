@@ -3,6 +3,7 @@ package tech.kayys.aljabr.backend.cpu;
 import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
 import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
@@ -547,6 +548,7 @@ public final class CpuBackend implements ComputeBackend {
         }
     }
 
+    @Override
     public Tensor indexAdd(Tensor input, int axis, Tensor indices, Tensor source) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(indices, "indices");
@@ -556,8 +558,15 @@ public final class CpuBackend implements ComputeBackend {
         if (input.backend() != this || indices.backend() != this || source.backend() != this) {
             throw new IllegalArgumentException("CPU indexAdd requires all tensors to use this backend");
         }
-        if (input.dtype() != DType.F32 || source.dtype() != DType.F32) {
-            throw new UnsupportedOperationException("CPU indexAdd currently supports F32 destination and source tensors");
+        if (input.dtype() != source.dtype()) {
+            throw new IllegalArgumentException(
+                    "CPU indexAdd source dtype " + source.dtype()
+                            + " must match destination dtype " + input.dtype());
+        }
+        if (input.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU indexAdd currently supports F32 destination and source tensors; actual dtype="
+                            + input.dtype());
         }
         if (indices.dtype() != DType.I32) {
             throw new IllegalArgumentException("CPU indexAdd indices must use I32; actual dtype=" + indices.dtype());
@@ -1242,6 +1251,33 @@ public final class CpuBackend implements ComputeBackend {
         return attentionExecution.attentionGqa(Q, K, V, additiveMask, causal);
     }
 
+    /**
+     * Computes one CPU attention query head directly from a session-backed KV cache.
+     *
+     * <p>Unlike the tensor-based attention overloads, this path reads cache blocks
+     * incrementally and does not materialize dense K/V tensors. The cache session
+     * remains responsible for committed-prefix visibility and storage lifecycle.</p>
+     *
+     * @see CpuKVCacheStreamingAttention
+     */
+    public float[] attentionFromCache(
+            KVCacheSession session,
+            int layer,
+            float[] query,
+            int queryHeadIndex,
+            int queryHeadCount,
+            int queryPosition,
+            int firstKeyPosition,
+            int tokenCount,
+            boolean causal) {
+        if (closed.get()) {
+            throw new IllegalStateException("CPU backend is closed");
+        }
+        return CpuKVCacheStreamingAttention.compute(
+                session, layer, query, queryHeadIndex, queryHeadCount,
+                queryPosition, firstKeyPosition, tokenCount, causal);
+    }
+
     // ── Conv / Pool ───────────────────────────────────────────────────────────
 
     @Override
@@ -1338,6 +1374,19 @@ public final class CpuBackend implements ComputeBackend {
     }
 
     // ── Misc ──────────────────────────────────────────────────────────────────
+
+    @Override
+    public Tensor contiguous(Tensor input) {
+        Objects.requireNonNull(input, "input must not be null");
+        long[] dimensions = input.shape().dims();
+        return switch (input.dtype()) {
+            case F32 -> TensorFactory.of(input.toFloatArray(), this, dimensions);
+            case I32 -> TensorFactory.of(input.toIntArray(), this, dimensions);
+            default -> throw new UnsupportedOperationException(
+                    "CPU contiguous materialization currently supports F32 and I32; actual dtype="
+                            + input.dtype());
+        };
+    }
 
     @Override
     public long numel(Tensor a) {

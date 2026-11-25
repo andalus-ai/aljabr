@@ -8,6 +8,7 @@ package tech.kayys.aljabr.core.tensor.lazy;
 public enum OpType {
     // Structural
     CONSTANT,
+    CONTIGUOUS,
 
     // Arithmetic
     ADD,

@@ -49,7 +49,7 @@ public final class Chronos2Encoder {
     public float[][][] encode(float[][][] inputs, int[] groupIds,
             boolean[][] validPatches, int[] positionIds) {
         Shape shape = validateInputs(inputs, groupIds, validPatches, positionIds);
-        float[][][] groupVisibility = GroupAttentionMask.build(groupIds, validPatches);
+        boolean[][][] groupVisibility = GroupAttentionMask.build(groupIds, validPatches);
         float[][][] hidden = copy(inputs);
         for (LayerWeights layer : layers) {
             // Time self-attention: independent temporal sequence per series.
