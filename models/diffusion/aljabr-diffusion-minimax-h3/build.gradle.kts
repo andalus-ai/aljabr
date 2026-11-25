@@ -16,6 +16,7 @@ java {
 
 dependencies {
     api(project(":models:diffusion:aljabr-diffusion-api"))
+    testImplementation(project(":models:diffusion:aljabr-diffusion-core"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
 }
