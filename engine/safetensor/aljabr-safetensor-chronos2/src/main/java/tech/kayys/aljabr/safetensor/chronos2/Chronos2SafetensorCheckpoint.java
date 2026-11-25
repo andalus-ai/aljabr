@@ -1,21 +1,19 @@
 package tech.kayys.aljabr.safetensor.chronos2;
 
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.core.nn.Linear;
+import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.models.chronos2.Chronos2Config;
 import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader;
 import tech.kayys.aljabr.safetensor.loader.SafetensorTensor;
+import tech.kayys.aljabr.safetensor.tensor.SafetensorLinearBinding;
+import tech.kayys.aljabr.safetensor.tensor.SafetensorTensorBinding;
 
-/**
- * Open Chronos-2 checkpoint whose tensor views are backed by the shared
- * Safetensors loader's mapped/off-heap storage.
- *
- * <p>The checkpoint owns the shard session. Do not retain tensor views beyond
- * this object's lifetime; closing it invalidates every view.</p>
- */
+/** Open Chronos-2 checkpoint backed by the shared mapped Safetensors loader. */
 public final class Chronos2SafetensorCheckpoint implements AutoCloseable {
     private final SafetensorShardLoader.SafetensorShardSession session;
     private final Chronos2SafetensorBindings.Binding binding;
@@ -28,65 +26,43 @@ public final class Chronos2SafetensorCheckpoint implements AutoCloseable {
         Objects.requireNonNull(binder, "binder");
         try {
             Map<String, SafetensorTensor> tensors = new LinkedHashMap<>();
-            for (String name : binder.expectedTensors(config).keySet()) {
-                tensors.put(name, session.tensor(name));
-            }
+            for (String name : binder.expectedTensors(config).keySet()) tensors.put(name, session.tensor(name));
             this.binding = binder.bind(config, tensors, session.tensorCount());
         } catch (RuntimeException | Error failure) {
             session.close();
             throw failure;
         }
     }
-
-    /** Original zero-copy view for a logical parameter path. */
     public SafetensorTensor tensor(String parameterName) {
         ensureOpen();
         return binding.tensorForParameter(parameterName);
     }
-
-    /**
-     * Opens a logical parameter as a regular Aljabr tensor backed by the mapped
-     * checkpoint bytes. The returned tensor retains its own shard lease and may
-     * outlive this checkpoint; the caller must close the tensor.
-     */
+    /** Returned tensor retains its own lease and must be closed by its caller. */
     public Tensor openTensor(String parameterName, ComputeBackend backend) {
         ensureOpen();
-        String checkpointName = binding.checkpointNameForParameter(parameterName);
-        return SafetensorTensorBinding.openTensor(session, checkpointName, backend);
+        return SafetensorTensorBinding.openTensor(session, binding.checkpointNameForParameter(parameterName), backend);
     }
-
-    /** Validated checkpoint name to logical parameter name bindings. */
+    /**
+     * Opens a mapped rank-two checkpoint parameter as the reusable Aljabr Linear module.
+     * The module owns its tensor and lease, may outlive this checkpoint, and must be closed.
+     * Bias tensors remain independently addressable through {@link #openTensor}.
+     */
+    public Linear openLinear(String parameterName, ComputeBackend backend) {
+        ensureOpen();
+        return SafetensorLinearBinding.openLinear(
+                session, binding.checkpointNameForParameter(parameterName), backend);
+    }
     public Map<String, String> parameterBindings() {
         ensureOpen();
         return binding.mapping().parameterBindings();
     }
-
-    /** Number of tensors required by this model family. */
-    public int expectedTensorCount() {
-        ensureOpen();
-        return binding.mapping().expectedTensorCount();
+    public int expectedTensorCount() { ensureOpen(); return binding.mapping().expectedTensorCount(); }
+    public int checkpointTensorCount() { ensureOpen(); return binding.mapping().checkpointTensorCount(); }
+    public boolean isClosed() { return closed.get(); }
+    @Override public void close() {
+        if (closed.compareAndSet(false, true)) session.close();
     }
-
-    /** Total tensor count in the source checkpoint, including unrelated tensors. */
-    public int checkpointTensorCount() {
-        ensureOpen();
-        return binding.mapping().checkpointTensorCount();
-    }
-
-    public boolean isClosed() {
-        return closed.get();
-    }
-
-    @Override
-    public void close() {
-        if (closed.compareAndSet(false, true)) {
-            session.close();
-        }
-    }
-
     private void ensureOpen() {
-        if (closed.get()) {
-            throw new IllegalStateException("Chronos-2 Safetensors checkpoint is closed");
-        }
+        if (closed.get()) throw new IllegalStateException("Chronos-2 Safetensors checkpoint is closed");
     }
 }
