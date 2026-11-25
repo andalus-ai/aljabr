@@ -186,6 +186,12 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
+    public Tensor contiguous() {
+        ensureOpen();
+        return record(OpType.CONTIGUOUS, new Tensor[] { this }, new Object[0], backend.contiguous(this));
+    }
+
+    @Override
     public Tensor eval() {
         return this;
     }
