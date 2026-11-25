@@ -7,3 +7,5 @@ Provider-neutral contracts for timestamped observations and covariates.
 - `TimeSeriesGroup`: related targets and covariates that may share information during forecasting.
 
 The API does not infer frequency, timezone, calendar semantics, resampling, or imputation. Those belong in explicit preprocessing components so models cannot silently reinterpret source data.
+
+`InstanceNormalizer` provides reusable per-series population-mean / population-standard-deviation normalization with explicit missing masks, configurable epsilon, optional arcsinh compression, and an immutable inverse-transform state. Model families select the settings they require; the shared API does not impose one normalization policy.
