@@ -5,15 +5,14 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
  * Immutable, metadata-only description of a GGUF artifact.
  *
- * <p>This descriptor deliberately records observable artifact facts rather
- * than guessing runtime capabilities from an architecture or model name.
- * A model-family adapter may use these facts together with verified tensor
- * mappings and runtime support to make a capability declaration.</p>
+ * <p>This descriptor records observable artifact facts. It does not infer
+ * runtime capabilities from an architecture, model name or tensor inventory.</p>
  */
 public record GgufModelDescriptor(
         String architecture,
@@ -21,7 +20,8 @@ public record GgufModelDescriptor(
         Set<String> metadataKeys,
         Set<String> tensorNames,
         boolean tokenizerMetadataPresent,
-        boolean chatTemplatePresent) {
+        boolean chatTemplatePresent,
+        Map<String, GgufTensorDescriptor> tensorDescriptors) {
 
     private static final String ARCHITECTURE_KEY = "general.architecture";
     private static final String MODEL_NAME_KEY = "general.name";
@@ -31,38 +31,80 @@ public record GgufModelDescriptor(
             "tokenizer.ggml.merges",
             "tokenizer.ggml.pre");
 
+    /** Preserves the original constructor for callers that only have tensor names. */
+    public GgufModelDescriptor(
+            String architecture,
+            String modelName,
+            Set<String> metadataKeys,
+            Set<String> tensorNames,
+            boolean tokenizerMetadataPresent,
+            boolean chatTemplatePresent) {
+        this(architecture, modelName, metadataKeys, tensorNames,
+                tokenizerMetadataPresent, chatTemplatePresent, Map.of());
+    }
+
     public GgufModelDescriptor {
         architecture = normalize(architecture);
         modelName = normalize(modelName);
         metadataKeys = immutableSorted(metadataKeys, "metadataKeys");
         tensorNames = immutableSorted(tensorNames, "tensorNames");
+        Objects.requireNonNull(tensorDescriptors, "tensorDescriptors");
+        TreeMap<String, GgufTensorDescriptor> descriptors = new TreeMap<>();
+        for (Map.Entry<String, GgufTensorDescriptor> entry : tensorDescriptors.entrySet()) {
+            String name = Objects.requireNonNull(entry.getKey(), "tensor descriptor name");
+            GgufTensorDescriptor descriptor = Objects.requireNonNull(entry.getValue(), "tensor descriptor");
+            if (!name.equals(descriptor.name())) {
+                throw new IllegalArgumentException("Tensor descriptor key does not match its name: " + name);
+            }
+            if (!tensorNames.contains(name)) {
+                throw new IllegalArgumentException("Tensor descriptor is absent from tensorNames: " + name);
+            }
+            descriptors.put(name, descriptor);
+        }
+        tensorDescriptors = Collections.unmodifiableMap(descriptors);
     }
 
-    /**
-     * Builds a descriptor from parsed GGUF metadata and tensor names.
-     * Metadata values are only interpreted for the two descriptive string
-     * fields and the presence of tokenizer/chat-template keys.
-     */
+    /** Builds a descriptor from parsed metadata and tensor names only. */
     public static GgufModelDescriptor inspect(
             Map<String, ?> metadata, Collection<String> tensorNames) {
-        Objects.requireNonNull(metadata, "metadata");
         Objects.requireNonNull(tensorNames, "tensorNames");
+        Set<String> names = new TreeSet<>();
+        for (String tensorName : tensorNames) {
+            names.add(Objects.requireNonNull(tensorName, "tensor name"));
+        }
+        return create(metadata, names, Map.of());
+    }
 
+    /** Builds a descriptor retaining dimensions and GGML type ids from the parser. */
+    public static GgufModelDescriptor inspectWithTensors(
+            Map<String, ?> metadata, Collection<GgufTensorDescriptor> tensors) {
+        Objects.requireNonNull(tensors, "tensors");
+        Map<String, GgufTensorDescriptor> descriptors = new TreeMap<>();
+        for (GgufTensorDescriptor tensor : tensors) {
+            Objects.requireNonNull(tensor, "tensor");
+            if (descriptors.putIfAbsent(tensor.name(), tensor) != null) {
+                throw new IllegalArgumentException("Duplicate tensor descriptor: " + tensor.name());
+            }
+        }
+        return create(metadata, descriptors.keySet(), descriptors);
+    }
+
+    private static GgufModelDescriptor create(
+            Map<String, ?> metadata,
+            Set<String> tensorNames,
+            Map<String, GgufTensorDescriptor> tensorDescriptors) {
+        Objects.requireNonNull(metadata, "metadata");
         String architecture = stringValue(metadata.get(ARCHITECTURE_KEY));
         String modelName = stringValue(metadata.get(MODEL_NAME_KEY));
         Set<String> keys = new TreeSet<>();
         for (String key : metadata.keySet()) {
             keys.add(Objects.requireNonNull(key, "metadata key"));
         }
-        Set<String> tensors = new TreeSet<>();
-        for (String tensorName : tensorNames) {
-            tensors.add(Objects.requireNonNull(tensorName, "tensor name"));
-        }
-
         boolean tokenizerPresent = TOKENIZER_KEYS.stream().anyMatch(keys::contains);
         boolean chatTemplatePresent = hasNonBlankString(metadata.get("tokenizer.chat_template"));
         return new GgufModelDescriptor(
-                architecture, modelName, keys, tensors, tokenizerPresent, chatTemplatePresent);
+                architecture, modelName, keys, tensorNames,
+                tokenizerPresent, chatTemplatePresent, tensorDescriptors);
     }
 
     /** Returns whether any tensor name begins with the supplied prefix. */
@@ -77,6 +119,7 @@ public record GgufModelDescriptor(
                 + ", modelName=" + display(modelName)
                 + ", metadataKeys=" + metadataKeys.size()
                 + ", tensors=" + tensorNames.size()
+                + ", tensorDetails=" + tensorDescriptors.size()
                 + ", tokenizerMetadata=" + tokenizerMetadataPresent
                 + ", chatTemplate=" + chatTemplatePresent;
     }
@@ -99,9 +142,7 @@ public record GgufModelDescriptor(
     }
 
     private static String normalize(String value) {
-        if (value == null) {
-            return null;
-        }
+        if (value == null) return null;
         String normalized = value.trim();
         return normalized.isEmpty() ? null : normalized;
     }

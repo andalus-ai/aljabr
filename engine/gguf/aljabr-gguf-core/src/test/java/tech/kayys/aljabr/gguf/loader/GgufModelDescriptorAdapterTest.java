@@ -33,6 +33,9 @@ class GgufModelDescriptorAdapterTest {
         assertTrue(descriptor.chatTemplatePresent());
         assertTrue(descriptor.hasTensorPrefix("blk."));
         assertEquals(2, descriptor.tensorNames().size());
+        assertEquals(List.of(8L, 8L),
+                descriptor.tensorDescriptors().get("token_embd.weight").dimensions());
+        assertEquals(0, descriptor.tensorDescriptors().get("token_embd.weight").ggmlTypeId());
     }
 
     @Test
