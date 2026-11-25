@@ -11,6 +11,7 @@ dependencies {
     api(project(":plugins:ml:aljabr-nn"))
     implementation(group = "jakarta.enterprise", name = "jakarta.enterprise.cdi-api")
     implementation(group = "jakarta.inject", name = "jakarta.inject-api")
+    testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
     testImplementation(group = "org.junit.jupiter", name = "junit-jupiter")
     testRuntimeOnly(group = "org.junit.platform", name = "junit-platform-launcher", version = "1.10.2")
 }
