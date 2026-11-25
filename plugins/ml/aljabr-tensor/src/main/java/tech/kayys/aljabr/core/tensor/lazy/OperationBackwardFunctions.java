@@ -22,6 +22,7 @@ public final class OperationBackwardFunctions {
 
     public static BackwardFunction forOperation(OpType operation) {
         return switch (operation) {
+            case CONTIGUOUS -> OperationBackwardFunctions::contiguous;
             case ADD -> OperationBackwardFunctions::add;
             case SUB -> OperationBackwardFunctions::subtract;
             case MUL -> OperationBackwardFunctions::multiply;
@@ -47,6 +48,16 @@ public final class OperationBackwardFunctions {
             case SQRT -> OperationBackwardFunctions::sqrt;
             default -> null;
         };
+    }
+
+    /**
+     * Materialization changes storage layout, not mathematical values. Its
+     * vector-Jacobian product is therefore an identity copy of the upstream
+     * gradient, with independent ownership for the graph executor.
+     */
+    private static Tensor[] contiguous(
+            Tensor output, Tensor gradient, List<Tensor> inputs, Object[] arguments) {
+        return new Tensor[] { gradient.add(0.0f) };
     }
 
     /**
