@@ -17,11 +17,10 @@ class Chronos2EncoderTest {
         boolean[][] valid = {{true}, {true}};
 
         float[][][] sameGroup = encoder.encode(input, new int[] {3, 3}, valid, new int[] {0});
-        assertEquals(sameGroup[0][0][0], sameGroup[1][0][0], 1e-5f);
-        assertEquals(sameGroup[0][0][1], sameGroup[1][0][1], 1e-5f);
-
         float[][][] separateGroups = encoder.encode(input, new int[] {3, 8}, valid, new int[] {0});
-        assertNotEquals(separateGroups[0][0][0], separateGroups[1][0][0], 1e-4f);
+        // Series 0 receives information from series 1 only when they share a group.
+        assertNotEquals(sameGroup[0][0][1], separateGroups[0][0][1], 1e-4f);
+        assertNotEquals(sameGroup[1][0][0], separateGroups[1][0][0], 1e-4f);
     }
 
     @Test
