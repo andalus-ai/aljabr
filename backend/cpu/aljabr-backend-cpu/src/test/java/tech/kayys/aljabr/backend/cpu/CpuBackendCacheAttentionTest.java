@@ -45,7 +45,6 @@ class CpuBackendCacheAttentionTest {
 
             assertArrayEquals(expected, actual, 1.0e-5f);
         } finally {
-            session.close();
             backend.close();
         }
     }
