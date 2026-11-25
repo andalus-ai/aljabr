@@ -2,6 +2,7 @@ package tech.kayys.aljabr.models.embeddinggemma2.vision;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -44,9 +45,13 @@ class EmbeddingGemma2VisionProcessorBatchTest {
         assertEquals(2, features.get(1).length);
         assertEquals(4, features.get(0)[0].length);
         assertEquals(4, features.get(1)[0].length);
+        assertTrue(java.util.Arrays.stream(features.get(0))
+                .flatMapToDouble(row -> java.util.Arrays.stream(row).asDoubleStream())
+                .anyMatch(value -> Math.abs(value) > 1e-7),
+                "non-zero fixture must exercise numerical feature preservation");
 
         // Reference the previous full padded-axis execution. Valid tokens must
-        // remain bit-identical when the tower trims the padded suffix before attention.
+        // remain numerically unchanged when the tower trims the padded suffix before attention.
         float[][][] paddedPixels = processorOutput.pixelValues();
         int[][][] paddedPositions = processorOutput.imagePositionIds();
         int paddedOutputLength = processorOutput.paddedPatchCount() / 4;
