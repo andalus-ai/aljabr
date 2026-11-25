@@ -15,6 +15,7 @@ java {
 dependencies {
     api(project(":models:aljabr-model-chronos2"))
     api(project(":engine:safetensor:aljabr-safetensor-loader"))
+    api(project(":engine:safetensor:aljabr-safetensor-tensor-storage"))
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api")
     implementation("jakarta.inject:jakarta.inject-api")
     testImplementation("org.junit.jupiter:junit-jupiter")
