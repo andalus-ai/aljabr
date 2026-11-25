@@ -13,6 +13,8 @@ class MiniMaxH3ConditioningCapabilitiesTest {
     @Test
     void acceptsOrderedReferenceFramesForMultiframeTask() {
         var inputs = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:motion"),
                 new DiffusionConditioningInput("frame-0", "file:///0.png", 0),
                 new DiffusionConditioningInput("frame-1", "file:///1.png", 1),
                 new DiffusionConditioningInput("frame-2", "file:///2.png", 2)));
@@ -34,6 +36,8 @@ class MiniMaxH3ConditioningCapabilitiesTest {
     @Test
     void acceptsSingleImageForImageToVideoAndEdit() {
         var inputs = new DiffusionConditioningSet(List.of(
+                new DiffusionConditioningInput(
+                        "prompt", DiffusionConditioningInput.Modality.PROMPT, "text:motion"),
                 new DiffusionConditioningInput(
                         "source", DiffusionConditioningInput.Modality.IMAGE, "file:///source.png")));
 
