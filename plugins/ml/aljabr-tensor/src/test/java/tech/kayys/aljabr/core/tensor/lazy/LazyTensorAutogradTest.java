@@ -112,6 +112,25 @@ class LazyTensorAutogradTest {
     }
 
     @Test
+    void lazyIndexAddRejectsSourceWithDifferentDtype() {
+        CpuBackend backend = new CpuBackend();
+        Tensor destinationValue = TensorFactory.of(new float[] { 1.0f, 2.0f }, backend, 2);
+        Tensor integerSource = TensorFactory.of(new int[] { 3 }, backend, 1);
+        LazyTensor destination = LazyTensor.of(destinationValue);
+        Tensor indices = TensorFactory.of(new int[] { 0 }, backend, 1);
+
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> destination.indexAdd(0, indices, integerSource));
+        } finally {
+            indices.release();
+            destinationValue.release();
+            integerSource.release();
+            backend.close();
+        }
+    }
+
+    @Test
     void indexAddBackwardRoutesGradientsToDestinationAndSource() {
         CpuBackend backend = new CpuBackend();
         Tensor destinationValue = TensorFactory.of(new float[] { 1.0f, 2.0f, 3.0f }, backend, 3);
