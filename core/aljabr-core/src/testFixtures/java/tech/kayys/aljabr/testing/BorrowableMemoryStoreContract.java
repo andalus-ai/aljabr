@@ -29,14 +29,14 @@ public abstract class BorrowableMemoryStoreContract {
     protected abstract BorrowableMemoryStore newStore();
 
     @Test
-    public final void missingKeyReturnsEmptyBorrow() {
+    public final void missingKeyReturnsEmptyBorrow() throws Exception {
         try (BorrowableMemoryStore store = newStore()) {
             assertTrue(store.borrow("missing".getBytes()).isEmpty());
         }
     }
 
     @Test
-    public final void borrowedValueIsReadableAndLeaseCloseEndsLeaseAccess() {
+    public final void borrowedValueIsReadableAndLeaseCloseEndsLeaseAccess() throws Exception {
         byte[] key = "borrow-contract-value".getBytes();
         long expected = 0x1020304050607080L;
 
@@ -62,7 +62,7 @@ public abstract class BorrowableMemoryStoreContract {
     }
 
     @Test
-    public final void independentLeasesHaveIndependentCloseLifetimes() {
+    public final void independentLeasesHaveIndependentCloseLifetimes() throws Exception {
         byte[] key = "independent-leases".getBytes();
         byte[] expected = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
 
