@@ -73,7 +73,10 @@ final class CpuAttentionExecution {
         long maskBatchStride = additiveMask != null && additiveMask.shape().rank()==3
                 ? Math.multiplyExact(Math.multiplyExact(queryLength, keyLength), Float.BYTES) : 0L;
         if (mask != null) {
-            validateAttentionMask(mask, Math.multiplyExact(queryLength, batch), keyLength);
+            validateAttentionMask(mask,
+                    additiveMask.shape().rank() == 3
+                            ? Math.multiplyExact(queryLength, batch) : queryLength,
+                    keyLength);
         }
         Shape outputShape=new Shape(batch,heads,queryLength,headDim);
         HostAccessibleStorage output=outputAllocator.apply(Math.multiplyExact(outputShape.numel(),Float.BYTES));
