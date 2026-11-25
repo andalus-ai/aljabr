@@ -124,6 +124,7 @@ class LazyTensorAutogradTest {
                     () -> destination.indexAdd(0, indices, integerSource));
         } finally {
             indices.release();
+            destination.release();
             destinationValue.release();
             integerSource.release();
             backend.close();
