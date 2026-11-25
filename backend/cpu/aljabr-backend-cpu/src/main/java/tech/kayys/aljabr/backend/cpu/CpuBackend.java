@@ -4,6 +4,7 @@ import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
 import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.cache.KVCacheSession;
+import tech.kayys.aljabr.cache.KVCacheAttentionBackend;
 import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
@@ -24,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Incubator Vector API where available. An optional {@link OffHeapBufferPool}
  * recycles off-heap memory across execution steps.</p>
  */
-public final class CpuBackend implements ComputeBackend {
+public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend {
 
     /** Defines whether this backend is responsible for closing an injected pool. */
     public enum PoolOwnership { BORROWED, OWNED }
@@ -1260,6 +1261,7 @@ public final class CpuBackend implements ComputeBackend {
      *
      * @see CpuKVCacheStreamingAttention
      */
+    @Override
     public float[] attentionFromCache(
             KVCacheSession session,
             int layer,
