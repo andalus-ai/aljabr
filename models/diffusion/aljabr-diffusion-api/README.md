@@ -2,12 +2,8 @@
 
 Family-neutral public contracts for optional diffusion model implementations.
 
-The API defines:
+This module intentionally has no dependency on a concrete model family, scheduler implementation, tensor backend, AQLI or Tafkir. It defines model descriptors, provider discovery, component manifests and requirements, plus the format-neutral DiffusionComponentLoader SPI.
 
-- `DiffusionModelDescriptor` and `DiffusionFamilyProvider` for family discovery.
-- `DiffusionComponentArtifact` and `DiffusionComponentManifest` for describing independently loadable model files.
-- `DiffusionComponentRequirement` for declaring required/optional component roles, accepted formats and preferred variants.
+A family module declares semantic component roles and requirements. A format integration implements DiffusionComponentLoader<T> to open artifacts of its format and returns an explicitly owned, closeable handle. The caller owns that handle and must close it; tensor views must not outlive its backing resource. The API does not resolve locations, download files, parse checkpoints, or choose compute backends.
 
-A component's role is a stable semantic identifier, not a filename or concrete loader class. Its location is opaque to the API so local, repository and object-store resolution can be supplied by separate storage adapters.
-
-A family module can publish a `DiffusionFamilyProvider` implementation through Java `ServiceLoader`, or an application can inject providers directly. This API deliberately does not load files, parse Safetensors, allocate tensors, select devices or execute pipelines.
+A family module can publish a DiffusionFamilyProvider implementation through Java ServiceLoader metadata, or an application can inject providers directly.
