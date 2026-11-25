@@ -2,8 +2,6 @@ package tech.kayys.aljabr.spi.tokenizer;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,13 +48,30 @@ public final class WordPieceTokenizer implements Tokenizer {
         EncodeOptions effective = options == null ? EncodeOptions.defaultOptions() : options;
         List<Long> ids = new ArrayList<>();
         if (effective.addBos && clsId >= 0) ids.add((long) clsId);
-        for (String token : basicTokens(text)) {
-            Integer special = specialTokens.get(token);
-            if (special != null) {
-                ids.add((long) special);
-            } else {
-                ids.addAll(wordPiece(token));
+        List<String> markers = new ArrayList<>(specialTokens.keySet());
+        markers.sort((left, right) -> Integer.compare(right.length(), left.length()));
+        int cursor = 0;
+        while (cursor < text.length()) {
+            String marker = null;
+            for (String candidate : markers) {
+                if (text.startsWith(candidate, cursor)) {
+                    marker = candidate;
+                    break;
+                }
             }
+            if (marker != null) {
+                ids.add(specialTokens.get(marker).longValue());
+                cursor += marker.length();
+                continue;
+            }
+            int nextMarker = text.length();
+            for (String candidate : markers) {
+                int found = text.indexOf(candidate, cursor);
+                if (found >= 0 && found < nextMarker) nextMarker = found;
+            }
+            String ordinary = text.substring(cursor, nextMarker);
+            for (String token : basicTokens(ordinary)) ids.addAll(wordPiece(token));
+            cursor = nextMarker;
         }
         if (effective.addEos && sepId >= 0) ids.add((long) sepId);
         long[] result = new long[ids.size()];
