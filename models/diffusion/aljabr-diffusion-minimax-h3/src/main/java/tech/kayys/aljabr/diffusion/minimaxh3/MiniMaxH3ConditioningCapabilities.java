@@ -46,6 +46,7 @@ public final class MiniMaxH3ConditioningCapabilities {
     public static void validate(
             MiniMaxH3Task task,
             DiffusionConditioningSet conditioning) {
+        Objects.requireNonNull(task, "task");
         Objects.requireNonNull(conditioning, "conditioning");
         for (DiffusionConditioningInput input : conditioning.inputs()) {
             if (!supports(task, input.modality())) {
