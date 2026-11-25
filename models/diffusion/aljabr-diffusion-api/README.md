@@ -54,6 +54,23 @@ conditioning or execution stage.
   not return borrowed data whose backing resource can be closed independently
   while the result is in use.
 
-The SPI deliberately does not define a registry, choose between competing
-preprocessors, impose image/video codecs, select a tokenizer, or allocate
-backend tensors. Those are separate integration and orchestration decisions.
+## Conditioning preparation orchestration
+
+`DiffusionConditioningPreprocessorRegistry` resolves an input against the
+registered adapters. Resolution requires exactly one match: unsupported and
+ambiguous inputs fail with input ID and modality diagnostics. Duplicate
+preprocessor identifiers are rejected when the registry is built.
+
+`DiffusionConditioningPreparationOrchestrator` validates the complete input
+set against task-declared modality cardinalities before invoking any adapter.
+It then prepares inputs in their declared order and returns a
+`PreparedDiffusionConditioningSet` that owns the resulting resources.
+
+Close the prepared set when conditioning is no longer needed. Resources are
+closed in reverse preparation order; cleanup failures are aggregated as
+suppressed exceptions. If preparation fails partway through, already prepared
+resources are also closed in reverse order and cleanup failures are suppressed
+on the original failure.
+
+The orchestration layer remains family-neutral. It does not impose image/video
+codecs, select a tokenizer, allocate backend tensors, or choose a device.
