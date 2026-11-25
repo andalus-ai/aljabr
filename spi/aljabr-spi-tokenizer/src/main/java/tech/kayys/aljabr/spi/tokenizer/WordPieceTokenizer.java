@@ -113,7 +113,7 @@ public final class WordPieceTokenizer implements Tokenizer {
         normalized.codePoints().forEach(cp -> {
             if (isWhitespace(cp)) {
                 flush(current, result);
-            } else if (isPunctuation(cp)) {
+            } else if (isPunctuation(cp) || isChineseCharacter(cp)) {
                 flush(current, result);
                 result.add(new String(Character.toChars(cp)));
             } else {
@@ -159,19 +159,33 @@ public final class WordPieceTokenizer implements Tokenizer {
 
     private static boolean isPunctuation(int cp) {
         int type = Character.getType(cp);
-        return (type >= Character.CONNECTOR_PUNCTUATION && type <= Character.OTHER_PUNCTUATION)
-                || (type >= Character.INITIAL_QUOTE_PUNCTUATION
-                    && type <= Character.FINAL_QUOTE_PUNCTUATION);
+        return type == Character.CONNECTOR_PUNCTUATION
+                || type == Character.DASH_PUNCTUATION
+                || type == Character.START_PUNCTUATION
+                || type == Character.END_PUNCTUATION
+                || type == Character.INITIAL_QUOTE_PUNCTUATION
+                || type == Character.FINAL_QUOTE_PUNCTUATION
+                || type == Character.OTHER_PUNCTUATION;
+    }
+
+    private static boolean isChineseCharacter(int cp) {
+        return (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3400 && cp <= 0x4dbf)
+                || (cp >= 0x20000 && cp <= 0x2a6df) || (cp >= 0x2a700 && cp <= 0x2b73f)
+                || (cp >= 0x2b740 && cp <= 0x2b81f) || (cp >= 0x2b820 && cp <= 0x2ceaf)
+                || (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0x2f800 && cp <= 0x2fa1f);
     }
 
     @Override
     public String decode(long[] tokens, DecodeOptions options) {
         if (tokens == null || tokens.length == 0) return "";
+        boolean skipSpecial = options == null || options.skipSpecialTokens;
         StringBuilder decoded = new StringBuilder();
         for (long rawId : tokens) {
             String token = reverseVocabulary.get((int) rawId);
-            if (token == null || token.equals("[PAD]") || token.equals("[CLS]")
-                    || token.equals("[SEP]") || token.equals("[MASK]")) continue;
+            if (token == null) continue;
+            boolean special = specialTokens.containsKey(token)
+                    || (int) rawId == padId || (int) rawId == clsId || (int) rawId == sepId;
+            if (skipSpecial && special) continue;
             if (token.startsWith(continuationPrefix)) {
                 decoded.append(token.substring(continuationPrefix.length()));
             } else {
