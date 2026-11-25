@@ -33,6 +33,12 @@ public class TransformerEncoderLayer extends NNModule {
 
     public TransformerEncoderLayer(ComputeBackend backend, int dModel, int nHead,
             int dimFeedforward, float dropout) {
+        this(backend, dModel, nHead, dimFeedforward, dropout, 1.0e-5f);
+    }
+
+    /** Creates a post-norm encoder layer with the model's configured LayerNorm epsilon. */
+    public TransformerEncoderLayer(ComputeBackend backend, int dModel, int nHead,
+            int dimFeedforward, float dropout, float layerNormEpsilon) {
         super(backend);
         if (dModel <= 0 || nHead <= 0 || dModel % nHead != 0 || dimFeedforward <= 0) {
             throw new IllegalArgumentException(
@@ -40,6 +46,9 @@ public class TransformerEncoderLayer extends NNModule {
         }
         if (!Float.isFinite(dropout) || dropout < 0.0f || dropout >= 1.0f) {
             throw new IllegalArgumentException("dropout must be finite and in [0, 1)");
+        }
+        if (!Float.isFinite(layerNormEpsilon) || layerNormEpsilon <= 0.0f) {
+            throw new IllegalArgumentException("layerNormEpsilon must be finite and positive");
         }
         this.dModel = dModel;
         this.nHead = nHead;
@@ -49,8 +58,10 @@ public class TransformerEncoderLayer extends NNModule {
         selfAttention = registerModule("self_attn", new MultiheadAttention(backend, dModel, nHead));
         feedForwardIn = registerModule("linear1", new Linear(backend, dModel, dimFeedforward));
         feedForwardOut = registerModule("linear2", new Linear(backend, dimFeedforward, dModel));
-        attentionNorm = registerModule("norm1", new LayerNorm(backend, dModel));
-        feedForwardNorm = registerModule("norm2", new LayerNorm(backend, dModel));
+        attentionNorm = registerModule("norm1",
+                new LayerNorm(backend, new long[] {dModel}, layerNormEpsilon, true));
+        feedForwardNorm = registerModule("norm2",
+                new LayerNorm(backend, new long[] {dModel}, layerNormEpsilon, true));
     }
 
     @Override
