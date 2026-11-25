@@ -116,7 +116,7 @@ public final class HuggingFaceDiffusionArtifactResolver implements DiffusionArti
         if (location.revision().matches("[0-9a-fA-F]{40}")) return location.revision().toLowerCase(Locale.ROOT);
         String url = endpoint + "/api/models/" + encodePath(location.repository())
                 + "/revision/" + encode(location.revision());
-        HttpResponse<String> response = sendText(request(url, timeout));
+        HttpResponse<String> response = sendText(request(url, timeout).GET().build());
         if (response.statusCode() / 100 != 2) throw new IOException("Revision lookup returned HTTP " + response.statusCode());
         Matcher matcher = COMMIT_SHA.matcher(response.body());
         if (!matcher.find()) throw new IOException("Revision response did not contain an immutable commit SHA");
