@@ -35,11 +35,7 @@ declared by `MiniMaxH3Task`.
 
 ## Deliberate support boundary
 
-This artifact currently provides **family identification and capability
-metadata only**. It does not claim to load MiniMax-H3 checkpoints or execute
-generation. The existing diffusion API does not yet define model construction,
-multimodal conditioning, video/audio latent state, component loading or
-pipeline execution contracts.
+This artifact currently provides **family identification, component requirement profiles, and conditioning capability metadata**. It does not claim to load MiniMax-H3 checkpoints or execute generation. Model construction, modality-specific preprocessing, video/audio latent state, and pipeline execution remain outside this increment.
 
 A complete native Aljabr implementation still requires, in dependency order:
 
@@ -99,3 +95,37 @@ are request inputs, not checkpoint components in this role inventory; their
 conditioning path remains a separate execution capability. These profiles
 describe component prerequisites and do not claim that generation is
 implemented.
+
+
+## Request conditioning capabilities
+
+The family module maps tasks onto the generic request-input descriptors in the
+diffusion API:
+
+| Task | Declared request inputs |
+|---|---|
+| Text-to-video | Prompt |
+| Image-to-video | Prompt, image |
+| Reference-to-video | Prompt, reference image |
+| Multiframe reference-to-video | Prompt, reference image, ordered video frames |
+| Text-to-image | Prompt |
+| Image edit | Prompt, image |
+
+Use `DiffusionConditioningSet` to pass ordered inputs, then validate the
+declared modality compatibility:
+
+```java
+var conditioning = new DiffusionConditioningSet(List.of(
+    new DiffusionConditioningInput("ref-0",
+        DiffusionConditioningInput.Modality.REFERENCE_IMAGE,
+        "file:///inputs/reference.png"),
+    new DiffusionConditioningInput("frame-0", "file:///inputs/frame-0.png", 0),
+    new DiffusionConditioningInput("frame-1", "file:///inputs/frame-1.png", 1)));
+
+MiniMaxH3ConditioningCapabilities.validate(
+    MiniMaxH3Task.MULTIFRAME_REFERENCE_TO_VIDEO, conditioning);
+```
+
+The capability check rejects unsupported modalities; it deliberately does not
+infer cardinality, prompt requirements, frame sampling, image preprocessing,
+or tensor layouts. Those belong to later execution and conditioning adapters.
