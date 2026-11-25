@@ -3,6 +3,7 @@ package tech.kayys.aljabr.backend.cpu;
 import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
 import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
+import tech.kayys.aljabr.cache.KVCacheSession;
 import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
@@ -1240,6 +1241,33 @@ public final class CpuBackend implements ComputeBackend {
     @Override
     public Tensor attentionGqa(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {
         return attentionExecution.attentionGqa(Q, K, V, additiveMask, causal);
+    }
+
+    /**
+     * Computes one CPU attention query head directly from a session-backed KV cache.
+     *
+     * <p>Unlike the tensor-based attention overloads, this path reads cache blocks
+     * incrementally and does not materialize dense K/V tensors. The cache session
+     * remains responsible for committed-prefix visibility and storage lifecycle.</p>
+     *
+     * @see CpuKVCacheStreamingAttention
+     */
+    public float[] attentionFromCache(
+            KVCacheSession session,
+            int layer,
+            float[] query,
+            int queryHeadIndex,
+            int queryHeadCount,
+            int queryPosition,
+            int firstKeyPosition,
+            int tokenCount,
+            boolean causal) {
+        if (closed.get()) {
+            throw new IllegalStateException("CPU backend is closed");
+        }
+        return CpuKVCacheStreamingAttention.compute(
+                session, layer, query, queryHeadIndex, queryHeadCount,
+                queryPosition, firstKeyPosition, tokenCount, causal);
     }
 
     // ── Conv / Pool ───────────────────────────────────────────────────────────
