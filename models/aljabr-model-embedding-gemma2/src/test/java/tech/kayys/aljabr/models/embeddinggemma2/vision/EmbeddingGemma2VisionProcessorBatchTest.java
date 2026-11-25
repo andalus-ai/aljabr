@@ -14,15 +14,15 @@ class EmbeddingGemma2VisionProcessorBatchTest {
         var processorOutput = new EmbeddingGemma2VisionProcessorOutput(
                 new float[][][]{
                         {
-                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
-                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                {0.6f, 0.4f, 0.7f}, {0.7f, 0.3f, 0.5f},
+                                {0.4f, 0.8f, 0.2f}, {0.9f, 0.1f, 0.6f},
                                 {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}, {0f, 0f, 0f}
                         },
                         {
-                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
-                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
-                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
-                                {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f}
+                                {0.55f, 0.45f, 0.65f}, {0.65f, 0.35f, 0.55f},
+                                {0.45f, 0.75f, 0.25f}, {0.85f, 0.15f, 0.55f},
+                                {0.35f, 0.65f, 0.75f}, {0.75f, 0.25f, 0.35f},
+                                {0.25f, 0.85f, 0.45f}, {0.95f, 0.05f, 0.65f}
                         }
                 },
                 new int[][][]{
@@ -44,6 +44,17 @@ class EmbeddingGemma2VisionProcessorBatchTest {
         assertEquals(2, features.get(1).length);
         assertEquals(4, features.get(0)[0].length);
         assertEquals(4, features.get(1)[0].length);
+
+        // Reference the previous full padded-axis execution. Valid tokens must
+        // remain bit-identical when the tower trims the padded suffix before attention.
+        float[][][] paddedPixels = processorOutput.pixelValues();
+        int[][][] paddedPositions = processorOutput.imagePositionIds();
+        int paddedOutputLength = processorOutput.paddedPatchCount() / 4;
+        for (int image = 0; image < features.size(); image++) {
+            float[][] untrimmed = tower.encodeAndProject(
+                    paddedPixels[image], paddedPositions[image], paddedOutputLength, null);
+            assertMatrixEquals(untrimmed, features.get(image));
+        }
     }
 
     @Test
@@ -88,12 +99,30 @@ class EmbeddingGemma2VisionProcessorBatchTest {
                         new int[]{1}));
     }
 
+    private static float[][] identity(int size) {
+        float[][] result = new float[size][size];
+        for (int index = 0; index < size; index++) result[index][index] = 1f;
+        return result;
+    }
+
+    private static void assertMatrixEquals(float[][] expected, float[][] actual) {
+        assertEquals(expected.length, actual.length, "token count");
+        for (int token = 0; token < expected.length; token++) {
+            assertEquals(expected[token].length, actual[token].length, "hidden size");
+            for (int dimension = 0; dimension < expected[token].length; dimension++) {
+                assertEquals(expected[token][dimension], actual[token][dimension], 1e-6f,
+                        "token " + token + ", dimension " + dimension);
+            }
+        }
+    }
+
     private static EmbeddingGemma2VisionTower tower() {
         float[][] zeros = new float[4][4];
         var patch = new EmbeddingGemma2VisionPatchEmbedder.Weights(
-                new float[4][3], new float[2][4][4]);
+                new float[][]{{1f, 0f, 0f}, {0f, 1f, 0f}, {0f, 0f, 1f}, {1f, 1f, 1f}},
+                new float[2][4][4]);
         var attention = new EmbeddingGemma2VisionAttention.Weights(
-                zeros, zeros, zeros, zeros,
+                zeros, zeros, identity(4), identity(4),
                 new float[]{1f, 1f, 1f, 1f}, new float[]{1f, 1f, 1f, 1f});
         var mlp = new EmbeddingGemma2Mlp.Weights(zeros, zeros, zeros);
         var norms = new EmbeddingGemma2VisionEncoderLayer.Weights(
