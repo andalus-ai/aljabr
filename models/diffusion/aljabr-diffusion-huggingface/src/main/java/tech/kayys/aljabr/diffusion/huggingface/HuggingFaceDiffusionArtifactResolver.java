@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
  * {@code HF_TOKEN} and is never included in diagnostics or cache keys.</p>
  */
 public final class HuggingFaceDiffusionArtifactResolver implements DiffusionArtifactResolver {
-    private static final Pattern COMMIT_SHA = Pattern.compile("\\"sha\\"\\s*:\\s*\\"([0-9a-fA-F]{40})\\"");
+    private static final Pattern COMMIT_SHA = Pattern.compile("\\\"sha\\\"\\s*:\\s*\\\"([0-9a-fA-F]{40})\\\"");
     private static final Pattern SHA256 = Pattern.compile("[0-9a-fA-F]{64}");
 
     private final HttpClient client;
