@@ -177,13 +177,31 @@ public final class EmbeddingGemma2VisionTower {
         if (paddedPatchCount % poolingArea != 0) {
             throw new IllegalArgumentException("processor padded patch count must be divisible by pooling kernel area");
         }
-        int outputLength = paddedPatchCount / poolingArea;
         float[][][] pixels = processorOutput.pixelValues();
         int[][][] positions = processorOutput.imagePositionIds();
         int[] expectedSoftTokens = processorOutput.numSoftTokensPerImage();
         List<float[][]> imageFeatures = new ArrayList<>(processorOutput.imageCount());
         for (int image = 0; image < processorOutput.imageCount(); image++) {
-            VisionOutput visionOutput = encode(pixels[image], positions[image], outputLength);
+            int validPatchCount = Math.multiplyExact(expectedSoftTokens[image], poolingArea);
+            if (validPatchCount > paddedPatchCount) {
+                throw new IllegalArgumentException("processor metadata for image " + image
+                        + " requires " + validPatchCount + " valid patches, exceeding padded axis "
+                        + paddedPatchCount);
+            }
+            for (int patch = validPatchCount; patch < paddedPatchCount; patch++) {
+                if (positions[image][patch][0] != -1 || positions[image][patch][1] != -1) {
+                    throw new IllegalArgumentException("processor padding for image " + image
+                            + " must be a contiguous suffix after " + validPatchCount + " valid patches");
+                }
+            }
+
+            // Padding positions are excluded as attention keys and their pooled outputs
+            // are discarded. Running the encoder only on the valid prefix is therefore
+            // numerically equivalent for valid tokens, while avoiding quadratic attention
+            // work over the shared max-patch axis.
+            float[][] validPixels = java.util.Arrays.copyOf(pixels[image], validPatchCount);
+            int[][] validPositions = java.util.Arrays.copyOf(positions[image], validPatchCount);
+            VisionOutput visionOutput = encode(validPixels, validPositions, expectedSoftTokens[image]);
             float[][] visionTokens = visionOutput.hiddenStates();
             if (visionTokens.length != expectedSoftTokens[image]) {
                 throw new IllegalArgumentException("processor metadata for image " + image + " declares "
