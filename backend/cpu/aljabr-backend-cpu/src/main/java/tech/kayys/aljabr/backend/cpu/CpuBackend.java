@@ -547,6 +547,7 @@ public final class CpuBackend implements ComputeBackend {
         }
     }
 
+    @Override
     public Tensor indexAdd(Tensor input, int axis, Tensor indices, Tensor source) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(indices, "indices");
@@ -556,8 +557,15 @@ public final class CpuBackend implements ComputeBackend {
         if (input.backend() != this || indices.backend() != this || source.backend() != this) {
             throw new IllegalArgumentException("CPU indexAdd requires all tensors to use this backend");
         }
-        if (input.dtype() != DType.F32 || source.dtype() != DType.F32) {
-            throw new UnsupportedOperationException("CPU indexAdd currently supports F32 destination and source tensors");
+        if (input.dtype() != source.dtype()) {
+            throw new IllegalArgumentException(
+                    "CPU indexAdd source dtype " + source.dtype()
+                            + " must match destination dtype " + input.dtype());
+        }
+        if (input.dtype() != DType.F32) {
+            throw new UnsupportedOperationException(
+                    "CPU indexAdd currently supports F32 destination and source tensors; actual dtype="
+                            + input.dtype());
         }
         if (indices.dtype() != DType.I32) {
             throw new IllegalArgumentException("CPU indexAdd indices must use I32; actual dtype=" + indices.dtype());
