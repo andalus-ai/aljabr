@@ -171,6 +171,21 @@ public interface ComputeBackend extends AutoCloseable {
         return DeviceType.CPU;
     }
 
+    /**
+     * Creates an independently owned canonical row-major copy of the input's
+     * logical values. Implementations must honor the input layout rather than
+     * copying its physical storage range verbatim.
+     *
+     * <p>The returned tensor must preserve shape and dtype, use storage offset
+     * zero and canonical contiguous strides, and not alias the input storage.
+     * The default is unsupported so providers cannot accidentally expose an
+     * incorrect raw-storage copy as a materialization implementation.</p>
+     */
+    default Tensor contiguous(Tensor input) {
+        throw new UnsupportedOperationException(
+                "Contiguous materialization is not supported by backend " + getClass().getName());
+    }
+
     // ── Element-wise binary ───────────────────────────────────────────
     Tensor add(Tensor a, Tensor b);
 
@@ -431,8 +446,9 @@ public interface ComputeBackend extends AutoCloseable {
     }
 
     /**
-     * Attention with an optional additive [queryLength, keyLength] mask.
-     * Negative infinity suppresses a key. Causal mode permits keyIndex <= queryIndex.
+     * Attention with an optional additive [queryLength, keyLength] shared mask
+     * or [batch, queryLength, keyLength] per-example mask. Negative infinity
+     * suppresses a key. Causal mode permits keyIndex <= queryIndex.
      * Backends without masked attention support must fail explicitly.
      */
     default Tensor attention(Tensor Q, Tensor K, Tensor V, Tensor additiveMask, boolean causal) {

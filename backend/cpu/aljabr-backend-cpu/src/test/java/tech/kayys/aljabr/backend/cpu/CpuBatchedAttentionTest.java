@@ -327,4 +327,30 @@ class CpuBatchedAttentionTest {
         }
     }
 
+
+    @Test
+    void perExampleAdditiveMaskDoesNotLeakAcrossBatchItems() {
+        CpuBackend backend = new CpuBackend();
+        Tensor query = TensorFactory.of(new float[4], backend, 2, 1, 2, 1);
+        Tensor key = TensorFactory.of(new float[4], backend, 2, 1, 2, 1);
+        Tensor value = TensorFactory.of(new float[] {2f, 8f, 2f, 8f}, backend, 2, 1, 2, 1);
+        Tensor mask = TensorFactory.of(new float[] {
+                0f, Float.NEGATIVE_INFINITY, 0f, Float.NEGATIVE_INFINITY,
+                Float.NEGATIVE_INFINITY, 0f, Float.NEGATIVE_INFINITY, 0f
+        }, backend, 2, 2, 2);
+        Tensor output = null;
+        try {
+            output = backend.attention(query, key, value, mask, false);
+            assertArrayEquals(new float[] {2f, 2f, 8f, 8f},
+                    output.toFloatArray(), 1e-6f);
+        } finally {
+            if (output != null) output.release();
+            mask.release();
+            value.release();
+            key.release();
+            query.release();
+            backend.close();
+        }
+    }
+
 }

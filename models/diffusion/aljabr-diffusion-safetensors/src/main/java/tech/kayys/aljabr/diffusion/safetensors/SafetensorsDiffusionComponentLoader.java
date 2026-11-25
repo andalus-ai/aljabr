@@ -12,17 +12,26 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Set;
 
-/** SafeTensors adapter delegating parsing and shard lifetime to the existing loader. */
+/**
+ * Diffusion component adapter backed by Aljabr's existing SafeTensors shard
+ * loader. Supports local paths and file URIs; repository downloads are handled
+ * by a separate artifact-location resolver, not by this format adapter.
+ */
 public final class SafetensorsDiffusionComponentLoader
         implements DiffusionComponentLoader<SafetensorsDiffusionComponent> {
+
     public static final String FORMAT = "safetensors";
+
     private final SafetensorShardLoader shardLoader;
 
     public SafetensorsDiffusionComponentLoader(SafetensorShardLoader shardLoader) {
         this.shardLoader = Objects.requireNonNull(shardLoader, "shardLoader");
     }
 
-    @Override public String format() { return FORMAT; }
+    @Override
+    public String format() {
+        return FORMAT;
+    }
 
     @Override
     public SafetensorsDiffusionComponent load(DiffusionComponentArtifact artifact) {
@@ -31,9 +40,10 @@ public final class SafetensorsDiffusionComponentLoader
             throw new DiffusionComponentLoadException(
                     artifact, "Unsupported component format: " + artifact.format());
         }
+
         try {
-            return new SafetensorsDiffusionComponent(
-                    artifact, shardLoader.open(resolveLocalPath(artifact.location())));
+            SafetensorShardSession session = shardLoader.open(resolveLocalPath(artifact.location()));
+            return new SafetensorsDiffusionComponent(artifact, session);
         } catch (RuntimeException failure) {
             throw new DiffusionComponentLoadException(
                     artifact, "Unable to open SafeTensors component at " + artifact.location(), failure);
@@ -42,7 +52,9 @@ public final class SafetensorsDiffusionComponentLoader
 
     static Path resolveLocalPath(String location) {
         Objects.requireNonNull(location, "location");
-        if (location.isBlank()) throw new IllegalArgumentException("Component location must not be blank");
+        if (location.isBlank()) {
+            throw new IllegalArgumentException("Component location must not be blank");
+        }
         if (location.startsWith("file:")) {
             return Path.of(URI.create(location)).toAbsolutePath().normalize();
         }
@@ -52,8 +64,11 @@ public final class SafetensorsDiffusionComponentLoader
         }
         return Path.of(location).toAbsolutePath().normalize();
     }
-
-    /** Owned handle; all tensor views become invalid when this handle is closed. */
+    
+    /**
+     * Owned handle over a single-file or sharded SafeTensors component.
+     * All returned tensor views are valid only until this handle is closed.
+     */
     public static final class SafetensorsDiffusionComponent implements AutoCloseable {
         private final DiffusionComponentArtifact artifact;
         private final SafetensorShardSession session;
@@ -64,12 +79,33 @@ public final class SafetensorsDiffusionComponentLoader
             this.session = session;
         }
 
-        public DiffusionComponentArtifact artifact() { return artifact; }
-        public SafetensorTensor tensor(String name) { return session.tensor(name); }
-        public boolean hasTensor(String name) { return session.findTensor(name).isPresent(); }
-        public Set<String> tensorNames() { return session.tensorNames(); }
-        public int tensorCount() { return session.tensorCount(); }
-        public boolean isSharded() { return session.isSharded(); }
-        @Override public void close() { session.close(); }
+        public DiffusionComponentArtifact artifact() {
+            return artifact;
+        }
+
+        public SafetensorTensor tensor(String name) {
+            return session.tensor(name);
+        }
+
+        public boolean hasTensor(String name) {
+            return session.findTensor(name).isPresent();
+        }
+
+        public Set<String> tensorNames() {
+            return session.tensorNames();
+        }
+
+        public int tensorCount() {
+            return session.tensorCount();
+        }
+
+        public boolean isSharded() {
+            return session.isSharded();
+        }
+
+        @Override
+        public void close() {
+            session.close();
+        }
     }
 }
