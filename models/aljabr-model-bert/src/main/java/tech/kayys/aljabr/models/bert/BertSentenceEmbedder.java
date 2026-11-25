@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.models.bert;
 
 import java.util.Objects;
+import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.models.embedding.common.L2Normalizer;
 import tech.kayys.aljabr.models.embedding.common.MaskedMeanPooler;
@@ -77,6 +78,9 @@ public final class BertSentenceEmbedder {
         if (attentionMask == null) {
             for (boolean[] row : included) java.util.Arrays.fill(row, true);
             return included;
+        }
+        if (attentionMask.dtype() != DType.I32) {
+            throw new IllegalArgumentException("attentionMask must have dtype I32");
         }
         if (attentionMask.shape().rank() != 2
                 || attentionMask.shape().dim(0) != batch
