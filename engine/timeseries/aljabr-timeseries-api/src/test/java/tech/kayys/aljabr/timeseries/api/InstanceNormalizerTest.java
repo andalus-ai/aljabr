@@ -33,7 +33,9 @@ class InstanceNormalizerTest {
         double[] future = result.state().transform(new double[] {4.0, Double.NaN}, null);
         assertTrue(Double.isFinite(future[0]));
         assertTrue(Double.isNaN(future[1]));
-        assertEquals(1.0, result.state().inverse(future)[1], 1e-12);
+        double[] restored = result.state().inverse(future);
+        assertEquals(4.0, restored[0], 1e-10);
+        assertTrue(Double.isNaN(restored[1]));
     }
 
     @Test
