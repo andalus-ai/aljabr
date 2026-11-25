@@ -172,7 +172,7 @@ final class CpuAttentionExecution {
                     computeAttentionGroup(q, k, v, mask, out, group,
                             (group / Math.toIntExact(queryHeads))
                                     * Math.toIntExact(keyValueHeads) + keyValueHead,
-                            queryLength, keyLength, headDim, scale, causal);
+                            0L, queryLength, keyLength, headDim, scale, causal);
                 }
             }
             return outputFactory.create(outputShape, output);
@@ -233,6 +233,7 @@ final class CpuAttentionExecution {
             MemorySegment out,
             int group,
             int keyGroup,
+            long maskBatchOffset,
             long queryLength,
             long keyLength,
             long headDim,
