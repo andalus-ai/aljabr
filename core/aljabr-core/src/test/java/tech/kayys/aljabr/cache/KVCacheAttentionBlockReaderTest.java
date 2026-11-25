@@ -64,7 +64,7 @@ class KVCacheAttentionBlockReaderTest {
     }
 
     @Test
-    void attentionReadCannotExposeUncommittedSuffix() {
+    void attentionReadCannotExposeUnwrittenCurrentPosition() {
         KVCacheLayout layout = KVCacheLayout.uniform(1, 8, 1, 4);
         BlockCompressedKVCacheStorage storage = new BlockCompressedKVCacheStorage(
                 layout, new TurboQuantProdKVCacheCodec(3, 103L), 4);
@@ -74,7 +74,7 @@ class KVCacheAttentionBlockReaderTest {
         session.writeRange(0, 0, 3, keys, 0, values, 0);
         session.commit(2);
 
-        assertThrows(IndexOutOfBoundsException.class,
+        assertThrows(IllegalStateException.class,
                 () -> session.readBlocksForAttention(0, 0, 3,
                         (first, count, k, v, offset) -> fail("must not expose uncommitted token")));
     }

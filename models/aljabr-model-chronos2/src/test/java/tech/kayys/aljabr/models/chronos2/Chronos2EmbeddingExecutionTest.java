@@ -71,6 +71,10 @@ class Chronos2EmbeddingExecutionTest {
                 new float[2][2], new float[2]);
     }
 
+    private static Weights identityResidual(int input, int hiddenWidth) {
+        return identityResidual(input, hiddenWidth, hiddenWidth);
+    }
+
     private static Weights identityResidual(int input, int hiddenWidth, int output) {
         float[][] hidden = new float[hiddenWidth][input];
         float[][] projected = new float[output][hiddenWidth];

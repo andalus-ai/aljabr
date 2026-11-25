@@ -86,7 +86,9 @@ subprojects {
         ":engine:gguf:aljabr-gguf-core",
         ":engine:safetensor:aljabr-safetensor-core",
         // Model-common tests execute Whisper through the CPU backend, which uses Vector API.
-        ":models:aljabr-model-common"
+        ":models:aljabr-model-common",
+        // BERT tests execute CPU tensor operations through the backend dependency.
+        ":models:aljabr-model-bert"
     )
 
     // Configure Javadoc task
