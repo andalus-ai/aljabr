@@ -146,16 +146,16 @@ public final class Chronos2Encoder {
         return linear(merged, weights.output());
     }
 
-    private static float[][] normalize(float[][] input, float[] scale) {
+    private float[][] normalize(float[][] input, float[] scale) {
         float[][][] expanded = new float[input.length][1][];
         for (int i = 0; i < input.length; i++) expanded[i][0] = input[i];
-        float[][][] result = RmsNormReference.apply(expanded, scale, 1e-6f);
+        float[][][] result = RmsNormReference.apply(expanded, scale, (float) config.layerNormEpsilon());
         float[][] output = new float[input.length][];
         for (int i = 0; i < input.length; i++) output[i] = result[i][0];
         return output;
     }
 
-    private static float[] normalize(float[] input, float[] scale) {
+    private float[] normalize(float[] input, float[] scale) {
         return normalize(new float[][] {input}, scale)[0];
     }
 
