@@ -17,6 +17,7 @@ sourceSets {
                 "tech/kayys/aljabr/gguf/core/GgufExporter.java",
                 "tech/kayys/aljabr/gguf/core/GgufModel.java",
                 "tech/kayys/aljabr/gguf/loader/GGUFModel.java",
+                "tech/kayys/aljabr/gguf/loader/GgufModelDescriptorAdapter.java",
                 "tech/kayys/aljabr/gguf/loader/GGUFTensorInfo.java",
                 "tech/kayys/aljabr/gguf/loader/GGUFParser.java",
                 "tech/kayys/aljabr/gguf/loader/GGUFReader.java",
@@ -37,6 +38,7 @@ sourceSets {
 }
 
 dependencies {
+    implementation(project(":engine:gguf:aljabr-gguf-api"))
     api(project(":core:aljabr-core"))
     api(project(":plugins:ml:aljabr-nn"))
     api(project(":plugins:ml:aljabr-tensor"))
