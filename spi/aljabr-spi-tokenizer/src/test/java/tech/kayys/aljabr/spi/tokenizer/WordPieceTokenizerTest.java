@@ -3,6 +3,8 @@ package tech.kayys.aljabr.spi.tokenizer;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class WordPieceTokenizerTest {
@@ -32,5 +34,48 @@ class WordPieceTokenizerTest {
     @Test
     void decodesContinuationPiecesWithoutSpaces() {
         assertEquals("playing,!", tokenizer().decode(new long[] {8, 9, 10, 11}, DecodeOptions.defaultOptions()));
+    }
+
+    @Test
+    void preservesAddedSpecialTokensAndHonorsDecodeOptions() {
+        WordPieceTokenizer tokenizer = tokenizer();
+        assertArrayEquals(new long[] {1, 4, 2},
+                tokenizer.encode("[CLS] Hello [SEP]", EncodeOptions.defaultOptions()));
+        assertEquals("hello", tokenizer.decode(new long[] {1, 4, 2}, DecodeOptions.defaultOptions()));
+        assertEquals("[CLS] hello [SEP]",
+                tokenizer.decode(new long[] {1, 4, 2}, new DecodeOptions().skipSpecialTokens(false)));
+    }
+
+    @Test
+    void loadsHuggingFaceWordPieceTokenizerJson() throws Exception {
+        String json = """
+                {
+                  "normalizer": {"type":"BertNormalizer","clean_text":true,"handle_chinese_chars":true,
+                    "strip_accents":null,"lowercase":true},
+                  "pre_tokenizer": {"type":"BertPreTokenizer"},
+                  "model": {"type":"WordPiece","unk_token":"[UNK]","continuing_subword_prefix":"##",
+                    "max_input_chars_per_word":100,
+                    "vocab":{"[UNK]":0,"[CLS]":1,"[SEP]":2,"[PAD]":3,"hello":4,"world":5}},
+                  "added_tokens":[
+                    {"id":0,"content":"[UNK]","special":true},
+                    {"id":1,"content":"[CLS]","special":true},
+                    {"id":2,"content":"[SEP]","special":true},
+                    {"id":3,"content":"[PAD]","special":true}
+                  ]
+                }
+                """;
+        Path path = Files.createTempFile("bert-tokenizer", ".json");
+        try {
+            Files.writeString(path, json);
+            HuggingFaceWordPieceLoader loader = new HuggingFaceWordPieceLoader();
+            org.junit.jupiter.api.Assertions.assertTrue(loader.supports(path));
+            Tokenizer loaded = loader.load(path);
+            assertArrayEquals(new long[] {1, 4, 5, 2},
+                    loaded.encode("Hello world", new EncodeOptions().addBos(true).addEos(true)));
+            assertEquals(4, loaded.vocabSize());
+            assertEquals(3, loaded.padTokenId());
+        } finally {
+            Files.deleteIfExists(path);
+        }
     }
 }
