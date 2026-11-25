@@ -28,9 +28,9 @@ class TimeSeriesTest {
     @Test
     void supportsCategoricalKnownFutureCovariates() {
         var covariate = CovariateSeries.categorical(
-                "promotion", new long[] {1, 2, 3}, new String[] {"none", "sale", "sale"}, true);
+                "promotion", new long[] {1, 2, 3}, new String[] {"none", null, "sale"}, true);
         assertEquals(CovariateSeries.Type.CATEGORICAL, covariate.type());
         assertEquals("sale", covariate.categoricalValues()[2]);
-        assertFalse(covariate.isObserved(0) == false);
+        assertFalse(covariate.isObserved(1));
     }
 }
