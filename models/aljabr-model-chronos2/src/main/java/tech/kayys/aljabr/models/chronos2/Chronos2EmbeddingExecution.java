@@ -124,9 +124,9 @@ public final class Chronos2EmbeddingExecution {
         float[][] hidden = weights.hiddenWeight();
         float[][] output = weights.outputWeight();
         float[][] residual = weights.residualWeight();
-        if (hidden.length != hiddenWidth || hidden[0].length != inputWidth
-                || output.length != outputWidth || output[0].length != hiddenWidth
-                || residual.length != outputWidth || residual[0].length != inputWidth) {
+        if (hidden.length != hiddenWidth || hidden.length == 0 || hidden[0].length != inputWidth
+                || output.length != outputWidth || output.length == 0 || output[0].length != hiddenWidth
+                || residual.length != outputWidth || residual.length == 0 || residual[0].length != inputWidth) {
             throw new IllegalArgumentException(name + " weights do not match configured dimensions");
         }
     }
