@@ -3,8 +3,6 @@ package tech.kayys.aljabr.core.memory;
 import java.util.List;
 import java.util.function.Supplier;
 
-import org.junit.jupiter.api.Test;
-
 import tech.kayys.aljabr.testing.TensorStorageContract;
 
 /**
