@@ -108,9 +108,9 @@ class QuantConfigTest {
     @Test
     void neutralStrategyRoundTripsEveryLegacyValue() {
         for (QuantStrategy legacy : QuantStrategy.values()) {
-            QuantizationStrategy neutral = QuantizationStrategy.fromLegacy(legacy);
+            QuantizationStrategy neutral = QuantizationStrategyCompatibility.fromLegacy(legacy);
             assertEquals(legacy.name(), neutral.name());
-            assertEquals(legacy, neutral.toLegacy());
+            assertEquals(legacy, QuantizationStrategyCompatibility.toLegacy(neutral));
         }
     }
 
@@ -126,7 +126,7 @@ class QuantConfigTest {
 
     @Test
     void neutralStrategyRejectsNull() {
-        assertThrows(NullPointerException.class, () -> QuantizationStrategy.fromLegacy(null));
+        assertThrows(NullPointerException.class, () -> QuantizationStrategyCompatibility.fromLegacy(null));
         assertThrows(NullPointerException.class, () -> QuantConfig.builder().quantizationStrategy(null));
     }
 }
