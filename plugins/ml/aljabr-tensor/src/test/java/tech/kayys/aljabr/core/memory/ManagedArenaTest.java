@@ -61,11 +61,16 @@ class ManagedArenaTest {
                     if (!start.await(2, TimeUnit.SECONDS)) {
                         throw new AssertionError("timed out waiting for race start");
                     }
+                    boolean retained;
                     try {
                         managed.retain();
-                        managed.close();
+                        retained = true;
                     } catch (IllegalStateException alreadyClosed) {
                         // The competing final close linearized first.
+                        retained = false;
+                    }
+                    if (retained) {
+                        managed.close();
                     }
                     return null;
                 });
