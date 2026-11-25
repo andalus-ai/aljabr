@@ -45,9 +45,7 @@ class EmbeddingGemma2VisionProcessorBatchTest {
         assertEquals(2, features.get(1).length);
         assertEquals(4, features.get(0)[0].length);
         assertEquals(4, features.get(1)[0].length);
-        assertTrue(java.util.Arrays.stream(features.get(0))
-                .flatMapToDouble(row -> java.util.Arrays.stream(row).asDoubleStream())
-                .anyMatch(value -> Math.abs(value) > 1e-7),
+        assertTrue(hasNonZeroFeature(features.get(0)),
                 "non-zero fixture must exercise numerical feature preservation");
 
         // Reference the previous full padded-axis execution. Valid tokens must
@@ -108,6 +106,15 @@ class EmbeddingGemma2VisionProcessorBatchTest {
         float[][] result = new float[size][size];
         for (int index = 0; index < size; index++) result[index][index] = 1f;
         return result;
+    }
+
+    private static boolean hasNonZeroFeature(float[][] features) {
+        for (float[] token : features) {
+            for (float value : token) {
+                if (Math.abs(value) > 1e-7f) return true;
+            }
+        }
+        return false;
     }
 
     private static void assertMatrixEquals(float[][] expected, float[][] actual) {
