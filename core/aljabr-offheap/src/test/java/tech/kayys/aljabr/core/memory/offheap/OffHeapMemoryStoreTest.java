@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class OffHeapMemoryStoreTest {
 
     @Test
-    void testZeroCopyGet {
+    void testZeroCopyGet() {
         try (OffHeapMemoryStore store = new OffHeapMemoryStore()) {
             byte[] key = "test-key-offheap".getBytes();
 
@@ -46,7 +46,7 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void testOverwriteAndDelete {
+    void testOverwriteAndDelete() {
         try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena arena = Arena.ofConfined()) {
 
@@ -75,7 +75,7 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void testCompactionReclaimsMemory {
+    void testCompactionReclaimsMemory() {
         OffHeapMemoryStore.Config cfg = OffHeapMemoryStore.Config.builder()
                 .maxStorageMiB(1L) // 1 MiB — tiny; compaction should trigger quickly
                 .build();
@@ -119,7 +119,7 @@ class OffHeapMemoryStoreTest {
 
 
     @Test
-    void borrowPinsStorageUntilLeaseIsClosed throws Exception {
+    void borrowPinsStorageUntilLeaseIsClosed() throws Exception {
         try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena inputArena = Arena.ofConfined()) {
             byte[] key = "leased-value".getBytes();
@@ -157,7 +157,7 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void zeroExpectedSizeReturnsWholeLegacyValue {
+    void zeroExpectedSizeReturnsWholeLegacyValue() {
         try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena arena = Arena.ofConfined()) {
             MemorySegment input = arena.allocate(32);
@@ -169,7 +169,7 @@ class OffHeapMemoryStoreTest {
     }
 
     @Test
-    void testStats {
+    void testStats() {
         try (OffHeapMemoryStore store = new OffHeapMemoryStore();
                 Arena arena = Arena.ofConfined()) {
 
