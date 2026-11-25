@@ -58,4 +58,32 @@ public abstract class TensorViewContract {
             backend.close();
         }
     }
+    @Test
+    public final void contiguousMaterializationCopiesLogicalValuesIntoIndependentStorage() {
+        ComputeBackend backend = createBackend();
+        Tensor source = TensorFactory.of(
+                new float[] {0, 1, 2, 3, 4, 5}, backend, 2, 3);
+        Tensor view = null;
+        Tensor contiguous = null;
+        try {
+            view = source.slice(new long[] {1, 1}, new long[] {1, 2});
+            contiguous = view.contiguous();
+
+            assertEquals(new Shape(1, 2), contiguous.shape());
+            assertArrayEquals(new long[] {2, 1}, contiguous.layout().strides());
+            assertEquals(0L, contiguous.layout().storageOffset());
+            assertTrue(contiguous.layout().isContiguous());
+            org.junit.jupiter.api.Assertions.assertNotSame(
+                    view.storage(), contiguous.storage(),
+                    "materialization must allocate independent storage");
+            assertArrayEquals(new float[] {4f, 5f}, contiguous.toFloatArray());
+            assertArrayEquals(new float[] {4f, 5f}, view.toFloatArray());
+        } finally {
+            if (contiguous != null) contiguous.release();
+            if (view != null) view.release();
+            source.release();
+            backend.close();
+        }
+    }
+
 }
