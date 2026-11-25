@@ -8,8 +8,6 @@ package tech.kayys.aljabr.forecasting.api;
  * checkpoint-format, device, or model-family assumptions.
  */
 public interface ForecastingModel extends AutoCloseable {
-    ForecastingCapabilities capabilities();
-
     ForecastResult forecast(ForecastRequest request);
 
     default String modelId() {
