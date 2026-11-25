@@ -92,7 +92,7 @@ public class QuantConfig {
      */
     public QuantConfig(QuantizationEngine.QuantStrategy strategy, int groupSize, int bits, boolean symmetric,
             boolean perChannel, boolean actOrder, double dampPercent, int numSamples, int seqLen, boolean descAct) {
-        this(QuantizationStrategy.fromLegacy(strategy), groupSize, bits, symmetric, perChannel,
+        this(QuantizationStrategyCompatibility.fromLegacy(strategy), groupSize, bits, symmetric, perChannel,
                 actOrder, dampPercent, numSamples, seqLen, descAct, true);
     }
 
@@ -186,7 +186,7 @@ public class QuantConfig {
     }
 
     public QuantizationEngine.QuantStrategy getStrategy() {
-        return strategy.toLegacy();
+        return QuantizationStrategyCompatibility.toLegacy(strategy);
     }
 
     /**
