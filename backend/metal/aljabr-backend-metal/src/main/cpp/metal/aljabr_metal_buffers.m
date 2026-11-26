@@ -40,13 +40,6 @@ static void _ensure_cache(void) {
   });
 }
 
-static BOOL checked_size_add(size_t a, size_t b, size_t *result) {
-  if (result == NULL || b > SIZE_MAX - a)
-    return NO;
-  *result = a + b;
-  return YES;
-}
-
 static BOOL checked_aligned_region(uintptr_t address, size_t bytes,
                                     size_t page_size, uintptr_t *aligned_address,
                                     size_t *aligned_bytes, size_t *offset) {
@@ -177,11 +170,14 @@ id<MTLBuffer> aljabr_metal_wrap_weight_ptr_offset(const void *ptr, size_t bytes,
   uintptr_t addr = (uintptr_t)ptr;
   if (g_master_model_buffer != nil && addr >= g_master_base) {
     uintptr_t relative = addr - g_master_base;
-    if (relative <= g_master_size && bytes <= g_master_size - (size_t)relative) {
-      size_t master_offset = 0;
-      if (!checked_size_add((size_t)(addr - g_master_base_aligned), 0,
-                            &master_offset) ||
-          master_offset > g_master_model_buffer.length ||
+    if (relative < g_master_size) {
+      if (bytes > g_master_size - (size_t)relative)
+        return nil;
+      uintptr_t aligned_delta = addr - g_master_base_aligned;
+      if (aligned_delta > (uintptr_t)SIZE_MAX)
+        return nil;
+      size_t master_offset = (size_t)aligned_delta;
+      if (master_offset > g_master_model_buffer.length ||
           bytes > g_master_model_buffer.length - master_offset)
         return nil;
       if (out_offset)
