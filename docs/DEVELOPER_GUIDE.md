@@ -167,6 +167,14 @@ Do not create a new module simply to make the directory tree look cleaner. Split
 
 Split classes when responsibilities have independent change drivers. Add interfaces for real substitution, external extension, stable module boundaries or useful test seams—not just to wrap a single implementation. Keep contracts narrow and preserve substitutability for semantics, errors and resource lifecycle. Prefer direct composition when it is clearer than a hierarchy.
 
+#### Keep classes and files cohesive
+
+Do not introduce god classes, god files or catch-all utilities. A class should have one clear responsibility and a source file should have one clear organizing purpose. Keep this discipline at method, class, file, package and module boundaries.
+
+Before adding to an existing `*Manager`, `*Engine`, `*Service`, `*Factory`, `*Registry`, `*Coordinator`, `*Handler` or `*Utils` type, check whether the new behavior belongs to the same responsibility and changes for the same reasons. These names are not prohibited; accumulating unrelated policy, parsing, validation, state, resource ownership, provider-specific logic and orchestration is.
+
+When a type becomes difficult to understand or test in isolation, map its responsibilities, callers, mutable state, resource lifetimes and dependencies. Extract cohesive collaborators behind existing or genuinely useful contracts, keep the public facade thin, and preserve behavior with focused tests. Avoid both extremes: one giant implementation and needless one-class-per-method fragmentation. Do not impose arbitrary line-count limits; use coupling, independent change drivers, hidden state and testability as the signals.
+
 ### Verify the complete developer and user path
 
 A capability is not complete merely because its implementation compiles. For the scope being changed, verify the relevant path:
