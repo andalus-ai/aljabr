@@ -431,10 +431,21 @@ public class QuantizationEngine {
      * Keeps small/vector tensors in their original form to reduce breakage risk.
      */
     public Map<String, AccelTensor> quantizeWeightsForInference(Map<String, AccelTensor> weights, QuantStrategy strategy) {
+        return quantizeWeightsForInference(weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
+    }
+
+    public Map<String, AccelTensor> quantizeWeightsForInference(Map<String, AccelTensor> weights,
+            QuantizationStrategy strategy) {
         return quantizeWeightsForInferenceDetailed(null, weights, strategy).weights();
     }
 
-    public Map<String, AccelTensor> quantizeWeightsForInference(Path modelPath, Map<String, AccelTensor> weights, QuantStrategy strategy) {
+    public Map<String, AccelTensor> quantizeWeightsForInference(Path modelPath, Map<String, AccelTensor> weights,
+            QuantStrategy strategy) {
+        return quantizeWeightsForInference(modelPath, weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
+    }
+
+    public Map<String, AccelTensor> quantizeWeightsForInference(Path modelPath, Map<String, AccelTensor> weights,
+            QuantizationStrategy strategy) {
         return quantizeWeightsForInferenceDetailed(modelPath, weights, strategy).weights();
     }
 
