@@ -845,6 +845,39 @@ class GgufInferenceEngineDelegationTest {
         }
     }
 
+
+    @Test
+    void embeddingCancellationReleasesLeaseAndClosesRetiredBackend() throws Exception {
+        Path model = Files.createTempFile("gguf-unload-active-embedding", ".gguf");
+        AtomicBoolean closed = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Uni<EmbeddingResponse> embed(EmbeddingRequest request) {
+                return Uni.createFrom().emitter(emitter -> { });
+            }
+
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+
+        try (GgufInferenceEngine engine = engine(model, backend)) {
+            Cancellable subscription = engine.executeEmbedding("model", embeddingRequest())
+                    .subscribe().with(item -> { }, failure -> fail(failure));
+
+            engine.unloadModel("model");
+            assertFalse(closed.get(), "the embedding subscription must retain its backend lease");
+
+            subscription.cancel();
+
+            assertTrue(closed.get(), "cancellation must release the final backend lease");
+            assertEquals(0, engine.getStats().activeInferences());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
     private static GgufBackendProvider provider(BackendFactory factory) {
         return new GgufBackendProvider() {
             @Override public String id() { return "test"; }
