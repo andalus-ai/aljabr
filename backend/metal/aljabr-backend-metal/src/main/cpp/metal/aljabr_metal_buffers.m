@@ -11,6 +11,7 @@
 #import "aljabr_metal_runtime.h"
 #import <CoreFoundation/CoreFoundation.h>
 #import <os/lock.h>
+#include <stdint.h>
 
 static id<MTLBuffer> g_swiglu_gate_scratch = nil;
 static id<MTLBuffer> g_swiglu_up_scratch = nil;
