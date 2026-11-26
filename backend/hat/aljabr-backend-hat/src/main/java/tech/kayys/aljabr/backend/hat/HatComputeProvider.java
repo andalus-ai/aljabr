@@ -848,14 +848,18 @@ public final class HatComputeProvider implements ComputeProvider {
 
             String numelValue = constraints.get(tensorName + "_numel");
             String expectedValue = expectedElementsKey == null ? null : constraints.get(expectedElementsKey);
+            Long expected = null;
+            if (expectedValue != null) {
+                expected = parseLong(expectedValue);
+                if (expected == null) return OperationSupport.UNKNOWN;
+                if (expected <= 0) return OperationSupport.UNSUPPORTED;
+            }
             if (numelValue != null) {
                 Long numel = parseLong(numelValue);
                 if (numel == null) return OperationSupport.UNKNOWN;
                 if (numel <= 0) return OperationSupport.UNSUPPORTED;
-                if (expectedValue == null) return OperationSupport.UNKNOWN;
-                Long expected = parseLong(expectedValue);
                 if (expected == null) return OperationSupport.UNKNOWN;
-                if (expected <= 0 || !numel.equals(expected)) return OperationSupport.UNSUPPORTED;
+                if (!numel.equals(expected)) return OperationSupport.UNSUPPORTED;
             }
 
             String contiguous = constraints.get(tensorName + "_contiguous");
