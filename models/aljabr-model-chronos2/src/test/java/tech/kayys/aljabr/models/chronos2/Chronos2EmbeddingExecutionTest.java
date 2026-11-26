@@ -24,7 +24,7 @@ class Chronos2EmbeddingExecutionTest {
     void embedsContextRegressionTokenAndFuturePatches() {
         Chronos2Config config = config(true);
         Weights input = identityResidual(3, 2);
-        Weights output = identityResidual(2, 2);
+        Weights output = projection(2, 2, 4);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
         float[][][] embedded = execution.embed(
@@ -55,7 +55,7 @@ class Chronos2EmbeddingExecutionTest {
     void rejectsInvalidProjectionGeometry() {
         Chronos2Config config = config(false);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config,
-                identityResidual(3, 2), identityResidual(2, 2), new float[][] {{0f, 0f}});
+                identityResidual(3, 2), projection(2, 2, 4), new float[][] {{0f, 0f}});
         assertThrows(IllegalArgumentException.class,
                 () -> execution.embed(new float[][][] {{{1f}}}, new float[][][] {{{1f, 2f, 3f}}}));
     }
@@ -71,13 +71,14 @@ class Chronos2EmbeddingExecutionTest {
                 new float[4][2], new float[4]);
     }
 
-    private static Weights identityResidual(int input, int output) {
-        float[][] hidden = new float[input][input];
-        float[][] projected = new float[output][input];
-        float[][] residual = new float[output][input];
-        for (int i = 0; i < input; i++) hidden[i][i] = 1f;
-        for (int i = 0; i < Math.min(input, output); i++) residual[i][i] = 1f;
-        return new Weights(hidden, new float[input], projected, new float[output],
-                residual, new float[output]);
+    private static Weights projection(int inputWidth, int hiddenWidth, int outputWidth) {
+        float[][] hidden = new float[hiddenWidth][inputWidth];
+        float[][] projected = new float[outputWidth][hiddenWidth];
+        float[][] residual = new float[outputWidth][inputWidth];
+        for (int i = 0; i < Math.min(inputWidth, hiddenWidth); i++) hidden[i][i] = 1f;
+        for (int i = 0; i < Math.min(hiddenWidth, outputWidth); i++) projected[i][i] = 1f;
+        for (int i = 0; i < Math.min(inputWidth, outputWidth); i++) residual[i][i] = 1f;
+        return new Weights(hidden, new float[hiddenWidth], projected, new float[outputWidth],
+                residual, new float[outputWidth]);
     }
 }
