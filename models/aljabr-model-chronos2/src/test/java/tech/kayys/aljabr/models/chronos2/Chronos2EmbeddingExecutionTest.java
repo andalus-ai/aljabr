@@ -23,7 +23,7 @@ class Chronos2EmbeddingExecutionTest {
     @Test
     void embedsContextRegressionTokenAndFuturePatches() {
         Chronos2Config config = config(true);
-        Weights input = identityResidual(3, 2);
+        Weights input = inputProjection();
         Weights output = identityResidual(2, 2);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
@@ -38,7 +38,7 @@ class Chronos2EmbeddingExecutionTest {
     @Test
     void quantileProjectionUsesQuantileMajorPatchOrder() {
         Chronos2Config config = config(false);
-        Weights input = identityResidual(3, 2);
+        Weights input = inputProjection();
         Weights output = quantileProjection();
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}});
@@ -55,7 +55,7 @@ class Chronos2EmbeddingExecutionTest {
     void rejectsInvalidProjectionGeometry() {
         Chronos2Config config = config(false);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config,
-                identityResidual(3, 2), identityResidual(2, 2), new float[][] {{0f, 0f}});
+                inputProjection(), identityResidual(2, 2), new float[][] {{0f, 0f}});
         assertThrows(IllegalArgumentException.class,
                 () -> execution.embed(new float[][][] {{{1f}}}, new float[][][] {{{1f, 2f, 3f}}}));
     }
@@ -63,6 +63,12 @@ class Chronos2EmbeddingExecutionTest {
     private static Chronos2Config config(boolean reg) {
         return new Chronos2Config(16, 1, 1, 1, 4, 16, 2, 2, 2, 1, 1,
                 1e-6, 10000d, reg, false, List.of(0.1d, 0.9d));
+    }
+
+    private static Weights inputProjection() {
+        return new Weights(new float[][] {{1f, 0f, 0f}, {0f, 1f, 0f}}, new float[2],
+                new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
+                new float[][] {{1f, 0f, 0f}, {0f, 1f, 0f}}, new float[2]);
     }
 
     private static Weights quantileProjection() {
