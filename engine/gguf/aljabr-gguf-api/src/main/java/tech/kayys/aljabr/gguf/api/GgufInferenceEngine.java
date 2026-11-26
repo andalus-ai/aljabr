@@ -313,6 +313,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Multi.createFrom().failure(error);
+            }
         });
     }
 
@@ -331,6 +332,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Multi.createFrom().failure(error);
+            }
         });
     }
 
