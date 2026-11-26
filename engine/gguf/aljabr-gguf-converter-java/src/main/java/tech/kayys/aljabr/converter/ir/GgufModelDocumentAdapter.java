@@ -159,10 +159,6 @@ public final class GgufModelDocumentAdapter {
         }
     }
 
-    private static String stringValue(Object value, String fallback) {
-        return value instanceof String text && !text.isBlank() ? text : fallback;
-    }
-
     private static int alignment(Map<String, Object> metadata) {
         Object value = metadata.getOrDefault("general.alignment", 32);
         return value instanceof Number number ? number.intValue() : 32;
