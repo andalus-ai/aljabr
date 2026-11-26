@@ -266,13 +266,25 @@ public final class HatComputeProvider implements ComputeProvider {
                 } catch (NumberFormatException invalidRank) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
-                String runningMeanDtype = constraints.get("running_mean_dtype");
-                String runningVarDtype = constraints.get("running_var_dtype");
-                if (runningMeanDtype == null || runningVarDtype == null) {
+                String runningStatsPresent = constraints.get("running_stats_present");
+                if (runningStatsPresent != null
+                        && !"true".equalsIgnoreCase(runningStatsPresent)
+                        && !"false".equalsIgnoreCase(runningStatsPresent)) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
-                if (!isF32(runningMeanDtype) || !isF32(runningVarDtype)) {
-                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                String runningMeanDtype = constraints.get("running_mean_dtype");
+                String runningVarDtype = constraints.get("running_var_dtype");
+                if ("false".equalsIgnoreCase(runningStatsPresent)) {
+                    if (runningMeanDtype != null || runningVarDtype != null) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                    }
+                } else {
+                    if (runningMeanDtype == null || runningVarDtype == null) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                    }
+                    if (!isF32(runningMeanDtype) || !isF32(runningVarDtype)) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
                 }
                 return normalizationSupport(operationId, constraints, false, false, true);
             }
