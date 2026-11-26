@@ -1,8 +1,8 @@
 package tech.kayys.aljabr.diffusion.execution.loop;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.concurrent.CancellationException;
@@ -10,71 +10,78 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 
+import tech.kayys.aljabr.backend.cpu.CpuBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
 import tech.kayys.aljabr.diffusion.execution.api.SigmaPredictionConverter;
 import tech.kayys.aljabr.diffusion.execution.api.SigmaStepContext;
-import tech.kayys.aljabr.diffusion.execution.euler.EulerSigmaStepExecutor;
+import tech.kayys.aljabr.diffusion.execution.api.SigmaStepExecutor;
 import tech.kayys.aljabr.diffusion.scheduler.api.PredictionType;
 
 class DiffusionDenoisingLoopTest {
 
-    private final DiffusionDenoisingLoop loop =
-            new DiffusionDenoisingLoop(new EulerSigmaStepExecutor());
-
     @Test
     void runsOrderedStepsAndReportsProgressWithoutClosingBorrowedInput() {
-        try (Tensor initial = Tensor.of(new float[]{1.0f}, 1)) {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor initial = TensorFactory.of(new float[] {1.0f}, backend, 1)) {
+            DiffusionDenoisingLoop loop = new DiffusionDenoisingLoop(testExecutor());
             AtomicInteger calls = new AtomicInteger();
+
             try (Tensor result = loop.run(
                     initial,
                     steps(2),
                     (sample, context) -> {
                         calls.incrementAndGet();
-                        return Tensor.of(new float[]{1.0f}, 1);
+                        return TensorFactory.of(new float[] {1.0f}, backend, 1);
                     },
-                    epsilonConverter(),
+                    epsilonConverter(backend),
                     () -> false,
                     completed -> assertEquals(calls.get(), completed))) {
                 assertEquals(2, calls.get());
-                assertTrue(initial.item() == 1.0f);
-                assertTrue(result.item() < 1.0f);
+                assertArrayEquals(new float[] {-1.0f}, result.toFloatArray(), 0.0001f);
             }
-            assertEquals(1.0f, initial.get(0));
+            assertArrayEquals(new float[] {1.0f}, initial.toFloatArray(), 0.0f);
         }
     }
 
     @Test
     void cancellationClosesLoopOwnedIntermediateButNotInitialInput() {
-        try (Tensor initial = Tensor.of(new float[]{1.0f}, 1)) {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor initial = TensorFactory.of(new float[] {1.0f}, backend, 1)) {
+            DiffusionDenoisingLoop loop = new DiffusionDenoisingLoop(testExecutor());
             AtomicInteger checks = new AtomicInteger();
             assertThrows(CancellationException.class, () -> loop.run(
                     initial,
                     steps(3),
-                    (sample, context) -> Tensor.of(new float[]{0.0f}, 1),
-                    epsilonConverter(),
+                    (sample, context) -> TensorFactory.of(new float[] {0.0f}, backend, 1),
+                    epsilonConverter(backend),
                     () -> checks.incrementAndGet() > 1,
                     null));
-            assertEquals(1.0f, initial.get(0));
+            assertArrayEquals(new float[] {1.0f}, initial.toFloatArray(), 0.0f);
         }
     }
 
     @Test
     void rejectsDenoiserAliasingBorrowedSampleWithoutClosingIt() {
-        try (Tensor initial = Tensor.of(new float[]{1.0f}, 1)) {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor initial = TensorFactory.of(new float[] {1.0f}, backend, 1)) {
+            DiffusionDenoisingLoop loop = new DiffusionDenoisingLoop(testExecutor());
             assertThrows(IllegalArgumentException.class, () -> loop.run(
                     initial,
                     steps(1),
                     (sample, context) -> sample,
-                    epsilonConverter(),
+                    epsilonConverter(backend),
                     null,
                     null));
-            assertEquals(1.0f, initial.get(0));
+            assertArrayEquals(new float[] {1.0f}, initial.toFloatArray(), 0.0f);
         }
     }
 
     @Test
     void rejectsNonContiguousStepIndexesBeforeExecutingModel() {
-        try (Tensor initial = Tensor.of(new float[]{1.0f}, 1)) {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor initial = TensorFactory.of(new float[] {1.0f}, backend, 1)) {
+            DiffusionDenoisingLoop loop = new DiffusionDenoisingLoop(testExecutor());
             AtomicInteger calls = new AtomicInteger();
             assertThrows(IllegalArgumentException.class, () -> loop.run(
                     initial,
@@ -82,13 +89,13 @@ class DiffusionDenoisingLoopTest {
                             1, 1.0d, 0.5d, PredictionType.EPSILON)),
                     (sample, context) -> {
                         calls.incrementAndGet();
-                        return Tensor.of(new float[]{0.0f}, 1);
+                        return TensorFactory.of(new float[] {0.0f}, backend, 1);
                     },
-                    epsilonConverter(),
+                    epsilonConverter(backend),
                     null,
                     null));
             assertEquals(0, calls.get());
-            assertEquals(1.0f, initial.get(0));
+            assertArrayEquals(new float[] {1.0f}, initial.toFloatArray(), 0.0f);
         }
     }
 
@@ -102,7 +109,7 @@ class DiffusionDenoisingLoopTest {
         return List.copyOf(contexts);
     }
 
-    private static SigmaPredictionConverter epsilonConverter() {
+    private static SigmaPredictionConverter epsilonConverter(CpuBackend backend) {
         return new SigmaPredictionConverter() {
             @Override
             public PredictionType predictionType() {
@@ -112,8 +119,16 @@ class DiffusionDenoisingLoopTest {
             @Override
             public Tensor toDerivative(
                     Tensor sample, Tensor modelOutput, SigmaStepContext context) {
-                // For this test fixture, modelOutput is already the derivative.
-                return Tensor.of(new float[]{modelOutput.get(0)}, 1);
+                return TensorFactory.of(modelOutput.toFloatArray(), backend, modelOutput.shape().dims());
+            }
+        };
+    }
+
+    private static SigmaStepExecutor testExecutor() {
+        return (sample, modelOutput, context, converter) -> {
+            Tensor derivative = converter.toDerivative(sample, modelOutput, context);
+            try (derivative; Tensor scaled = derivative.mul((float) context.deltaSigma())) {
+                return sample.add(scaled);
             }
         };
     }
