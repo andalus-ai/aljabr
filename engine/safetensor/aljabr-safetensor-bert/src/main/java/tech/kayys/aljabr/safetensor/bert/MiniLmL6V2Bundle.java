@@ -20,13 +20,26 @@ public final class MiniLmL6V2Bundle implements AutoCloseable {
     public MiniLmL6V2Bundle(MiniLmL6V2 model, Tokenizer tokenizer) {
         this.model = Objects.requireNonNull(model, "model must not be null");
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer must not be null");
-        if (tokenizer.vocabSize() != model.encoder().config().vocabularySize()) {
-            throw new IllegalArgumentException("Tokenizer vocabulary size " + tokenizer.vocabSize()
+        int vocabularySize = tokenizer.vocabSize();
+        if (vocabularySize != model.encoder().config().vocabularySize()) {
+            throw new IllegalArgumentException("Tokenizer vocabulary size " + vocabularySize
                     + " does not match BERT vocabulary size "
                     + model.encoder().config().vocabularySize());
         }
-        if (tokenizer.bosTokenId() < 0 || tokenizer.eosTokenId() < 0 || tokenizer.padTokenId() < 0) {
-            throw new IllegalArgumentException("MiniLM WordPiece tokenizer must define CLS, SEP and PAD tokens");
+        validateSpecialToken("CLS/BOS", tokenizer.bosTokenId(), vocabularySize);
+        validateSpecialToken("SEP/EOS", tokenizer.eosTokenId(), vocabularySize);
+        validateSpecialToken("PAD", tokenizer.padTokenId(), vocabularySize);
+        if (tokenizer.bosTokenId() == tokenizer.eosTokenId()
+                || tokenizer.bosTokenId() == tokenizer.padTokenId()
+                || tokenizer.eosTokenId() == tokenizer.padTokenId()) {
+            throw new IllegalArgumentException("MiniLM CLS, SEP and PAD token IDs must be distinct");
+        }
+    }
+
+    private static void validateSpecialToken(String name, int tokenId, int vocabularySize) {
+        if (tokenId < 0 || tokenId >= vocabularySize) {
+            throw new IllegalArgumentException("MiniLM tokenizer " + name + " token ID " + tokenId
+                    + " is outside vocabulary range [0, " + vocabularySize + ")");
         }
     }
 
