@@ -123,7 +123,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         }
         return observeLifecycle("gguf.model.load", provider.id(), () -> {
             GgufBackend backend = provider.create(modelPath, config);
-            backends.put(modelId, backend);
+            backends.put(modelId, registrationFor(backend));
             return backend;
         });
     }
