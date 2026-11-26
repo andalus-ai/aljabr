@@ -548,3 +548,12 @@ A model ID is a unique live registration key within one `GgufInferenceEngine`.
 ### Validation
 
 A focused test verifies that duplicate registration is rejected before provider creation, produces no model-load lifecycle event, preserves the original backend for inference, and closes it only on explicit unload. CI must validate the supported JDK baseline.
+
+
+## GGUF backend-use leases and draining
+
+A GGUF backend registration owns the backend resource independently from the engine's model-ID lookup. Each active backend operation acquires a short-lived lease. Synchronous execution releases its lease in `finally`; reactive streaming and embedding acquire on subscription and release on every terminal path, including cancellation.
+
+Unloading or shutting down first detaches registrations from the lookup table. This rejects subsequent operations immediately without invalidating operations already in flight. The backend is closed exactly once after retirement and the final lease release. Shutdown does not wait for a potentially unbounded stream to terminate.
+
+The registration monitor protects only lease accounting and retirement state. Provider callbacks and backend cleanup run outside that monitor. Tests must cover concurrent inference/unload and inference/shutdown, and reactive completion, failure and cancellation. Deferred cleanup failures must remain observable at the release boundary while accounting remains consistent.

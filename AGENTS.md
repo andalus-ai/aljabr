@@ -585,3 +585,16 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Prefer package-private composition over new public SPIs. Introduce an interface only for a demonstrated extension point, multiple real implementations or a valuable stable test seam.
 - Perform structural extraction independently from numerical optimization. Each extraction must preserve shape/dtype/error semantics, precision, resource ownership, release-on-failure behavior and backend conformance tests.
 - Apply these rules to every backend (CPU, Metal, CUDA, Vulkan, OpenCL, HAT and future providers); do not make the public tensor API depend on a concrete backend implementation.
+
+
+## GGUF backend ownership and draining requirements
+
+- A registered GGUF backend must be represented by a registration owner, not exposed directly from the engine registry.
+- Every operation that can call a backend (synchronous/asynchronous inference, streaming inference, and embedding) must acquire a backend-use lease before invoking provider code.
+- Streaming and embedding leases begin on subscription, remain held through completion/failure/cancellation, and are released exactly once on every terminal path, including synchronous supplier failures.
+- Unload and engine shutdown must detach registrations before invoking provider cleanup. Detachment rejects new work immediately; it must not close a backend while any lease remains active.
+- Backend close is attempted exactly once, immediately when an unused registration retires or when its final lease is released. Do not block shutdown waiting indefinitely for long-lived streams.
+- Keep registration synchronization separate from provider code: never invoke backend close while holding the registration monitor.
+- Preserve close failures. Immediate shutdown should attempt cleanup for every retired registration and aggregate failures; deferred close failures must remain visible to the operation releasing the final lease and must not corrupt lease accounting.
+- Do not introduce ThreadLocal ownership, hidden background cleanup threads, or serving-layer dependencies into the GGUF API.
+- Add race tests for inference versus unload/shutdown, plus reactive completion, failure and cancellation paths whenever lease handling changes.
