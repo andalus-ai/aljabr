@@ -307,7 +307,7 @@ public final class Gemma3TextBackbone {
                     flattenTokens(flatten(value)), 0);
 
             float[][][] attended = causalAttention(query, key, value, layerIndex);
-            float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
+            float[][] attentionOutput = { linearVector(attended, layer.attentionOutput()) };
             attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
             float[][] afterAttention = add(input, attentionOutput);
 
@@ -354,7 +354,7 @@ public final class Gemma3TextBackbone {
             cacheSession.write(layerIndex, absolutePosition,
                     currentKey, 0, currentValue, 0);
 
-            float[][][] attended = new float[1][queryHeads][headDim];
+            float[] attended = new float[hidden];
             int groups = queryHeads / kvHeads;
             int firstVisible = config.isSlidingAttentionLayer(layerIndex)
                     ? Math.max(0, absolutePosition - config.slidingWindowSize() + 1) : 0;
@@ -393,7 +393,7 @@ public final class Gemma3TextBackbone {
                     int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double probability = Math.exp(scores[source - firstVisible] - maximum) / denominator;
                     for (int dimension = 0; dimension < headDim; dimension++) {
-                        attended[0][head][dimension] +=
+                        attended[head * headDim + dimension] +=
                                 (float) (probability * layerVisibleValues[sourceOffset + dimension]);
                     }
                 }
@@ -651,6 +651,19 @@ public final class Gemma3TextBackbone {
                 throw new IllegalArgumentException("token vectors must have a consistent width");
             }
             System.arraycopy(input[token], 0, output, token * width, width);
+        }
+        return output;
+    }
+
+    /** Projects one token vector without wrapping it in a temporary sequence tensor. */
+    private static float[] linearVector(float[] input, float[][] weight) {
+        float[] output = new float[weight.length];
+        for (int out = 0; out < weight.length; out++) {
+            double sum = 0.0d;
+            for (int in = 0; in < input.length; in++) {
+                sum += (double) weight[out][in] * input[in];
+            }
+            output[out] = (float) sum;
         }
         return output;
     }
