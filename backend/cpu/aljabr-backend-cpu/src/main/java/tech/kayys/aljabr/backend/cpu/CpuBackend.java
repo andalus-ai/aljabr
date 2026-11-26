@@ -597,7 +597,6 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
 
         long outputElements = plan.outputShape().numel();
         DType dtype = input.dtype();
-        int elementBytes = dtype.blockByteSize();
         HostAccessibleStorage output = allocateOutput(dtype.memoryFootprintBytes(outputElements));
         try {
             MemorySegment destination = seg(input);
