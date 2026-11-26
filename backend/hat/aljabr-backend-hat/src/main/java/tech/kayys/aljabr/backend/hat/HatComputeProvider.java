@@ -274,6 +274,18 @@ public final class HatComputeProvider implements ComputeProvider {
                 if (!isF32(runningMeanDtype) || !isF32(runningVarDtype)) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
                 }
+                OperationSupport runningMeanLayout = optionalNormalizationParameterLayoutSupport(
+                        constraints, "running_mean", "channels");
+                OperationSupport runningVarLayout = optionalNormalizationParameterLayoutSupport(
+                        constraints, "running_var", "channels");
+                if (runningMeanLayout == OperationSupport.UNSUPPORTED
+                        || runningVarLayout == OperationSupport.UNSUPPORTED) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                }
+                if (runningMeanLayout == OperationSupport.UNKNOWN
+                        || runningVarLayout == OperationSupport.UNKNOWN) {
+                    return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                }
                 return normalizationSupport(operationId, constraints, false, false, true);
             }
 
@@ -801,8 +813,70 @@ public final class HatComputeProvider implements ComputeProvider {
             if (weightSupport == OperationSupport.UNKNOWN || biasSupport == OperationSupport.UNKNOWN) {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
             }
+
+            String expectedElementsKey = switch (operationId) {
+                case "tensor.layer_norm" -> "normalized_numel";
+                case "tensor.rms_norm" -> "last_dim";
+                case "tensor.batch_norm" -> "channels";
+                default -> null;
+            };
+            OperationSupport weightLayout = optionalNormalizationParameterLayoutSupport(
+                    constraints, "weight", expectedElementsKey);
+            OperationSupport biasLayout = checkBias
+                    ? optionalNormalizationParameterLayoutSupport(constraints, "bias", expectedElementsKey)
+                    : OperationSupport.DELEGATED;
+            if (weightLayout == OperationSupport.UNSUPPORTED || biasLayout == OperationSupport.UNSUPPORTED) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+            }
+            if (weightLayout == OperationSupport.UNKNOWN || biasLayout == OperationSupport.UNKNOWN) {
+                return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+            }
             return new OperationSupportDescriptor(
                     operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        /**
+         * Validates optional shape/layout metadata when the caller has it.
+         * Missing metadata remains compatible with existing callers; supplied
+         * metadata must be sufficient and consistent before fallback is advertised.
+         */
+        private OperationSupport optionalNormalizationParameterLayoutSupport(
+                Map<String, String> constraints, String tensorName, String expectedElementsKey) {
+            String present = constraints.get(tensorName + "_present");
+            if ("false".equalsIgnoreCase(present)) return OperationSupport.DELEGATED;
+            if (present != null && !"true".equalsIgnoreCase(present)) return OperationSupport.UNKNOWN;
+
+            String numelValue = constraints.get(tensorName + "_numel");
+            String expectedValue = expectedElementsKey == null ? null : constraints.get(expectedElementsKey);
+            Long expected = null;
+            if (expectedValue != null) {
+                expected = parseLong(expectedValue);
+                if (expected == null) return OperationSupport.UNKNOWN;
+                if (expected <= 0) return OperationSupport.UNSUPPORTED;
+            }
+            if (numelValue != null) {
+                Long numel = parseLong(numelValue);
+                if (numel == null) return OperationSupport.UNKNOWN;
+                if (numel <= 0) return OperationSupport.UNSUPPORTED;
+                if (expected == null) return OperationSupport.UNKNOWN;
+                if (!numel.equals(expected)) return OperationSupport.UNSUPPORTED;
+            }
+
+            String contiguous = constraints.get(tensorName + "_contiguous");
+            if (contiguous != null) {
+                if (!"true".equalsIgnoreCase(contiguous) && !"false".equalsIgnoreCase(contiguous)) {
+                    return OperationSupport.UNKNOWN;
+                }
+                if ("false".equalsIgnoreCase(contiguous)) return OperationSupport.UNSUPPORTED;
+            }
+
+            String offsetValue = constraints.get(tensorName + "_storage_offset");
+            if (offsetValue != null) {
+                Long offset = parseLong(offsetValue);
+                if (offset == null) return OperationSupport.UNKNOWN;
+                if (offset != 0) return OperationSupport.UNSUPPORTED;
+            }
+            return OperationSupport.DELEGATED;
         }
 
         private OperationSupport optionalNormalizationTensorSupport(
