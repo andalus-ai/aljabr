@@ -101,4 +101,25 @@ class WordPieceTokenizerTest {
             Files.deleteIfExists(path);
         }
     }
+    @Test
+    void respectsExplicitChineseCharacterHandlingSetting() throws Exception {
+        String json = """
+                {
+                  "normalizer": {"type":"BertNormalizer","clean_text":true,"handle_chinese_chars":false,
+                    "strip_accents":false,"lowercase":false},
+                  "model": {"type":"WordPiece","unk_token":"[UNK]","continuing_subword_prefix":"##",
+                    "max_input_chars_per_word":100,
+                    "vocab":{"[UNK]":0,"中文":1}}
+                }
+                """;
+        Path path = Files.createTempFile("bert-tokenizer-chinese", ".json");
+        try {
+            Files.writeString(path, json);
+            assertArrayEquals(new long[] {1},
+                    new HuggingFaceWordPieceLoader().load(path).encode("中文", EncodeOptions.defaultOptions()));
+        } finally {
+            Files.deleteIfExists(path);
+        }
+    }
+
 }
