@@ -12,6 +12,7 @@ package tech.kayys.aljabr.safetensor.quantization.quantizer;
 import org.jboss.logging.Logger;
 import tech.kayys.aljabr.safetensor.core.tensor.AccelTensor;
 import tech.kayys.aljabr.safetensor.quantization.QuantConfig;
+import tech.kayys.aljabr.safetensor.quantization.QuantizationStrategy;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -119,10 +120,10 @@ public class GPTQQuantizer implements Quantizer {
     @Override
     public boolean supports(QuantConfig config) {
         if (config == null) return false;
-        var s = config.getStrategy();
-        return s == tech.kayys.aljabr.safetensor.quantization.QuantizationEngine.QuantStrategy.INT4
-                || s == tech.kayys.aljabr.safetensor.quantization.QuantizationEngine.QuantStrategy.INT8
-                || s == tech.kayys.aljabr.safetensor.quantization.QuantizationEngine.QuantStrategy.GPTQ;
+        QuantizationStrategy strategy = config.getQuantizationStrategy();
+        return strategy == QuantizationStrategy.INT4
+                || strategy == QuantizationStrategy.INT8
+                || strategy == QuantizationStrategy.GPTQ;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
