@@ -49,6 +49,11 @@ public final class ClassifierFreeGuidance {
                 : predictSequential(sample, context, provider);
 
         try (predictions) {
+            if (predictions.unconditional() == sample
+                    || predictions.conditional() == sample) {
+                throw new IllegalStateException(
+                        "Guidance predictions must not alias the borrowed sample");
+            }
             Tensor guided = Objects.requireNonNull(
                     tensorOperations.combine(
                             predictions.unconditional(),
