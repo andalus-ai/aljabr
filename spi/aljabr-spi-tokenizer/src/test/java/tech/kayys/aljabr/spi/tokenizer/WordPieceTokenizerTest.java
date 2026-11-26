@@ -55,7 +55,7 @@ class WordPieceTokenizerTest {
                   "pre_tokenizer": {"type":"BertPreTokenizer"},
                   "model": {"type":"WordPiece","unk_token":"[UNK]","continuing_subword_prefix":"##",
                     "max_input_chars_per_word":100,
-                    "vocab":{"[UNK]":0,"[CLS]":1,"[SEP]":2,"[PAD]":3,"hello":4,"world":5}},
+                    "vocab":{"[UNK]":0,"[CLS]":1,"[SEP]":2,"[PAD]":3,"hello":4,"world":5,"cafe":6}},
                   "added_tokens":[
                     {"id":0,"content":"[UNK]","special":true},
                     {"id":1,"content":"[CLS]","special":true},
@@ -72,8 +72,31 @@ class WordPieceTokenizerTest {
             Tokenizer loaded = loader.load(path);
             assertArrayEquals(new long[] {1, 4, 5, 2},
                     loaded.encode("Hello world", new EncodeOptions().addBos(true).addEos(true)));
-            assertEquals(6, loaded.vocabSize());
+            assertArrayEquals(new long[] {6}, loaded.encode("Café", EncodeOptions.defaultOptions()),
+                    "BertNormalizer strip_accents=null follows lowercase=true");
+            assertEquals(7, loaded.vocabSize());
             assertEquals(3, loaded.padTokenId());
+        } finally {
+            Files.deleteIfExists(path);
+        }
+    }
+
+    @Test
+    void explicitFalseStripAccentsDoesNotInheritLowercase() throws Exception {
+        String json = """
+                {
+                  "normalizer": {"type":"BertNormalizer","clean_text":true,"handle_chinese_chars":true,
+                    "strip_accents":false,"lowercase":true},
+                  "model": {"type":"WordPiece","unk_token":"[UNK]","continuing_subword_prefix":"##",
+                    "max_input_chars_per_word":100,
+                    "vocab":{"[UNK]":0,"cafe":1,"café":2}}
+                }
+                """;
+        Path path = Files.createTempFile("bert-tokenizer-explicit-accent", ".json");
+        try {
+            Files.writeString(path, json);
+            assertArrayEquals(new long[] {2},
+                    new HuggingFaceWordPieceLoader().load(path).encode("Café", EncodeOptions.defaultOptions()));
         } finally {
             Files.deleteIfExists(path);
         }
