@@ -385,7 +385,9 @@ public final class Gemma3TextBackbone {
                     maximum = Math.max(maximum, score);
                 }
                 double denominator = 0.0d;
-                for (double score : scores) denominator += Math.exp(score - maximum);
+                for (int index = 0; index < visibleTokenCount; index++) {
+                    denominator += Math.exp(scores[index] - maximum);
+                }
                 for (int source = firstVisible; source <= absolutePosition; source++) {
                     int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double probability = Math.exp(scores[source - firstVisible] - maximum) / denominator;
