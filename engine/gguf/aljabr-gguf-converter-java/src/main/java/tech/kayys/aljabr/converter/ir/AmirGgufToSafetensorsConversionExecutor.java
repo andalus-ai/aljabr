@@ -380,11 +380,6 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
     }
 
     /**
-     * GGML block_iq2_xs layout: fp16 scale, 32 little-endian 16-bit
-     * grid/sign words, then eight packed scale bytes. Each scale byte
-     * supplies two four-bit subgroup scales.
-     */
-    /**
      * GGML block_iq2_s layout: fp16 scale, 32 grid-index bytes, 32 packed sign
      * bytes, eight grid-index high-bit bytes, and eight packed scale bytes.
      * Each 32-value group contains four eight-value grid vectors; the low and
@@ -415,6 +410,11 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
     }
 
+    /**
+     * GGML block_iq2_xs layout: fp16 scale, 32 little-endian 16-bit
+     * grid/sign words, then eight packed scale bytes. Each scale byte
+     * supplies two four-bit subgroup scales.
+     */
     private static void dequantizeIQ2XSBlock(byte[] source, int base, ByteBuffer output) {
         float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
         int qsOffset = base + 2;
