@@ -55,19 +55,24 @@ class Chronos2EmbeddingExecutionTest {
     void rejectsInvalidProjectionGeometry() {
         Chronos2Config config = config(false);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config,
-                identityResidual(3, 2), identityResidual(2, 2), new float[][] {{0f, 0f}});
+                identityResidual(3, 2), outputProjection(), new float[][] {{0f, 0f}});
         assertThrows(IllegalArgumentException.class,
                 () -> execution.embed(new float[][][] {{{1f}}}, new float[][][] {{{1f, 2f, 3f}}}));
     }
 
     private static Chronos2Config config(boolean reg) {
-        return new Chronos2Config(16, 1, 1, 1, 4, 16, 2, 2, 2, 1, 1,
+        return new Chronos2Config(16, 1, 1, 1, 4, 16, 2, 2, 3, 1, 1,
                 1e-6, 10000d, reg, false, List.of(0.1d, 0.9d));
     }
 
+    private static Weights outputProjection() {
+        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}, {0f, 0f}}, new float[3],
+                new float[4][3], new float[4], new float[4][2], new float[4]);
+    }
+
     private static Weights quantileProjection() {
-        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
-                new float[][] {{1f, 0f}, {0f, 1f}, {1f, 0f}, {0f, 1f}}, new float[4],
+        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}, {0f, 0f}}, new float[3],
+                new float[][] {{1f, 0f, 0f}, {0f, 1f, 0f}, {1f, 0f, 0f}, {0f, 1f, 0f}}, new float[4],
                 new float[4][2], new float[4]);
     }
 
