@@ -30,7 +30,7 @@ class DiffusionDenoisingLoopTest {
                     steps(2),
                     (sample, context) -> {
                         calls.incrementAndGet();
-                        return Tensor.of(new float[]{0.0f}, 1);
+                        return Tensor.of(new float[]{1.0f}, 1);
                     },
                     epsilonConverter(),
                     () -> false,
