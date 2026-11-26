@@ -178,8 +178,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         return executionObserverFailureCount.get();
     }
 
-    public synchronized void unloadModel(String modelId) {
-        GgufBackendRegistration removed = backends.remove(modelId);
+    public void unloadModel(String modelId) {
+        GgufBackendRegistration removed;
+        synchronized (this) {
+            removed = backends.remove(modelId);
+        }
         if (removed != null) removed.retire();
     }
 
@@ -537,13 +540,15 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     }
 
     @Override
-    public synchronized void close() {
-        // Detach the complete set before invoking provider code. This makes
-        // shutdown idempotent and prevents a failing close from leaving models
-        // registered or causing already-attempted backends to be closed twice.
-        List<GgufBackendRegistration> closing = new ArrayList<>(backends.values());
-        backends.clear();
-        initialized = false;
+    public void close() {
+        // Detach the complete set while holding the engine lock, then invoke
+        // provider cleanup after releasing it.
+        List<GgufBackendRegistration> closing;
+        synchronized (this) {
+            closing = new ArrayList<>(backends.values());
+            backends.clear();
+            initialized = false;
+        }
 
         Throwable firstFailure = null;
         for (GgufBackendRegistration registration : closing) {
