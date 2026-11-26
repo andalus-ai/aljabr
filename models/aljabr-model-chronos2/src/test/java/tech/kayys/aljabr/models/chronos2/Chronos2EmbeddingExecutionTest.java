@@ -24,7 +24,7 @@ class Chronos2EmbeddingExecutionTest {
     void embedsContextRegressionTokenAndFuturePatches() {
         Chronos2Config config = config(true);
         Weights input = identityResidual(3, 2);
-        Weights output = identityResidual(2, 2);
+        Weights output = outputProjection();
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
         float[][][] embedded = execution.embed(
