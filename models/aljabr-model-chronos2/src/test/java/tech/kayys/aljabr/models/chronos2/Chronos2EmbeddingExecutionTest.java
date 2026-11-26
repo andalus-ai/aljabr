@@ -24,7 +24,7 @@ class Chronos2EmbeddingExecutionTest {
     void embedsContextRegressionTokenAndFuturePatches() {
         Chronos2Config config = config(true);
         Weights input = identityResidual(3, 2, 2);
-        Weights output = identityResidual(2, 2, 4);
+        Weights output = identityResidual(2, 2, 2);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
         float[][][] embedded = execution.embed(
@@ -55,7 +55,7 @@ class Chronos2EmbeddingExecutionTest {
     void rejectsInvalidProjectionGeometry() {
         Chronos2Config config = config(false);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config,
-                identityResidual(3, 2, 2), identityResidual(2, 2, 4), new float[][] {{0f, 0f}});
+                identityResidual(3, 2, 2), identityResidual(2, 2, 2), new float[][] {{0f, 0f}});
         assertThrows(IllegalArgumentException.class,
                 () -> execution.embed(new float[][][] {{{1f}}}, new float[][][] {{{1f, 2f, 3f}}}));
     }
@@ -67,8 +67,8 @@ class Chronos2EmbeddingExecutionTest {
 
     private static Weights quantileProjection() {
         return new Weights(new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
-                new float[][] {{1f, 0f}, {0f, 1f}, {1f, 0f}, {0f, 1f}}, new float[4],
-                new float[4][2], new float[4]);
+                new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
+                new float[2][2], new float[2]);
     }
 
     private static Weights identityResidual(int input, int hiddenWidth, int output) {
