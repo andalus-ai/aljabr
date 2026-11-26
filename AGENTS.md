@@ -212,6 +212,35 @@ For parallel PRs:
 - Ask the maintainer to run local tests only when the result depends on their Apple Silicon/Metal hardware or other unavailable local environment; complete code inspection, implementation, documentation, and CI-oriented work autonomously first.
 - Never report a test, build, benchmark, or hardware validation as passing unless its output was observed.
 
+## SDK-first design
+
+The public Java SDK is the primary product surface of Aljabr. CLI tools, notebooks, examples, model runners, integrations and downstream products are consumers/adapters of the SDK—not alternate implementations of its semantics.
+
+- Design and review public SDK contracts before building CLI commands, notebook helpers, demos or product-specific integrations on top of them. Start from real Java consumer workflows and make the library usable without launching a CLI or runtime process.
+- Keep public APIs idiomatic, composable, discoverable, documented and independently consumable through published artifacts. Prefer stable Aljabr-owned types and explicit lifecycle/ownership contracts over leaking implementation-library types.
+- Keep convenience layers thin: builders, facades and adapters should delegate to canonical SDK contracts and must not fork validation, defaults, numerical semantics, provider selection mechanics or execution behavior.
+- Ensure the same SDK contract is usable from ordinary Java code, Gradle/Maven applications, JBang, JShell and notebooks. Examples and tooling demonstrate the SDK; they do not define a second programming model.
+- Treat API compatibility, dependency footprint, JDK baseline, resource ownership, error semantics and module publication as part of SDK design—not cleanup work after implementation.
+- Do not expose internal implementation classes merely to make integration easier. Promote a type to public API only when its semantics, ownership, compatibility expectations and consumer value are understood.
+- For every public feature, document the smallest artifact/dependency needed, supported usage, lifecycle/close behavior, errors, capability constraints and a runnable Java example.
+- Validate SDK usability from an external consumer perspective where practical: compile a small consumer against published or publish-to-local artifacts, without depending on repository-internal source sets or implementation modules.
+
+## Capability-based architecture
+
+Capabilities—not model names, file extensions, backend names or product-specific modes—are the primary way to describe what Aljabr components can do and what an execution path requires.
+
+- Express reusable functionality through stable, Aljabr-owned capability identifiers and descriptors with explicit versions, constraints and semantics. Reuse the canonical capability registry/contracts; do not invent parallel boolean flags, string switches or ad hoc capability maps.
+- Model capability dimensions at the right level: operation/domain support, dtype, shape/layout, precision, device, memory, determinism, batching, streaming, quantization, distribution and relevant format/architecture constraints. Include only dimensions that are meaningful and enforceable for that capability.
+- Separate a model/format's requirements from a provider's supported capabilities. A model family or file format must not imply that a particular provider can execute it; compatibility is an evaluated relationship with explicit evidence and diagnostics.
+- Select execution paths by matching requested requirements against declared, installed, available, compatible and validated capabilities. Keep these states distinct. A declaration alone is not proof of runtime availability, correctness or performance.
+- Prefer capability queries and composable operation support over hard-coded checks such as model-name lists, file-extension branches, backend-name conditionals or universal supports-everything flags. Where format/model-specific handling is genuinely required, isolate it in the owning adapter and translate into shared contracts.
+- Keep capability discovery separate from product policy. Aljabr provides descriptors, compatibility evaluation, provider initialization and explainable outcomes; AQLI or another consuming application chooses product-specific profiles, priorities and serving policy.
+- Make unsupported, unavailable, incompatible, unvalidated and failed outcomes distinguishable. Never silently fall back in a way that violates explicit precision, device, determinism, memory, format or other caller constraints.
+- Keep capability contracts extensible without requiring every consumer/provider to implement unrelated optional methods. Use focused capability interfaces or descriptors and compose them where appropriate; avoid giant universal interfaces and speculative one-interface-per-operation designs.
+- Capability metadata must not redefine computational semantics. Dtype, shape, error, ownership and numerical behavior remain defined by the canonical SDK/API contracts; providers advertise whether and under what constraints they implement them.
+- Add capability-specific conformance tests against independent references where possible. Test positive and negative constraints, boundary shapes, lifecycle, fallback/selection explanations and external-provider interoperability.
+- Do not claim a model, format, operation or provider is supported merely because its name is recognized or its descriptor exists. Report the exact capability coverage, constraints, provider and validation evidence.
+
 ## Developer experience and extension ecosystem
 
 Aljabr is a Java-native computational framework for research, development, education and production use. Its intended breadth is comparable to foundational parts of NumPy, SciPy, PyTorch and the surrounding scientific Python ecosystem, without promising Python API compatibility.
@@ -391,11 +420,19 @@ Before moving a type, inspect package/API compatibility, Gradle dependency edges
 
 ### 19.5 Reusable, cohesive code
 
-- Prefer composition and small cohesive components over god classes, catch-all managers and utility dumping grounds.
+- Prefer composition and small cohesive components over god classes, god files, catch-all managers and utility dumping grounds.
+- Apply the same responsibility discipline at every level: method, class, source file, package, Gradle module and subsystem. A well-factored class inside a god file or an over-coupled module is not sufficient.
+- A source file should have one clear organizing purpose. Split unrelated types, operation families, policy, algorithms, storage, provider integration and lifecycle code into cohesive files when they have independent reasons to change or distinct ownership.
+- Do not use a single class or file as the default home for an entire feature. In particular, avoid monolithic `*Manager`, `*Engine`, `*Service`, `*Factory`, `*Registry`, `*Coordinator`, `*Handler` and `*Utils` types that accumulate unrelated responsibilities. These names are not inherently wrong; the responsibility and dependency structure determine whether a design is cohesive.
+- Treat size and complexity as review signals, not arbitrary line-count quotas. Investigate files/classes with many unrelated collaborators, broad mutable state, many public methods, deeply nested control flow, repeated branching on provider/format/model type, mixed I/O and algorithms, or changes that routinely touch unrelated behavior. Split when it improves locality, independent testing, comprehension or change isolation; do not split mechanically to satisfy a numeric limit.
+- Keep orchestration thin. A facade may coordinate cohesive collaborators and own a clear lifecycle, but should delegate algorithms, parsing, validation, storage, dispatch and provider-specific behavior to the components that own those responsibilities.
 - Keep pure transformations separate from I/O, mutable state, provider lifecycle and orchestration where doing so improves testability or reuse.
 - Avoid framework-specific copies of generic numerical, tensor, model or format logic. Put shared behavior behind the canonical Aljabr contract and keep framework adapters thin.
-- Do not extract one-use helpers into public APIs without a real reuse or extension case.
+- Reuse existing implementations, contracts, validators, registries, descriptors and conversion paths before adding new ones. When duplication is found, establish the canonical owner and migrate callers incrementally instead of creating another abstraction.
+- Do not extract one-use helpers into public APIs without a real reuse or extension case. Package-private collaborators are usually preferable for internal decomposition.
 - Avoid both extremes: duplicated implementations and over-generalized frameworks. Reuse should reduce semantic drift, not create indirection without value.
+- When decomposing a large class or file, first map its responsibilities, callers, state/resource ownership, dependency edges and tests. Extract one cohesive responsibility at a time, preserve public behavior and compatibility, and add focused tests around the new boundary. Do not combine structural decomposition with unrelated algorithmic optimization.
+- Do not create one class per method or wrap every operation in an interface. Introduce a type or abstraction only when it gives a meaningful responsibility boundary, independent lifecycle, reusable behavior, stable extension point or valuable test seam.
 
 ### 19.6 Developer experience
 
@@ -429,6 +466,11 @@ For a structural, API, execution, provider, CLI or documentation change, reviewe
 6. Can a consumer discover, configure, execute, diagnose and clean up the capability?
 7. Are error, cancellation, streaming and fallback behaviors explicit and tested?
 8. Are claims about implementation, validation and support backed by evidence?
+9. Does each changed class and source file have a cohesive responsibility, or is it accumulating unrelated algorithms, state, I/O, policy or lifecycle work?
+10. Does a facade/orchestrator delegate to focused collaborators, and are existing reusable contracts and implementations used instead of duplicated logic?
+11. If a large class/file was changed, is its responsibility map and decomposition (or reason to keep it cohesive) clear from the design and tests?
+12. Is the public SDK the source of truth, with CLI/notebook/integration layers acting as thin consumers rather than alternate APIs?
+13. Are execution and extension decisions based on canonical capability contracts and explicit constraints rather than model-name/backend-name conditionals?
 
 If a question is not applicable, say why in the PR rather than adding unnecessary machinery. These principles supplement the existing test, compatibility, provider, memory and hardware-specific rules; they do not override them.
 
