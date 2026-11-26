@@ -212,6 +212,35 @@ For parallel PRs:
 - Ask the maintainer to run local tests only when the result depends on their Apple Silicon/Metal hardware or other unavailable local environment; complete code inspection, implementation, documentation, and CI-oriented work autonomously first.
 - Never report a test, build, benchmark, or hardware validation as passing unless its output was observed.
 
+## SDK-first design
+
+The public Java SDK is the primary product surface of Aljabr. CLI tools, notebooks, examples, model runners, integrations and downstream products are consumers/adapters of the SDK—not alternate implementations of its semantics.
+
+- Design and review public SDK contracts before building CLI commands, notebook helpers, demos or product-specific integrations on top of them. Start from real Java consumer workflows and make the library usable without launching a CLI or runtime process.
+- Keep public APIs idiomatic, composable, discoverable, documented and independently consumable through published artifacts. Prefer stable Aljabr-owned types and explicit lifecycle/ownership contracts over leaking implementation-library types.
+- Keep convenience layers thin: builders, facades and adapters should delegate to canonical SDK contracts and must not fork validation, defaults, numerical semantics, provider selection mechanics or execution behavior.
+- Ensure the same SDK contract is usable from ordinary Java code, Gradle/Maven applications, JBang, JShell and notebooks. Examples and tooling demonstrate the SDK; they do not define a second programming model.
+- Treat API compatibility, dependency footprint, JDK baseline, resource ownership, error semantics and module publication as part of SDK design—not cleanup work after implementation.
+- Do not expose internal implementation classes merely to make integration easier. Promote a type to public API only when its semantics, ownership, compatibility expectations and consumer value are understood.
+- For every public feature, document the smallest artifact/dependency needed, supported usage, lifecycle/close behavior, errors, capability constraints and a runnable Java example.
+- Validate SDK usability from an external consumer perspective where practical: compile a small consumer against published or publish-to-local artifacts, without depending on repository-internal source sets or implementation modules.
+
+## Capability-based architecture
+
+Capabilities—not model names, file extensions, backend names or product-specific modes—are the primary way to describe what Aljabr components can do and what an execution path requires.
+
+- Express reusable functionality through stable, Aljabr-owned capability identifiers and descriptors with explicit versions, constraints and semantics. Reuse the canonical capability registry/contracts; do not invent parallel boolean flags, string switches or ad hoc capability maps.
+- Model capability dimensions at the right level: operation/domain support, dtype, shape/layout, precision, device, memory, determinism, batching, streaming, quantization, distribution and relevant format/architecture constraints. Include only dimensions that are meaningful and enforceable for that capability.
+- Separate a model/format's requirements from a provider's supported capabilities. A model family or file format must not imply that a particular provider can execute it; compatibility is an evaluated relationship with explicit evidence and diagnostics.
+- Select execution paths by matching requested requirements against declared, installed, available, compatible and validated capabilities. Keep these states distinct. A declaration alone is not proof of runtime availability, correctness or performance.
+- Prefer capability queries and composable operation support over hard-coded checks such as model-name lists, file-extension branches, backend-name conditionals or universal supports-everything flags. Where format/model-specific handling is genuinely required, isolate it in the owning adapter and translate into shared contracts.
+- Keep capability discovery separate from product policy. Aljabr provides descriptors, compatibility evaluation, provider initialization and explainable outcomes; AQLI or another consuming application chooses product-specific profiles, priorities and serving policy.
+- Make unsupported, unavailable, incompatible, unvalidated and failed outcomes distinguishable. Never silently fall back in a way that violates explicit precision, device, determinism, memory, format or other caller constraints.
+- Keep capability contracts extensible without requiring every consumer/provider to implement unrelated optional methods. Use focused capability interfaces or descriptors and compose them where appropriate; avoid giant universal interfaces and speculative one-interface-per-operation designs.
+- Capability metadata must not redefine computational semantics. Dtype, shape, error, ownership and numerical behavior remain defined by the canonical SDK/API contracts; providers advertise whether and under what constraints they implement them.
+- Add capability-specific conformance tests against independent references where possible. Test positive and negative constraints, boundary shapes, lifecycle, fallback/selection explanations and external-provider interoperability.
+- Do not claim a model, format, operation or provider is supported merely because its name is recognized or its descriptor exists. Report the exact capability coverage, constraints, provider and validation evidence.
+
 ## Developer experience and extension ecosystem
 
 Aljabr is a Java-native computational framework for research, development, education and production use. Its intended breadth is comparable to foundational parts of NumPy, SciPy, PyTorch and the surrounding scientific Python ecosystem, without promising Python API compatibility.
