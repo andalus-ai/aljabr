@@ -1111,7 +1111,7 @@ public final class HatComputeProvider implements ComputeProvider {
         private OperationSupport nonNegativeFiniteFloatConstraint(
                 Map<String, String> constraints, String key) {
             String value = constraints.get(key);
-            if (value == null) return OperationSupport.UNKNOWN;
+            if (value == null) return OperationSupport.DELEGATED;
             try {
                 float parsed = Float.parseFloat(value);
                 return Float.isFinite(parsed) && parsed >= 0.0f
@@ -1124,7 +1124,7 @@ public final class HatComputeProvider implements ComputeProvider {
         private OperationSupport finiteFloatRangeConstraint(
                 Map<String, String> constraints, String key, float minimum, float maximum) {
             String value = constraints.get(key);
-            if (value == null) return OperationSupport.UNKNOWN;
+            if (value == null) return OperationSupport.DELEGATED;
             try {
                 float parsed = Float.parseFloat(value);
                 if (!Float.isFinite(parsed)) return OperationSupport.UNSUPPORTED;
