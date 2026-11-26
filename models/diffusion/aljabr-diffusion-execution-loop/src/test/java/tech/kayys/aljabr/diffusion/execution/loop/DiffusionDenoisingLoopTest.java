@@ -36,8 +36,8 @@ class DiffusionDenoisingLoopTest {
                     () -> false,
                     completed -> assertEquals(calls.get(), completed))) {
                 assertEquals(2, calls.get());
-                assertTrue(initial.get(0) == 1.0f);
-                assertTrue(result.get(0) < 1.0f);
+                assertTrue(initial.item() == 1.0f);
+                assertTrue(result.item() < 1.0f);
             }
             assertEquals(1.0f, initial.get(0));
         }
