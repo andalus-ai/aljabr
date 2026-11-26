@@ -30,10 +30,10 @@ class EulerDenoisingRunnerTest {
             try (Tensor result = runner.run(
                     initial,
                     2,
-                    PredictionType.FLOW,
+                    PredictionType.EPSILON,
                     (sample, context) -> TensorFactory.of(
                             new float[] {1.0f}, backend, 1),
-                    converter(backend, PredictionType.FLOW),
+                    converter(backend, PredictionType.EPSILON),
                     () -> false,
                     completed::set)) {
                 assertArrayEquals(new float[] {8.0f}, result.toFloatArray(), 0.0001f);
