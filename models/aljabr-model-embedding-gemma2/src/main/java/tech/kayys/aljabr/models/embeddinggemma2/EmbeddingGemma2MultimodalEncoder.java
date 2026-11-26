@@ -65,6 +65,8 @@ public final class EmbeddingGemma2MultimodalEncoder {
         if (inputIds.length == 0) {
             throw new IllegalArgumentException("inputIds must not be empty");
         }
+        // Reject invalid text sequence metadata before image preprocessing or vision execution.
+        textBackbone.validateSequenceMetadata(inputIds.length, validTokens, positionIds);
         // Validate text IDs before image processing, then check the expanded
         // image-token budget before running the (potentially expensive) vision tower.
         float[][] textEmbeddings = EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
