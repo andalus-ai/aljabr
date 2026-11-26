@@ -14,7 +14,7 @@ class Chronos2EmbeddingExecutionTest {
     void residualProjectionAddsLearnedSkipProjection() {
         Weights weights = new Weights(
                 new float[][] {{1f}, {2f}}, new float[] {0f, 0f},
-                new float[][] {{1f}}, new float[] {0f},
+                new float[][] {{1f, 0f}}, new float[] {0f},
                 new float[][] {{3f}}, new float[] {1f});
         float[][] result = ResidualProjectionReference.apply(new float[][] {{2f}}, weights, Activation.RELU);
         assertEquals(9f, result[0][0], 1e-6f);
@@ -30,7 +30,7 @@ class Chronos2EmbeddingExecutionTest {
         float[][][] embedded = execution.embed(
                 new float[][][] {{{1f, 0f, 0f}, {0f, 1f, 0f}}},
                 new float[][][] {{{0f, 0f, 1f}}});
-        assertEquals(3, embedded[0].length);
+        assertEquals(4, embedded[0].length);
         assertEquals(7f, embedded[0][1][0], 1e-6f);
         assertEquals(8f, embedded[0][1][1], 1e-6f);
     }
@@ -55,7 +55,7 @@ class Chronos2EmbeddingExecutionTest {
     void rejectsInvalidProjectionGeometry() {
         Chronos2Config config = config(false);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config,
-                identityResidual(3, 2), identityResidual(2, 4), new float[][] {{0f, 0f}});
+                identityResidual(3, 2), identityResidual(2, 2), new float[][] {{0f, 0f}});
         assertThrows(IllegalArgumentException.class,
                 () -> execution.embed(new float[][][] {{{1f}}}, new float[][][] {{{1f, 2f, 3f}}}));
     }
