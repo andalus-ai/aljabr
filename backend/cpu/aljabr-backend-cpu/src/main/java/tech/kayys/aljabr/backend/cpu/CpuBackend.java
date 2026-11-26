@@ -605,6 +605,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             MemorySegment result = output.segment();
             TensorLayout destinationLayout = input.layout();
             TensorLayout sourceLayout = source.layout();
+            TensorLayout resultLayout = TensorLayout.contiguous(plan.outputShape());
             long[] destinationDims = input.shape().dims();
             for (long logical = 0; logical < outputElements; logical++) {
                 float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
@@ -624,7 +625,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                         float update = readIndexAddValue(
                                 updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
                         float current = readIndexAddValue(result, destinationDimensions,
-                                TensorLayout.contiguous(plan.outputShape()), destinationLogical, dtype);
+                                resultLayout, destinationLogical, dtype);
                         writeIndexAddValue(result, destinationLogical, dtype, current + update);
                     }
                 }
