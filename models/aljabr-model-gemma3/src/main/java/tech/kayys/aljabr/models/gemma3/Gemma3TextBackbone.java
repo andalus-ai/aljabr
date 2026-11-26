@@ -307,9 +307,9 @@ public final class Gemma3TextBackbone {
                     flattenTokens(flatten(value)), 0);
 
             float[][][] attended = causalAttention(query, key, value, layerIndex);
-            float[][] attentionOutput = { linearVector(attended, layer.attentionOutput()) };
-            attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
-            float[][] afterAttention = add(input, attentionOutput);
+            float[] attentionOutputVector = linearVector(attended, layer.attentionOutput());
+            rmsNormVectorInPlace(attentionOutputVector, layer.postAttentionNorm());
+            float[][] afterAttention = add(input, new float[][] { attentionOutputVector });
 
             normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
             float[][] gate = linear(normalized, layer.feedForwardGate());
@@ -320,7 +320,7 @@ public final class Gemma3TextBackbone {
                 }
             }
             float[][] feedForward = linear(gate, layer.feedForwardDown());
-            feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
+            rmsNormVectorInPlace(feedForward[0], layer.postFeedForwardNorm());
             return add(afterAttention, feedForward);
         }
 
@@ -507,6 +507,20 @@ public final class Gemma3TextBackbone {
             }
         }
         return output;
+    }
+
+    /**
+     * Applies RMS normalization to a freshly produced single-token vector.
+     * The caller must own the vector; this method mutates it to avoid allocating
+     * a second vector for the normalized result.
+     */
+    private void rmsNormVectorInPlace(float[] input, float[] scale) {
+        double squareSum = 0.0d;
+        for (float value : input) squareSum += (double) value * value;
+        double inverse = 1.0d / Math.sqrt(squareSum / hidden + epsilon);
+        for (int dimension = 0; dimension < hidden; dimension++) {
+            input[dimension] = (float) (input[dimension] * inverse * (scale[dimension] + 1.0f));
+        }
     }
 
     private float[][] rmsNorm(float[][] input, float[] scale) {
