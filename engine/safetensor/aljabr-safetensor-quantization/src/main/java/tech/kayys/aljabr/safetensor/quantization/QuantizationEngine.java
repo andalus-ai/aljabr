@@ -134,7 +134,7 @@ public class QuantizationEngine {
 
     private void registerIfAvailable(QuantizationStrategy strategy, Quantizer quantizer) {
         if (quantizer != null) {
-            registerQuantizer(strategy, quantizer);
+            registerQuantizerWithStrategy(strategy, quantizer);
         }
     }
 
@@ -145,13 +145,13 @@ public class QuantizationEngine {
      * @param quantizer quantizer implementation
      */
     public void registerQuantizer(QuantStrategy strategy, Quantizer quantizer) {
-        registerQuantizer(QuantizationStrategyCompatibility.fromLegacy(strategy), quantizer);
+        registerQuantizerWithStrategy(QuantizationStrategyCompatibility.fromLegacy(strategy), quantizer);
     }
 
     /**
      * Register a quantizer using the framework-neutral strategy contract.
      */
-    public void registerQuantizer(QuantizationStrategy strategy, Quantizer quantizer) {
+    public void registerQuantizerWithStrategy(QuantizationStrategy strategy, Quantizer quantizer) {
         Objects.requireNonNull(strategy, "strategy cannot be null");
         Objects.requireNonNull(quantizer, "quantizer cannot be null");
         quantizers.put(strategy.name().toLowerCase(), quantizer);
@@ -431,33 +431,33 @@ public class QuantizationEngine {
      * Keeps small/vector tensors in their original form to reduce breakage risk.
      */
     public Map<String, AccelTensor> quantizeWeightsForInference(Map<String, AccelTensor> weights, QuantStrategy strategy) {
-        return quantizeWeightsForInference(weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
+        return quantizeWeightsForInferenceWithStrategy(weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
     }
 
-    public Map<String, AccelTensor> quantizeWeightsForInference(Map<String, AccelTensor> weights,
+    public Map<String, AccelTensor> quantizeWeightsForInferenceWithStrategy(Map<String, AccelTensor> weights,
             QuantizationStrategy strategy) {
         return quantizeWeightsForInferenceDetailed(null, weights, strategy).weights();
     }
 
     public Map<String, AccelTensor> quantizeWeightsForInference(Path modelPath, Map<String, AccelTensor> weights,
             QuantStrategy strategy) {
-        return quantizeWeightsForInference(modelPath, weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
+        return quantizeWeightsForInferenceWithStrategy(modelPath, weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
     }
 
-    public Map<String, AccelTensor> quantizeWeightsForInference(Path modelPath, Map<String, AccelTensor> weights,
+    public Map<String, AccelTensor> quantizeWeightsForInferenceWithStrategy(Path modelPath, Map<String, AccelTensor> weights,
             QuantizationStrategy strategy) {
         return quantizeWeightsForInferenceDetailed(modelPath, weights, strategy).weights();
     }
 
     public InferenceQuantizationResult quantizeWeightsForInferenceDetailed(Path modelPath, Map<String, AccelTensor> weights, QuantStrategy strategy) {
-        return quantizeWeightsForInferenceDetailed(modelPath, weights,
+        return quantizeWeightsForInferenceDetailedWithStrategy(modelPath, weights,
                 QuantizationStrategyCompatibility.fromLegacy(strategy));
     }
 
     /**
      * Quantize inference weights using the neutral strategy API.
      */
-    public InferenceQuantizationResult quantizeWeightsForInferenceDetailed(Path modelPath,
+    public InferenceQuantizationResult quantizeWeightsForInferenceDetailedWithStrategy(Path modelPath,
             Map<String, AccelTensor> weights, QuantizationStrategy strategy) {
         QuantizationStrategy effectiveStrategy = normalizeInferenceStrategy(strategy);
         if (effectiveStrategy == QuantizationStrategy.NONE) {
