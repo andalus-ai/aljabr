@@ -12,6 +12,7 @@ package tech.kayys.aljabr.safetensor.quantization.quantizer;
 import org.jboss.logging.Logger;
 import tech.kayys.aljabr.safetensor.core.tensor.AccelTensor;
 import tech.kayys.aljabr.safetensor.quantization.QuantConfig;
+import tech.kayys.aljabr.safetensor.quantization.QuantizationStrategy;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -159,11 +160,11 @@ public class INT8Quantizer implements Quantizer {
     @Override
     public boolean supports(QuantConfig config) {
         if (config == null) return false;
-        if (config.getStrategy() == tech.kayys.aljabr.safetensor.quantization.QuantizationEngine.QuantStrategy.FP8) {
+        if (config == null || config.getQuantizationStrategy() == QuantizationStrategy.FP8) {
             return false;
         }
         return config.getBits() == 8
-                || config.getStrategy() == tech.kayys.aljabr.safetensor.quantization.QuantizationEngine.QuantStrategy.INT8;
+                || config.getQuantizationStrategy() == QuantizationStrategy.INT8;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
