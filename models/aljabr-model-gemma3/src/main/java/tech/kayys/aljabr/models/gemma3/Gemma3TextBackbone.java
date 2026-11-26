@@ -399,7 +399,7 @@ public final class Gemma3TextBackbone {
                 }
             }
 
-            float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
+            float[][] attentionOutput = { linearVector(attended, layer.attentionOutput()) };
             attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
             float[][] afterAttention = add(input, attentionOutput);
             normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
