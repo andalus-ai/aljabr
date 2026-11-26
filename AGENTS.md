@@ -391,11 +391,19 @@ Before moving a type, inspect package/API compatibility, Gradle dependency edges
 
 ### 19.5 Reusable, cohesive code
 
-- Prefer composition and small cohesive components over god classes, catch-all managers and utility dumping grounds.
+- Prefer composition and small cohesive components over god classes, god files, catch-all managers and utility dumping grounds.
+- Apply the same responsibility discipline at every level: method, class, source file, package, Gradle module and subsystem. A well-factored class inside a god file or an over-coupled module is not sufficient.
+- A source file should have one clear organizing purpose. Split unrelated types, operation families, policy, algorithms, storage, provider integration and lifecycle code into cohesive files when they have independent reasons to change or distinct ownership.
+- Do not use a single class or file as the default home for an entire feature. In particular, avoid monolithic `*Manager`, `*Engine`, `*Service`, `*Factory`, `*Registry`, `*Coordinator`, `*Handler` and `*Utils` types that accumulate unrelated responsibilities. These names are not inherently wrong; the responsibility and dependency structure determine whether a design is cohesive.
+- Treat size and complexity as review signals, not arbitrary line-count quotas. Investigate files/classes with many unrelated collaborators, broad mutable state, many public methods, deeply nested control flow, repeated branching on provider/format/model type, mixed I/O and algorithms, or changes that routinely touch unrelated behavior. Split when it improves locality, independent testing, comprehension or change isolation; do not split mechanically to satisfy a numeric limit.
+- Keep orchestration thin. A facade may coordinate cohesive collaborators and own a clear lifecycle, but should delegate algorithms, parsing, validation, storage, dispatch and provider-specific behavior to the components that own those responsibilities.
 - Keep pure transformations separate from I/O, mutable state, provider lifecycle and orchestration where doing so improves testability or reuse.
 - Avoid framework-specific copies of generic numerical, tensor, model or format logic. Put shared behavior behind the canonical Aljabr contract and keep framework adapters thin.
-- Do not extract one-use helpers into public APIs without a real reuse or extension case.
+- Reuse existing implementations, contracts, validators, registries, descriptors and conversion paths before adding new ones. When duplication is found, establish the canonical owner and migrate callers incrementally instead of creating another abstraction.
+- Do not extract one-use helpers into public APIs without a real reuse or extension case. Package-private collaborators are usually preferable for internal decomposition.
 - Avoid both extremes: duplicated implementations and over-generalized frameworks. Reuse should reduce semantic drift, not create indirection without value.
+- When decomposing a large class or file, first map its responsibilities, callers, state/resource ownership, dependency edges and tests. Extract one cohesive responsibility at a time, preserve public behavior and compatibility, and add focused tests around the new boundary. Do not combine structural decomposition with unrelated algorithmic optimization.
+- Do not create one class per method or wrap every operation in an interface. Introduce a type or abstraction only when it gives a meaningful responsibility boundary, independent lifecycle, reusable behavior, stable extension point or valuable test seam.
 
 ### 19.6 Developer experience
 
