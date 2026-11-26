@@ -95,7 +95,7 @@ class EulerDenoisingRunnerTest {
             @Override
             public Tensor toDerivative(
                     Tensor sample, Tensor modelOutput, SigmaStepContext context) {
-                return TensorFactory.of(modelOutput.toFloatArray(), backend, modelOutput.shape().dimensions());
+                return TensorFactory.of(modelOutput.toFloatArray(), backend, modelOutput.shape().dims());
             }
         };
     }
