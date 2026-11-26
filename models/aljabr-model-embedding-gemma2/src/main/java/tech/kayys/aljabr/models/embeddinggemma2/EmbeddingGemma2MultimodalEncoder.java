@@ -62,10 +62,16 @@ public final class EmbeddingGemma2MultimodalEncoder {
         if (images.isEmpty()) {
             throw new IllegalArgumentException("at least one image is required");
         }
-        // Validate and embed text before running the (potentially expensive) vision tower.
+        if (inputIds.length == 0) {
+            throw new IllegalArgumentException("inputIds must not be empty");
+        }
+        // Validate text IDs before image processing, then check the expanded
+        // image-token budget before running the (potentially expensive) vision tower.
         float[][] textEmbeddings = EmbeddingGemma2MultimodalInputAssembler.embedTextTokens(
                 textBackbone, inputIds, imageTokenId, padTokenId);
-        List<float[][]> imageFeatures = visionPipeline.encodeBatch(images);
+        var processorOutput = visionPipeline.preprocess(images);
+        validateImagePlaceholderCount(inputIds, imageTokenId, processorOutput.numSoftTokensPerImage());
+        List<float[][]> imageFeatures = visionPipeline.encodeBatch(processorOutput);
         float[][] mergedEmbeddings = EmbeddingGemma2MultimodalInputAssembler.replaceImagePlaceholders(
                 textEmbeddings, inputIds, imageTokenId, imageFeatures);
         return textBackbone.encodeEmbeddings(mergedEmbeddings, validTokens, positionIds);
@@ -99,6 +105,31 @@ public final class EmbeddingGemma2MultimodalEncoder {
         float[][] tokenStates = encode(inputIds, images, validTokens, positionIds);
         boolean[] poolingMask = validTokens == null ? allValid(inputIds.length) : validTokens;
         return EmbeddingGemma2MeanPooler.meanPool(tokenStates, poolingMask);
+    }
+
+
+    static void validateImagePlaceholderCount(int[] inputIds, int imageTokenId, int[] softTokenCounts) {
+        Objects.requireNonNull(inputIds, "inputIds must not be null");
+        Objects.requireNonNull(softTokenCounts, "softTokenCounts must not be null");
+        if (imageTokenId < 0) {
+            throw new IllegalArgumentException("imageTokenId must be non-negative");
+        }
+        int placeholders = 0;
+        for (int tokenId : inputIds) {
+            if (tokenId == imageTokenId) placeholders++;
+        }
+        int expected = 0;
+        for (int imageIndex = 0; imageIndex < softTokenCounts.length; imageIndex++) {
+            int count = softTokenCounts[imageIndex];
+            if (count <= 0) {
+                throw new IllegalArgumentException("image " + imageIndex + " must have a positive soft-token count");
+            }
+            expected = Math.addExact(expected, count);
+        }
+        if (placeholders != expected) {
+            throw new IllegalArgumentException("image placeholder count (" + placeholders
+                    + ") must equal processor soft-token count (" + expected + ")");
+        }
     }
 
     private static int[] sequentialPositions(int length) {
