@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Objects;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.models.bert.BertConfig;
 import tech.kayys.aljabr.models.bert.MiniLmL6V2;
 import tech.kayys.aljabr.spi.tokenizer.EncodeOptions;
 import tech.kayys.aljabr.spi.tokenizer.Tokenizer;
@@ -20,11 +21,16 @@ public final class MiniLmL6V2Bundle implements AutoCloseable {
     public MiniLmL6V2Bundle(MiniLmL6V2 model, Tokenizer tokenizer) {
         this.model = Objects.requireNonNull(model, "model must not be null");
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer must not be null");
+        validateTokenizerContract(model.encoder().config(), tokenizer);
+    }
+
+    static void validateTokenizerContract(BertConfig config, Tokenizer tokenizer) {
+        Objects.requireNonNull(config, "config must not be null");
+        Objects.requireNonNull(tokenizer, "tokenizer must not be null");
         int vocabularySize = tokenizer.vocabSize();
-        if (vocabularySize != model.encoder().config().vocabularySize()) {
+        if (vocabularySize != config.vocabularySize()) {
             throw new IllegalArgumentException("Tokenizer vocabulary size " + vocabularySize
-                    + " does not match BERT vocabulary size "
-                    + model.encoder().config().vocabularySize());
+                    + " does not match BERT vocabulary size " + config.vocabularySize());
         }
         validateSpecialToken("CLS/BOS", tokenizer.bosTokenId(), vocabularySize);
         validateSpecialToken("SEP/EOS", tokenizer.eosTokenId(), vocabularySize);
