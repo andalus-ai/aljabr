@@ -50,7 +50,7 @@ static BOOL checked_size_add(size_t a, size_t b, size_t *result) {
 static BOOL checked_aligned_region(uintptr_t address, size_t bytes,
                                     size_t page_size, uintptr_t *aligned_address,
                                     size_t *aligned_bytes, size_t *offset) {
-  if (bytes == 0 || page_size == 0 ||
+  if (bytes == 0 || bytes > UINTPTR_MAX - address || page_size == 0 ||
       (page_size & (page_size - 1)) != 0)
     return NO;
   size_t page_offset = (size_t)(address & (uintptr_t)(page_size - 1));
@@ -147,9 +147,10 @@ int aljabr_metal_register_model_buffer(const void *base_ptr, size_t total_bytes)
   if (dummyDst != nil && g_queue != nil) {
     id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
     id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-    [blit copyFromBuffer:buf sourceOffset:0 toBuffer:dummyDst destinationOffset:0 size:64];
+    size_t touch_bytes = aligned_bytes < 64 ? aligned_bytes : 64;
+    [blit copyFromBuffer:buf sourceOffset:0 toBuffer:dummyDst destinationOffset:0 size:touch_bytes];
     if (aligned_bytes > 128) {
-      [blit copyFromBuffer:buf sourceOffset:aligned_bytes - 64 toBuffer:dummyDst destinationOffset:0 size:64];
+      [blit copyFromBuffer:buf sourceOffset:aligned_bytes - touch_bytes toBuffer:dummyDst destinationOffset:0 size:touch_bytes];
     }
     [blit endEncoding];
     [cmd commit];
