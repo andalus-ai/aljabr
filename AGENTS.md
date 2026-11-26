@@ -437,6 +437,9 @@ For a structural, API, execution, provider, CLI or documentation change, reviewe
 6. Can a consumer discover, configure, execute, diagnose and clean up the capability?
 7. Are error, cancellation, streaming and fallback behaviors explicit and tested?
 8. Are claims about implementation, validation and support backed by evidence?
+9. Does each changed class and source file have a cohesive responsibility, or is it accumulating unrelated algorithms, state, I/O, policy or lifecycle work?
+10. Does a facade/orchestrator delegate to focused collaborators, and are existing reusable contracts and implementations used instead of duplicated logic?
+11. If a large class/file was changed, is its responsibility map and decomposition (or reason to keep it cohesive) clear from the design and tests?
 
 If a question is not applicable, say why in the PR rather than adding unnecessary machinery. These principles supplement the existing test, compatibility, provider, memory and hardware-specific rules; they do not override them.
 
