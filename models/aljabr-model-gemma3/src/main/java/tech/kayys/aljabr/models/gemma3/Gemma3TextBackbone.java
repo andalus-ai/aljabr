@@ -335,8 +335,9 @@ public final class Gemma3TextBackbone {
             float[][] valueFlat = linear(normalized, layer.value());
 
             float[][][] query = reshape(queryFlat, queryHeads, headDim);
-            float[][][] key = headRmsNorm(reshape(keyFlat, kvHeads, headDim), layer.keyNorm());
-            query = headRmsNorm(query, layer.queryNorm());
+            float[][][] key = reshape(keyFlat, kvHeads, headDim);
+            headRmsNormInPlace(key, layer.keyNorm());
+            headRmsNormInPlace(query, layer.queryNorm());
             applyRopeAtPositionInPlace(query, absolutePosition,
                     config.ropeThetaForLayer(layerIndex),
                     config.partialRotaryFactorForLayer(layerIndex));
@@ -534,6 +535,27 @@ public final class Gemma3TextBackbone {
             }
         }
         return output;
+    }
+
+    /**
+     * Normalizes newly projected per-token query/key heads in place.
+     *
+     * <p>The incremental path owns these reshaped projection arrays, so it can
+     * safely avoid allocating a second three-dimensional tensor. The prefill
+     * path keeps the non-mutating reference helper.</p>
+     */
+    private void headRmsNormInPlace(float[][][] input, float[] scale) {
+        for (int token = 0; token < input.length; token++) {
+            for (int head = 0; head < input[token].length; head++) {
+                double squareSum = 0.0d;
+                for (float value : input[token][head]) squareSum += (double) value * value;
+                double inverse = 1.0d / Math.sqrt(squareSum / headDim + epsilon);
+                for (int dimension = 0; dimension < headDim; dimension++) {
+                    input[token][head][dimension] = (float) (
+                            input[token][head][dimension] * inverse * (scale[dimension] + 1.0f));
+                }
+            }
+        }
     }
 
     /** Applies one decode position's rotary transform without allocating a position array or output tensor. */
