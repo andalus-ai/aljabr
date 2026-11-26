@@ -1491,7 +1491,7 @@ class CpuBackendStorageTest {
 
     @Test
     void reshapeMaterializesNonContiguousInputInLogicalOrder() {
-        HostStorage storage = new HostStorage(99f, 1f, 3f, 5f, 2f, 4f, 6f);
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f);
         DefaultTensor input = new DefaultTensor(
                 new Shape(2, 3), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
                 new tech.kayys.aljabr.core.tensor.TensorLayout(
