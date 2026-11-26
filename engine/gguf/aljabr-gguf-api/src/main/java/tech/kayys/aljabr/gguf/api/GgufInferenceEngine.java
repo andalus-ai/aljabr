@@ -413,9 +413,14 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 GgufBackendRegistration.Lease lease = leaseFor(modelId);
                 GgufBackend backend = lease.backend();
                 if (executionObserver == ExecutionObserver.NOOP) {
-                    return backend.embed(request)
-                            .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                            .onTermination().invoke(() -> { activeCount.decrementAndGet(); lease.close(); });
+                    try {
+                        return backend.embed(request)
+                                .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                                .onTermination().invoke(() -> { activeCount.decrementAndGet(); lease.close(); });
+                    } catch (RuntimeException | Error failure) {
+                        lease.close();
+                        throw failure;
+                    }
                 }
                 return observeEmbedding(lease, () -> backend.embed(request));
             } catch (Exception error) {
