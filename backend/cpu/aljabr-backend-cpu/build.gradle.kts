@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
     implementation(project(":plugins:ml:aljabr-tensor"))
-    implementation(project(":core:aljabr-core"))
+    api(project(":core:aljabr-core"))
     api(project(":spi:aljabr-spi-compute"))
     testImplementation(project(":spi:aljabr-spi-testkit"))
     testImplementation(testFixtures(project(":plugins:ml:aljabr-tensor")))

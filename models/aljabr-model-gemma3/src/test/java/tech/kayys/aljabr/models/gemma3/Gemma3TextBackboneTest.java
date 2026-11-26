@@ -104,6 +104,22 @@ class Gemma3TextBackboneTest {
             assertEquals(3, session.position());
         }
 
+        // Reused score buffers grow geometrically; only the visible prefix may
+        // contribute to softmax after the buffer capacity exceeds that prefix.
+        int[] incrementalTokens = new int[12];
+        for (int index = 0; index < incrementalTokens.length; index++) {
+            incrementalTokens[index] = index % config.vocabSize();
+        }
+        try (Gemma3TextBackbone.DecodeSession incremental = backbone.newDecodeSession()) {
+            assertArrayEquals(backbone.forward(new int[] {incrementalTokens[0]})[0],
+                    incremental.decode(incrementalTokens[0]), 1.0e-5f);
+            for (int index = 1; index < incrementalTokens.length; index++) {
+                int[] prefix = java.util.Arrays.copyOf(incrementalTokens, index + 1);
+                assertArrayEquals(backbone.forward(prefix)[index],
+                        incremental.decode(incrementalTokens[index]), 1.0e-5f);
+            }
+        }
+
         int[] longerPrompt = new int[20];
         for (int index = 0; index < longerPrompt.length; index++) {
             longerPrompt[index] = index % config.vocabSize();

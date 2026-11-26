@@ -337,10 +337,10 @@ public final class Gemma3TextBackbone {
             float[][][] query = reshape(queryFlat, queryHeads, headDim);
             float[][][] key = headRmsNorm(reshape(keyFlat, kvHeads, headDim), layer.keyNorm());
             query = headRmsNorm(query, layer.queryNorm());
-            query = applyRope(query, new int[] {absolutePosition},
+            applyRopeAtPositionInPlace(query, absolutePosition,
                     config.ropeThetaForLayer(layerIndex),
                     config.partialRotaryFactorForLayer(layerIndex));
-            key = applyRope(key, new int[] {absolutePosition},
+            applyRopeAtPositionInPlace(key, absolutePosition,
                     config.ropeThetaForLayer(layerIndex),
                     config.partialRotaryFactorForLayer(layerIndex));
 
@@ -385,7 +385,9 @@ public final class Gemma3TextBackbone {
                     maximum = Math.max(maximum, score);
                 }
                 double denominator = 0.0d;
-                for (double score : scores) denominator += Math.exp(score - maximum);
+                for (int index = 0; index < visibleTokenCount; index++) {
+                    denominator += Math.exp(scores[index] - maximum);
+                }
                 for (int source = firstVisible; source <= absolutePosition; source++) {
                     int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double probability = Math.exp(scores[source - firstVisible] - maximum) / denominator;
@@ -532,6 +534,31 @@ public final class Gemma3TextBackbone {
             }
         }
         return output;
+    }
+
+    /** Applies one decode position's rotary transform without allocating a position array or output tensor. */
+    private static void applyRopeAtPositionInPlace(
+            float[][][] input, int position, double theta, double factor) {
+        int rotaryDimension = ((int) Math.floor(input[0][0].length * factor)) & ~1;
+        if (rotaryDimension <= 0) {
+            throw new IllegalArgumentException("Gemma 3 rotary dimension must be positive");
+        }
+        int half = rotaryDimension / 2;
+        for (float[][] token : input) {
+            for (float[] head : token) {
+                for (int dimension = 0; dimension < half; dimension++) {
+                    double inverseFrequency = 1.0d
+                            / Math.pow(theta, (2.0d * dimension) / rotaryDimension);
+                    double angle = position * inverseFrequency;
+                    double cosine = Math.cos(angle);
+                    double sine = Math.sin(angle);
+                    double first = head[dimension];
+                    double second = head[dimension + half];
+                    head[dimension] = (float) (first * cosine - second * sine);
+                    head[dimension + half] = (float) (second * cosine + first * sine);
+                }
+            }
+        }
     }
 
     private static float[][][] applyRope(float[][][] input, int[] positions, double theta, double factor) {

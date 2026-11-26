@@ -1430,4 +1430,62 @@ class CpuBackendStorageTest {
         assertEquals(0, indexStorage.references());
     }
 
+
+    @Test
+    void matmulSupportsZeroRowsAndColumns() {
+        HostStorage emptyRowsStorage = new HostStorage();
+        HostStorage rightStorage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor emptyRows = tensor(emptyRowsStorage, 0, 2);
+        DefaultTensor right = tensor(rightStorage, 2, 3);
+        Tensor noRows = null;
+
+        HostStorage leftStorage = new HostStorage(1f, 2f, 3f, 4f, 5f, 6f);
+        HostStorage emptyColumnsStorage = new HostStorage();
+        DefaultTensor left = tensor(leftStorage, 2, 3);
+        DefaultTensor emptyColumns = tensor(emptyColumnsStorage, 3, 0);
+        Tensor noColumns = null;
+        try {
+            noRows = backend.matmul(emptyRows, right);
+            assertArrayEquals(new long[] {0, 3}, noRows.shape().dims());
+            assertEquals(0, noRows.numel());
+            assertArrayEquals(new float[0], noRows.toFloatArray(), 0f);
+
+            noColumns = backend.matmul(left, emptyColumns);
+            assertArrayEquals(new long[] {2, 0}, noColumns.shape().dims());
+            assertEquals(0, noColumns.numel());
+            assertArrayEquals(new float[0], noColumns.toFloatArray(), 0f);
+        } finally {
+            if (noColumns != null) noColumns.release();
+            if (noRows != null) noRows.release();
+            emptyColumns.release();
+            left.release();
+            right.release();
+            emptyRows.release();
+        }
+        assertEquals(0, emptyRowsStorage.references());
+        assertEquals(0, rightStorage.references());
+        assertEquals(0, leftStorage.references());
+        assertEquals(0, emptyColumnsStorage.references());
+    }
+
+    @Test
+    void matmulWithZeroInnerDimensionProducesZeroFilledOutput() {
+        HostStorage leftStorage = new HostStorage();
+        HostStorage rightStorage = new HostStorage();
+        DefaultTensor left = tensor(leftStorage, 2, 0);
+        DefaultTensor right = tensor(rightStorage, 0, 3);
+        Tensor result = null;
+        try {
+            result = backend.matmul(left, right);
+            assertArrayEquals(new long[] {2, 3}, result.shape().dims());
+            assertArrayEquals(new float[] {0f, 0f, 0f, 0f, 0f, 0f}, result.toFloatArray(), 0f);
+        } finally {
+            if (result != null) result.release();
+            right.release();
+            left.release();
+        }
+        assertEquals(0, leftStorage.references());
+        assertEquals(0, rightStorage.references());
+    }
+
 }

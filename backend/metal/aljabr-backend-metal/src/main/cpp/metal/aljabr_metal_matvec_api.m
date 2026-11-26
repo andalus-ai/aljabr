@@ -3351,31 +3351,60 @@ int aljabr_metal_init_kv_cache(int nLayers, int maxSeq,
   if (g_device == nil || nLayers <= 0 || nLayers > MAX_DECODE_LAYERS ||
       maxSeq <= 0 || layerStrides == NULL)
     return -1;
+
+  // Build the complete cache off to the side. A bad stride or allocation
+  // failure must not publish a partially initialized cache to decode calls.
+  id<MTLBuffer> __strong newK[MAX_DECODE_LAYERS] = { nil };
+  id<MTLBuffer> __strong newV[MAX_DECODE_LAYERS] = { nil };
+  uint32_t newStrides[MAX_DECODE_LAYERS] = { 0 };
+  for (int i = 0; i < nLayers; i++) {
+    if (layerStrides[i] <= 0)
+      return -1;
+    size_t bytes = 0;
+    size_t allocBytes = 0;
+    if (!checked_float_buffer_bytes((size_t)maxSeq,
+                                    (size_t)layerStrides[i], 1, &bytes) ||
+        !checked_aligned_buffer_length(bytes, &allocBytes))
+      return -1;
+    newK[i] = [g_device newBufferWithLength:allocBytes
+                                    options:MTLResourceStorageModeShared];
+    newV[i] = [g_device newBufferWithLength:allocBytes
+                                    options:MTLResourceStorageModeShared];
+    if (newK[i] == nil || newV[i] == nil)
+      return -2;
+    newStrides[i] = (uint32_t)layerStrides[i];
+  }
+
+  for (int i = 0; i < nLayers; i++) {
+    g_kv_k[i] = newK[i];
+    g_kv_v[i] = newV[i];
+    g_kv_stride[i] = newStrides[i];
+  }
+  for (int i = nLayers; i < g_kv_layers; i++) {
+    g_kv_k[i] = nil;
+    g_kv_v[i] = nil;
+    g_kv_stride[i] = 0;
+  }
   g_kv_layers = nLayers;
   g_kv_max_seq = maxSeq;
-  for (int i = 0; i < nLayers; i++) {
-    uint32_t stride = (uint32_t)layerStrides[i];
-    g_kv_stride[i] = stride;
-    size_t bytes = (size_t)maxSeq * stride * sizeof(float);
-    size_t allocBytes = (bytes + 16383) & ~16383;
-    g_kv_k[i] = [g_device newBufferWithLength:allocBytes
-                                      options:MTLResourceStorageModeShared];
-    g_kv_v[i] = [g_device newBufferWithLength:allocBytes
-                                      options:MTLResourceStorageModeShared];
-    if (g_kv_k[i] == nil || g_kv_v[i] == nil)
-      return -2;
-  }
   return 0;
 }
 
 int aljabr_metal_sync_kv_cache(int layer, int seqLen, const float *kData,
                                const float *vData) {
-  if (layer < 0 || layer >= g_kv_layers || seqLen <= 0 || seqLen > g_kv_max_seq)
+  if (layer < 0 || layer >= g_kv_layers || seqLen <= 0 ||
+      seqLen > g_kv_max_seq || g_kv_stride[layer] == 0)
     return -1;
-  size_t bytes = (size_t)seqLen * g_kv_stride[layer] * sizeof(float);
-  if (kData && g_kv_k[layer])
+  size_t bytes = 0;
+  if (!checked_float_buffer_bytes((size_t)seqLen,
+                                  (size_t)g_kv_stride[layer], 1, &bytes))
+    return -1;
+  if ((kData && (g_kv_k[layer] == nil || g_kv_k[layer].length < bytes)) ||
+      (vData && (g_kv_v[layer] == nil || g_kv_v[layer].length < bytes)))
+    return -2;
+  if (kData)
     memcpy([g_kv_k[layer] contents], kData, bytes);
-  if (vData && g_kv_v[layer])
+  if (vData)
     memcpy([g_kv_v[layer] contents], vData, bytes);
   return 0;
 }
