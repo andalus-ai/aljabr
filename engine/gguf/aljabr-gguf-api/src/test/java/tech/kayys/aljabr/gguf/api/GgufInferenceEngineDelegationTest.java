@@ -20,6 +20,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -710,6 +713,135 @@ class GgufInferenceEngineDelegationTest {
         } finally {
             Files.deleteIfExists(firstModel);
             Files.deleteIfExists(secondModel);
+        }
+    }
+
+
+    @Test
+    void unloadDefersBackendCloseUntilSynchronousInferenceReleasesLease() throws Exception {
+        Path model = Files.createTempFile("gguf-unload-active-inference", ".gguf");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean closed = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public InferenceResponse execute(InferenceRequest request) {
+                entered.countDown();
+                try {
+                    if (!release.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("test timed out waiting to release inference");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(interrupted);
+                }
+                return response("leased");
+            }
+
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+
+        try (GgufInferenceEngine engine = engine(model, backend)) {
+            CompletableFuture<InferenceResponse> running =
+                    CompletableFuture.supplyAsync(() -> engine.execute("model", request()));
+            assertTrue(entered.await(5, TimeUnit.SECONDS), "inference should enter the backend");
+
+            engine.unloadModel("model");
+
+            assertFalse(closed.get(), "unload must not close a backend with an active lease");
+            assertThrows(tech.kayys.aljabr.spi.exception.InferenceException.class,
+                    () -> engine.execute("model", request()));
+
+            release.countDown();
+            assertEquals("leased", running.get(5, TimeUnit.SECONDS).getContent());
+            assertTrue(closed.get(), "the final lease release must close the retired backend");
+        } finally {
+            release.countDown();
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void streamCancellationReleasesLeaseAndClosesRetiredBackend() throws Exception {
+        Path model = Files.createTempFile("gguf-unload-active-stream", ".gguf");
+        AtomicBoolean closed = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public Multi<StreamingInferenceChunk> stream(InferenceRequest request) {
+                return Multi.createFrom().emitter(emitter -> { });
+            }
+
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+
+        try (GgufInferenceEngine engine = engine(model, backend)) {
+            Cancellable subscription = engine.streamExecute("model", request())
+                    .subscribe().with(item -> { }, failure -> fail(failure));
+
+            engine.unloadModel("model");
+            assertFalse(closed.get(), "the stream subscription must retain its backend lease");
+
+            subscription.cancel();
+
+            assertTrue(closed.get(), "cancellation must release the final backend lease");
+            assertEquals(0, engine.getStats().activeInferences());
+        } finally {
+            Files.deleteIfExists(model);
+        }
+    }
+
+    @Test
+    void engineCloseDefersBackendCloseUntilActiveInferenceCompletes() throws Exception {
+        Path model = Files.createTempFile("gguf-close-active-inference", ".gguf");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean closed = new AtomicBoolean();
+        GgufBackend backend = new TestBackend() {
+            @Override
+            public InferenceResponse execute(InferenceRequest request) {
+                entered.countDown();
+                try {
+                    if (!release.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("test timed out waiting to release inference");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(interrupted);
+                }
+                return response("shutdown-leased");
+            }
+
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+
+        GgufInferenceEngine engine = engine(model, backend);
+        try {
+            CompletableFuture<InferenceResponse> running =
+                    CompletableFuture.supplyAsync(() -> engine.execute("model", request()));
+            assertTrue(entered.await(5, TimeUnit.SECONDS), "inference should enter the backend");
+
+            engine.close();
+
+            assertFalse(closed.get(), "shutdown must defer close while inference owns a lease");
+            assertThrows(tech.kayys.aljabr.spi.exception.InferenceException.class,
+                    () -> engine.execute("model", request()));
+
+            release.countDown();
+            assertEquals("shutdown-leased", running.get(5, TimeUnit.SECONDS).getContent());
+            assertTrue(closed.get());
+        } finally {
+            release.countDown();
+            engine.close();
+            Files.deleteIfExists(model);
         }
     }
 
