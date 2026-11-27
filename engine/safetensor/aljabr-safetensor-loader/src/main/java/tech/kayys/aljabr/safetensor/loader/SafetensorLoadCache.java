@@ -50,6 +50,7 @@ public class SafetensorLoadCache {
         if (cache == null) {
             cache = new LinkedHashMap<>(16, 0.75f, true);
         }
+        return acquired;
     }
 
     /**
@@ -183,6 +184,50 @@ public class SafetensorLoadCache {
         return ttlSeconds > 0 && Instant.now().isAfter(entry.insertedAt().plusSeconds(ttlSeconds));
     }
 
+    private void closeResultQuietly(SafetensorLoadResult result) {
+        try {
+            if (result != null && !result.isClosed()) {
+                result.close();
+                metrics.recordClose();
+            }
+        } catch (RuntimeException failure) {
+            log.warnf(failure, "SafetensorLoadCache: error closing uncached result");
+        }
+    }
+
+    private final class CacheEntry {
+        private final SafetensorLoadResult result;
+        private final SafetensorShardSession session;
+        private final Instant insertedAt;
+        private final AtomicBoolean closeMetricRecorded = new AtomicBoolean();
+
+        private CacheEntry(SafetensorLoadResult result, Instant insertedAt) {
+            this.result = result;
+            this.insertedAt = insertedAt;
+            this.session = SafetensorShardSession.singleFile(result);
+        }
+
+        private SafetensorLoadResult result() { return result; }
+        private Instant insertedAt() { return insertedAt; }
+
+        private LoadLease acquire() {
+            return new LoadLease(this, session.retain());
+        }
+
+        private void retire() {
+            session.close();
+            recordCloseIfReleased();
+        }
+
+        private void release(SafetensorShardSession.SessionLease lease) {
+            lease.close();
+            recordCloseIfReleased();
+        }
+
+        private void recordCloseIfReleased() {
+            if (session.resourcesClosed() && closeMetricRecorded.compareAndSet(false, true)) {
+                metrics.recordClose();
+            }
     private final class CacheEntry {
         private final SafetensorLoadResult result;
         private final SafetensorShardSession session;
