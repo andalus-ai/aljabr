@@ -371,6 +371,23 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         return MemorySegment.ofArray(packed);
     }
 
+    /**
+     * Creates a storage-sharing shape view while balancing the retained storage
+     * reference if tensor construction fails.
+     */
+    private Tensor shapeView(Tensor input, Shape outputShape, long[] outputStrides) {
+        TensorStorage storage = input.storage();
+        storage.retain();
+        try {
+            return new DefaultTensor(
+                    outputShape, input.dtype(), input.device(), storage, this,
+                    new TensorLayout(outputShape, outputStrides, input.layout().storageOffset()));
+        } catch (RuntimeException | Error failure) {
+            storage.release();
+            throw failure;
+        }
+    }
+
     // ── Shape ops ────────────────────────────────────────────────────────────
 
     @Override
@@ -677,15 +694,48 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
 
     @Override
     public Tensor unsqueeze(Tensor a, int dim) {
+        Objects.requireNonNull(a, "input");
         TensorOperationValidator.UnsqueezePlan plan =
                 TensorOperationValidator.validateUnsqueeze(a.shape(), dim);
-        return reshape(a, plan.outputShape().dims());
+        if (a.dtype().isQuantized()) {
+            return reshape(a, plan.outputShape().dims());
+        }
+
+        int axis = plan.axis();
+        long[] inputStrides = a.layout().strides();
+        long[] outputStrides = new long[inputStrides.length + 1];
+        System.arraycopy(inputStrides, 0, outputStrides, 0, axis);
+        outputStrides[axis] = axis == inputStrides.length
+                ? 1L
+                : Math.multiplyExact(inputStrides[axis], a.shape().dim(axis));
+        System.arraycopy(inputStrides, axis, outputStrides, axis + 1,
+                inputStrides.length - axis);
+        return shapeView(a, plan.outputShape(), outputStrides);
     }
 
     @Override
     public Tensor squeeze(Tensor a) {
+        Objects.requireNonNull(a, "input");
         Shape outputShape = TensorOperationValidator.validateSqueeze(a.shape());
-        return reshape(a, outputShape.dims());
+        if (a.dtype().isQuantized()) {
+            return reshape(a, outputShape.dims());
+        }
+
+        long[] inputDimensions = a.shape().dims();
+        long[] inputStrides = a.layout().strides();
+        long[] outputStrides = new long[outputShape.rank()];
+        int outputAxis = 0;
+        for (int axis = 0; axis < inputDimensions.length; axis++) {
+            if (inputDimensions[axis] != 1) {
+                outputStrides[outputAxis++] = inputStrides[axis];
+            }
+        }
+        // The tensor API represents scalar/all-singleton squeeze results as
+        // a one-element vector; its sole stride is immaterial to addressing.
+        if (outputAxis == 0) {
+            outputStrides[0] = 1L;
+        }
+        return shapeView(a, outputShape, outputStrides);
     }
 
     @Override

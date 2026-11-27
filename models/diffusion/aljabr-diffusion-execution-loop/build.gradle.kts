@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     api(project(":models:diffusion:aljabr-diffusion-execution-api"))
+    api(project(":models:diffusion:aljabr-diffusion-api"))
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
