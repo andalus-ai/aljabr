@@ -99,7 +99,12 @@ public final class EmbeddingGemma2VisionImagePipeline {
      * preserved; padded tokens are removed by the vision tower.
      */
     public List<float[][]> encodeBatch(List<EmbeddingGemma2VisionImageProcessor.RgbImage> images) {
-        EmbeddingGemma2VisionProcessorOutput processorOutput = imageProcessor.process(images);
+        return encodeBatch(imageProcessor.process(images));
+    }
+
+    /** Executes already-preprocessed image inputs without repeating image processing. */
+    public List<float[][]> encodeBatch(EmbeddingGemma2VisionProcessorOutput processorOutput) {
+        Objects.requireNonNull(processorOutput, "processorOutput must not be null");
         return visionTower.encodeAndProject(processorOutput);
     }
 

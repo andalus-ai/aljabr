@@ -307,9 +307,9 @@ public final class Gemma3TextBackbone {
                     flattenTokens(flatten(value)), 0);
 
             float[][][] attended = causalAttention(query, key, value, layerIndex);
-            float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
-            attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
-            float[][] afterAttention = add(input, attentionOutput);
+            float[] attentionOutputVector = linearVector(attended, layer.attentionOutput());
+            rmsNormVectorInPlace(attentionOutputVector, layer.postAttentionNorm());
+            float[][] afterAttention = add(input, new float[][] { attentionOutputVector });
 
             normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
             float[][] gate = linear(normalized, layer.feedForwardGate());
@@ -320,7 +320,7 @@ public final class Gemma3TextBackbone {
                 }
             }
             float[][] feedForward = linear(gate, layer.feedForwardDown());
-            feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
+            rmsNormVectorInPlace(feedForward[0], layer.postFeedForwardNorm());
             return add(afterAttention, feedForward);
         }
 
@@ -335,8 +335,9 @@ public final class Gemma3TextBackbone {
             float[][] valueFlat = linear(normalized, layer.value());
 
             float[][][] query = reshape(queryFlat, queryHeads, headDim);
-            float[][][] key = headRmsNorm(reshape(keyFlat, kvHeads, headDim), layer.keyNorm());
-            query = headRmsNorm(query, layer.queryNorm());
+            float[][][] key = reshape(keyFlat, kvHeads, headDim);
+            headRmsNormInPlace(key, layer.keyNorm());
+            headRmsNormInPlace(query, layer.queryNorm());
             applyRopeAtPositionInPlace(query, absolutePosition,
                     config.ropeThetaForLayer(layerIndex),
                     config.partialRotaryFactorForLayer(layerIndex));
@@ -353,7 +354,7 @@ public final class Gemma3TextBackbone {
             cacheSession.write(layerIndex, absolutePosition,
                     currentKey, 0, currentValue, 0);
 
-            float[][][] attended = new float[1][queryHeads][headDim];
+            float[] attended = new float[hidden];
             int groups = queryHeads / kvHeads;
             int firstVisible = config.isSlidingAttentionLayer(layerIndex)
                     ? Math.max(0, absolutePosition - config.slidingWindowSize() + 1) : 0;
@@ -392,13 +393,13 @@ public final class Gemma3TextBackbone {
                     int sourceOffset = (source - firstVisible) * cacheWidth + kvHead * headDim;
                     double probability = Math.exp(scores[source - firstVisible] - maximum) / denominator;
                     for (int dimension = 0; dimension < headDim; dimension++) {
-                        attended[0][head][dimension] +=
+                        attended[head * headDim + dimension] +=
                                 (float) (probability * layerVisibleValues[sourceOffset + dimension]);
                     }
                 }
             }
 
-            float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
+            float[][] attentionOutput = { linearVector(attended, layer.attentionOutput()) };
             attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
             float[][] afterAttention = add(input, attentionOutput);
             normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
@@ -508,6 +509,20 @@ public final class Gemma3TextBackbone {
         return output;
     }
 
+    /**
+     * Applies RMS normalization to a freshly produced single-token vector.
+     * The caller must own the vector; this method mutates it to avoid allocating
+     * a second vector for the normalized result.
+     */
+    private void rmsNormVectorInPlace(float[] input, float[] scale) {
+        double squareSum = 0.0d;
+        for (float value : input) squareSum += (double) value * value;
+        double inverse = 1.0d / Math.sqrt(squareSum / hidden + epsilon);
+        for (int dimension = 0; dimension < hidden; dimension++) {
+            input[dimension] = (float) (input[dimension] * inverse * (scale[dimension] + 1.0f));
+        }
+    }
+
     private float[][] rmsNorm(float[][] input, float[] scale) {
         float[][] output = new float[input.length][hidden];
         for (int token = 0; token < input.length; token++) {
@@ -534,6 +549,27 @@ public final class Gemma3TextBackbone {
             }
         }
         return output;
+    }
+
+    /**
+     * Normalizes newly projected per-token query/key heads in place.
+     *
+     * <p>The incremental path owns these reshaped projection arrays, so it can
+     * safely avoid allocating a second three-dimensional tensor. The prefill
+     * path keeps the non-mutating reference helper.</p>
+     */
+    private void headRmsNormInPlace(float[][][] input, float[] scale) {
+        for (int token = 0; token < input.length; token++) {
+            for (int head = 0; head < input[token].length; head++) {
+                double squareSum = 0.0d;
+                for (float value : input[token][head]) squareSum += (double) value * value;
+                double inverse = 1.0d / Math.sqrt(squareSum / headDim + epsilon);
+                for (int dimension = 0; dimension < headDim; dimension++) {
+                    input[token][head][dimension] = (float) (
+                            input[token][head][dimension] * inverse * (scale[dimension] + 1.0f));
+                }
+            }
+        }
     }
 
     /** Applies one decode position's rotary transform without allocating a position array or output tensor. */
@@ -629,6 +665,19 @@ public final class Gemma3TextBackbone {
                 throw new IllegalArgumentException("token vectors must have a consistent width");
             }
             System.arraycopy(input[token], 0, output, token * width, width);
+        }
+        return output;
+    }
+
+    /** Projects one token vector without wrapping it in a temporary sequence tensor. */
+    private static float[] linearVector(float[] input, float[][] weight) {
+        float[] output = new float[weight.length];
+        for (int out = 0; out < weight.length; out++) {
+            double sum = 0.0d;
+            for (int in = 0; in < input.length; in++) {
+                sum += (double) weight[out][in] * input[in];
+            }
+            output[out] = (float) sum;
         }
         return output;
     }
