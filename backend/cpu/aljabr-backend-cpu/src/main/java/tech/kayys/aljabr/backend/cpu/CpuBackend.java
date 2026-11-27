@@ -384,9 +384,14 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
 
         TensorLayout inputLayout = a.layout();
         if (!inputLayout.isContiguous()) {
-            throw new UnsupportedOperationException(
-                    "CPU reshape of a non-contiguous tensor requires materialization; "
-                            + "input layout=" + inputLayout);
+            // Reshape preserves logical row-major order. Materialize only when
+            // the source layout cannot be represented by canonical output strides.
+            Tensor materialized = contiguous(a);
+            try {
+                return reshape(materialized, newShape);
+            } finally {
+                materialized.release();
+            }
         }
 
         // A contiguous tensor may still be a view with a non-zero storage
