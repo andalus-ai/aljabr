@@ -153,6 +153,25 @@ public final class EmbeddingGemma2TextBackbone {
         return result;
     }
 
+    /** Validates sequence metadata before a multimodal caller starts image inference. */
+    void validateSequenceMetadata(int sequenceLength, boolean[] validTokens, int[] positionIds) {
+        if (sequenceLength <= 0 || sequenceLength > config.maxInputTokens()) {
+            throw new IllegalArgumentException("input sequence length must be between 1 and max_input_tokens ("
+                    + config.maxInputTokens() + ")");
+        }
+        if (validTokens != null && validTokens.length != sequenceLength) {
+            throw new IllegalArgumentException("validTokens length must equal input sequence length");
+        }
+        if (positionIds == null || positionIds.length != sequenceLength) {
+            throw new IllegalArgumentException("positionIds length must equal input sequence length");
+        }
+        for (int index = 0; index < positionIds.length; index++) {
+            if (positionIds[index] < 0 || positionIds[index] >= config.maxPositionEmbeddings()) {
+                throw new IllegalArgumentException("position ID out of range at index " + index);
+            }
+        }
+    }
+
     private void validateEmbeddingInputs(
             float[][] inputEmbeddings, boolean[] validTokens, int[] positionIds) {
         if (inputEmbeddings == null || inputEmbeddings.length == 0) {
