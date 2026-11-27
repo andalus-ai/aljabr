@@ -146,6 +146,28 @@ class EmbeddingGemma2VisionImagePipelineTest {
         assertMatrixEquals(squareAlone, landscapeFirst.get(1));
     }
 
+    @Test
+    void encodesPreprocessedBatchWithoutRepeatingImageProcessing() {
+        var spec = new EmbeddingGemma2VisionCheckpointMapper.VisionSpec(
+                4, 4, 1, 1, 1, 4, 1, 32, false);
+        var pipeline = EmbeddingGemma2VisionImagePipeline.fromCheckpoint(
+                spec, nonZeroCheckpoint(), 3, 1e-6f, 1e-6f, 100d, 70, 2);
+        var images = List.of(
+                EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(
+                        4, 4, solidRgb(4, 4, (byte) 255)),
+                EmbeddingGemma2VisionImageProcessor.RgbImage.fromRgb8(
+                        8, 4, solidRgb(8, 4, (byte) 64)));
+
+        var processorOutput = pipeline.preprocess(images);
+        List<float[][]> fromPreprocessed = pipeline.encodeBatch(processorOutput);
+        List<float[][]> fromImages = pipeline.encodeBatch(images);
+
+        assertEquals(images.size(), fromPreprocessed.size());
+        for (int image = 0; image < images.size(); image++) {
+            assertMatrixEquals(fromImages.get(image), fromPreprocessed.get(image));
+        }
+    }
+
     private static void assertMatrixEquals(float[][] expected, float[][] actual) {
         assertEquals(expected.length, actual.length, "token count");
         for (int token = 0; token < expected.length; token++) {
