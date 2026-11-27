@@ -640,3 +640,15 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Preserve close failures. Immediate shutdown should attempt cleanup for every retired registration and aggregate failures; deferred close failures must remain visible to the operation releasing the final lease and must not corrupt lease accounting.
 - Do not introduce ThreadLocal ownership, hidden background cleanup threads, or serving-layer dependencies into the GGUF API.
 - Add race tests for inference versus unload/shutdown, plus reactive completion, failure and cancellation paths whenever lease handling changes.
+
+
+## SafeTensors mapped-resource ownership and cache leases
+
+- A SafeTensors cache entry owns one resource-lifetime reference; a returned bare `SafetensorLoadResult` is not a caller lease and must not be used where concurrent eviction, invalidation or shutdown can occur.
+- New cache consumers must acquire a closeable cache lease and hold it for the complete lifetime of every tensor view or memory segment they use. Close the lease exactly once with try-with-resources or an equivalent structured scope.
+- Cache eviction, explicit invalidation, TTL expiry and application shutdown must retire only the cache owner's reference. They must not invalidate tensor memory while caller leases remain active.
+- When the cache is disabled, the returned lease must still own the loaded result and release it on close; do not create an untracked result lifetime.
+- Keep the legacy bare-result API only for compatibility. Mark it deprecated, document its concurrent-eviction limitation and do not introduce new internal consumers.
+- Keep resource cleanup outside the cache monitor. Cache synchronization protects lookup, LRU ordering and owner detachment only; it must not be held while mapped arenas are released.
+- Record close metrics only when the underlying mapped resources are physically released, not merely when the cache entry is retired.
+- Add regression tests for eviction, invalidation, shutdown and disabled-cache behavior with active leases. Verify tensor reads remain valid until final lease release and fail after physical close.
