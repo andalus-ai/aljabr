@@ -2,6 +2,7 @@ package tech.kayys.aljabr.safetensor.bert;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
 import tech.kayys.aljabr.models.bert.BertConfig;
@@ -17,6 +18,7 @@ import tech.kayys.aljabr.spi.tokenizer.Tokenizer;
 public final class MiniLmL6V2Bundle implements AutoCloseable {
     private final MiniLmL6V2 model;
     private final Tokenizer tokenizer;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     public MiniLmL6V2Bundle(MiniLmL6V2 model, Tokenizer tokenizer) {
         this.model = Objects.requireNonNull(model, "model must not be null");
@@ -49,8 +51,15 @@ public final class MiniLmL6V2Bundle implements AutoCloseable {
         }
     }
 
+    private void ensureOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("MiniLM bundle is closed");
+        }
+    }
+
     /** Tokenizes, truncates, pads, runs the encoder and returns normalized 384-D vectors. */
     public float[][] encode(List<String> sentences) {
+        ensureOpen();
         Objects.requireNonNull(sentences, "sentences must not be null");
         if (sentences.isEmpty()) return new float[0][];
         int batch = sentences.size();
@@ -107,6 +116,8 @@ public final class MiniLmL6V2Bundle implements AutoCloseable {
 
     @Override
     public void close() {
-        model.encoder().close();
+        if (closed.compareAndSet(false, true)) {
+            model.encoder().close();
+        }
     }
 }
