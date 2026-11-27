@@ -7,9 +7,9 @@ import java.lang.foreign.ValueLayout;
 /**
  * Owns the off-heap normalization weights shared by the GGUF Metal decode path.
  *
- * <p>The native Metal runtime retains registered buffer addresses, so replaced
- * generations are deliberately not closed here. A published generation keeps
- * its shared arena reachable for the lifetime of the store.</p>
+ * <p>The store retains the active shared arena alongside its segments. It does
+ * not close an arena after registration because native buffer retention is
+ * controlled by the Metal binding lifecycle.</p>
  */
 final class GgufMetalNormBufferStore {
     private static final int SLOT_COUNT = 6;
