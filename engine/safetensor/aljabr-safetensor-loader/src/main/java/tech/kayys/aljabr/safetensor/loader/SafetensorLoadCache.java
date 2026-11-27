@@ -50,6 +50,7 @@ public class SafetensorLoadCache {
         if (cache == null) {
             cache = new LinkedHashMap<>(16, 0.75f, true);
         }
+        return acquired;
     }
 
     /**
@@ -105,25 +106,30 @@ public class SafetensorLoadCache {
      * returned lease. This method cannot protect a caller from concurrent eviction.
      */
     @Deprecated
-    public synchronized SafetensorLoadResult getOrLoad(Path path, SafetensorFFMLoader loader) {
+    public SafetensorLoadResult getOrLoad(Path path, SafetensorFFMLoader loader) {
         if (!config.cache().enabled()) {
             return loader.load(path);
         }
-        ensureInitialized();
-        CacheEntry entry = cache.get(path);
-        if (entry != null && !entry.result().isClosed() && !isExpired(entry)) {
-            return entry.result();
-        }
-        if (entry != null) {
-            cache.remove(path);
-            entry.retire();
-        }
-        SafetensorLoadResult result = loader.load(path);
-        cache.put(path, new CacheEntry(result, Instant.now()));
         List<CacheEntry> retired = new ArrayList<>();
-        evictOverflow(retired);
-        retired.forEach(CacheEntry::retire);
-        return result;
+        try {
+            synchronized (this) {
+                ensureInitialized();
+                CacheEntry entry = cache.get(path);
+                if (entry != null && !entry.result().isClosed() && !isExpired(entry)) {
+                    return entry.result();
+                }
+                if (entry != null) {
+                    cache.remove(path);
+                    retired.add(entry);
+                }
+                SafetensorLoadResult result = loader.load(path);
+                cache.put(path, new CacheEntry(result, Instant.now()));
+                evictOverflow(retired);
+                return result;
+            }
+        } finally {
+            retired.forEach(CacheEntry::retire);
+        }
     }
 
     public void invalidate(Path path) {
@@ -189,6 +195,39 @@ public class SafetensorLoadCache {
         }
     }
 
+    private final class CacheEntry {
+        private final SafetensorLoadResult result;
+        private final SafetensorShardSession session;
+        private final Instant insertedAt;
+        private final AtomicBoolean closeMetricRecorded = new AtomicBoolean();
+
+        private CacheEntry(SafetensorLoadResult result, Instant insertedAt) {
+            this.result = result;
+            this.insertedAt = insertedAt;
+            this.session = SafetensorShardSession.singleFile(result);
+        }
+
+        private SafetensorLoadResult result() { return result; }
+        private Instant insertedAt() { return insertedAt; }
+
+        private LoadLease acquire() {
+            return new LoadLease(this, session.retain());
+        }
+
+        private void retire() {
+            session.close();
+            recordCloseIfReleased();
+        }
+
+        private void release(SafetensorShardSession.SessionLease lease) {
+            lease.close();
+            recordCloseIfReleased();
+        }
+
+        private void recordCloseIfReleased() {
+            if (session.resourcesClosed() && closeMetricRecorded.compareAndSet(false, true)) {
+                metrics.recordClose();
+            }
     private final class CacheEntry {
         private final SafetensorLoadResult result;
         private final SafetensorShardSession session;

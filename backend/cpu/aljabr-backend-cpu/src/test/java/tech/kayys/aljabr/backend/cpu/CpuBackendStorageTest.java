@@ -771,6 +771,38 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void squeezeAndUnsqueezePreserveStridesOffsetsAndSharedStorage() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(1, 2, 2), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 2, 2), new long[] {6, 3, 1}, 1));
+        Tensor squeezed = null;
+        Tensor expanded = null;
+        try {
+            squeezed = backend.squeeze(input);
+            expanded = backend.unsqueeze(squeezed, 1);
+
+            assertArrayEquals(new long[] {2, 2}, squeezed.shape().dims());
+            assertArrayEquals(new long[] {3, 1}, squeezed.layout().strides());
+            assertArrayEquals(new long[] {2, 1, 2}, expanded.shape().dims());
+            assertArrayEquals(new long[] {3, 2, 1}, expanded.layout().strides());
+            assertEquals(1, squeezed.layout().storageOffset());
+            assertEquals(1, expanded.layout().storageOffset());
+            assertArrayEquals(new float[] {1f, 2f, 4f, 5f}, squeezed.toFloatArray(), 0f);
+            assertArrayEquals(new float[] {1f, 2f, 4f, 5f}, expanded.toFloatArray(), 0f);
+            assertSame(storage, squeezed.storage());
+            assertSame(storage, expanded.storage());
+            assertEquals(3, storage.references());
+        } finally {
+            if (expanded != null) expanded.release();
+            if (squeezed != null) squeezed.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
     void squeezeRetainsOneElementVectorForAllSingletonAndScalarInputs() {
         HostStorage singletonStorage = new HostStorage(9f);
         DefaultTensor singletonInput = tensor(singletonStorage, 1, 1);
@@ -1515,6 +1547,33 @@ class CpuBackendStorageTest {
 
 
     @Test
+    void catReadsOffsetAndStridedInputsInLogicalOrderAndDoesNotRetainInputStorage() {
+        HostStorage leftStorage = new HostStorage(99f, 1f, 99f, 2f, 99f, 3f, 99f, 4f);
+        HostStorage rightStorage = new HostStorage(99f, 5f, 99f, 6f, 99f, 7f, 99f, 8f);
+        DefaultTensor left = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) leftStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {4, 2}, 1));
+        DefaultTensor right = new DefaultTensor(
+                new Shape(2, 2), DType.F32, DeviceType.CPU, (TensorStorage) rightStorage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 2), new long[] {4, 2}, 1));
+        Tensor concatenated = null;
+        try {
+            concatenated = backend.cat(List.of(left, right), -1);
+            assertArrayEquals(new long[] {2, 4}, concatenated.shape().dims());
+            assertArrayEquals(
+                    new float[] {1f, 2f, 5f, 6f, 3f, 4f, 7f, 8f},
+                    concatenated.toFloatArray(), 0f);
+            assertEquals(1, leftStorage.references());
+            assertEquals(1, rightStorage.references());
+        } finally {
+            if (concatenated != null) concatenated.release();
+            right.release();
+            left.release();
+        }
+        assertEquals(0, leftStorage.references());
+        assertEquals(0, rightStorage.references());
     void reshapeMaterializesNonContiguousInputInLogicalOrder() {
         HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f);
         DefaultTensor input = new DefaultTensor(
