@@ -46,6 +46,22 @@ class BertCheckpointMapperTest {
     }
 
     @Test
+    void validatesCompleteCheckpointNamesWithoutLoadingTensorPayloads() {
+        BertCheckpointMapper mapper = new BertCheckpointMapper();
+        java.util.Set<String> names = new java.util.LinkedHashSet<>(mapper.expectedTensorShapes(config()).keySet());
+        names.add("pooler.dense.weight");
+        names.add("embeddings.position_ids");
+        mapper.validateTensorNames(config(), names);
+
+        names.add("unexpected.weight");
+        assertThrows(IllegalArgumentException.class, () -> mapper.validateTensorNames(config(), names));
+
+        names.remove("unexpected.weight");
+        names.remove("encoder.layer.0.attention.self.query.weight");
+        assertThrows(IllegalArgumentException.class, () -> mapper.validateTensorNames(config(), names));
+    }
+
+    @Test
     void rejectsMissingUnexpectedAndMismatchedTensors() {
         BertCheckpointMapper mapper = new BertCheckpointMapper();
         Map<String, BertCheckpointMapper.CheckpointTensor> missing = completeCheckpoint(mapper, config());
