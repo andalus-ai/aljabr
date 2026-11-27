@@ -384,9 +384,14 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
 
         TensorLayout inputLayout = a.layout();
         if (!inputLayout.isContiguous()) {
-            throw new UnsupportedOperationException(
-                    "CPU reshape of a non-contiguous tensor requires materialization; "
-                            + "input layout=" + inputLayout);
+            // Reshape preserves logical row-major order. Materialize only when
+            // the source layout cannot be represented by canonical output strides.
+            Tensor materialized = contiguous(a);
+            try {
+                return reshape(materialized, newShape);
+            } finally {
+                materialized.release();
+            }
         }
 
         // A contiguous tensor may still be a view with a non-zero storage
@@ -564,9 +569,9 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                     "CPU indexAdd source dtype " + source.dtype()
                             + " must match destination dtype " + input.dtype());
         }
-        if (input.dtype() != DType.F32) {
+        if (input.dtype() != DType.F32 && input.dtype() != DType.F16 && input.dtype() != DType.BF16) {
             throw new UnsupportedOperationException(
-                    "CPU indexAdd currently supports F32 destination and source tensors; actual dtype="
+                    "CPU indexAdd currently supports F32, F16, and BF16 destination and source tensors; actual dtype="
                             + input.dtype());
         }
         if (indices.dtype() != DType.I32) {
@@ -596,18 +601,19 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         }
 
         long outputElements = plan.outputShape().numel();
-        HostAccessibleStorage output = allocateOutput(
-                Math.multiplyExact(outputElements, (long) Float.BYTES));
+        DType dtype = input.dtype();
+        HostAccessibleStorage output = allocateOutput(dtype.memoryFootprintBytes(outputElements));
         try {
             MemorySegment destination = seg(input);
             MemorySegment updates = seg(source);
             MemorySegment result = output.segment();
             TensorLayout destinationLayout = input.layout();
             TensorLayout sourceLayout = source.layout();
+            TensorLayout resultLayout = TensorLayout.contiguous(plan.outputShape());
+            long[] destinationDims = input.shape().dims();
             for (long logical = 0; logical < outputElements; logical++) {
-                float value = CpuTensorLayoutAccess.readLogical(
-                        destination, destinationDimensions, destinationLayout, logical);
-                result.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(logical, Float.BYTES), value);
+                float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
+                writeIndexAddValue(result, logical, dtype, value);
             }
 
             long sourceAxisSize = sourceDimensions[selectedAxis];
@@ -620,18 +626,45 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                     for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
                         long sourceLogical = Math.addExact(sourceBase, innerIndex);
                         long destinationLogical = Math.addExact(destinationBase, innerIndex);
-                        float update = CpuTensorLayoutAccess.readLogical(
-                                updates, sourceDimensions, sourceLayout, sourceLogical);
-                        long byteOffset = Math.multiplyExact(destinationLogical, Float.BYTES);
-                        float current = result.get(ValueLayout.JAVA_FLOAT, byteOffset);
-                        result.set(ValueLayout.JAVA_FLOAT, byteOffset, current + update);
+                        float update = readIndexAddValue(
+                                updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
+                        float current = readIndexAddValue(result, destinationDimensions,
+                                resultLayout, destinationLogical, dtype);
+                        writeIndexAddValue(result, destinationLogical, dtype, current + update);
                     }
                 }
             }
-            return out(plan.outputShape(), output);
+            return out(plan.outputShape(), dtype, output);
         } catch (RuntimeException | Error failure) {
             output.release();
             throw failure;
+        }
+    }
+
+    private static float readIndexAddValue(
+            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex, DType dtype) {
+        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
+        return switch (dtype) {
+            case F32 -> segment.get(ValueLayout.JAVA_FLOAT,
+                    Math.multiplyExact(elementOffset, Float.BYTES));
+            case F16 -> CpuFloatingPointConversions.halfToFloat(segment.get(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(elementOffset, Short.BYTES)));
+            case BF16 -> CpuFloatingPointConversions.bfloat16ToFloat(segment.get(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(elementOffset, Short.BYTES)));
+            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
+        };
+    }
+
+    private static void writeIndexAddValue(
+            MemorySegment segment, long logicalIndex, DType dtype, float value) {
+        switch (dtype) {
+            case F32 -> segment.set(ValueLayout.JAVA_FLOAT,
+                    Math.multiplyExact(logicalIndex, Float.BYTES), value);
+            case F16 -> segment.set(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToHalf(value));
+            case BF16 -> segment.set(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToBfloat16(value));
+            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
         }
     }
 

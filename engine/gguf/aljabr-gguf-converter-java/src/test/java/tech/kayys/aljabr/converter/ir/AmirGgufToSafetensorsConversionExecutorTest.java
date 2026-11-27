@@ -328,6 +328,61 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ2SBlockUsingGridHighBitsSignsAndIndependentScaleNibbles() throws Exception {
+        byte[] block = new byte[82];
+        block[1] = 0x3c; // fp16 d = 1
+        // The low eight-bit grid indices are zero; qh selects 256/512/768/0.
+        block[66] = 0x39;
+        // Next 32-value group selects 0/256/512/768.
+        block[67] = (byte) 0xe4;
+        block[34] = (byte) 0x81; // first and eighth lanes negative
+        block[35] = (byte) 0x82; // second and eighth lanes negative
+        block[74] = 0x31; // first pair scale = 0.375, second pair = 0.875
+        block[75] = 0x20; // next group scale = 0.125 / 0.625
+
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ2_S", List.of(256L), source, 8L, block.length);
+        var model = model("iq2_s", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq2_s.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(model,
+                plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        JsonObject tensorHeader = header(file).getAsJsonObject("weight");
+        assertEquals("F32", tensorHeader.get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+
+        int[][] grids = {
+                {25, 25, 25, 25, 25, 8, 25, 8},       // grid 256
+                {25, 25, 43, 8, 25, 8, 8, 25},        // grid 512
+                {8, 43, 8, 25, 8, 8, 43, 25},         // grid 768
+                {8, 8, 8, 8, 8, 8, 8, 8}              // grid 0
+        };
+        int[] signMasks = {0x81, 0x82, 0, 0};
+        float[] scales = {0.375f, 0.375f, 0.875f, 0.875f};
+        for (int vector = 0; vector < 4; vector++) {
+            for (int lane = 0; lane < 8; lane++) {
+                float sign = (signMasks[vector] & (1 << lane)) != 0 ? -1.0f : 1.0f;
+                assertEquals(scales[vector] * grids[vector][lane] * sign,
+                        values.getFloat((vector * 8 + lane) * Float.BYTES), 0.0f);
+            }
+        }
+
+        // The next 32 values exercise the second qh byte and the next scale byte.
+        int[][] secondGrids = {grids[3], grids[0], grids[1], grids[2]};
+        float[] secondScales = {0.125f, 0.125f, 0.625f, 0.625f};
+        for (int vector = 0; vector < 4; vector++) {
+            for (int lane = 0; lane < 8; lane++) {
+                assertEquals(secondScales[vector] * secondGrids[vector][lane],
+                        values.getFloat((32 + vector * 8 + lane) * Float.BYTES), 0.0f);
+            }
+        }
+    }
+
+    @Test
     void dequantizesIQ3XXSBlockUsingPackedGridSignsAndScale() throws Exception {
         byte[] block = new byte[98];
         block[1] = 0x3c; // fp16 scale = 1
