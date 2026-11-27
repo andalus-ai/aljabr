@@ -648,7 +648,8 @@ public final class GgufMetalBridge {
 
     /**
      * Returns a slice view into the pre-loaded norm buffer for {@code (slot, layerIdx)}.
-     * Returns {@link MemorySegment#NULL} if norms are not registered or the source array was null.
+     * Returns {@link MemorySegment#NULL} if buffers are not registered or the slot/layer is out of range.
+     * Missing source weights remain represented by zero-filled slices.
      */
     private static MemorySegment normSlice(int slot, int layerIdx) {
         return NORM_BUFFERS.slice(slot, layerIdx);
