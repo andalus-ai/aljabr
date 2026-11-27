@@ -124,6 +124,31 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ1SHighGridBitsScaleMultiplierAndNegativeDelta() throws Exception {
+        byte[] block = new byte[50];
+        block[1] = 0x3c; // fp16 base scale = 1
+        block[34] = 0x01; // first grid index high bits = 1
+        block[35] = (byte) 0x90; // scale multiplier = 3; negative delta
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ1_S", List.of(256L), source, 8L, block.length);
+        var model = model("iq1_s-packed", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq1_s-packed.safetensors");
+
+        new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        byte[] file = Files.readAllBytes(output);
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        float[] firstGrid = {-3.375f, -0.375f, 2.625f, -0.375f,
+                2.625f, -3.375f, -0.375f, -3.375f};
+        for (float expected : firstGrid) assertEquals(expected, values.getFloat(), 0.0f);
+        for (int i = 8; i < 32; i++) assertEquals(-3.375f, values.getFloat(), 0.0f);
+        for (int i = 32; i < 256; i++) assertEquals(-0.875f, values.getFloat(), 0.0f);
+    }
+
+    @Test
     void dequantizesQ4ZeroBlocksToF32InGgmlElementOrder() throws Exception {
         byte[] block = new byte[18];
         block[0] = 0;
