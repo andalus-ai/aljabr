@@ -4,7 +4,15 @@ import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 
 /**
- * Descriptor for a single tensor inside a GGUF file.
+ * Runtime-oriented tensor representation used by the in-memory GGUF model API.
+ *
+ * <p>This is intentionally distinct from {@code gguf.loader.GGUFTensorInfo},
+ * which describes a tensor's serialized file layout, and from the public
+ * {@code GgufTensorDescriptor}, which exposes format-neutral structural facts.
+ * This type carries a resolved {@link GgmlType} and may carry a live
+ * {@link MemorySegment}; it must not be used as the public model-inspection
+ * contract.
+ *
  * @author bhangun
  */
 public record GGUFTensorInfo(
@@ -42,11 +50,11 @@ public record GGUFTensorInfo(
         for (long d : shape) n *= d;
         return n;
     }
-    
+
     public long rows() {
         return shape.length > 0 ? shape[0] : 1;
     }
-    
+
     public long cols() {
         if (shape.length < 2) return 1;
         long c = 1;

@@ -16,6 +16,8 @@ java {
 
 dependencies {
     api(project(":models:diffusion:aljabr-diffusion-execution-api"))
+    api(project(":models:diffusion:aljabr-diffusion-execution-loop"))
+    api(project(":models:diffusion:aljabr-diffusion-scheduler-euler"))
     testImplementation(project(":backend:cpu:aljabr-backend-cpu"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")

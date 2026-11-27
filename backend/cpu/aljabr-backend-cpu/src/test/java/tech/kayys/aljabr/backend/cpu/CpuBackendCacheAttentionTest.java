@@ -44,7 +44,7 @@ class CpuBackendCacheAttentionTest {
             storage.readKeyRange(0, 0, 3, decodedKeys, 0);
             storage.readValueRange(0, 0, 3, decodedValues, 0);
             float[] expected = reference(
-                    new float[] {0.6f, -0.4f, 0.2f, 0.3f}, decodedKeys, decodedValues, 3, 1, 4);
+                    new float[] {0.6f, -0.4f, 0.2f, 0.3f}, decodedKeys, decodedValues, 2, 1, 4);
 
             assertArrayEquals(expected, actual, 1.0e-5f);
         } finally {

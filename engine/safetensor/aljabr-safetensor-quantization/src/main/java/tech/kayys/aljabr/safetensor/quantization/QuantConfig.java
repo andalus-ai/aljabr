@@ -251,7 +251,7 @@ public class QuantConfig {
          * Compatibility entry point for callers using the engine-scoped strategy.
          */
         public Builder strategy(QuantizationEngine.QuantStrategy strategy) {
-            return quantizationStrategy(QuantizationStrategy.fromLegacy(strategy));
+            return quantizationStrategy(QuantizationStrategyCompatibility.fromLegacy(strategy));
         }
 
         /**
