@@ -21,7 +21,7 @@ public final class BertCheckpointMapper {
             Map<String, CheckpointTensor> checkpointTensors) {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(checkpointTensors, "checkpointTensors must not be null");
-        Map<String, int[]> expected = expectedTensorShapes(config);
+        validateTensorNames(config, checkpointTensors.keySet());
         Map<String, CheckpointTensor> mapped = new LinkedHashMap<>();
         for (Map.Entry<String, String> binding : parameterBindings(config).entrySet()) {
             CheckpointTensor tensor = checkpointTensors.get(binding.getKey());
@@ -36,12 +36,28 @@ public final class BertCheckpointMapper {
             }
             mapped.put(binding.getValue(), tensor);
         }
-        for (String name : checkpointTensors.keySet()) {
-            if (parameterBindings(config).containsKey(name) || IGNORED_BUFFERS.contains(name)
-                    || isIgnoredHead(name)) continue;
-            throw new IllegalArgumentException("Unsupported or unmapped BERT checkpoint tensor: " + name);
-        }
         return Map.copyOf(mapped);
+    }
+
+    /**
+     * Validates the complete checkpoint key set without materializing tensor payloads.
+     * Required encoder parameters must be present; only known non-encoder heads and
+     * persistent index buffers may be ignored.
+     */
+    public void validateTensorNames(BertConfig config, java.util.Set<String> tensorNames) {
+        Objects.requireNonNull(config, "config must not be null");
+        Objects.requireNonNull(tensorNames, "tensorNames must not be null");
+        Map<String, String> bindings = parameterBindings(config);
+        for (String required : bindings.keySet()) {
+            if (!tensorNames.contains(required)) {
+                throw new IllegalArgumentException("Missing required BERT checkpoint tensor: " + required);
+            }
+        }
+        for (String name : tensorNames) {
+            if (!bindings.containsKey(name) && !IGNORED_BUFFERS.contains(name) && !isIgnoredHead(name)) {
+                throw new IllegalArgumentException("Unsupported or unmapped BERT checkpoint tensor: " + name);
+            }
+        }
     }
 
     /** Expected source tensor shapes keyed by canonical Hugging Face names. */
