@@ -3439,6 +3439,34 @@ int aljabr_metal_register_rope_freqs(int layer, const float *freqData,
   return 0;
 }
 
+static BOOL checked_decode_weight_bytes(int type, int rows, int columns,
+                                         size_t *bytes) {
+  if (bytes == NULL || rows <= 0 || columns <= 0)
+    return NO;
+  size_t elements = 0;
+  if (!checked_size_mul((size_t)rows, (size_t)columns, &elements))
+    return NO;
+  size_t blockElements = 1;
+  size_t blockBytes = sizeof(float);
+  if (type == 12) {
+    blockElements = 256;
+    blockBytes = 144;
+  } else if (type == 14) {
+    blockElements = 256;
+    blockBytes = 210;
+  } else if (type == 8) {
+    blockElements = 32;
+    blockBytes = 34;
+  } else if (type == 1 || type == 30 || type == 16) {
+    blockBytes = sizeof(uint16_t);
+  } else if (type != 0) {
+    return NO;
+  }
+  if (elements % blockElements != 0)
+    return NO;
+  return checked_size_mul(elements / blockElements, blockBytes, bytes);
+}
+
 int aljabr_metal_register_decode_layer(
     int layer, int kvLayerIndex, const void *wQ, const void *wK, const void *wV,
     const void *wO, const void *gate, const void *up, const void *down,
@@ -3447,14 +3475,44 @@ int aljabr_metal_register_decode_layer(
     int nH, int nKVH, int headDim, int stride, float freqBase, int isSwa,
     float outScale, float attnScale, int hasPostAttnNorm,
     int hasPostFfnNorm, int hasQNorm, int hasKNorm, int hasUnitVNorm) {
-  if (layer < 0 || layer >= MAX_DECODE_LAYERS)
+  if (!g_initialized)
     return -1;
-  if (kvLayerIndex < 0 || kvLayerIndex >= MAX_DECODE_LAYERS ||
-      kvLayerIndex > layer)
+  if (layer < 0 || layer >= MAX_DECODE_LAYERS || kvLayerIndex < 0 ||
+      kvLayerIndex >= MAX_DECODE_LAYERS || kvLayerIndex > layer)
     return -1;
-  if (layer >= g_num_decode_layers)
-    g_num_decode_layers = layer + 1;
-  g_decode_geometry_ready = NO;
+
+  size_t bytesWQ = 0, bytesWK = 0, bytesWV = 0, bytesWO = 0;
+  size_t bytesGate = 0, bytesUp = 0, bytesDown = 0;
+  if ((wQ && !checked_decode_weight_bytes(typeQ, n0, wO_N, &bytesWQ)) ||
+      (wK && !checked_decode_weight_bytes(typeK, n1, wO_N, &bytesWK)) ||
+      (wV && !checked_decode_weight_bytes(typeV, n2, wO_N, &bytesWV)) ||
+      (wO && !checked_decode_weight_bytes(typeWO, wO_N, wO_K, &bytesWO)) ||
+      (gate && !checked_decode_weight_bytes(typeGate, ffnDim, wO_N,
+                                            &bytesGate)) ||
+      (up && !checked_decode_weight_bytes(typeUp, ffnDim, wO_N, &bytesUp)) ||
+      (down && !checked_decode_weight_bytes(typeDown, wO_N, ffnDim,
+                                             &bytesDown)))
+    return -2;
+
+  size_t offWQ = 0, offWK = 0, offWV = 0, offWO = 0;
+  size_t offGate = 0, offUp = 0, offDown = 0;
+  id<MTLBuffer> bufWQ = wQ ? wrap_weight_ptr_offset(wQ, bytesWQ, &offWQ) : nil;
+  id<MTLBuffer> bufWK = wK ? wrap_weight_ptr_offset(wK, bytesWK, &offWK) : nil;
+  id<MTLBuffer> bufWV = wV ? wrap_weight_ptr_offset(wV, bytesWV, &offWV) : nil;
+  id<MTLBuffer> bufWO = wO ? wrap_weight_ptr_offset(wO, bytesWO, &offWO) : nil;
+  id<MTLBuffer> bufGate =
+      gate ? wrap_weight_ptr_offset(gate, bytesGate, &offGate) : nil;
+  id<MTLBuffer> bufUp = up ? wrap_weight_ptr_offset(up, bytesUp, &offUp) : nil;
+  id<MTLBuffer> bufDown =
+      down ? wrap_weight_ptr_offset(down, bytesDown, &offDown) : nil;
+
+  if ((wQ && bufWQ == nil) || (wK && bufWK == nil) ||
+      (wV && bufWV == nil) || (wO && bufWO == nil) ||
+      (gate && bufGate == nil) || (up && bufUp == nil) ||
+      (down && bufDown == nil))
+    return -3;
+
+  // Publish the layer only after every requested weight has a valid wrapper.
   DecodeLayerConfig *cfg = &g_decode_layers[layer];
   cfg->kvLayerIndex = kvLayerIndex;
   cfg->wQ = wQ;
@@ -3483,9 +3541,6 @@ int aljabr_metal_register_decode_layer(
   cfg->stride = stride;
   cfg->freqBase = freqBase;
   cfg->isSwa = isSwa;
-  cfg->kvLayerIndex = (kvLayerIndex >= 0 && kvLayerIndex < MAX_DECODE_LAYERS)
-                          ? kvLayerIndex
-                          : layer;
   cfg->outScale = outScale;
   cfg->attnScale = attnScale;
   cfg->hasPostAttnNorm = hasPostAttnNorm;
@@ -3493,28 +3548,23 @@ int aljabr_metal_register_decode_layer(
   cfg->hasQNorm = hasQNorm;
   cfg->hasKNorm = hasKNorm;
   cfg->hasUnitVNorm = hasUnitVNorm;
-
-  if (wQ)
-    cfg->bufWQ = wrap_weight_ptr_offset(
-        wQ, calc_matvec_weight_bytes(typeQ, n0, wO_N), &cfg->offWQ);
-  if (wK)
-    cfg->bufWK = wrap_weight_ptr_offset(
-        wK, calc_matvec_weight_bytes(typeK, n1, wO_N), &cfg->offWK);
-  if (wV)
-    cfg->bufWV = wrap_weight_ptr_offset(
-        wV, calc_matvec_weight_bytes(typeV, n2, wO_N), &cfg->offWV);
-  if (wO)
-    cfg->bufWO = wrap_weight_ptr_offset(
-        wO, calc_matvec_weight_bytes(typeWO, wO_N, wO_K), &cfg->offWO);
-  if (gate)
-    cfg->bufGate = wrap_weight_ptr_offset(
-        gate, calc_matvec_weight_bytes(typeGate, ffnDim, wO_N), &cfg->offGate);
-  if (up)
-    cfg->bufUp = wrap_weight_ptr_offset(
-        up, calc_matvec_weight_bytes(typeUp, ffnDim, wO_N), &cfg->offUp);
-  if (down)
-    cfg->bufDown = wrap_weight_ptr_offset(
-        down, calc_matvec_weight_bytes(typeDown, wO_N, ffnDim), &cfg->offDown);
+  cfg->bufWQ = bufWQ;
+  cfg->bufWK = bufWK;
+  cfg->bufWV = bufWV;
+  cfg->bufWO = bufWO;
+  cfg->bufGate = bufGate;
+  cfg->bufUp = bufUp;
+  cfg->bufDown = bufDown;
+  cfg->offWQ = offWQ;
+  cfg->offWK = offWK;
+  cfg->offWV = offWV;
+  cfg->offWO = offWO;
+  cfg->offGate = offGate;
+  cfg->offUp = offUp;
+  cfg->offDown = offDown;
+  if (layer >= g_num_decode_layers)
+    g_num_decode_layers = layer + 1;
+  g_decode_geometry_ready = NO;
   return 0;
 }
 
