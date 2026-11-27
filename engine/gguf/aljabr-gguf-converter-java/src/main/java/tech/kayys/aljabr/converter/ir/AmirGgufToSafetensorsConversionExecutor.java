@@ -453,11 +453,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         }
     }
 
-    /**
-     * GGML block_iq2_xxs layout: fp16 scale followed by 32 little-endian
-     * 16-bit words. Each 8-byte group contains four grid indices and four
-     * packed seven-bit sign codes plus a four-bit scale multiplier.
-     */
+    /** Decodes one 256-value IQ1_S block using canonical 8-value grid vectors. */
     private static void dequantizeIQ1SBlock(byte[] source, int base, ByteBuffer values) {
         float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
         int qsBase = base + 2;
