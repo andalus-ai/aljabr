@@ -23,3 +23,26 @@ Cancellation and progress callbacks are caller supplied. Cancellation is checked
 ## Scope
 
 The first implementation supports sigma-space solvers through `SigmaStepExecutor`. Discrete alpha/beta schedulers remain separate and should use a matching execution contract rather than being coerced into sigma semantics.
+
+
+## Classifier-free guidance
+
+`ClassifierFreeGuidance` combines unconditional and conditional predictions
+using:
+
+```text
+guided = unconditional + guidanceScale * (conditional - unconditional)
+```
+
+A `GuidancePredictionProvider` owns model invocation and conditioning. It may
+advertise batched prediction support to evaluate both branches in one model
+call; otherwise the engine invokes the unconditional and conditional branches
+sequentially. The engine never guesses backend batching support.
+
+`GuidanceTensorOperations` owns tensor algebra and optional standard-deviation
+matching/blending for guidance rescale. This keeps allocation and
+backend-specific kernels outside the orchestration layer.
+
+Provider predictions and intermediate tensors are newly owned. The guidance
+engine closes predictions and intermediate guided tensors. The returned
+prediction is newly owned by the caller. The input sample is borrowed.
