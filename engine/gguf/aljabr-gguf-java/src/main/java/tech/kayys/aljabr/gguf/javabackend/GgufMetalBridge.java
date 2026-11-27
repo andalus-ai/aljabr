@@ -60,15 +60,8 @@ public final class GgufMetalBridge {
     // Thread-local or reusable buffers for inputs/outputs to prevent allocations in inner loop
     private static final ThreadLocal<MetalBufferCache> BUFFERS = ThreadLocal.withInitial(MetalBufferCache::new);
 
-    // Pre-loaded static norm buffers: layout [normSlot][layer * dim]
-    // normSlot: 0=postAttn, 1=ffnNorm, 2=postFfn, 3=nextAttnNorm (= attnNorm of layer+1)
-    // Populated once at model init via registerLayerNorms(). Avoids per-token MemorySegment.copy() for
-    // layer-static norm weights (saves ~192 memcpy calls per decode step).
-    private static volatile Arena g_normArena = null;
-    // g_normSeg[slot] = contiguous off-heap segment for that slot; layer L is at offset L*dim*FLOAT_BYTES
-    private static volatile MemorySegment[] g_normSegs = null;
-    private static volatile int g_normDim = 0;
-    private static volatile int g_normLayers = 0;
+    // Owns the model-wide, preloaded normalization buffers used by fused decode operations.
+    private static final GgufMetalNormBufferStore NORM_BUFFERS = new GgufMetalNormBufferStore();
 
     static {
         boolean enabled = false;
@@ -632,39 +625,12 @@ public final class GgufMetalBridge {
             float[][] postFfnN, float[][] attnNormN,
             float[][] attnQNormN, float[][] attnKNormN) {
         if (!METAL_ENABLED) return;
-        // 6 slots: 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm, 4=attnQNorm, 5=attnKNorm
-        Arena arena = Arena.ofShared();
-        MemorySegment[] segs = new MemorySegment[6];
-        long[] slotBytes = new long[6];
-        for (int slot = 0; slot < 4; slot++) {
-            slotBytes[slot] = (long) layers * dim * Float.BYTES;
-            segs[slot] = arena.allocate(slotBytes[slot]);
-        }
-        int hDim = headDim > 0 ? headDim : 256;
-        for (int slot = 4; slot < 6; slot++) {
-            slotBytes[slot] = (long) layers * hDim * Float.BYTES;
-            segs[slot] = arena.allocate(slotBytes[slot]);
-        }
-        float[][][] sources = { postAttnN, ffnNormN, postFfnN, attnNormN, attnQNormN, attnKNormN };
-        for (int slot = 0; slot < 6; slot++) {
-            float[][] src = sources[slot];
-            int nFloats = slot < 4 ? dim : hDim;
-            for (int layer = 0; layer < layers; layer++) {
-                float[] arr = (src != null && layer < src.length) ? src[layer] : null;
-                if (arr != null) {
-                    int copyLen = Math.min(arr.length, nFloats);
-                    MemorySegment.copy(arr, 0, segs[slot], ValueLayout.JAVA_FLOAT, (long) layer * nFloats * Float.BYTES, copyLen);
-                }
-            }
-        }
-        // Publish atomically (volatile write)
-        g_normArena = arena;
-        g_normSegs = segs;
-        g_normDim = dim;
-        g_normLayers = layers;
+        MemorySegment[] segs = NORM_BUFFERS.register(
+                layers, dim, headDim, postAttnN, ffnNormN, postFfnN, attnNormN, attnQNormN, attnKNormN);
+        long[] slotBytes = NORM_BUFFERS.slotByteSizes(layers, dim, headDim);
 
         if (REGISTER_NORM_BUFFER_MH != null) {
-            for (int slot = 0; slot < 6; slot++) {
+            for (int slot = 0; slot < segs.length; slot++) {
                 try {
                     int rc = (int) REGISTER_NORM_BUFFER_MH.invokeExact(slot, segs[slot], slotBytes[slot]);
                     if (rc != 0) {
@@ -676,23 +642,16 @@ public final class GgufMetalBridge {
             }
         }
 
+        int hDim = headDim > 0 ? headDim : 256;
         LOG.fine("[GgufMetalBridge] Pre-loaded norm buffers: " + layers + " layers × (4 slots × " + dim + " + 2 slots × " + hDim + ") floats");
     }
 
     /**
      * Returns a slice view into the pre-loaded norm buffer for {@code (slot, layerIdx)}.
      * Returns {@link MemorySegment#NULL} if norms are not registered or the source array was null.
-     *
-     * @param slot     0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm
-     * @param layerIdx layer index
      */
     private static MemorySegment normSlice(int slot, int layerIdx) {
-        MemorySegment[] segs = g_normSegs;
-        if (segs == null || slot < 0 || slot >= 4 || layerIdx < 0 || layerIdx >= g_normLayers) {
-            return MemorySegment.NULL;
-        }
-        long byteOffset = (long) layerIdx * g_normDim * Float.BYTES;
-        return segs[slot].asSlice(byteOffset, (long) g_normDim * Float.BYTES);
+        return NORM_BUFFERS.slice(slot, layerIdx);
     }
 
     /**
