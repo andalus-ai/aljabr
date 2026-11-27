@@ -61,8 +61,13 @@ class Chronos2EmbeddingExecutionTest {
     }
 
     private static Chronos2Config config(boolean reg) {
-        return new Chronos2Config(16, 1, 1, 1, 4, 16, 2, 2, 2, 1, 1,
+        return new Chronos2Config(16, 1, 1, 1, 4, 16, 2, 2, 3, 1, 1,
                 1e-6, 10000d, reg, false, List.of(0.1d, 0.9d));
+    }
+
+    private static Weights outputProjection() {
+        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}, {0f, 0f}}, new float[3],
+                new float[2][3], new float[2], new float[2][2], new float[2]);
     }
 
     private static Weights quantileProjection() {
