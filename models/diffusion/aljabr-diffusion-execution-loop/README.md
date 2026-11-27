@@ -46,3 +46,32 @@ backend-specific kernels outside the orchestration layer.
 Provider predictions and intermediate tensors are newly owned. The guidance
 engine closes predictions and intermediate guided tensors. The returned
 prediction is newly owned by the caller. The input sample is borrowed.
+
+
+## Using CFG in a denoising runner
+
+Use `GuidedDiffusionDenoiser` as the `DiffusionDenoiser` passed to a
+scheduler-specific runner such as `EulerDenoisingRunner`:
+
+```java
+var guidedDenoiser = new GuidedDiffusionDenoiser(
+        classifierFreeGuidance,
+        modelFamilyPredictionProvider,
+        7.5,  // guidance scale
+        0.0); // guidance rescale (disabled)
+
+runner.run(
+        initialLatents,
+        inferenceSteps,
+        predictionType,
+        guidedDenoiser,
+        predictionConverter,
+        cancelled,
+        progress);
+```
+
+The prediction provider captures the request's prepared conditioning and
+performs the model-family-specific conditional/unconditional evaluations.
+The adapter applies CFG at each solver coordinate and returns the newly owned
+guided prediction expected by `DiffusionDenoisingLoop`. No scheduler or
+pipeline implementation needs a CFG-specific branch.
