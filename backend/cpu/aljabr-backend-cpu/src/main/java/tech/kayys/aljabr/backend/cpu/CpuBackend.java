@@ -689,6 +689,27 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
     public Tensor flatten(Tensor a) {
         Objects.requireNonNull(a, "input");
         Shape outputShape = TensorOperationValidator.validateFlatten(a.shape());
+
+        // A single non-singleton dimension is already a one-dimensional
+        // logical sequence, even when its physical stride is not one.
+        // Preserve that view instead of copying it through reshape().
+        if (!a.dtype().isQuantized() && a.numel() > 1) {
+            long[] dimensions = a.shape().dims();
+            long[] strides = a.layout().strides();
+            int nonSingletonAxis = -1;
+            for (int axis = 0; axis < dimensions.length; axis++) {
+                if (dimensions[axis] > 1) {
+                    if (nonSingletonAxis >= 0) {
+                        nonSingletonAxis = -2;
+                        break;
+                    }
+                    nonSingletonAxis = axis;
+                }
+            }
+            if (nonSingletonAxis >= 0) {
+                return shapeView(a, outputShape, new long[] {strides[nonSingletonAxis]});
+            }
+        }
         return reshape(a, outputShape.dims());
     }
 

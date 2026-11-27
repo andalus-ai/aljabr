@@ -116,6 +116,29 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void flattenPreservesSingleAxisStrideAndStorageOffsetWithoutMaterializing() {
+        HostStorage storage = new HostStorage(99f, 1f, 99f, 2f, 99f, 3f, 99f, 4f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(1, 4, 1), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(1, 4, 1), new long[] {8, 2, 1}, 1));
+        Tensor flattened = null;
+        try {
+            flattened = backend.flatten(input);
+            assertArrayEquals(new long[] {4}, flattened.shape().dims());
+            assertArrayEquals(new long[] {2}, flattened.layout().strides());
+            assertEquals(1, flattened.layout().storageOffset());
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f}, flattened.toFloatArray(), 0f);
+            assertSame(storage, flattened.storage());
+            assertEquals(2, storage.references());
+        } finally {
+            if (flattened != null) flattened.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
     void broadcastOperationsReadStridedOperandsWithStorageOffsets() {
         HostStorage leftStorage = new HostStorage(99f, 1f, 99f, 2f);
         HostStorage rightStorage = new HostStorage(99f, 10f, 20f);
