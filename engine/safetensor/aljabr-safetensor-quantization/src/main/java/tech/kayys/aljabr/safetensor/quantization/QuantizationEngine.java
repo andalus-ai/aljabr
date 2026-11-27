@@ -116,13 +116,13 @@ public class QuantizationEngine {
 
         // Preserve the historical strategy choices when the optional Tafkir extension
         // is present, while keeping Aljabr's built-ins usable without that extension.
-        registerIfAvailable(QuantStrategy.INT4, firstAvailable(autoRound, gptq));
-        registerIfAvailable(QuantStrategy.INT8, firstAvailable(bitsAndBytes, nativeInt8));
-        registerIfAvailable(QuantStrategy.FP8, nativeFp8);
-        registerIfAvailable(QuantStrategy.GPTQ, gptq);
-        registerIfAvailable(QuantStrategy.AWQ, QuantizerRegistry.get("AWQ"));
-        registerIfAvailable(QuantStrategy.TURBO, QuantizerRegistry.get("TurboQuant"));
-        registerIfAvailable(QuantStrategy.BNB, bitsAndBytes);
+        registerIfAvailable(QuantizationStrategy.INT4, firstAvailable(autoRound, gptq));
+        registerIfAvailable(QuantizationStrategy.INT8, firstAvailable(bitsAndBytes, nativeInt8));
+        registerIfAvailable(QuantizationStrategy.FP8, nativeFp8);
+        registerIfAvailable(QuantizationStrategy.GPTQ, gptq);
+        registerIfAvailable(QuantizationStrategy.AWQ, QuantizerRegistry.get("AWQ"));
+        registerIfAvailable(QuantizationStrategy.TURBO, QuantizerRegistry.get("TurboQuant"));
+        registerIfAvailable(QuantizationStrategy.BNB, bitsAndBytes);
 
         log.infof("QuantizationEngine initialized with available quantizers: %s",
                 QuantizerRegistry.getNames());
@@ -132,9 +132,9 @@ public class QuantizationEngine {
         return preferred != null ? preferred : fallback;
     }
 
-    private void registerIfAvailable(QuantStrategy strategy, Quantizer quantizer) {
+    private void registerIfAvailable(QuantizationStrategy strategy, Quantizer quantizer) {
         if (quantizer != null) {
-            registerQuantizer(strategy, quantizer);
+            registerQuantizerWithStrategy(strategy, quantizer);
         }
     }
 
@@ -145,6 +145,15 @@ public class QuantizationEngine {
      * @param quantizer quantizer implementation
      */
     public void registerQuantizer(QuantStrategy strategy, Quantizer quantizer) {
+        registerQuantizerWithStrategy(QuantizationStrategyCompatibility.fromLegacy(strategy), quantizer);
+    }
+
+    /**
+     * Register a quantizer using the framework-neutral strategy contract.
+     */
+    public void registerQuantizerWithStrategy(QuantizationStrategy strategy, Quantizer quantizer) {
+        Objects.requireNonNull(strategy, "strategy cannot be null");
+        Objects.requireNonNull(quantizer, "quantizer cannot be null");
         quantizers.put(strategy.name().toLowerCase(), quantizer);
         log.infof("Registered quantizer for strategy: %s", strategy);
     }
@@ -422,16 +431,36 @@ public class QuantizationEngine {
      * Keeps small/vector tensors in their original form to reduce breakage risk.
      */
     public Map<String, AccelTensor> quantizeWeightsForInference(Map<String, AccelTensor> weights, QuantStrategy strategy) {
+        return quantizeWeightsForInferenceWithStrategy(weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
+    }
+
+    public Map<String, AccelTensor> quantizeWeightsForInferenceWithStrategy(Map<String, AccelTensor> weights,
+            QuantizationStrategy strategy) {
         return quantizeWeightsForInferenceDetailed(null, weights, strategy).weights();
     }
 
-    public Map<String, AccelTensor> quantizeWeightsForInference(Path modelPath, Map<String, AccelTensor> weights, QuantStrategy strategy) {
+    public Map<String, AccelTensor> quantizeWeightsForInference(Path modelPath, Map<String, AccelTensor> weights,
+            QuantStrategy strategy) {
+        return quantizeWeightsForInferenceWithStrategy(modelPath, weights, QuantizationStrategyCompatibility.fromLegacy(strategy));
+    }
+
+    public Map<String, AccelTensor> quantizeWeightsForInferenceWithStrategy(Path modelPath, Map<String, AccelTensor> weights,
+            QuantizationStrategy strategy) {
         return quantizeWeightsForInferenceDetailed(modelPath, weights, strategy).weights();
     }
 
     public InferenceQuantizationResult quantizeWeightsForInferenceDetailed(Path modelPath, Map<String, AccelTensor> weights, QuantStrategy strategy) {
-        QuantStrategy effectiveStrategy = normalizeInferenceStrategy(strategy);
-        if (effectiveStrategy == QuantStrategy.NONE) {
+        return quantizeWeightsForInferenceDetailedWithStrategy(modelPath, weights,
+                QuantizationStrategyCompatibility.fromLegacy(strategy));
+    }
+
+    /**
+     * Quantize inference weights using the neutral strategy API.
+     */
+    public InferenceQuantizationResult quantizeWeightsForInferenceDetailedWithStrategy(Path modelPath,
+            Map<String, AccelTensor> weights, QuantizationStrategy strategy) {
+        QuantizationStrategy effectiveStrategy = normalizeInferenceStrategy(strategy);
+        if (effectiveStrategy == QuantizationStrategy.NONE) {
             return new InferenceQuantizationResult(weights, "off", null, 0, 0);
         }
 
@@ -559,40 +588,26 @@ public class QuantizationEngine {
     // Internal methods
     // ─────────────────────────────────────────────────────────────────────────
 
-    private Quantizer getQuantizer(QuantStrategy strategy) {
+    private Quantizer getQuantizer(QuantizationStrategy strategy) {
         return quantizers.get(strategy.name().toLowerCase());
     }
 
-    private QuantStrategy normalizeInferenceStrategy(QuantStrategy strategy) {
-        if (strategy == null) {
-            return QuantStrategy.NONE;
+    private QuantizationStrategy normalizeInferenceStrategy(QuantizationStrategy strategy) {
+        QuantizationStrategy normalized = InferenceQuantizationPolicy.normalizeStrategy(strategy);
+        if (strategy == QuantizationStrategy.TURBO) {
+            log.warn("TurboQuant direct inference is not wired yet; using BNB-compatible NF4 path");
+        } else if (strategy == QuantizationStrategy.GPTQ) {
+            log.warn("GPTQ direct inference path is not complete yet; using INT4-compatible path");
         }
-
-        return switch (strategy) {
-            case TURBO -> {
-                log.warn("TurboQuant direct inference is not wired yet; using BNB-compatible NF4 path");
-                yield QuantStrategy.BNB;
-            }
-            case GPTQ -> {
-                log.warn("GPTQ direct inference path is not complete yet; using INT4-compatible path");
-                yield QuantStrategy.INT4;
-            }
-            default -> strategy;
-        };
+        return normalized;
     }
 
     private boolean shouldQuantizeForInference(String name, AccelTensor tensor) {
-        return tensor != null
-                && (name.endsWith(".weight") || name.endsWith(".qweight") || name.endsWith("down_proj") || name.endsWith("gate_up_proj"))
-                && (tensor.rank() == 2 || tensor.rank() == 3)
-                && tensor.numel() >= 4096
-                && !name.contains("embed_tokens")
-                && !name.contains("position_embedding")
-                && !name.contains("vision_tower");
+        return InferenceQuantizationPolicy.shouldQuantize(name, tensor);
     }
 
-    private Path inferenceCachePath(Path modelPath, QuantStrategy strategy) {
-        if (modelPath == null || strategy == null || strategy == QuantStrategy.NONE) {
+    private Path inferenceCachePath(Path modelPath, QuantizationStrategy strategy) {
+        if (modelPath == null || strategy == null || strategy == QuantizationStrategy.NONE) {
             return null;
         }
         try {
@@ -622,7 +637,7 @@ public class QuantizationEngine {
         }
     }
 
-    private Map<String, CachedTensor> loadInferenceCache(Path cachePath, QuantStrategy strategy) {
+    private Map<String, CachedTensor> loadInferenceCache(Path cachePath, QuantizationStrategy strategy) {
         if (cachePath == null || !Files.isRegularFile(cachePath)) {
             return Collections.emptyMap();
         }
@@ -671,7 +686,7 @@ public class QuantizationEngine {
         }
     }
 
-    private void persistInferenceCache(Path cachePath, QuantStrategy strategy, Map<String, AccelTensor> weights) {
+    private void persistInferenceCache(Path cachePath, QuantizationStrategy strategy, Map<String, AccelTensor> weights) {
         if (cachePath == null) {
             return;
         }
@@ -812,17 +827,8 @@ public class QuantizationEngine {
         return tensor != null ? 256L : 0L; // Placeholder
     }
 
-    private QuantConfig createDefaultConfig(QuantStrategy strategy) {
-        return switch (strategy) {
-            case INT4 -> QuantConfig.int4Gptq();
-            case INT8 -> QuantConfig.int8();
-            case FP8 -> QuantConfig.fp8();
-            case TURBO -> QuantConfig.turbo();
-            case AWQ -> QuantConfig.awq(4, 128);
-            case GPTQ -> QuantConfig.builder().strategy(QuantStrategy.GPTQ).build();
-            case BNB -> QuantConfig.bnb();
-            case NONE -> new QuantConfig();
-        };
+    private QuantConfig createDefaultConfig(QuantizationStrategy strategy) {
+        return InferenceQuantizationPolicy.defaultConfig(strategy);
     }
 
     /**

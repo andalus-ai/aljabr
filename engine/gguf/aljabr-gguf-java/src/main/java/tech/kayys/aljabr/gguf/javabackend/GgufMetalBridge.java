@@ -8,8 +8,6 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -60,399 +58,40 @@ public final class GgufMetalBridge {
     // Thread-local or reusable buffers for inputs/outputs to prevent allocations in inner loop
     private static final ThreadLocal<MetalBufferCache> BUFFERS = ThreadLocal.withInitial(MetalBufferCache::new);
 
-    // Pre-loaded static norm buffers: layout [normSlot][layer * dim]
-    // normSlot: 0=postAttn, 1=ffnNorm, 2=postFfn, 3=nextAttnNorm (= attnNorm of layer+1)
-    // Populated once at model init via registerLayerNorms(). Avoids per-token MemorySegment.copy() for
-    // layer-static norm weights (saves ~192 memcpy calls per decode step).
-    private static volatile Arena g_normArena = null;
-    // g_normSeg[slot] = contiguous off-heap segment for that slot; layer L is at offset L*dim*FLOAT_BYTES
-    private static volatile MemorySegment[] g_normSegs = null;
-    private static volatile int g_normDim = 0;
-    private static volatile int g_normLayers = 0;
+    // Owns the model-wide, preloaded normalization buffers used by fused decode operations.
+    private static final GgufMetalNormBufferStore NORM_BUFFERS = new GgufMetalNormBufferStore();
 
     static {
-        boolean enabled = false;
-        Object instance = null;
-        MethodHandle q4kHandle = null;
-        MethodHandle q4kSoftcapHandle = null;
-        MethodHandle q6kHandle = null;
-        MethodHandle q6kSoftcapHandle = null;
-        MethodHandle q8_0Handle = null;
-        MethodHandle pairHandle = null;
-        MethodHandle tripleHandle = null;
-        MethodHandle batchHandle = null;
-        MethodHandle tripleBatchHandle = null;
-        MethodHandle ffnFusedHandle = null;
-        MethodHandle ffnFusedBatchHandle = null;
-        MethodHandle woFfnFusedHandle = null;
-        MethodHandle woFfnFusedLayerBatchHandle = null;
-        MethodHandle woFfnNextQkvFusedHandle = null;
-        MethodHandle woFfnLogitsFusedHandle = null;
-        MethodHandle registerModelBufferHandle = null;
-        MethodHandle softcapHandle = null;
-        MethodHandle fa4Handle = null;
-        MethodHandle initKvCacheHandle = null;
-        MethodHandle syncKvCacheHandle = null;
-        MethodHandle registerNormBufferHandle = null;
-        MethodHandle registerRopeFreqsHandle = null;
-        MethodHandle registerDecodeLayerHandle = null;
-        MethodHandle registerOutputHandle = null;
-        MethodHandle registerTokenEmbdHandle = null;
-        MethodHandle decodeStepHandle = null;
-        MethodHandle decodeStepTokenHandle = null;
-
-        boolean disableMetal = Boolean.getBoolean("aljabr.metal.disable") ||
-                "false".equalsIgnoreCase(System.getProperty("aljabr.metal.enabled"));
-
-        if (!disableMetal) {
-            try {
-                // MetalLibraryDiscovery is the single source of truth for native
-                // library resolution. It prioritizes explicit overrides, local
-                // build outputs, and ~/.aljabr/libs. Do not force discovery into
-                // the legacy ~/.aqli location, which may contain stale binaries.
-
-                Class<?> mbClass = Class.forName("tech.kayys.aljabr.metal.binding.MetalBinding");
-                MethodHandles.Lookup lookup = MethodHandles.publicLookup();
-
-                MethodHandle initMH = lookup.findStatic(mbClass, "initialize", MethodType.methodType(boolean.class));
-                boolean initialized = (boolean) initMH.invokeExact();
-
-                if (initialized) {
-                    MethodHandle getInstanceMH = lookup.findStatic(mbClass, "getInstance", MethodType.methodType(mbClass));
-                    instance = getInstanceMH.invoke();
-
-                    MethodHandle initRuntimeMH = lookup.findVirtual(mbClass, "init", MethodType.methodType(int.class));
-                    int rc = (int) initRuntimeMH.invoke(instance);
-
-                    if (rc == 0) {
-                        MethodHandle isActiveMH = lookup.findVirtual(mbClass, "isRuntimeActive", MethodType.methodType(boolean.class));
-                        boolean active = (boolean) isActiveMH.invoke(instance);
-
-                        if (active) {
-                            // matvecTransposedRightQ4K(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N)
-                            q4kHandle = lookup.findVirtual(mbClass, "matvecTransposedRightQ4K",
-                                    MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class, int.class, int.class))
-                                    .bindTo(instance);
-
-                            // matvecTransposedRightQ4KSoftcap(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N, float cap)
-                            try {
-                                q4kSoftcapHandle = lookup.findVirtual(mbClass, "matvecTransposedRightQ4KSoftcap",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class, int.class, int.class, float.class))
-                                        .bindTo(instance);
-                            } catch (Throwable t) {
-                                System.err.println("[q4kSoftcapHandle lookup failed] " + t);
-                            }
-
-                            // matvecTransposedRightQ6K(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N)
-                            try {
-                                q6kHandle = lookup.findVirtual(mbClass, "matvecTransposedRightQ6K",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // matvecTransposedRightQ6KSoftcap(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N, float cap)
-                            try {
-                                q6kSoftcapHandle = lookup.findVirtual(mbClass, "matvecTransposedRightQ6KSoftcap",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class, int.class, int.class, float.class))
-                                        .bindTo(instance);
-                            } catch (Throwable t) {
-                                System.err.println("[q6kSoftcapHandle lookup failed] " + t);
-                            }
-
-                            // matvecTransposedRightQ8_0(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N)
-                            try {
-                                q8_0Handle = lookup.findVirtual(mbClass, "matvecTransposedRightQ8_0",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // matvecTransposedRightPair(MemorySegment C0, MemorySegment C1, MemorySegment A, MemorySegment B0, MemorySegment B1, int K, int N0, int N1, int type0, int type1)
-                            try {
-                                pairHandle = lookup.findVirtual(mbClass, "matvecTransposedRightPair",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // matvecTransposedRightTriple(MemorySegment C0, MemorySegment C1, MemorySegment C2, MemorySegment A, MemorySegment B0, MemorySegment B1, MemorySegment B2, int K, int N0, int N1, int N2, int type0, int type1, int type2)
-                            try {
-                                tripleHandle = lookup.findVirtual(mbClass, "matvecTransposedRightTriple",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class, int.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // matvecTransposedRightBatch(MemorySegment C, MemorySegment A, MemorySegment B, int K, int N, int type, int batchSize)
-                            try {
-                                batchHandle = lookup.findVirtual(mbClass, "matvecTransposedRightBatch",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // matvecTransposedRightTripleBatch(MemorySegment C0, MemorySegment C1, MemorySegment C2, MemorySegment A, MemorySegment B0, MemorySegment B1, MemorySegment B2, int K, int N0, int N1, int N2, int type0, int type1, int type2, int batchSize)
-                            try {
-                                tripleBatchHandle = lookup.findVirtual(mbClass, "matvecTransposedRightTripleBatch",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // ffnGatedFused(MemorySegment outDown, MemorySegment inA, MemorySegment gateW, MemorySegment upW, MemorySegment downW, int dim, int ffnDim, int typeGate, int typeUp, int typeDown, int activationKind)
-                            try {
-                                ffnFusedHandle = lookup.findVirtual(mbClass, "ffnGatedFused",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // ffnGatedFusedBatch(MemorySegment outDown, MemorySegment inA, MemorySegment gateW, MemorySegment upW, MemorySegment downW, int dim, int ffnDim, int typeGate, int typeUp, int typeDown, int activationKind, int batchSize)
-                            try {
-                                ffnFusedBatchHandle = lookup.findVirtual(mbClass, "ffnGatedFusedBatch",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class, int.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // registerModelBuffer(MemorySegment basePtr, long totalBytes)
-                            try {
-                                registerModelBufferHandle = lookup.findVirtual(mbClass, "registerModelBuffer",
-                                        MethodType.methodType(int.class, MemorySegment.class, long.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // woFfnFused(...)
-                            try {
-                                woFfnFusedHandle = lookup.findVirtual(mbClass, "woFfnFused",
-                                        MethodType.methodType(int.class,
-                                                MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, int.class, int.class, int.class,
-                                                MemorySegment.class, int.class, int.class,
-                                                MemorySegment.class, int.class,
-                                                MemorySegment.class, int.class, int.class,
-                                                float.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class,
-                                                int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // woFfnFusedLayerBatch(...)
-                            try {
-                                woFfnFusedLayerBatchHandle = lookup.findVirtual(mbClass, "woFfnFusedLayerBatch",
-                                        MethodType.methodType(int.class,
-                                                MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, float.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // woFfnNextQkvFused(...)
-                            try {
-                                woFfnNextQkvFusedHandle = lookup.findVirtual(mbClass, "woFfnNextQkvFused",
-                                        MethodType.methodType(int.class,
-                                                MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, int.class, int.class, int.class,
-                                                MemorySegment.class, int.class,
-                                                MemorySegment.class,
-                                                MemorySegment.class, int.class,
-                                                float.class,
-                                                float.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class,
-                                                int.class, int.class,
-                                                int.class,
-                                                MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class,
-                                                int.class, int.class, int.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                            // woFfnLogitsFused(...)
-                            try {
-                                woFfnLogitsFusedHandle = lookup.findVirtual(mbClass, "woFfnLogitsFused",
-                                        MethodType.methodType(int.class,
-                                                MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, int.class, int.class, int.class,
-                                                MemorySegment.class, int.class,
-                                                MemorySegment.class,
-                                                MemorySegment.class, int.class,
-                                                float.class,
-                                                float.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class,
-                                                int.class, int.class,
-                                                MemorySegment.class,
-                                                MemorySegment.class, int.class, int.class, int.class,
-                                                MemorySegment.class, float.class))
-                                        .bindTo(instance);
-                            } catch (NoSuchMethodException ignored) {
-                            }
-
-                             // softcap(MemorySegment logits, int N, float cap)
-                             try {
-                                 softcapHandle = lookup.findVirtual(mbClass, "softcap",
-                                         MethodType.methodType(int.class,
-                                                 MemorySegment.class, int.class, float.class))
-                                         .bindTo(instance);
-                             } catch (NoSuchMethodException ignored) {
-                             }
-
-                            // FlashAttention-4 GPU SDPA lookup
-                            try {
-                                Class<?> faClass = Class.forName("tech.kayys.aljabr.metal.binding.MetalFlashAttentionBinding");
-                                MethodHandle faInit = lookup.findStatic(faClass, "initialize", MethodType.methodType(boolean.class));
-                                faInit.invoke();
-                                MethodHandle faGetInstance = lookup.findStatic(faClass, "getInstance", MethodType.methodType(faClass));
-                                Object faInstance = faGetInstance.invoke();
-                                fa4Handle = lookup.findVirtual(faClass, "fa4Attention",
-                                        MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class, int.class, int.class, float.class, boolean.class, boolean.class))
-                                        .bindTo(faInstance);
-                                LOG.fine("[GgufMetalBridge] MetalFlashAttentionBinding bound successfully.");
-                            } catch (Throwable t) {
-                                LOG.fine("MetalFlashAttentionBinding lookup failed: " + t.getMessage());
-                            }
-
-                            // Decode step bindings
-                            try {
-                                initKvCacheHandle = lookup.findVirtual(mbClass, "initKVCache",
-                                        MethodType.methodType(int.class, int.class, int.class, MemorySegment.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] initKVCache handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] initKVCache bind FAILED: " + t); }
-
-                            try {
-                                syncKvCacheHandle = lookup.findVirtual(mbClass, "syncKVCache",
-                                        MethodType.methodType(int.class, int.class, int.class, MemorySegment.class, MemorySegment.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] syncKVCache handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] syncKVCache bind FAILED: " + t); }
-
-                            try {
-                                registerNormBufferHandle = lookup.findVirtual(mbClass, "registerNormBuffer",
-                                        MethodType.methodType(int.class, int.class, MemorySegment.class, long.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] registerNormBuffer handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerNormBuffer bind FAILED: " + t); }
-
-                            try {
-                                registerRopeFreqsHandle = lookup.findVirtual(mbClass, "registerRopeFreqs",
-                                        MethodType.methodType(int.class, int.class, MemorySegment.class, int.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] registerRopeFreqs handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerRopeFreqs bind FAILED: " + t); }
-
-                            try {
-                                registerDecodeLayerHandle = lookup.findVirtual(mbClass, "registerDecodeLayer",
-                                        MethodType.methodType(int.class,
-                                                int.class, int.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                MemorySegment.class, MemorySegment.class, MemorySegment.class,
-                                                int.class, int.class, int.class, int.class, int.class, int.class, int.class,
-                                                int.class, int.class, int.class, int.class, int.class, int.class,
-                                                int.class, int.class, int.class, int.class,
-                                                float.class, int.class,
-                                                float.class, float.class,
-                                                int.class, int.class,
-                                                int.class, int.class,
-                                                int.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] registerDecodeLayer handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerDecodeLayer bind FAILED: " + t); }
-
-                            try {
-                                registerOutputHandle = lookup.findVirtual(mbClass, "registerOutput",
-                                        MethodType.methodType(int.class,
-                                                MemorySegment.class,
-                                                MemorySegment.class, int.class, int.class, int.class,
-                                                float.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] registerOutput handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerOutput bind FAILED: " + t); }
-
-                            try {
-                                decodeStepHandle = lookup.findVirtual(mbClass, "decodeStep",
-                                        MethodType.methodType(int.class,
-                                                int.class, int.class, float.class,
-                                                MemorySegment.class, MemorySegment.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] decodeStep handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] decodeStep bind FAILED: " + t); }
-
-                            try {
-                                registerTokenEmbdHandle = lookup.findVirtual(mbClass, "registerTokenEmbd",
-                                        MethodType.methodType(int.class, MemorySegment.class, int.class, int.class, float.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] registerTokenEmbd handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] registerTokenEmbd bind FAILED: " + t); }
-
-                            try {
-                                decodeStepTokenHandle = lookup.findVirtual(mbClass, "decodeStepToken",
-                                        MethodType.methodType(int.class, int.class, int.class, float.class, int.class, MemorySegment.class))
-                                        .bindTo(instance);
-                                LOG.fine("[GgufMetalBridge] decodeStepToken handle bound.");
-                            } catch (Throwable t) { LOG.warning("[GgufMetalBridge] decodeStepToken bind FAILED: " + t); }
-
-                            enabled = true;
-                            LOG.fine("Aljabr Metal GPU acceleration enabled for Java GGUF backend.");
-                        }
-                    }
-                }
-            } catch (ClassNotFoundException e) {
-                LOG.fine("MetalBinding not on classpath, continuing with CPU vector execution.");
-            } catch (Throwable t) {
-                LOG.log(Level.WARNING, "Failed to initialize Aljabr Metal GPU acceleration: " + t.getMessage(), t);
-            }
-        }
-
-        METAL_ENABLED = enabled;
-        METAL_BINDING_INSTANCE = instance;
-        MATVEC_Q4K_MH = q4kHandle;
-        MATVEC_Q4K_SOFTCAP_MH = q4kSoftcapHandle;
-        MATVEC_Q6K_MH = q6kHandle;
-        MATVEC_Q6K_SOFTCAP_MH = q6kSoftcapHandle;
-        MATVEC_Q8_0_MH = q8_0Handle;
-        MATVEC_PAIR_MH = pairHandle;
-        MATVEC_TRIPLE_MH = tripleHandle;
-        MATVEC_BATCH_MH = batchHandle;
-        MATVEC_TRIPLE_BATCH_MH = tripleBatchHandle;
-        FFN_GATED_FUSED_MH = ffnFusedHandle;
-        FFN_GATED_FUSED_BATCH_MH = ffnFusedBatchHandle;
-        WO_FFN_FUSED_MH = woFfnFusedHandle;
-        WO_FFN_FUSED_LAYER_BATCH_MH = woFfnFusedLayerBatchHandle;
-        WO_FFN_NEXT_QKV_FUSED_MH = woFfnNextQkvFusedHandle;
-        WO_FFN_LOGITS_FUSED_MH = woFfnLogitsFusedHandle;
-        REGISTER_MODEL_BUFFER_MH = registerModelBufferHandle;
-        SOFTCAP_MH = softcapHandle;
-        FA4_ATTENTION_MH = fa4Handle;
-        INIT_KV_CACHE_MH = initKvCacheHandle;
-        SYNC_KV_CACHE_MH = syncKvCacheHandle;
-        REGISTER_NORM_BUFFER_MH = registerNormBufferHandle;
-        REGISTER_ROPE_FREQS_MH = registerRopeFreqsHandle;
-        REGISTER_DECODE_LAYER_MH = registerDecodeLayerHandle;
-        REGISTER_OUTPUT_MH = registerOutputHandle;
-        REGISTER_TOKEN_EMBD_MH = registerTokenEmbdHandle;
-        DECODE_STEP_MH = decodeStepHandle;
-        DECODE_STEP_TOKEN_MH = decodeStepTokenHandle;
+        GgufMetalBindingDiscovery.Result bindings = GgufMetalBindingDiscovery.discover(LOG);
+        METAL_ENABLED = bindings.enabled();
+        METAL_BINDING_INSTANCE = bindings.instance();
+        MATVEC_Q4K_MH = bindings.q4kHandle();
+        MATVEC_Q4K_SOFTCAP_MH = bindings.q4kSoftcapHandle();
+        MATVEC_Q6K_MH = bindings.q6kHandle();
+        MATVEC_Q6K_SOFTCAP_MH = bindings.q6kSoftcapHandle();
+        MATVEC_Q8_0_MH = bindings.q8_0Handle();
+        MATVEC_PAIR_MH = bindings.pairHandle();
+        MATVEC_TRIPLE_MH = bindings.tripleHandle();
+        MATVEC_BATCH_MH = bindings.batchHandle();
+        MATVEC_TRIPLE_BATCH_MH = bindings.tripleBatchHandle();
+        FFN_GATED_FUSED_MH = bindings.ffnFusedHandle();
+        FFN_GATED_FUSED_BATCH_MH = bindings.ffnFusedBatchHandle();
+        WO_FFN_FUSED_MH = bindings.woFfnFusedHandle();
+        WO_FFN_FUSED_LAYER_BATCH_MH = bindings.woFfnFusedLayerBatchHandle();
+        WO_FFN_NEXT_QKV_FUSED_MH = bindings.woFfnNextQkvFusedHandle();
+        WO_FFN_LOGITS_FUSED_MH = bindings.woFfnLogitsFusedHandle();
+        REGISTER_MODEL_BUFFER_MH = bindings.registerModelBufferHandle();
+        SOFTCAP_MH = bindings.softcapHandle();
+        FA4_ATTENTION_MH = bindings.fa4Handle();
+        INIT_KV_CACHE_MH = bindings.initKvCacheHandle();
+        SYNC_KV_CACHE_MH = bindings.syncKvCacheHandle();
+        REGISTER_NORM_BUFFER_MH = bindings.registerNormBufferHandle();
+        REGISTER_ROPE_FREQS_MH = bindings.registerRopeFreqsHandle();
+        REGISTER_DECODE_LAYER_MH = bindings.registerDecodeLayerHandle();
+        REGISTER_OUTPUT_MH = bindings.registerOutputHandle();
+        REGISTER_TOKEN_EMBD_MH = bindings.registerTokenEmbdHandle();
+        DECODE_STEP_MH = bindings.decodeStepHandle();
+        DECODE_STEP_TOKEN_MH = bindings.decodeStepTokenHandle();
     }
 
     public static boolean isVerbose() {
@@ -632,39 +271,12 @@ public final class GgufMetalBridge {
             float[][] postFfnN, float[][] attnNormN,
             float[][] attnQNormN, float[][] attnKNormN) {
         if (!METAL_ENABLED) return;
-        // 6 slots: 0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm, 4=attnQNorm, 5=attnKNorm
-        Arena arena = Arena.ofShared();
-        MemorySegment[] segs = new MemorySegment[6];
-        long[] slotBytes = new long[6];
-        for (int slot = 0; slot < 4; slot++) {
-            slotBytes[slot] = (long) layers * dim * Float.BYTES;
-            segs[slot] = arena.allocate(slotBytes[slot]);
-        }
-        int hDim = headDim > 0 ? headDim : 256;
-        for (int slot = 4; slot < 6; slot++) {
-            slotBytes[slot] = (long) layers * hDim * Float.BYTES;
-            segs[slot] = arena.allocate(slotBytes[slot]);
-        }
-        float[][][] sources = { postAttnN, ffnNormN, postFfnN, attnNormN, attnQNormN, attnKNormN };
-        for (int slot = 0; slot < 6; slot++) {
-            float[][] src = sources[slot];
-            int nFloats = slot < 4 ? dim : hDim;
-            for (int layer = 0; layer < layers; layer++) {
-                float[] arr = (src != null && layer < src.length) ? src[layer] : null;
-                if (arr != null) {
-                    int copyLen = Math.min(arr.length, nFloats);
-                    MemorySegment.copy(arr, 0, segs[slot], ValueLayout.JAVA_FLOAT, (long) layer * nFloats * Float.BYTES, copyLen);
-                }
-            }
-        }
-        // Publish atomically (volatile write)
-        g_normArena = arena;
-        g_normSegs = segs;
-        g_normDim = dim;
-        g_normLayers = layers;
+        MemorySegment[] segs = NORM_BUFFERS.register(
+                layers, dim, headDim, postAttnN, ffnNormN, postFfnN, attnNormN, attnQNormN, attnKNormN);
+        long[] slotBytes = NORM_BUFFERS.slotByteSizes(layers, dim, headDim);
 
         if (REGISTER_NORM_BUFFER_MH != null) {
-            for (int slot = 0; slot < 6; slot++) {
+            for (int slot = 0; slot < segs.length; slot++) {
                 try {
                     int rc = (int) REGISTER_NORM_BUFFER_MH.invokeExact(slot, segs[slot], slotBytes[slot]);
                     if (rc != 0) {
@@ -676,23 +288,17 @@ public final class GgufMetalBridge {
             }
         }
 
+        int hDim = headDim > 0 ? headDim : 256;
         LOG.fine("[GgufMetalBridge] Pre-loaded norm buffers: " + layers + " layers × (4 slots × " + dim + " + 2 slots × " + hDim + ") floats");
     }
 
     /**
      * Returns a slice view into the pre-loaded norm buffer for {@code (slot, layerIdx)}.
-     * Returns {@link MemorySegment#NULL} if norms are not registered or the source array was null.
-     *
-     * @param slot     0=postAttn, 1=ffnNorm, 2=postFfn, 3=attnNorm
-     * @param layerIdx layer index
+     * Returns {@link MemorySegment#NULL} if buffers are not registered or the slot/layer is out of range.
+     * Missing source weights remain represented by zero-filled slices.
      */
     private static MemorySegment normSlice(int slot, int layerIdx) {
-        MemorySegment[] segs = g_normSegs;
-        if (segs == null || slot < 0 || slot >= 4 || layerIdx < 0 || layerIdx >= g_normLayers) {
-            return MemorySegment.NULL;
-        }
-        long byteOffset = (long) layerIdx * g_normDim * Float.BYTES;
-        return segs[slot].asSlice(byteOffset, (long) g_normDim * Float.BYTES);
+        return NORM_BUFFERS.slice(slot, layerIdx);
     }
 
     /**

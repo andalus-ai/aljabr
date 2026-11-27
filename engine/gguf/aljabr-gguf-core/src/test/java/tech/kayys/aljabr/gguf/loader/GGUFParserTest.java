@@ -51,7 +51,7 @@ class GGUFParserTest {
         buffer.putInt(8); // STRING array
         buffer.putLong(2);
         putString(buffer, "alpha");
-        putString(buffer, "beta");
+        putString(buffer, "café");
         putString(buffer, "dimensions");
         buffer.putInt(9);
         buffer.putInt(2); // UINT16 array
@@ -74,7 +74,7 @@ class GGUFParserTest {
         var labels = assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.ArrayVal.class,
                 model.typedMetadata().get("labels"));
         assertEquals(tech.kayys.aljabr.gguf.core.GgufMetaType.STRING, labels.elementType());
-        assertEquals("beta", ((tech.kayys.aljabr.gguf.core.GgufMetaValue.StringVal)
+        assertEquals("café", ((tech.kayys.aljabr.gguf.core.GgufMetaValue.StringVal)
                 labels.elements().get(1)).value());
         var dimensions = assertInstanceOf(tech.kayys.aljabr.gguf.core.GgufMetaValue.ArrayVal.class,
                 model.typedMetadata().get("dimensions"));

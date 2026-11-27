@@ -12,6 +12,7 @@ package tech.kayys.aljabr.safetensor.quantization.quantizer;
 import org.jboss.logging.Logger;
 import tech.kayys.aljabr.safetensor.core.tensor.AccelTensor;
 import tech.kayys.aljabr.safetensor.quantization.QuantConfig;
+import tech.kayys.aljabr.safetensor.quantization.QuantizationStrategy;
 import tech.kayys.aljabr.safetensor.quantization.QuantizationEngine;
 
 /**
@@ -160,7 +161,7 @@ public class FP8Quantizer implements Quantizer {
 
     @Override
     public boolean supports(QuantConfig config) {
-        return config.getStrategy() == QuantizationEngine.QuantStrategy.FP8;
+        return config != null && config.getQuantizationStrategy() == QuantizationStrategy.FP8;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

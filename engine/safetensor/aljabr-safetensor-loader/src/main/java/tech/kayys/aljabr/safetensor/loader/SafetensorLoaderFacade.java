@@ -100,17 +100,31 @@ public class SafetensorLoaderFacade {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Load (or retrieve from cache) a single-file SafeTensors result.
-     *
-     * <p>
-     * The result is managed by the LRU cache — do NOT call {@code close()} on
-     * it; the cache handles eviction. If you need explicit lifetime control,
-     * use {@link #open(Path)} instead.
+     * Acquire a caller-owned lease to a cached single-file SafeTensors result.
+     * The lease must be closed after all tensor access is complete. Cache
+     * eviction, invalidation and shutdown retire only the cache owner and do
+     * not invalidate tensors while this lease remains active.
      *
      * @param filePath path to a .safetensors file
-     * @return the cached or freshly-loaded result
+     * @return a closeable lease protecting the result's mapped memory
      * @throws ProviderException on loading failure
      */
+    public SafetensorLoadCache.LoadLease acquireCached(Path filePath) {
+        try {
+            return loadCache.acquire(filePath.toAbsolutePath().normalize(), ffmLoader);
+        } catch (SafetensorException e) {
+            throw wrapProviderException("Failed to load SafeTensors file: " + filePath, e, true);
+        }
+    }
+
+    /**
+     * Compatibility API returning a cache-owned result without a caller lease.
+     * Concurrent eviction can close its tensor memory; new code must use
+     * {@link #acquireCached(Path)}.
+     *
+     * @deprecated Use {@link #acquireCached(Path)} and close the returned lease.
+     */
+    @Deprecated
     public SafetensorLoadResult loadCached(Path filePath) {
         try {
             return loadCache.getOrLoad(filePath.toAbsolutePath().normalize(), ffmLoader);
