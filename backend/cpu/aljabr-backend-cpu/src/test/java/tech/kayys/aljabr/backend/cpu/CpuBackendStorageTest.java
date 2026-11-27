@@ -1597,6 +1597,9 @@ class CpuBackendStorageTest {
         }
         assertEquals(0, leftStorage.references());
         assertEquals(0, rightStorage.references());
+    }
+
+    @Test
     void reshapeMaterializesNonContiguousInputInLogicalOrder() {
         HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f);
         DefaultTensor input = new DefaultTensor(

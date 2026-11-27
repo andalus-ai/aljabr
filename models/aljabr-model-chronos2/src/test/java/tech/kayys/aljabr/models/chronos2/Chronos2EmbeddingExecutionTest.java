@@ -38,7 +38,7 @@ class Chronos2EmbeddingExecutionTest {
     @Test
     void quantileProjectionUsesQuantileMajorPatchOrder() {
         Chronos2Config config = config(false);
-        Weights input = identityResidual(3, 2, 2);
+        Weights input = projection(2, 3, 2);
         Weights output = quantileProjection();
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}});
