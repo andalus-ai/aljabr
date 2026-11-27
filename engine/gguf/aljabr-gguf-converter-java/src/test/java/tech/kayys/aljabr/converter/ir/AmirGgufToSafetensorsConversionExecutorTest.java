@@ -103,6 +103,27 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ1SBlocksUsingCanonicalGridAndPackedScaleAndSign() throws Exception {
+        byte[] block = new byte[50];
+        block[1] = 0x3c; // fp16 base scale = 1; zero qh selects scale 1 and positive delta
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ1_S", List.of(256L), source, 8L, block.length);
+        var model = model("iq1_s", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq1_s.safetensors");
+
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        assertEquals(256L * Float.BYTES, result.payloadBytes());
+        byte[] file = Files.readAllBytes(output);
+        assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < 256; i++) assertEquals(-0.875f, values.getFloat(), 0.0f);
+    }
+
+    @Test
     void dequantizesQ4ZeroBlocksToF32InGgmlElementOrder() throws Exception {
         byte[] block = new byte[18];
         block[0] = 0;
