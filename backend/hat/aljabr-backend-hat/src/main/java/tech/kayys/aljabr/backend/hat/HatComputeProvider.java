@@ -266,6 +266,11 @@ public final class HatComputeProvider implements ComputeProvider {
                 } catch (NumberFormatException invalidRank) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
+                OperationSupport momentumSupport = finiteFloatRangeConstraint(
+                        constraints, "momentum", 0.0f, 1.0f);
+                if (momentumSupport != OperationSupport.DELEGATED) {
+                    return new OperationSupportDescriptor(operationId, momentumSupport, null);
+                }
                 String runningMeanDtype = constraints.get("running_mean_dtype");
                 String runningVarDtype = constraints.get("running_var_dtype");
                 if (runningMeanDtype == null || runningVarDtype == null) {
@@ -801,6 +806,11 @@ public final class HatComputeProvider implements ComputeProvider {
                 return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             }
 
+            OperationSupport epsilonSupport = nonNegativeFiniteFloatConstraint(constraints, "eps");
+            if (epsilonSupport != OperationSupport.DELEGATED) {
+                return new OperationSupportDescriptor(operationId, epsilonSupport, null);
+            }
+
             OperationSupport weightSupport = optionalNormalizationTensorSupport(
                     constraints, "weight", weightRequired);
             OperationSupport biasSupport = checkBias
@@ -1170,6 +1180,33 @@ public final class HatComputeProvider implements ComputeProvider {
             if (dtype == null) return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
             if (!isF32(dtype)) return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
             return new OperationSupportDescriptor(operationId, OperationSupport.DELEGATED, CPU_FALLBACK_BACKEND_ID);
+        }
+
+        private OperationSupport nonNegativeFiniteFloatConstraint(
+                Map<String, String> constraints, String key) {
+            String value = constraints.get(key);
+            if (value == null) return OperationSupport.DELEGATED;
+            try {
+                float parsed = Float.parseFloat(value);
+                return Float.isFinite(parsed) && parsed >= 0.0f
+                        ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED;
+            } catch (NumberFormatException invalid) {
+                return OperationSupport.UNKNOWN;
+            }
+        }
+
+        private OperationSupport finiteFloatRangeConstraint(
+                Map<String, String> constraints, String key, float minimum, float maximum) {
+            String value = constraints.get(key);
+            if (value == null) return OperationSupport.DELEGATED;
+            try {
+                float parsed = Float.parseFloat(value);
+                if (!Float.isFinite(parsed)) return OperationSupport.UNSUPPORTED;
+                return parsed >= minimum && parsed <= maximum
+                        ? OperationSupport.DELEGATED : OperationSupport.UNSUPPORTED;
+            } catch (NumberFormatException invalid) {
+                return OperationSupport.UNKNOWN;
+            }
         }
 
         private static boolean isF32(String dtype) {
