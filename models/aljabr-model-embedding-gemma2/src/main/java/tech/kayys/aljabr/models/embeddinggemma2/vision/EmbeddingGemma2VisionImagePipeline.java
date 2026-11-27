@@ -102,10 +102,7 @@ public final class EmbeddingGemma2VisionImagePipeline {
         return encodeBatch(imageProcessor.process(images));
     }
 
-    /**
-     * Executes already-preprocessed image inputs without repeating image
-     * resizing, patch extraction, or position-ID generation.
-     */
+    /** Executes already-preprocessed image inputs without repeating image processing. */
     public List<float[][]> encodeBatch(EmbeddingGemma2VisionProcessorOutput processorOutput) {
         Objects.requireNonNull(processorOutput, "processorOutput must not be null");
         return visionTower.encodeAndProject(processorOutput);
