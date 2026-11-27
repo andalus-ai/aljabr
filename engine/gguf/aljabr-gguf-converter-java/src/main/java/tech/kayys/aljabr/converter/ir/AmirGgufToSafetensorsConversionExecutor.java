@@ -161,6 +161,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
+            case "IQ1_S" -> TensorEncoding.dequantized("IQ1_S", 50, 256);
             case "IQ2_XXS" -> TensorEncoding.dequantized("IQ2_XXS", 66, 256);
             case "IQ2_XS" -> TensorEncoding.dequantized("IQ2_XS", 74, 256);
             case "IQ2_S" -> TensorEncoding.dequantized("IQ2_S", 82, 256);
@@ -186,7 +187,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -287,6 +288,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("IQ1_S")) {
+                    dequantizeIQ1SBlock(source, base, values);
+                    continue;
+                }
                 if (type.equals("IQ2_XXS")) {
                     dequantizeIQ2XXSBlock(source, base, values);
                     continue;
@@ -453,6 +458,25 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
      * 16-bit words. Each 8-byte group contains four grid indices and four
      * packed seven-bit sign codes plus a four-bit scale multiplier.
      */
+    private static void dequantizeIQ1SBlock(byte[] source, int base, ByteBuffer values) {
+        float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        int qsBase = base + 2;
+        int qhBase = qsBase + 32;
+        for (int subBlock = 0; subBlock < 8; subBlock++) {
+            int packed = (source[qhBase + subBlock * 2] & 0xff)
+                    | ((source[qhBase + subBlock * 2 + 1] & 0xff) << 8);
+            float subScale = scale * (2 * ((packed >>> 12) & 0x07) + 1);
+            float delta = (packed & 0x8000) != 0 ? -0.125f : 0.125f;
+            for (int group = 0; group < 4; group++) {
+                int gridIndex = (source[qsBase + subBlock * 4 + group] & 0xff)
+                        | (((packed >>> (group * 3)) & 0x07) << 8);
+                for (int element = 0; element < 8; element++) {
+                    values.putFloat(subScale * (Iq1SGrid.value(gridIndex, element) + delta));
+                }
+            }
+        }
+    }
+
     private static void dequantizeIQ2XXSBlock(byte[] source, int base, ByteBuffer output) {
         float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
         int qsOffset = base + 2;
