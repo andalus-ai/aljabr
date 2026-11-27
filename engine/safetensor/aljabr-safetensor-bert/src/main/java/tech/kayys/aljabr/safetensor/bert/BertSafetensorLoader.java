@@ -38,6 +38,10 @@ public final class BertSafetensorLoader {
         BertConfig config = encoder.config();
         Set<String> expectedNames = mapper.expectedTensorShapes(config).keySet();
         try (SafetensorShardLoader.SafetensorShardSession session = shardLoader.open(checkpoint)) {
+            // Validate the complete index/header key set before copying any tensor data.
+            // This prevents an unsupported checkpoint from being silently accepted merely
+            // because this adapter only materializes the encoder parameters it consumes.
+            mapper.validateTensorNames(config, session.tensorNames());
             Map<String, BertCheckpointMapper.CheckpointTensor> tensors = new LinkedHashMap<>();
             for (String name : expectedNames) {
                 SafetensorTensor tensor = session.findTensor(name).orElseThrow(
