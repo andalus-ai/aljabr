@@ -276,8 +276,19 @@ public final class HatComputeProvider implements ComputeProvider {
                 if (runningMeanDtype == null || runningVarDtype == null) {
                     return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
                 }
-                if (!isF32(runningMeanDtype) || !isF32(runningVarDtype)) {
-                    return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                String runningMeanDtype = constraints.get("running_mean_dtype");
+                String runningVarDtype = constraints.get("running_var_dtype");
+                if ("false".equalsIgnoreCase(runningStatsPresent)) {
+                    if (runningMeanDtype != null || runningVarDtype != null) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                    }
+                } else {
+                    if (runningMeanDtype == null || runningVarDtype == null) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNKNOWN, null);
+                    }
+                    if (!isF32(runningMeanDtype) || !isF32(runningVarDtype)) {
+                        return new OperationSupportDescriptor(operationId, OperationSupport.UNSUPPORTED, null);
+                    }
                 }
                 OperationSupport runningMeanLayout = optionalNormalizationParameterLayoutSupport(
                         constraints, "running_mean", "channels");
