@@ -24,6 +24,7 @@ class QuantConfigTest {
         QuantConfig config = new QuantConfig();
 
         assertEquals(QuantStrategy.INT4, config.getStrategy());
+        assertEquals(QuantizationStrategy.INT4, config.getQuantizationStrategy());
         assertEquals(128, config.getGroupSize());
         assertEquals(4, config.getBits());
         assertFalse(config.isSymmetric());
@@ -102,5 +103,30 @@ class QuantConfigTest {
         assertThrows(NullPointerException.class, () -> {
             new QuantConfig(null, 128, 4, false, true, false, 0.01, 128, 2048, false);
         });
+    }
+
+    @Test
+    void neutralStrategyRoundTripsEveryLegacyValue() {
+        for (QuantStrategy legacy : QuantStrategy.values()) {
+            QuantizationStrategy neutral = QuantizationStrategyCompatibility.fromLegacy(legacy);
+            assertEquals(legacy.name(), neutral.name());
+            assertEquals(legacy, QuantizationStrategyCompatibility.toLegacy(neutral));
+        }
+    }
+
+    @Test
+    void builderAcceptsNeutralStrategyAndPreservesLegacyGetter() {
+        QuantConfig config = QuantConfig.builder()
+                .quantizationStrategy(QuantizationStrategy.BNB)
+                .build();
+
+        assertEquals(QuantizationStrategy.BNB, config.getQuantizationStrategy());
+        assertEquals(QuantStrategy.BNB, config.getStrategy());
+    }
+
+    @Test
+    void neutralStrategyRejectsNull() {
+        assertThrows(NullPointerException.class, () -> QuantizationStrategyCompatibility.fromLegacy(null));
+        assertThrows(NullPointerException.class, () -> QuantConfig.builder().quantizationStrategy(null));
     }
 }

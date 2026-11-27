@@ -4,6 +4,7 @@ import tech.kayys.aljabr.backend.cpu.ops.CpuOps;
 import tech.kayys.aljabr.backend.cpu.ops.MatmulCpu;
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.cache.KVCacheSession;
+import tech.kayys.aljabr.cache.KVCacheAttentionBackend;
 import tech.kayys.aljabr.core.tensor.*;
 import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
 import tech.kayys.aljabr.diagnostics.DiagnosticSink;
@@ -24,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Incubator Vector API where available. An optional {@link OffHeapBufferPool}
  * recycles off-heap memory across execution steps.</p>
  */
-public final class CpuBackend implements ComputeBackend {
+public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend {
 
     /** Defines whether this backend is responsible for closing an injected pool. */
     public enum PoolOwnership { BORROWED, OWNED }
@@ -370,6 +371,23 @@ public final class CpuBackend implements ComputeBackend {
         return MemorySegment.ofArray(packed);
     }
 
+    /**
+     * Creates a storage-sharing shape view while balancing the retained storage
+     * reference if tensor construction fails.
+     */
+    private Tensor shapeView(Tensor input, Shape outputShape, long[] outputStrides) {
+        TensorStorage storage = input.storage();
+        storage.retain();
+        try {
+            return new DefaultTensor(
+                    outputShape, input.dtype(), input.device(), storage, this,
+                    new TensorLayout(outputShape, outputStrides, input.layout().storageOffset()));
+        } catch (RuntimeException | Error failure) {
+            storage.release();
+            throw failure;
+        }
+    }
+
     // ── Shape ops ────────────────────────────────────────────────────────────
 
     @Override
@@ -383,9 +401,14 @@ public final class CpuBackend implements ComputeBackend {
 
         TensorLayout inputLayout = a.layout();
         if (!inputLayout.isContiguous()) {
-            throw new UnsupportedOperationException(
-                    "CPU reshape of a non-contiguous tensor requires materialization; "
-                            + "input layout=" + inputLayout);
+            // Reshape preserves logical row-major order. Materialize only when
+            // the source layout cannot be represented by canonical output strides.
+            Tensor materialized = contiguous(a);
+            try {
+                return reshape(materialized, newShape);
+            } finally {
+                materialized.release();
+            }
         }
 
         // A contiguous tensor may still be a view with a non-zero storage
@@ -563,9 +586,9 @@ public final class CpuBackend implements ComputeBackend {
                     "CPU indexAdd source dtype " + source.dtype()
                             + " must match destination dtype " + input.dtype());
         }
-        if (input.dtype() != DType.F32) {
+        if (input.dtype() != DType.F32 && input.dtype() != DType.F16 && input.dtype() != DType.BF16) {
             throw new UnsupportedOperationException(
-                    "CPU indexAdd currently supports F32 destination and source tensors; actual dtype="
+                    "CPU indexAdd currently supports F32, F16, and BF16 destination and source tensors; actual dtype="
                             + input.dtype());
         }
         if (indices.dtype() != DType.I32) {
@@ -595,18 +618,19 @@ public final class CpuBackend implements ComputeBackend {
         }
 
         long outputElements = plan.outputShape().numel();
-        HostAccessibleStorage output = allocateOutput(
-                Math.multiplyExact(outputElements, (long) Float.BYTES));
+        DType dtype = input.dtype();
+        HostAccessibleStorage output = allocateOutput(dtype.memoryFootprintBytes(outputElements));
         try {
             MemorySegment destination = seg(input);
             MemorySegment updates = seg(source);
             MemorySegment result = output.segment();
             TensorLayout destinationLayout = input.layout();
             TensorLayout sourceLayout = source.layout();
+            TensorLayout resultLayout = TensorLayout.contiguous(plan.outputShape());
+            long[] destinationDims = input.shape().dims();
             for (long logical = 0; logical < outputElements; logical++) {
-                float value = CpuTensorLayoutAccess.readLogical(
-                        destination, destinationDimensions, destinationLayout, logical);
-                result.set(ValueLayout.JAVA_FLOAT, Math.multiplyExact(logical, Float.BYTES), value);
+                float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
+                writeIndexAddValue(result, logical, dtype, value);
             }
 
             long sourceAxisSize = sourceDimensions[selectedAxis];
@@ -619,18 +643,45 @@ public final class CpuBackend implements ComputeBackend {
                     for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
                         long sourceLogical = Math.addExact(sourceBase, innerIndex);
                         long destinationLogical = Math.addExact(destinationBase, innerIndex);
-                        float update = CpuTensorLayoutAccess.readLogical(
-                                updates, sourceDimensions, sourceLayout, sourceLogical);
-                        long byteOffset = Math.multiplyExact(destinationLogical, Float.BYTES);
-                        float current = result.get(ValueLayout.JAVA_FLOAT, byteOffset);
-                        result.set(ValueLayout.JAVA_FLOAT, byteOffset, current + update);
+                        float update = readIndexAddValue(
+                                updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
+                        float current = readIndexAddValue(result, destinationDimensions,
+                                resultLayout, destinationLogical, dtype);
+                        writeIndexAddValue(result, destinationLogical, dtype, current + update);
                     }
                 }
             }
-            return out(plan.outputShape(), output);
+            return out(plan.outputShape(), dtype, output);
         } catch (RuntimeException | Error failure) {
             output.release();
             throw failure;
+        }
+    }
+
+    private static float readIndexAddValue(
+            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex, DType dtype) {
+        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
+        return switch (dtype) {
+            case F32 -> segment.get(ValueLayout.JAVA_FLOAT,
+                    Math.multiplyExact(elementOffset, Float.BYTES));
+            case F16 -> CpuFloatingPointConversions.halfToFloat(segment.get(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(elementOffset, Short.BYTES)));
+            case BF16 -> CpuFloatingPointConversions.bfloat16ToFloat(segment.get(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(elementOffset, Short.BYTES)));
+            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
+        };
+    }
+
+    private static void writeIndexAddValue(
+            MemorySegment segment, long logicalIndex, DType dtype, float value) {
+        switch (dtype) {
+            case F32 -> segment.set(ValueLayout.JAVA_FLOAT,
+                    Math.multiplyExact(logicalIndex, Float.BYTES), value);
+            case F16 -> segment.set(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToHalf(value));
+            case BF16 -> segment.set(ValueLayout.JAVA_SHORT,
+                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToBfloat16(value));
+            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
         }
     }
 
@@ -643,15 +694,48 @@ public final class CpuBackend implements ComputeBackend {
 
     @Override
     public Tensor unsqueeze(Tensor a, int dim) {
+        Objects.requireNonNull(a, "input");
         TensorOperationValidator.UnsqueezePlan plan =
                 TensorOperationValidator.validateUnsqueeze(a.shape(), dim);
-        return reshape(a, plan.outputShape().dims());
+        if (a.dtype().isQuantized()) {
+            return reshape(a, plan.outputShape().dims());
+        }
+
+        int axis = plan.axis();
+        long[] inputStrides = a.layout().strides();
+        long[] outputStrides = new long[inputStrides.length + 1];
+        System.arraycopy(inputStrides, 0, outputStrides, 0, axis);
+        outputStrides[axis] = axis == inputStrides.length
+                ? 1L
+                : Math.multiplyExact(inputStrides[axis], a.shape().dim(axis));
+        System.arraycopy(inputStrides, axis, outputStrides, axis + 1,
+                inputStrides.length - axis);
+        return shapeView(a, plan.outputShape(), outputStrides);
     }
 
     @Override
     public Tensor squeeze(Tensor a) {
+        Objects.requireNonNull(a, "input");
         Shape outputShape = TensorOperationValidator.validateSqueeze(a.shape());
-        return reshape(a, outputShape.dims());
+        if (a.dtype().isQuantized()) {
+            return reshape(a, outputShape.dims());
+        }
+
+        long[] inputDimensions = a.shape().dims();
+        long[] inputStrides = a.layout().strides();
+        long[] outputStrides = new long[outputShape.rank()];
+        int outputAxis = 0;
+        for (int axis = 0; axis < inputDimensions.length; axis++) {
+            if (inputDimensions[axis] != 1) {
+                outputStrides[outputAxis++] = inputStrides[axis];
+            }
+        }
+        // The tensor API represents scalar/all-singleton squeeze results as
+        // a one-element vector; its sole stride is immaterial to addressing.
+        if (outputAxis == 0) {
+            outputStrides[0] = 1L;
+        }
+        return shapeView(a, outputShape, outputStrides);
     }
 
     @Override
@@ -674,47 +758,24 @@ public final class CpuBackend implements ComputeBackend {
                     "CPU transpose does not yet support block-quantized tensors; actual dtype is " + a.dtype());
         }
 
-        int rank = a.shape().rank();
+        // A transpose changes only logical dimension order. Preserve the
+        // backing allocation and express the operation through swapped
+        // element strides, including any existing storage offset.
         Shape outShape = plan.outputShape();
-        long[] outDims = outShape.dims();
-        long total = outShape.numel();
-        int elementBytes = a.dtype().blockByteSize();
-        long outputBytes = a.dtype().memoryFootprintBytes(total);
-        HostAccessibleStorage outBuf = allocateOutput(outputBytes);
+        TensorLayout inputLayout = a.layout();
+        long[] outputStrides = inputLayout.strides();
+        long stride = outputStrides[d0];
+        outputStrides[d0] = outputStrides[d1];
+        outputStrides[d1] = stride;
+
+        TensorStorage storage = a.storage();
+        storage.retain();
         try {
-            TensorLayout inputLayout = a.layout();
-            long[] inputStrides = inputLayout.strides();
-            long storageOffset = inputLayout.storageOffset();
-            long[] outputStrides = TensorLayout.contiguous(outShape).strides();
-            MemorySegment src = seg(a);
-            MemorySegment dst = outBuf.segment();
-            long[] cursor = new long[rank];
-
-            for (long element = 0; element < total; element++) {
-                long inputIndex = storageOffset;
-                long outputIndex = 0;
-                for (int dimension = 0; dimension < rank; dimension++) {
-                    int inputDimension = dimension == d0 ? d1
-                            : dimension == d1 ? d0 : dimension;
-                    inputIndex = Math.addExact(inputIndex,
-                            Math.multiplyExact(cursor[dimension], inputStrides[inputDimension]));
-                    outputIndex = Math.addExact(outputIndex,
-                            Math.multiplyExact(cursor[dimension], outputStrides[dimension]));
-                }
-                long inputByteOffset = Math.multiplyExact(inputIndex, elementBytes);
-                long outputByteOffset = Math.multiplyExact(outputIndex, elementBytes);
-                MemorySegment.copy(src, inputByteOffset, dst, outputByteOffset, elementBytes);
-
-                for (int dimension = rank - 1; dimension >= 0; dimension--) {
-                    if (++cursor[dimension] < outDims[dimension]) {
-                        break;
-                    }
-                    cursor[dimension] = 0;
-                }
-            }
-            return out(outShape, a.dtype(), outBuf);
+            return new DefaultTensor(
+                    outShape, a.dtype(), a.device(), storage, this,
+                    new TensorLayout(outShape, outputStrides, inputLayout.storageOffset()));
         } catch (RuntimeException | Error failure) {
-            outBuf.release();
+            storage.release();
             throw failure;
         }
     }
@@ -1260,6 +1321,7 @@ public final class CpuBackend implements ComputeBackend {
      *
      * @see CpuKVCacheStreamingAttention
      */
+    @Override
     public float[] attentionFromCache(
             KVCacheSession session,
             int layer,

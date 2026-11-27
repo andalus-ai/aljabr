@@ -2,8 +2,10 @@ package tech.kayys.aljabr.safetensor.bert;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorFactory;
+import tech.kayys.aljabr.models.bert.BertConfig;
 import tech.kayys.aljabr.models.bert.MiniLmL6V2;
 import tech.kayys.aljabr.spi.tokenizer.EncodeOptions;
 import tech.kayys.aljabr.spi.tokenizer.Tokenizer;
@@ -16,22 +18,48 @@ import tech.kayys.aljabr.spi.tokenizer.Tokenizer;
 public final class MiniLmL6V2Bundle implements AutoCloseable {
     private final MiniLmL6V2 model;
     private final Tokenizer tokenizer;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     public MiniLmL6V2Bundle(MiniLmL6V2 model, Tokenizer tokenizer) {
         this.model = Objects.requireNonNull(model, "model must not be null");
         this.tokenizer = Objects.requireNonNull(tokenizer, "tokenizer must not be null");
-        if (tokenizer.vocabSize() != model.encoder().config().vocabularySize()) {
-            throw new IllegalArgumentException("Tokenizer vocabulary size " + tokenizer.vocabSize()
-                    + " does not match BERT vocabulary size "
-                    + model.encoder().config().vocabularySize());
+        validateTokenizerContract(model.encoder().config(), tokenizer);
+    }
+
+    static void validateTokenizerContract(BertConfig config, Tokenizer tokenizer) {
+        Objects.requireNonNull(config, "config must not be null");
+        Objects.requireNonNull(tokenizer, "tokenizer must not be null");
+        int vocabularySize = tokenizer.vocabSize();
+        if (vocabularySize != config.vocabularySize()) {
+            throw new IllegalArgumentException("Tokenizer vocabulary size " + vocabularySize
+                    + " does not match BERT vocabulary size " + config.vocabularySize());
         }
-        if (tokenizer.bosTokenId() < 0 || tokenizer.eosTokenId() < 0 || tokenizer.padTokenId() < 0) {
-            throw new IllegalArgumentException("MiniLM WordPiece tokenizer must define CLS, SEP and PAD tokens");
+        validateSpecialToken("CLS/BOS", tokenizer.bosTokenId(), vocabularySize);
+        validateSpecialToken("SEP/EOS", tokenizer.eosTokenId(), vocabularySize);
+        validateSpecialToken("PAD", tokenizer.padTokenId(), vocabularySize);
+        if (tokenizer.bosTokenId() == tokenizer.eosTokenId()
+                || tokenizer.bosTokenId() == tokenizer.padTokenId()
+                || tokenizer.eosTokenId() == tokenizer.padTokenId()) {
+            throw new IllegalArgumentException("MiniLM CLS, SEP and PAD token IDs must be distinct");
+        }
+    }
+
+    private static void validateSpecialToken(String name, int tokenId, int vocabularySize) {
+        if (tokenId < 0 || tokenId >= vocabularySize) {
+            throw new IllegalArgumentException("MiniLM tokenizer " + name + " token ID " + tokenId
+                    + " is outside vocabulary range [0, " + vocabularySize + ")");
+        }
+    }
+
+    private void ensureOpen() {
+        if (closed.get()) {
+            throw new IllegalStateException("MiniLM bundle is closed");
         }
     }
 
     /** Tokenizes, truncates, pads, runs the encoder and returns normalized 384-D vectors. */
     public float[][] encode(List<String> sentences) {
+        ensureOpen();
         Objects.requireNonNull(sentences, "sentences must not be null");
         if (sentences.isEmpty()) return new float[0][];
         int batch = sentences.size();
@@ -88,6 +116,8 @@ public final class MiniLmL6V2Bundle implements AutoCloseable {
 
     @Override
     public void close() {
-        model.encoder().close();
+        if (closed.compareAndSet(false, true)) {
+            model.encoder().close();
+        }
     }
 }

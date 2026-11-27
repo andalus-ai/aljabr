@@ -73,6 +73,8 @@ class FormatTargetCapabilityTest {
                 tensor("q5_1", "Q5_1", List.of(32L))));
         var q6 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q6", "Q6_K", List.of(256L))));
+        var q2_0 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("q2_0", "Q2_0", List.of(64L))));
         var q2 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q2", "Q2_K", List.of(256L))));
         var q3 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
@@ -83,6 +85,8 @@ class FormatTargetCapabilityTest {
                 tensor("q5k", "Q5_K", List.of(256L))));
         var q8 = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("q8", "Q8_0", List.of(32L))));
+        var iq2s = new SafetensorsTargetCapability().assess(model("llama", "gguf",
+                tensor("iq2s", "IQ2_S", List.of(256L))));
         var iq3xxs = new SafetensorsTargetCapability().assess(model("llama", "gguf",
                 tensor("iq3xxs", "IQ3_XXS", List.of(256L))));
         var iq3s = new SafetensorsTargetCapability().assess(model("llama", "gguf",
@@ -97,11 +101,13 @@ class FormatTargetCapabilityTest {
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5_0.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5_1.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q6.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q2_0.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q2.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q3.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q4k.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q5k.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, q8.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq2s.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq3xxs.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq3s.fidelity());
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, iq4nl.fidelity());

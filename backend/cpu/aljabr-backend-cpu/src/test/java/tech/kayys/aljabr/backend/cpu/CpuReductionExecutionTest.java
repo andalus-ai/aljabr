@@ -38,6 +38,28 @@ class CpuReductionExecutionTest {
     }
 
     @Test
+    void emptySumUsesAdditiveIdentityAndMaxRejectsEmptyInput() {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor empty = TensorFactory.of(new float[0], backend, 0);
+                Tensor sum = backend.sum(empty)) {
+            assertArrayEquals(new long[] {1}, sum.shape().dims());
+            assertArrayEquals(new float[] {0f}, sum.toFloatArray(), 0f);
+            org.junit.jupiter.api.Assertions.assertThrows(
+                    IllegalArgumentException.class, () -> backend.max(empty));
+        }
+    }
+
+    @Test
+    void axisSumOfEmptyReductionDimensionProducesZeros() {
+        try (CpuBackend backend = new CpuBackend();
+                Tensor empty = TensorFactory.of(new float[0], backend, 2, 0, 3);
+                Tensor sum = backend.sum(empty, 1, false)) {
+            assertArrayEquals(new long[] {2, 3}, sum.shape().dims());
+            assertArrayEquals(new float[] {0f, 0f, 0f, 0f, 0f, 0f}, sum.toFloatArray(), 0f);
+        }
+    }
+
+    @Test
     void softmaxAndLogSoftmaxRemainStableAcrossRows() {
         try (CpuBackend backend = new CpuBackend();
                 Tensor input = TensorFactory.of(new float[] {1000f, 1001f, -1000f, -999f}, backend, 2, 2);
