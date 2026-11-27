@@ -42,15 +42,21 @@ public final class HuggingFaceWordPieceLoader {
                     ? "##" : json.model.continuing_subword_prefix;
             boolean lowercase = json.normalizer == null || json.normalizer.lowercase == null
                     || json.normalizer.lowercase;
-            boolean stripAccents = json.normalizer != null && Boolean.TRUE.equals(json.normalizer.strip_accents);
+            // BertNormalizer defines strip_accents=null as "follow lowercase".
+            boolean stripAccents = json.normalizer == null
+                    || json.normalizer.strip_accents == null
+                    ? lowercase : json.normalizer.strip_accents;
             boolean cleanText = json.normalizer == null || json.normalizer.clean_text == null
                     || json.normalizer.clean_text;
+            boolean handleChineseChars = json.normalizer == null
+                    || json.normalizer.handle_chinese_chars == null
+                    || json.normalizer.handle_chinese_chars;
             int maxChars = json.model.max_input_chars_per_word > 0
                     ? json.model.max_input_chars_per_word : 100;
             return new WordPieceTokenizer(vocabulary, specialTokens, unknownId,
                     vocabulary.getOrDefault("[CLS]", -1), vocabulary.getOrDefault("[SEP]", -1),
                     vocabulary.getOrDefault("[PAD]", -1), prefix, lowercase, stripAccents,
-                    cleanText, maxChars);
+                    cleanText, handleChineseChars, maxChars);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load Hugging Face WordPiece tokenizer: " + path, e);
         }
@@ -76,6 +82,7 @@ public final class HuggingFaceWordPieceLoader {
             public Boolean lowercase;
             public Boolean strip_accents;
             public Boolean clean_text;
+            public Boolean handle_chinese_chars;
         }
 
         @JsonIgnoreProperties(ignoreUnknown = true)

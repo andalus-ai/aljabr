@@ -5,7 +5,12 @@ import tech.kayys.aljabr.gguf.api.GgufTensorDescriptor;
 
 import java.util.Objects;
 
-/** Bridges the canonical GGUF parser model into the inference-facing descriptor contract. */
+/**
+ * Maps parser-owned GGUF metadata into the public structural descriptor API.
+ *
+ * <p>Physical payload location and size remain on the parser model and are
+ * intentionally not copied into {@link GgufTensorDescriptor}.
+ */
 public final class GgufModelDescriptorAdapter {
 
     private GgufModelDescriptorAdapter() {
