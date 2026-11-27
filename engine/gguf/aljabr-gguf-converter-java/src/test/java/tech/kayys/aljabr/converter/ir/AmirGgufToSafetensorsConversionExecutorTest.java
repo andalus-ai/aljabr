@@ -128,6 +128,31 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesQ2ZeroBlocksUsingTwoBitCodesInGgmlElementOrder() throws Exception {
+        byte[] block = new byte[18];
+        block[1] = 0x40; // fp16 scale = 2
+        java.util.Arrays.fill(block, 2, block.length, (byte) 0xe4);
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "Q2_0", List.of(64L), source, 8L, block.length);
+        var model = model("q2_0", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("q2_0.safetensors");
+
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        assertEquals(64L * Float.BYTES, result.payloadBytes());
+        byte[] file = Files.readAllBytes(output);
+        assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 64 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        float[] expected = {-2.0f, 0.0f, 2.0f, 4.0f};
+        for (int i = 0; i < 64; i++) {
+            assertEquals(expected[i & 3], values.getFloat(), 0.0f);
+        }
+    }
+
+    @Test
     void dequantizesQ8ZeroBlocksToF32() throws Exception {
         byte[] block = new byte[34];
         block[0] = 0;
