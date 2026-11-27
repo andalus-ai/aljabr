@@ -708,69 +708,24 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                     "CPU transpose does not yet support block-quantized tensors; actual dtype is " + a.dtype());
         }
 
-        if (!a.dtype().isQuantized()) {
-            // A transpose changes only logical dimension order. Preserve the
-            // backing allocation and express the operation through swapped
-            // element strides, including any existing storage offset.
-            TensorLayout inputLayout = a.layout();
-            long[] outputStrides = inputLayout.strides();
-            long stride = outputStrides[d0];
-            outputStrides[d0] = outputStrides[d1];
-            outputStrides[d1] = stride;
-
-            TensorStorage storage = a.storage();
-            storage.retain();
-            try {
-                return new DefaultTensor(
-                        outShape, a.dtype(), a.device(), storage, this,
-                        new TensorLayout(outShape, outputStrides, inputLayout.storageOffset()));
-            } catch (RuntimeException | Error failure) {
-                storage.release();
-                throw failure;
-            }
-        }
-
-        int rank = a.shape().rank();
+        // A transpose changes only logical dimension order. Preserve the
+        // backing allocation and express the operation through swapped
+        // element strides, including any existing storage offset.
         Shape outShape = plan.outputShape();
-        long[] outDims = outShape.dims();
-        long total = outShape.numel();
-        int elementBytes = a.dtype().blockByteSize();
-        long outputBytes = a.dtype().memoryFootprintBytes(total);
-        HostAccessibleStorage outBuf = allocateOutput(outputBytes);
+        TensorLayout inputLayout = a.layout();
+        long[] outputStrides = inputLayout.strides();
+        long stride = outputStrides[d0];
+        outputStrides[d0] = outputStrides[d1];
+        outputStrides[d1] = stride;
+
+        TensorStorage storage = a.storage();
+        storage.retain();
         try {
-            TensorLayout inputLayout = a.layout();
-            long[] inputStrides = inputLayout.strides();
-            long storageOffset = inputLayout.storageOffset();
-            long[] outputStrides = TensorLayout.contiguous(outShape).strides();
-            MemorySegment src = seg(a);
-            MemorySegment dst = outBuf.segment();
-            long[] cursor = new long[rank];
-
-            for (long element = 0; element < total; element++) {
-                long inputIndex = storageOffset;
-                long outputIndex = 0;
-                for (int dimension = 0; dimension < rank; dimension++) {
-                    int inputDimension = dimension == d0 ? d1
-                            : dimension == d1 ? d0 : dimension;
-                    inputIndex = Math.addExact(inputIndex,
-                            Math.multiplyExact(cursor[dimension], inputStrides[inputDimension]));
-                    outputIndex = Math.addExact(outputIndex,
-                            Math.multiplyExact(cursor[dimension], outputStrides[dimension]));
-                }
-                long inputByteOffset = Math.multiplyExact(inputIndex, elementBytes);
-                long outputByteOffset = Math.multiplyExact(outputIndex, elementBytes);
-                MemorySegment.copy(src, inputByteOffset, dst, outputByteOffset, elementBytes);
-
-                for (int dimension = rank - 1; dimension >= 0; dimension--) {
-                    if (++cursor[dimension] < outDims[dimension]) {
-                        break;
-                    }
-                    cursor[dimension] = 0;
-                }
-            }
-            return out(outShape, a.dtype(), outBuf);
+            return new DefaultTensor(
+                    outShape, a.dtype(), a.device(), storage, this,
+                    new TensorLayout(outShape, outputStrides, inputLayout.storageOffset()));
         } catch (RuntimeException | Error failure) {
-            outBuf.release();
+            storage.release();
             throw failure;
         }
     }
