@@ -586,9 +586,10 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                     "CPU indexAdd source dtype " + source.dtype()
                             + " must match destination dtype " + input.dtype());
         }
-        if (input.dtype() != DType.F32 && input.dtype() != DType.F16 && input.dtype() != DType.BF16) {
+        if (input.dtype() != DType.F32 && input.dtype() != DType.F16 && input.dtype() != DType.BF16
+                && input.dtype() != DType.I32) {
             throw new UnsupportedOperationException(
-                    "CPU indexAdd currently supports F32, F16, and BF16 destination and source tensors; actual dtype="
+                    "CPU indexAdd currently supports F32, F16, BF16, and I32 destination and source tensors; actual dtype="
                             + input.dtype());
         }
         if (indices.dtype() != DType.I32) {
@@ -629,8 +630,13 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             TensorLayout resultLayout = TensorLayout.contiguous(plan.outputShape());
             long[] destinationDims = input.shape().dims();
             for (long logical = 0; logical < outputElements; logical++) {
-                float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
-                writeIndexAddValue(result, logical, dtype, value);
+                if (dtype == DType.I32) {
+                    writeIndexAddInt(result, logical,
+                            readIndexAddInt(destination, destinationDims, destinationLayout, logical));
+                } else {
+                    float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
+                    writeIndexAddValue(result, logical, dtype, value);
+                }
             }
 
             long sourceAxisSize = sourceDimensions[selectedAxis];
@@ -643,11 +649,19 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                     for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
                         long sourceLogical = Math.addExact(sourceBase, innerIndex);
                         long destinationLogical = Math.addExact(destinationBase, innerIndex);
-                        float update = readIndexAddValue(
-                                updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
-                        float current = readIndexAddValue(result, destinationDimensions,
-                                resultLayout, destinationLogical, dtype);
-                        writeIndexAddValue(result, destinationLogical, dtype, current + update);
+                        if (dtype == DType.I32) {
+                            int update = readIndexAddInt(
+                                    updates, sourceDimensions, sourceLayout, sourceLogical);
+                            int current = readIndexAddInt(
+                                    result, destinationDimensions, resultLayout, destinationLogical);
+                            writeIndexAddInt(result, destinationLogical, current + update);
+                        } else {
+                            float update = readIndexAddValue(
+                                    updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
+                            float current = readIndexAddValue(result, destinationDimensions,
+                                    resultLayout, destinationLogical, dtype);
+                            writeIndexAddValue(result, destinationLogical, dtype, current + update);
+                        }
                     }
                 }
             }
@@ -656,6 +670,16 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             output.release();
             throw failure;
         }
+    }
+
+    private static int readIndexAddInt(
+            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex) {
+        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
+        return segment.get(ValueLayout.JAVA_INT, Math.multiplyExact(elementOffset, Integer.BYTES));
+    }
+
+    private static void writeIndexAddInt(MemorySegment segment, long logicalIndex, int value) {
+        segment.set(ValueLayout.JAVA_INT, Math.multiplyExact(logicalIndex, Integer.BYTES), value);
     }
 
     private static float readIndexAddValue(
