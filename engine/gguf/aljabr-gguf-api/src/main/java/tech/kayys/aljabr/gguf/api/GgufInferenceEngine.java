@@ -39,7 +39,7 @@ import java.util.concurrent.Callable;
  */
 public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable {
 
-    private final Map<String, GgufBackend> backends = new ConcurrentHashMap<>();
+    private final Map<String, GgufBackendRegistration> backends = new ConcurrentHashMap<>();
     private final List<GgufBackendProvider> providers;
     private final ProviderDecisionObserver decisionObserver;
     private final ExecutionObserver executionObserver;
@@ -118,12 +118,12 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         GgufBackendProvider provider = selectProvider(modelPath, selection, requiredCapabilities);
         if (executionObserver == ExecutionObserver.NOOP) {
             GgufBackend backend = provider.create(modelPath, config);
-            backends.put(modelId, backend);
+            backends.put(modelId, registrationFor(backend));
             return backend;
         }
         return observeLifecycle("gguf.model.load", provider.id(), () -> {
             GgufBackend backend = provider.create(modelPath, config);
-            backends.put(modelId, backend);
+            backends.put(modelId, registrationFor(backend));
             return backend;
         });
     }
@@ -178,15 +178,21 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         return executionObserverFailureCount.get();
     }
 
-    public synchronized void unloadModel(String modelId) {
-        GgufBackend removed = backends.remove(modelId);
-        if (removed != null) {
-            if (executionObserver == ExecutionObserver.NOOP) {
-                removed.close();
-            } else {
-                observeLifecycleUnchecked("gguf.model.unload", removed.name(), removed::close);
-            }
+    public void unloadModel(String modelId) {
+        GgufBackendRegistration removed;
+        synchronized (this) {
+            removed = backends.remove(modelId);
         }
+        if (removed != null) removed.retire();
+    }
+
+    private GgufBackendRegistration registrationFor(GgufBackend backend) {
+        return new GgufBackendRegistration(backend, () -> closeBackend(backend));
+    }
+
+    private void closeBackend(GgufBackend backend) {
+        if (executionObserver == ExecutionObserver.NOOP) backend.close();
+        else observeLifecycleUnchecked("gguf.model.unload", backend.name(), backend::close);
     }
 
     @Override
@@ -206,7 +212,9 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         activeCount.incrementAndGet();
         totalCount.incrementAndGet();
         try {
-            return executeObserved(backendFor(modelId), request, null);
+            try (GgufBackendRegistration.Lease lease = leaseFor(modelId)) {
+                return executeObserved(lease.backend(), request, null);
+            }
         } catch (Exception error) {
             failedCount.incrementAndGet();
             if (error instanceof InferenceException inferenceException) {
@@ -268,7 +276,9 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         activeCount.incrementAndGet();
         totalCount.incrementAndGet();
         try {
-            return executeObserved(backendFor(modelId), request, context);
+            try (GgufBackendRegistration.Lease lease = leaseFor(modelId)) {
+                return executeObserved(lease.backend(), request, context);
+            }
         } catch (Exception error) {
             failedCount.incrementAndGet();
             if (error instanceof InferenceException inferenceException) {
@@ -299,15 +309,13 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             activeCount.incrementAndGet();
             totalCount.incrementAndGet();
             try {
-                GgufBackend backend = backendFor(modelId);
-                return observeStream(backend, () -> backend.stream(request));
+                GgufBackendRegistration.Lease lease = leaseFor(modelId);
+                GgufBackend backend = lease.backend();
+                return observeStream(lease, () -> backend.stream(request));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
                 return Multi.createFrom().failure(error);
-            } catch (Error fatal) {
-                activeCount.decrementAndGet();
-                throw fatal;
             }
         });
     }
@@ -320,8 +328,9 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             activeCount.incrementAndGet();
             totalCount.incrementAndGet();
             try {
-                GgufBackend backend = backendFor(modelId);
-                return observeStream(backend, () -> backend.stream(request, context));
+                GgufBackendRegistration.Lease lease = leaseFor(modelId);
+                GgufBackend backend = lease.backend();
+                return observeStream(lease, () -> backend.stream(request, context));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
@@ -336,8 +345,9 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
      * assembled. Completion, failure and cancellation have distinct outcomes.
      */
     private Multi<StreamingInferenceChunk> observeStream(
-            GgufBackend backend,
+            GgufBackendRegistration.Lease lease,
             Supplier<Multi<StreamingInferenceChunk>> streamSupplier) {
+        GgufBackend backend = lease.backend();
         ExecutionScope scope = null;
         if (executionObserver != ExecutionObserver.NOOP) {
             DiagnosticContext context = DiagnosticContext.builder()
@@ -355,7 +365,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             if (activeScope == null) {
                 return stream
                         .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+                        .onTermination().invoke(() -> { activeCount.decrementAndGet(); lease.close(); });
             }
             return stream
                     .onFailure().invoke(failure -> {
@@ -369,6 +379,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                             executionObserverFailureCount.incrementAndGet();
                         }
                         activeCount.decrementAndGet();
+                        lease.close();
                     });
         } catch (RuntimeException failure) {
             failedCount.incrementAndGet();
@@ -381,8 +392,20 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 }
             } finally {
                 activeCount.decrementAndGet();
+                lease.close();
             }
             return Multi.createFrom().failure(failure);
+        } catch (Error fatal) {
+            try {
+                if (activeScope != null) activeScope.fail(fatal);
+                if (activeScope != null && activeScope.observerFailure().isPresent()) {
+                    executionObserverFailureCount.incrementAndGet();
+                }
+            } finally {
+                activeCount.decrementAndGet();
+                lease.close();
+            }
+            throw fatal;
         }
     }
 
@@ -392,13 +415,19 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             activeCount.incrementAndGet();
             totalCount.incrementAndGet();
             try {
-                GgufBackend backend = backendFor(modelId);
+                GgufBackendRegistration.Lease lease = leaseFor(modelId);
+                GgufBackend backend = lease.backend();
                 if (executionObserver == ExecutionObserver.NOOP) {
-                    return backend.embed(request)
-                            .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                            .onTermination().invoke(() -> activeCount.decrementAndGet());
+                    try {
+                        return backend.embed(request)
+                                .onFailure().invoke(failure -> failedCount.incrementAndGet())
+                                .onTermination().invoke(() -> { activeCount.decrementAndGet(); lease.close(); });
+                    } catch (RuntimeException | Error failure) {
+                        lease.close();
+                        throw failure;
+                    }
                 }
-                return observeEmbedding(backend, () -> backend.embed(request));
+                return observeEmbedding(lease, () -> backend.embed(request));
             } catch (Exception error) {
                 failedCount.incrementAndGet();
                 activeCount.decrementAndGet();
@@ -415,8 +444,9 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
      * supplier is invoked only after subscription to the deferred Uni.
      */
     private Uni<EmbeddingResponse> observeEmbedding(
-            GgufBackend backend,
+            GgufBackendRegistration.Lease lease,
             Supplier<Uni<EmbeddingResponse>> embeddingSupplier) {
+        GgufBackend backend = lease.backend();
         ExecutionScope scope = null;
         if (executionObserver != ExecutionObserver.NOOP) {
             DiagnosticContext context = DiagnosticContext.builder()
@@ -434,7 +464,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             if (activeScope == null) {
                 return embedding
                         .onFailure().invoke(failure -> failedCount.incrementAndGet())
-                        .onTermination().invoke(() -> activeCount.decrementAndGet());
+                        .onTermination().invoke(() -> { activeCount.decrementAndGet(); lease.close(); });
             }
             return embedding
                     .onItem().invoke(item -> activeScope.succeed())
@@ -448,6 +478,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                             executionObserverFailureCount.incrementAndGet();
                         }
                         activeCount.decrementAndGet();
+                        lease.close();
                     });
         } catch (RuntimeException failure) {
             failedCount.incrementAndGet();
@@ -458,6 +489,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
                 }
             } finally {
                 activeCount.decrementAndGet();
+                lease.close();
             }
             return Uni.createFrom().failure(failure);
         } catch (Error fatal) {
@@ -465,6 +497,7 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
             if (activeScope.observerFailure().isPresent()) {
                 executionObserverFailureCount.incrementAndGet();
             }
+            lease.close();
             throw fatal;
         }
     }
@@ -507,22 +540,20 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
     }
 
     @Override
-    public synchronized void close() {
-        // Detach the complete set before invoking provider code. This makes
-        // shutdown idempotent and prevents a failing close from leaving models
-        // registered or causing already-attempted backends to be closed twice.
-        List<GgufBackend> closing = new ArrayList<>(backends.values());
-        backends.clear();
-        initialized = false;
+    public void close() {
+        // Detach the complete set while holding the engine lock, then invoke
+        // provider cleanup after releasing it.
+        List<GgufBackendRegistration> closing;
+        synchronized (this) {
+            closing = new ArrayList<>(backends.values());
+            backends.clear();
+            initialized = false;
+        }
 
         Throwable firstFailure = null;
-        for (GgufBackend backend : closing) {
+        for (GgufBackendRegistration registration : closing) {
             try {
-                if (executionObserver == ExecutionObserver.NOOP) {
-                    backend.close();
-                } else {
-                    observeLifecycleUnchecked("gguf.model.unload", backend.name(), backend::close);
-                }
+                registration.retire();
             } catch (RuntimeException | Error failure) {
                 if (firstFailure == null) {
                     firstFailure = failure;
@@ -540,16 +571,14 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         }
     }
 
-    private GgufBackend backendFor(String modelId) {
-        GgufBackend backend = backends.get(modelId);
-        if (backend == null) {
-            if (backends.size() == 1) {
-                return backends.values().iterator().next();
-            }
-            throw new InferenceException(
+    private synchronized GgufBackendRegistration.Lease leaseFor(String modelId) {
+        GgufBackendRegistration registration = backends.get(modelId);
+        if (registration == null) {
+            if (backends.size() == 1) registration = backends.values().iterator().next();
+            else throw new InferenceException(
                     "No GGUF model loaded with id: " + modelId + ". Loaded models: " + backends.keySet());
         }
-        return backend;
+        return registration.acquire();
     }
 
     /**
