@@ -41,6 +41,20 @@ class EmbeddingGemma2TextBackboneTest {
     }
 
     @Test
+    void validatesSequenceMetadataBeforeMultimodalExecution() throws Exception {
+        EmbeddingGemma2TextBackbone backbone = new EmbeddingGemma2TextBackbone(config(), weights());
+        backbone.validateSequenceMetadata(2, new boolean[] {true, false}, new int[] {0, 1});
+        assertThrows(IllegalArgumentException.class,
+                () -> backbone.validateSequenceMetadata(2, new boolean[] {true}, new int[] {0, 1}));
+        assertThrows(IllegalArgumentException.class,
+                () -> backbone.validateSequenceMetadata(2, null, new int[] {0}));
+        assertThrows(IllegalArgumentException.class,
+                () -> backbone.validateSequenceMetadata(2, null, new int[] {0, 8192}));
+        assertThrows(IllegalArgumentException.class,
+                () -> backbone.validateSequenceMetadata(0, null, new int[0]));
+    }
+
+    @Test
     void rejectsPositionLengthMismatch() throws Exception {
         EmbeddingGemma2TextBackbone backbone = new EmbeddingGemma2TextBackbone(config(), weights());
         assertThrows(IllegalArgumentException.class,

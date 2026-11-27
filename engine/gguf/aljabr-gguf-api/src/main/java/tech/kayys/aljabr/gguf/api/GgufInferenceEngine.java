@@ -178,6 +178,11 @@ public final class GgufInferenceEngine implements InferenceEngine, AutoCloseable
         return executionObserverFailureCount.get();
     }
 
+    public void unloadModel(String modelId) {
+        GgufBackendRegistration removed;
+        synchronized (this) {
+            removed = backends.remove(modelId);
+        }
     public synchronized void unloadModel(String modelId) {
         GgufBackendRegistration removed = backends.remove(modelId);
         if (removed != null) removed.retire();
