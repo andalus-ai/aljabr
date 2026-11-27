@@ -2,76 +2,50 @@
 
 Family-neutral orchestration for iterative sigma-space denoising.
 
-This module composes:
-- a caller-provided denoiser,
-- the family-provided prediction-to-derivative converter,
-- an existing `SigmaStepExecutor`,
-- immutable `SigmaStepContext` values.
+This module composes a caller-provided denoiser, family-provided prediction
+converter, SigmaStepExecutor, and immutable SigmaStepContext values. It does
+not select a model family, scheduler, device, or backend.
 
-It does not select a model family, scheduler, device, or backend. Callers build the ordered step contexts from their scheduler's schedule.
+## Model-family invocation
+
+DiffusionModelInvoker is the boundary between generic execution and an
+architecture-specific diffusion model. It receives the current latent sample,
+a request-owned PreparedDiffusionConditioningSet, and SigmaStepContext. The
+family adapter maps prepared conditioning to the architecture's model inputs
+and returns a newly owned prediction tensor.
+
+ConditionedDiffusionDenoiser binds one prepared conditioning set to an invoker.
+For classifier-free guidance, ConditionedGuidancePredictionProvider binds
+separate unconditional and conditional sets to the same invoker and uses
+sequential evaluation. Families/backends that support concatenated branch
+evaluation can implement GuidancePredictionProvider directly and opt into
+batched prediction.
+
+The request scope owns and closes prepared conditioning after generation.
+Denoisers and providers only borrow those resources; they do not close them.
+The execution loop owns and closes each model prediction and intermediate
+latent tensor according to its existing ownership contract.
 
 ## Ownership
 
 - The initial sample is borrowed and remains open.
-- Each denoiser prediction must be a newly owned tensor. The loop closes it after the step.
-- Each step executor must return a newly owned tensor. The loop owns intermediate results and closes them after the next result is produced.
+- Each denoiser prediction must be newly owned; the loop closes it after the step.
+- Each step executor returns a newly owned tensor; the loop owns intermediate results.
 - The final tensor is returned to the caller, who must close it.
-- A denoiser or executor must never return either borrowed input as an owned result.
-
-Cancellation and progress callbacks are caller supplied. Cancellation is checked before each model evaluation. If cancellation, inference, or a callback fails, all loop-owned tensors are closed.
-
-## Scope
-
-The first implementation supports sigma-space solvers through `SigmaStepExecutor`. Discrete alpha/beta schedulers remain separate and should use a matching execution contract rather than being coerced into sigma semantics.
-
+- Cancellation and failures close loop-owned tensors.
 
 ## Classifier-free guidance
 
-`ClassifierFreeGuidance` combines unconditional and conditional predictions
-using:
+ClassifierFreeGuidance combines unconditional and conditional predictions:
 
-```text
-guided = unconditional + guidanceScale * (conditional - unconditional)
-```
+`guided = unconditional + guidanceScale * (conditional - unconditional)`
 
-A `GuidancePredictionProvider` owns model invocation and conditioning. It may
-advertise batched prediction support to evaluate both branches in one model
-call; otherwise the engine invokes the unconditional and conditional branches
-sequentially. The engine never guesses backend batching support.
+GuidanceTensorOperations owns tensor algebra and optional guidance rescale.
+The guidance engine closes provider predictions and intermediate tensors;
+the returned prediction is newly owned by the caller. The input sample is
+borrowed.
 
-`GuidanceTensorOperations` owns tensor algebra and optional standard-deviation
-matching/blending for guidance rescale. This keeps allocation and
-backend-specific kernels outside the orchestration layer.
-
-Provider predictions and intermediate tensors are newly owned. The guidance
-engine closes predictions and intermediate guided tensors. The returned
-prediction is newly owned by the caller. The input sample is borrowed.
-
-
-## Using CFG in a denoising runner
-
-Use `GuidedDiffusionDenoiser` as the `DiffusionDenoiser` passed to a
-scheduler-specific runner such as `EulerDenoisingRunner`:
-
-```java
-var guidedDenoiser = new GuidedDiffusionDenoiser(
-        classifierFreeGuidance,
-        modelFamilyPredictionProvider,
-        7.5,  // guidance scale
-        0.0); // guidance rescale (disabled)
-
-runner.run(
-        initialLatents,
-        inferenceSteps,
-        predictionType,
-        guidedDenoiser,
-        predictionConverter,
-        cancelled,
-        progress);
-```
-
-The prediction provider captures the request's prepared conditioning and
-performs the model-family-specific conditional/unconditional evaluations.
-The adapter applies CFG at each solver coordinate and returns the newly owned
-guided prediction expected by `DiffusionDenoisingLoop`. No scheduler or
-pipeline implementation needs a CFG-specific branch.
+Use GuidedDiffusionDenoiser as the DiffusionDenoiser passed to a
+scheduler-specific runner. The provider captures prepared conditioning and
+performs family-specific model evaluations. No scheduler or pipeline needs a
+CFG-specific branch.
