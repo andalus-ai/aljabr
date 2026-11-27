@@ -2,50 +2,36 @@
  * Aljabr Inference Engine — SafeTensor Module
  * Copyright (c) 2026 Kayys.tech
  * SPDX-License-Identifier: Apache-2.0
- *
- * SafetensorLoadCache.java
- * ────────────────────────
- * Thread-safe, bounded LRU cache for {@link SafetensorLoadResult} objects.
- *
- * Motivation
- * ══════════
- * Memory-mapping a large SafeTensors file is an O(1) operation (mmap is lazy),
- * but the syscall itself, plus header parsing, still adds measurable latency
- * on the first request to each model.  A cache avoids this overhead on
- * subsequent requests to the same model file in a multi-tenant server.
- *
- * Eviction policy
- * ═══════════════
- * LRU with a configurable maximum size and idle TTL.
- * When an entry is evicted the underlying {@link SafetensorLoadResult} is
- * closed, which unmaps the file from the process address space.
- *
- * Thread-safety
- * ═════════════
- * All methods are synchronized on the internal LinkedHashMap to ensure
- * correct LRU ordering.  Lock contention is minimal because load operations
- * are long compared to the cache lock hold time.
  */
 package tech.kayys.aljabr.safetensor.loader;
 
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-
 import org.jboss.logging.Logger;
+import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader.SafetensorShardSession;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Bounded LRU cache for {@link SafetensorLoadResult} objects.
+ * Bounded LRU cache for memory-mapped SafeTensors resources.
  *
- * <p>
- * Use {@link #getOrLoad(Path, SafetensorFFMLoader)} to load a file with
- * automatic cache lookup and insertion.
- * @author bhangun
+ * <p>The cache owns one session reference per entry. Callers that need tensor
+ * memory to survive eviction, invalidation, or application shutdown must use
+ * {@link #acquire(Path, SafetensorFFMLoader)} and close the returned lease.
+ * Removing an entry retires only the cache's owner reference; mapped memory is
+ * released after the final caller lease is closed.
+ *
+ * <p>{@link #getOrLoad(Path, SafetensorFFMLoader)} remains for compatibility.
+ * Its bare result is not protected against concurrent eviction and should not
+ * be used by new code.
  */
 @ApplicationScoped
 public class SafetensorLoadCache {
@@ -58,129 +44,217 @@ public class SafetensorLoadCache {
     @Inject
     SafetensorMetrics metrics;
 
-    /** Underlying LRU map. Access is synchronized on {@code this}. */
     private LinkedHashMap<Path, CacheEntry> cache;
-
-    // ─────────────────────────────────────────────────────────────────────────
 
     private void ensureInitialized() {
         if (cache == null) {
-            int maxSize = config.cache().maxSize();
-            // Access-ordered LinkedHashMap with automatic eldest-entry removal
-            cache = new LinkedHashMap<>(maxSize * 2, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<Path, CacheEntry> eldest) {
-                    boolean evict = size() > maxSize;
-                    if (evict) {
-                        log.debugf("SafetensorLoadCache: evicting [%s] (LRU, size limit=%d)",
-                                eldest.getKey().getFileName(), maxSize);
-                        closeQuietly(eldest.getValue().result());
-                    }
-                    return evict;
-                }
-            };
+            cache = new LinkedHashMap<>(16, 0.75f, true);
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API
-    // ─────────────────────────────────────────────────────────────────────────
+    /**
+     * Acquire a caller-owned lease to a cached or newly loaded single-file result.
+     * The lease keeps tensor memory valid even after cache eviction or shutdown.
+     */
+    public LoadLease acquire(Path path, SafetensorFFMLoader loader) {
+        if (!config.cache().enabled()) {
+            SafetensorLoadResult result = loader.load(path);
+            CacheEntry uncached = new CacheEntry(result, Instant.now());
+            SafetensorShardSession.SessionLease lease;
+            try {
+                SafetensorShardSession session = SafetensorShardSession.singleFile(result);
+                lease = session.retain();
+                session.close();
+                return new LoadLease(uncached, lease);
+            } catch (RuntimeException | Error failure) {
+                closeResultQuietly(result);
+                throw failure;
+            }
+        }
+
+        List<CacheEntry> retired = new ArrayList<>();
+        LoadLease acquired;
+        synchronized (this) {
+            ensureInitialized();
+            CacheEntry entry = cache.get(path);
+            if (entry != null && !entry.result().isClosed() && !isExpired(entry)) {
+                acquired = entry.acquire();
+                log.debugf("SafetensorLoadCache: HIT [%s]", path.getFileName());
+            } else {
+                if (entry != null) {
+                    cache.remove(path);
+                    retired.add(entry);
+                }
+                SafetensorLoadResult result = loader.load(path);
+                entry = new CacheEntry(result, Instant.now());
+                cache.put(path, entry);
+                acquired = entry.acquire();
+                evictOverflow(retired);
+                log.debugf("SafetensorLoadCache: MISS [%s]", path.getFileName());
+            }
+        }
+        retired.forEach(CacheEntry::retire);
+        return acquired;
+    }
 
     /**
-     * Return a cached {@link SafetensorLoadResult} for the given path, or load
-     * and cache it via the provided loader.
+     * Compatibility API returning a cache-owned result without a caller lease.
      *
-     * @param path   absolute, normalized path to the .safetensors file
-     * @param loader loader to use on cache miss
-     * @return a live (non-closed) load result
+     * @deprecated Use {@link #acquire(Path, SafetensorFFMLoader)} and close the
+     * returned lease. This method cannot protect a caller from concurrent eviction.
      */
+    @Deprecated
     public synchronized SafetensorLoadResult getOrLoad(Path path, SafetensorFFMLoader loader) {
         if (!config.cache().enabled()) {
-            // Cache disabled — every call produces a new result
             return loader.load(path);
         }
-
         ensureInitialized();
-
         CacheEntry entry = cache.get(path);
         if (entry != null && !entry.result().isClosed() && !isExpired(entry)) {
-            log.debugf("SafetensorLoadCache: HIT [%s]", path.getFileName());
             return entry.result();
         }
-
-        // Cache miss or stale/closed entry
         if (entry != null) {
-            log.debugf("SafetensorLoadCache: STALE/CLOSED [%s], reloading", path.getFileName());
-            closeQuietly(entry.result());
+            cache.remove(path);
+            entry.retire();
         }
-
-        log.debugf("SafetensorLoadCache: MISS [%s], loading", path.getFileName());
         SafetensorLoadResult result = loader.load(path);
         cache.put(path, new CacheEntry(result, Instant.now()));
+        List<CacheEntry> retired = new ArrayList<>();
+        evictOverflow(retired);
+        retired.forEach(CacheEntry::retire);
         return result;
     }
 
-    /**
-     * Explicitly invalidate a cache entry (e.g. when a model file has been
-     * updated).
-     *
-     * @param path path to invalidate
-     */
-    public synchronized void invalidate(Path path) {
-        if (cache == null)
-            return;
-        CacheEntry entry = cache.remove(path);
-        if (entry != null) {
+    public void invalidate(Path path) {
+        CacheEntry retired;
+        synchronized (this) {
+            retired = cache == null ? null : cache.remove(path);
+        }
+        if (retired != null) {
             log.infof("SafetensorLoadCache: invalidated [%s]", path.getFileName());
-            closeQuietly(entry.result());
+            retired.retire();
         }
     }
 
-    /** Invalidate all cached entries and release their memory. */
-    public synchronized void invalidateAll() {
-        if (cache == null)
-            return;
-        log.infof("SafetensorLoadCache: invalidating all %d entries", cache.size());
-        cache.values().forEach(e -> closeQuietly(e.result()));
-        cache.clear();
+    /** Retire all entries without invalidating resources held by active leases. */
+    public void invalidateAll() {
+        List<CacheEntry> retired;
+        synchronized (this) {
+            if (cache == null || cache.isEmpty()) {
+                return;
+            }
+            retired = new ArrayList<>(cache.values());
+            cache.clear();
+        }
+        log.infof("SafetensorLoadCache: invalidating all %d entries", retired.size());
+        retired.forEach(CacheEntry::retire);
     }
 
-    /** Current number of cached entries. */
     public synchronized int size() {
-        return cache != null ? cache.size() : 0;
+        return cache == null ? 0 : cache.size();
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
 
     @PreDestroy
     void onShutdown() {
-        log.info("SafetensorLoadCache: application shutdown — releasing all mmap'd files");
+        log.info("SafetensorLoadCache: application shutdown — retiring cached files");
         invalidateAll();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Internal types
-    // ─────────────────────────────────────────────────────────────────────────
+    private void evictOverflow(List<CacheEntry> retired) {
+        int maxSize = Math.max(1, config.cache().maxSize());
+        Iterator<Map.Entry<Path, CacheEntry>> iterator = cache.entrySet().iterator();
+        while (cache.size() > maxSize && iterator.hasNext()) {
+            Map.Entry<Path, CacheEntry> eldest = iterator.next();
+            iterator.remove();
+            retired.add(eldest.getValue());
+            log.debugf("SafetensorLoadCache: evicting [%s] (LRU, size limit=%d)",
+                    eldest.getKey().getFileName(), maxSize);
+        }
+    }
 
     private boolean isExpired(CacheEntry entry) {
         long ttlSeconds = config.cache().ttlSeconds();
-        if (ttlSeconds <= 0)
-            return false;
-        return Instant.now().isAfter(entry.insertedAt().plusSeconds(ttlSeconds));
+        return ttlSeconds > 0 && Instant.now().isAfter(entry.insertedAt().plusSeconds(ttlSeconds));
     }
 
-    private void closeQuietly(SafetensorLoadResult result) {
+    private void closeResultQuietly(SafetensorLoadResult result) {
         try {
             if (result != null && !result.isClosed()) {
                 result.close();
                 metrics.recordClose();
             }
-        } catch (Exception e) {
-            log.warnf(e, "SafetensorLoadCache: error closing evicted entry");
+        } catch (RuntimeException failure) {
+            log.warnf(failure, "SafetensorLoadCache: error closing uncached result");
         }
     }
 
-    /** Internal cache entry: result + insertion timestamp for TTL. */
-    private record CacheEntry(SafetensorLoadResult result, Instant insertedAt) {
+    private final class CacheEntry {
+        private final SafetensorLoadResult result;
+        private final SafetensorShardSession session;
+        private final Instant insertedAt;
+        private final AtomicBoolean closeMetricRecorded = new AtomicBoolean();
+
+        private CacheEntry(SafetensorLoadResult result, Instant insertedAt) {
+            this.result = result;
+            this.insertedAt = insertedAt;
+            this.session = SafetensorShardSession.singleFile(result);
+        }
+
+        private SafetensorLoadResult result() { return result; }
+        private Instant insertedAt() { return insertedAt; }
+
+        private LoadLease acquire() {
+            return new LoadLease(this, session.retain());
+        }
+
+        private void retire() {
+            session.close();
+            recordCloseIfReleased();
+        }
+
+        private void release(SafetensorShardSession.SessionLease lease) {
+            lease.close();
+            recordCloseIfReleased();
+        }
+
+        private void recordCloseIfReleased() {
+            if (session.resourcesClosed() && closeMetricRecorded.compareAndSet(false, true)) {
+                metrics.recordClose();
+            }
+        }
+    }
+
+    /** A caller-owned reference to the result's mapped tensor memory. */
+    public final class LoadLease implements AutoCloseable {
+        private final CacheEntry entry;
+        private final SafetensorShardSession.SessionLease lease;
+        private final AtomicBoolean closed = new AtomicBoolean();
+
+        private LoadLease(CacheEntry entry, SafetensorShardSession.SessionLease lease) {
+            this.entry = entry;
+            this.lease = lease;
+        }
+
+        /** Returns the live result while this lease remains open. */
+        public SafetensorLoadResult result() {
+            if (closed.get()) {
+                throw new IllegalStateException("SafeTensors load lease is closed.");
+            }
+            if (entry.result().isClosed()) {
+                throw new IllegalStateException("SafeTensors load result is closed.");
+            }
+            return entry.result();
+        }
+
+        public boolean isClosed() {
+            return closed.get();
+        }
+
+        @Override
+        public void close() {
+            if (closed.compareAndSet(false, true)) {
+                entry.release(lease);
+            }
+        }
     }
 }
