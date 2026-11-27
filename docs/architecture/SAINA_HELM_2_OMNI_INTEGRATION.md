@@ -229,3 +229,47 @@ capability matching. The next slice can add family-specific tensor-shape and
 processing-asset validation once a real artifact's metadata and tensor
 inventory are available. No Saina adapter is registered yet because its
 architecture and tensor contract remain unverified.
+
+### M2 — Deterministic model-family discovery
+
+The GGUF API now includes `GgufModelFamilyRegistry`:
+
+- Adapters can be supplied explicitly or discovered through Java
+  `ServiceLoader`, supporting independently packaged model-family modules.
+- The registry orders adapters by stable family identifier and rejects duplicate
+  identifiers at construction time.
+- Resolution requires exactly one successful inspection and successful
+  inspection by every registered adapter.
+- Zero matches returns `NO_MATCH`; multiple matches return `AMBIGUOUS`;
+  adapter exceptions or invalid adapter results return `ADAPTER_FAILURE`.
+- A failed or ambiguous resolution never returns an adapter to callers.
+
+This is intentionally a conservative artifact resolver. It does not load model
+weights, infer modality support, or choose an execution provider. Applications
+must perform the existing provider-capability check after family resolution.
+
+
+### M2 — Reusable tensor requirements and artifact validation
+
+The GGUF API now retains structural tensor facts and provides a pure requirement matcher:
+
+- `GgufTensorDescriptor` captures a tensor name, ordered dimensions and the
+  GGML type identifier observed in the parsed artifact.
+- `GgufModelDescriptor.inspectWithTensors(...)` carries those facts from the
+  parser into the model-family inspection boundary. The original name-only
+  inspection path and constructor remain available for callers that do not
+  have structural details.
+- `GgufTensorRequirement` expresses a required tensor name, optional exact
+  dimensions and optional accepted GGML type identifiers.
+- `GgufTensorRequirementMatcher` validates the requirements without loading
+  tensor payloads or allocating execution resources. It reports all missing
+  tensors, shape mismatches and unsupported type identifiers in one result.
+- Duplicate requirement names and duplicate inventory entries are rejected
+  instead of silently producing an ambiguous validation result.
+
+The matcher deliberately uses the numeric GGML type identifiers already
+exposed by the GGUF parser. It does not guess Saina's tensor names, shapes,
+quantization choices or modality pathways. A family adapter can now implement
+its verified tensor contract using this generic API once a real artifact
+inventory is available. This is structural artifact validation only; it does
+not establish operator support or executable model capability.

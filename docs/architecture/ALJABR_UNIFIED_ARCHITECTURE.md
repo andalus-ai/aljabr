@@ -197,6 +197,7 @@ This document consolidates direction; the following documents remain the detaile
 - [Modular Distribution Architecture](MODULAR_DISTRIBUTION.md) — artifact selection, BOM, providers and packaging.
 - [Gradle Distribution Audit](GRADLE_DISTRIBUTION_AUDIT.md) — static build/publication configuration findings.
 - [Implementation Boundary Audit](PHASE_0_2_IMPLEMENTATION_BOUNDARY_AUDIT.md) — current static findings for inference SPI ownership, format API placement, legacy integrations and build conventions.
+- [Implementation Cohesion Audit](IMPLEMENTATION_COHESION_AUDIT.md) — source-level triage of large execution, backend, model-configuration and accelerator integration classes.
 - [Research and Training Readiness](RESEARCH_TRAINING_READINESS.md) — autograd and training readiness limitations.
 - [Tafkir–Aljabr Dependency Direction](TAFKIR_ALJABR_DEPENDENCY_DIRECTION.md) — training integration boundary.
 - [Quantized Tensor Interoperability](QUANTIZED_TENSOR_INTEROPERABILITY.md) — quantized tensor interoperability.

@@ -60,6 +60,21 @@ class GgufModelDescriptorTest {
     }
 
     @Test
+    void inspectWithTensorsRetainsShapeAndTypeFacts() {
+        GgufTensorDescriptor tensor = new GgufTensorDescriptor(
+                "blk.0.attn_q.weight", List.of(8L, 16L), 2);
+        GgufModelDescriptor descriptor = GgufModelDescriptor.inspectWithTensors(
+                Map.of("general.architecture", "example"), List.of(tensor));
+
+        assertEquals(Set.of("blk.0.attn_q.weight"), descriptor.tensorNames());
+        assertEquals(List.of(8L, 16L),
+                descriptor.tensorDescriptors().get("blk.0.attn_q.weight").dimensions());
+        assertEquals(2, descriptor.tensorDescriptors().get("blk.0.attn_q.weight").ggmlTypeId());
+        assertThrows(UnsupportedOperationException.class,
+                () -> descriptor.tensorDescriptors().clear());
+    }
+
+    @Test
     void rejectsNullInputsAndNullEntries() {
         assertThrows(NullPointerException.class,
                 () -> GgufModelDescriptor.inspect(null, List.of()));

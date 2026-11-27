@@ -4,11 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import tech.kayys.aljabr.gguf.api.GgufModelDescriptor;
+import tech.kayys.aljabr.gguf.api.GgufTensorDescriptor;
 import tech.kayys.aljabr.gguf.core.GgmlType;
 import tech.kayys.aljabr.gguf.loader.GGUFModel;
 import tech.kayys.aljabr.gguf.loader.GGUFParser;
 import tech.kayys.aljabr.gguf.loader.GGUFReader;
 import tech.kayys.aljabr.gguf.loader.GGUFTensorInfo;
+import tech.kayys.aljabr.gguf.loader.GgufModelDescriptorAdapter;
 import tech.kayys.aljabr.spi.model.ir.ModelDocument;
 import tech.kayys.aljabr.spi.model.ir.PayloadReference;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
@@ -78,7 +81,8 @@ public final class GgufModelDocumentAdapter {
         Map<String, String> metadata = new LinkedHashMap<>();
         Map<String, String> extensions = new LinkedHashMap<>();
 
-        String architecture = stringValue(rawMetadata.get("general.architecture"), "unknown");
+        GgufModelDescriptor descriptor = GgufModelDescriptorAdapter.inspect(model);
+        String architecture = descriptor.architecture() == null ? "unknown" : descriptor.architecture();
         metadata.put("general.architecture", architecture);
         metadata.put("gguf.version", Integer.toString(model.version()));
         metadata.put("gguf.alignment", Integer.toString(alignment(rawMetadata)));
@@ -91,15 +95,20 @@ public final class GgufModelDocumentAdapter {
 
         List<TensorDescriptor> tensors = new ArrayList<>(model.tensors().size());
         for (GGUFTensorInfo info : model.tensors()) {
+            GgufTensorDescriptor tensorDescriptor = descriptor.tensorDescriptors().get(info.name());
+            if (tensorDescriptor == null) {
+                throw new IOException("GGUF descriptor is missing tensor " + info.name());
+            }
+
             GgmlType type;
             try {
-                type = GgmlType.fromId(info.typeId());
+                type = GgmlType.fromId(tensorDescriptor.ggmlTypeId());
             } catch (IllegalArgumentException exception) {
-                throw new IOException("Unsupported GGUF tensor type " + info.typeId()
+                throw new IOException("Unsupported GGUF tensor type " + tensorDescriptor.ggmlTypeId()
                         + " for tensor " + info.name(), exception);
             }
 
-            List<Long> shape = java.util.Arrays.stream(info.shape()).boxed().toList();
+            List<Long> shape = tensorDescriptor.dimensions();
             long absoluteOffset;
             long payloadEnd;
             try {
@@ -129,7 +138,7 @@ public final class GgufModelDocumentAdapter {
                     "unknown",
                     quantization,
                     payload,
-                    Map.of("gguf.type-id", Integer.toString(info.typeId()),
+                    Map.of("gguf.type-id", Integer.toString(tensorDescriptor.ggmlTypeId()),
                             "gguf.dimension-order", "ggml-fastest-first")));
         }
 
@@ -148,10 +157,6 @@ public final class GgufModelDocumentAdapter {
         } catch (JsonProcessingException exception) {
             throw new IOException("Unable to preserve GGUF metadata value", exception);
         }
-    }
-
-    private static String stringValue(Object value, String fallback) {
-        return value instanceof String text && !text.isBlank() ? text : fallback;
     }
 
     private static int alignment(Map<String, Object> metadata) {

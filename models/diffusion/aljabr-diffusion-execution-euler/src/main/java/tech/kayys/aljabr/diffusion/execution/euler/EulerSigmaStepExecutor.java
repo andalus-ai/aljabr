@@ -53,6 +53,14 @@ public final class EulerSigmaStepExecutor implements SigmaStepExecutor {
         Tensor derivative = Objects.requireNonNull(
                 converter.toDerivative(sample, modelOutput, context),
                 "converter returned a null derivative");
+        // The converter contract requires a newly owned tensor. Check identity
+        // before entering try-with-resources so a broken converter cannot cause
+        // this executor to close either borrowed input.
+        if (derivative == sample || derivative == modelOutput) {
+            throw new IllegalArgumentException(
+                    "Derivative must not alias the borrowed sample or model output");
+        }
+
         try (derivative) {
             if (!sample.shape().equals(derivative.shape())) {
                 throw new IllegalArgumentException(

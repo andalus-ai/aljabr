@@ -548,3 +548,23 @@ A model ID is a unique live registration key within one `GgufInferenceEngine`.
 ### Validation
 
 A focused test verifies that duplicate registration is rejected before provider creation, produces no model-load lifecycle event, preserves the original backend for inference, and closes it only on explicit unload. CI must validate the supported JDK baseline.
+
+
+## GGUF backend-use leases and draining
+
+A GGUF backend registration owns the backend resource independently from the engine's model-ID lookup. Each active backend operation acquires a short-lived lease. Synchronous execution releases its lease in `finally`; reactive streaming and embedding acquire on subscription and release on every terminal path, including cancellation.
+
+Unloading or shutting down first detaches registrations from the lookup table. This rejects subsequent operations immediately without invalidating operations already in flight. The backend is closed exactly once after retirement and the final lease release. Shutdown does not wait for a potentially unbounded stream to terminate.
+
+The registration monitor protects only lease accounting and retirement state. Provider callbacks and backend cleanup run outside that monitor. Tests must cover concurrent inference/unload and inference/shutdown, and reactive completion, failure and cancellation. Deferred cleanup failures must remain observable at the release boundary while accounting remains consistent.
+
+
+## SafeTensors cache resource leases
+
+The SafeTensors load cache owns one session reference for each cached result. New consumers should call `SafetensorLoaderFacade.acquireCached(path)` and close the returned lease after all tensor views have finished being used.
+
+Eviction, TTL expiry, explicit invalidation and application shutdown detach and retire the cache owner. They do not close the mapped arena while a caller lease remains active. The final caller lease release closes the underlying single-file session and releases mapped memory. The disabled-cache path follows the same ownership contract: each load is returned through a lease and is released when that lease closes.
+
+The legacy `loadCached(path)` / `getOrLoad(path, loader)` bare-result methods remain temporarily for source compatibility. They do not protect consumers against concurrent eviction and must not be used for new code. Migrate consumers to the lease API before removing the compatibility methods.
+
+Regression coverage verifies that eviction, invalidation and shutdown preserve active tensor reads, and that final lease release closes the result. Cache locks protect lookup and detachment only; mapped-resource cleanup happens after leaving the cache monitor.
