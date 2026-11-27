@@ -67,7 +67,7 @@ class Chronos2EmbeddingExecutionTest {
 
     private static Weights outputProjection() {
         return new Weights(new float[][] {{1f, 0f}, {0f, 1f}, {0f, 0f}}, new float[3],
-                new float[4][3], new float[4], new float[4][2], new float[4]);
+                new float[2][3], new float[2], new float[2][2], new float[2]);
     }
 
     private static Weights quantileProjection() {
