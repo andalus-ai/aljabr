@@ -22,6 +22,7 @@ public final class BertCheckpointMapper {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(checkpointTensors, "checkpointTensors must not be null");
         validateTensorNames(config, checkpointTensors.keySet());
+        Map<String, int[]> expected = expectedTensorShapes(config);
         Map<String, CheckpointTensor> mapped = new LinkedHashMap<>();
         for (Map.Entry<String, String> binding : parameterBindings(config).entrySet()) {
             CheckpointTensor tensor = checkpointTensors.get(binding.getKey());
