@@ -89,6 +89,9 @@ final class CpuReductionExecution {
 
     public Tensor max(Tensor a) {
         Objects.requireNonNull(a, "tensor must not be null");
+        if (a.numel() == 0) {
+            throw new IllegalArgumentException("Max is undefined for an empty tensor");
+        }
         CpuTensorLayoutAccess.requireF32(a);
         MemorySegment source = CpuTensorStorageAccess.segment(a);
         TensorLayout layout = a.layout();

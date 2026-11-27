@@ -24,21 +24,21 @@ class Chronos2EmbeddingExecutionTest {
     void embedsContextRegressionTokenAndFuturePatches() {
         Chronos2Config config = config(true);
         Weights input = identityResidual(3, 2);
-        Weights output = outputProjection();
+        Weights output = projection(2, 2, 4);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
         float[][][] embedded = execution.embed(
                 new float[][][] {{{1f, 0f, 0f}, {0f, 1f, 0f}}},
                 new float[][][] {{{0f, 0f, 1f}}});
         assertEquals(4, embedded[0].length);
-        assertEquals(7f, embedded[0][1][0], 1e-6f);
-        assertEquals(8f, embedded[0][1][1], 1e-6f);
+        assertEquals(7f, embedded[0][2][0], 1e-6f);
+        assertEquals(8f, embedded[0][2][1], 1e-6f);
     }
 
     @Test
     void quantileProjectionUsesQuantileMajorPatchOrder() {
         Chronos2Config config = config(false);
-        Weights input = identityResidual(3, 2);
+        Weights input = identityResidual(3, 2, 2);
         Weights output = quantileProjection();
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}});
@@ -46,7 +46,6 @@ class Chronos2EmbeddingExecutionTest {
         assertEquals(2, values[0].length);
         assertEquals(2, values[0][0].length);
         assertEquals(1f, values[0][0][0], 1e-6f);
-        assertEquals(2f, values[0][0][1], 1e-6f);
         assertEquals(3f, values[0][0][1], 1e-6f);
         assertEquals(2f, values[0][1][0], 1e-6f);
         assertEquals(4f, values[0][1][1], 1e-6f);
@@ -56,7 +55,7 @@ class Chronos2EmbeddingExecutionTest {
     void rejectsInvalidProjectionGeometry() {
         Chronos2Config config = config(false);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config,
-                identityResidual(3, 2), outputProjection(), new float[][] {{0f, 0f}});
+                identityResidual(3, 2), projection(2, 2, 4), new float[][] {{0f, 0f}});
         assertThrows(IllegalArgumentException.class,
                 () -> execution.embed(new float[][][] {{{1f}}}, new float[][][] {{{1f, 2f, 3f}}}));
     }
@@ -72,18 +71,19 @@ class Chronos2EmbeddingExecutionTest {
     }
 
     private static Weights quantileProjection() {
-        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}, {0f, 0f}}, new float[3],
-                new float[][] {{1f, 0f, 0f}, {0f, 1f, 0f}}, new float[2],
+        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
+                new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
                 new float[2][2], new float[2]);
     }
 
-    private static Weights identityResidual(int input, int output) {
-        float[][] hidden = new float[input][input];
-        float[][] projected = new float[output][input];
-        float[][] residual = new float[output][input];
-        for (int i = 0; i < input; i++) hidden[i][i] = 1f;
-        for (int i = 0; i < Math.min(input, output); i++) residual[i][i] = 1f;
-        return new Weights(hidden, new float[input], projected, new float[output],
-                residual, new float[output]);
+    private static Weights projection(int inputWidth, int hiddenWidth, int outputWidth) {
+        float[][] hidden = new float[hiddenWidth][inputWidth];
+        float[][] projected = new float[outputWidth][hiddenWidth];
+        float[][] residual = new float[outputWidth][inputWidth];
+        for (int i = 0; i < Math.min(inputWidth, hiddenWidth); i++) hidden[i][i] = 1f;
+        for (int i = 0; i < Math.min(hiddenWidth, outputWidth); i++) projected[i][i] = 1f;
+        for (int i = 0; i < Math.min(inputWidth, outputWidth); i++) residual[i][i] = 1f;
+        return new Weights(hidden, new float[hiddenWidth], projected, new float[outputWidth],
+                residual, new float[outputWidth]);
     }
 }
