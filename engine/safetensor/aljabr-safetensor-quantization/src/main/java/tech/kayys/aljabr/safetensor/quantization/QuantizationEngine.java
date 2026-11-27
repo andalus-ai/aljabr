@@ -593,31 +593,17 @@ public class QuantizationEngine {
     }
 
     private QuantizationStrategy normalizeInferenceStrategy(QuantizationStrategy strategy) {
-        if (strategy == null) {
-            return QuantizationStrategy.NONE;
+        QuantizationStrategy normalized = InferenceQuantizationPolicy.normalizeStrategy(strategy);
+        if (strategy == QuantizationStrategy.TURBO) {
+            log.warn("TurboQuant direct inference is not wired yet; using BNB-compatible NF4 path");
+        } else if (strategy == QuantizationStrategy.GPTQ) {
+            log.warn("GPTQ direct inference path is not complete yet; using INT4-compatible path");
         }
-
-        return switch (strategy) {
-            case TURBO -> {
-                log.warn("TurboQuant direct inference is not wired yet; using BNB-compatible NF4 path");
-                yield QuantizationStrategy.BNB;
-            }
-            case GPTQ -> {
-                log.warn("GPTQ direct inference path is not complete yet; using INT4-compatible path");
-                yield QuantizationStrategy.INT4;
-            }
-            default -> strategy;
-        };
+        return normalized;
     }
 
     private boolean shouldQuantizeForInference(String name, AccelTensor tensor) {
-        return tensor != null
-                && (name.endsWith(".weight") || name.endsWith(".qweight") || name.endsWith("down_proj") || name.endsWith("gate_up_proj"))
-                && (tensor.rank() == 2 || tensor.rank() == 3)
-                && tensor.numel() >= 4096
-                && !name.contains("embed_tokens")
-                && !name.contains("position_embedding")
-                && !name.contains("vision_tower");
+        return InferenceQuantizationPolicy.shouldQuantize(name, tensor);
     }
 
     private Path inferenceCachePath(Path modelPath, QuantizationStrategy strategy) {
@@ -842,16 +828,7 @@ public class QuantizationEngine {
     }
 
     private QuantConfig createDefaultConfig(QuantizationStrategy strategy) {
-        return switch (strategy) {
-            case INT4 -> QuantConfig.int4Gptq();
-            case INT8 -> QuantConfig.int8();
-            case FP8 -> QuantConfig.fp8();
-            case TURBO -> QuantConfig.turbo();
-            case AWQ -> QuantConfig.awq(4, 128);
-            case GPTQ -> QuantConfig.builder().quantizationStrategy(QuantizationStrategy.GPTQ).build();
-            case BNB -> QuantConfig.bnb();
-            case NONE -> new QuantConfig();
-        };
+        return InferenceQuantizationPolicy.defaultConfig(strategy);
     }
 
     /**
