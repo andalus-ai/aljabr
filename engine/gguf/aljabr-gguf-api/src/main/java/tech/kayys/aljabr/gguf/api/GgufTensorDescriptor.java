@@ -3,7 +3,14 @@ package tech.kayys.aljabr.gguf.api;
 import java.util.List;
 import java.util.Objects;
 
-/** Immutable structural facts for one tensor in a parsed GGUF artifact. */
+/**
+ * Public structural facts for one tensor in a GGUF artifact.
+ *
+ * <p>This is the stable inspection/selection contract: it contains no
+ * parser-specific file offsets, payload sizes, backend types, or live memory
+ * handles. Parser and runtime representations are adapted to this descriptor
+ * at their respective boundaries.
+ */
 public record GgufTensorDescriptor(String name, List<Long> dimensions, int ggmlTypeId) {
 
     public GgufTensorDescriptor {

@@ -18,11 +18,19 @@ public final class WordPieceTokenizer implements Tokenizer {
     private final Map<String, Integer> specialTokens;
     private final int unknownId, clsId, sepId, padId, maxCharsPerWord;
     private final String continuationPrefix;
-    private final boolean lowercase, stripAccents, cleanText;
+    private final boolean lowercase, stripAccents, cleanText, handleChineseChars;
 
     public WordPieceTokenizer(Map<String, Integer> vocabulary, Map<String, Integer> specialTokens,
             int unknownId, int clsId, int sepId, int padId, String continuationPrefix,
             boolean lowercase, boolean stripAccents, boolean cleanText, int maxCharsPerWord) {
+        this(vocabulary, specialTokens, unknownId, clsId, sepId, padId, continuationPrefix,
+                lowercase, stripAccents, cleanText, true, maxCharsPerWord);
+    }
+
+    public WordPieceTokenizer(Map<String, Integer> vocabulary, Map<String, Integer> specialTokens,
+            int unknownId, int clsId, int sepId, int padId, String continuationPrefix,
+            boolean lowercase, boolean stripAccents, boolean cleanText, boolean handleChineseChars,
+            int maxCharsPerWord) {
         this.vocabulary = Map.copyOf(Objects.requireNonNull(vocabulary, "vocabulary"));
         this.specialTokens = Map.copyOf(specialTokens == null ? Map.of() : specialTokens);
         if (unknownId < 0 || !this.vocabulary.containsValue(unknownId)) {
@@ -37,6 +45,7 @@ public final class WordPieceTokenizer implements Tokenizer {
         this.lowercase = lowercase;
         this.stripAccents = stripAccents;
         this.cleanText = cleanText;
+        this.handleChineseChars = handleChineseChars;
         this.maxCharsPerWord = maxCharsPerWord;
         Map<Integer, String> reverse = new HashMap<>();
         this.vocabulary.forEach((token, id) -> reverse.put(id, token));
@@ -114,7 +123,7 @@ public final class WordPieceTokenizer implements Tokenizer {
         normalized.codePoints().forEach(cp -> {
             if (isWhitespace(cp)) {
                 flush(current, result);
-            } else if (isPunctuation(cp) || isChineseCharacter(cp)) {
+            } else if (isPunctuation(cp) || (handleChineseChars && isChineseCharacter(cp))) {
                 flush(current, result);
                 result.add(new String(Character.toChars(cp)));
             } else {
@@ -133,7 +142,7 @@ public final class WordPieceTokenizer implements Tokenizer {
         });
         String value = cleaned.toString();
         if (lowercase) value = value.toLowerCase(java.util.Locale.ROOT);
-        if (stripAccents || lowercase) {
+        if (stripAccents) {
             value = Normalizer.normalize(value, Normalizer.Form.NFD)
                     .replaceAll("\\p{Mn}+", "");
         }
