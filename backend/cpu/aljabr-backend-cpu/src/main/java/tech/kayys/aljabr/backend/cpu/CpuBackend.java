@@ -708,6 +708,28 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                     "CPU transpose does not yet support block-quantized tensors; actual dtype is " + a.dtype());
         }
 
+        if (!a.dtype().isQuantized()) {
+            // A transpose changes only logical dimension order. Preserve the
+            // backing allocation and express the operation through swapped
+            // element strides, including any existing storage offset.
+            TensorLayout inputLayout = a.layout();
+            long[] outputStrides = inputLayout.strides();
+            long stride = outputStrides[d0];
+            outputStrides[d0] = outputStrides[d1];
+            outputStrides[d1] = stride;
+
+            TensorStorage storage = a.storage();
+            storage.retain();
+            try {
+                return new DefaultTensor(
+                        outShape, a.dtype(), a.device(), storage, this,
+                        new TensorLayout(outShape, outputStrides, inputLayout.storageOffset()));
+            } catch (RuntimeException | Error failure) {
+                storage.release();
+                throw failure;
+            }
+        }
+
         int rank = a.shape().rank();
         Shape outShape = plan.outputShape();
         long[] outDims = outShape.dims();

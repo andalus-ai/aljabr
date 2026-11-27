@@ -700,6 +700,31 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void transposeCreatesStrideSwappedViewAndRetainsOffsetStorage() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 3), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 3), new long[] {1, 2}, 1));
+        Tensor transposed = null;
+        try {
+            transposed = backend.transpose(input, 0, 1);
+
+            assertArrayEquals(new long[] {3, 2}, transposed.shape().dims());
+            assertArrayEquals(new long[] {2, 1}, transposed.layout().strides());
+            assertEquals(1, transposed.layout().storageOffset());
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f, 5f, 6f},
+                    transposed.toFloatArray(), 0f);
+            assertSame(storage, transposed.storage());
+            assertEquals(2, storage.references());
+        } finally {
+            if (transposed != null) transposed.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
     void transposeRejectsInvalidAxesBeforeAllocatingOutput() {
         HostStorage storage = new HostStorage(1f, 2f, 3f, 4f);
         DefaultTensor input = tensor(storage, 2, 2);
