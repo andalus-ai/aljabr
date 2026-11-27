@@ -6,7 +6,6 @@ import java.lang.foreign.ValueLayout;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GgufMetalNormBufferStoreTest {
     @Test
