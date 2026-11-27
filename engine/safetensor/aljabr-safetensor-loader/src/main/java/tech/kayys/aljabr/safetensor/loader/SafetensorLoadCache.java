@@ -60,40 +60,41 @@ public class SafetensorLoadCache {
         if (!config.cache().enabled()) {
             SafetensorLoadResult result = loader.load(path);
             CacheEntry uncached = new CacheEntry(result, Instant.now());
-            SafetensorShardSession.SessionLease lease;
             try {
-                SafetensorShardSession session = SafetensorShardSession.singleFile(result);
-                lease = session.retain();
-                session.close();
-                return new LoadLease(uncached, lease);
+                LoadLease lease = uncached.acquire();
+                uncached.retire();
+                return lease;
             } catch (RuntimeException | Error failure) {
-                closeResultQuietly(result);
+                uncached.retire();
                 throw failure;
             }
         }
 
         List<CacheEntry> retired = new ArrayList<>();
         LoadLease acquired;
-        synchronized (this) {
-            ensureInitialized();
-            CacheEntry entry = cache.get(path);
-            if (entry != null && !entry.result().isClosed() && !isExpired(entry)) {
-                acquired = entry.acquire();
-                log.debugf("SafetensorLoadCache: HIT [%s]", path.getFileName());
-            } else {
-                if (entry != null) {
-                    cache.remove(path);
-                    retired.add(entry);
+        try {
+            synchronized (this) {
+                ensureInitialized();
+                CacheEntry entry = cache.get(path);
+                if (entry != null && !entry.result().isClosed() && !isExpired(entry)) {
+                    acquired = entry.acquire();
+                    log.debugf("SafetensorLoadCache: HIT [%s]", path.getFileName());
+                } else {
+                    if (entry != null) {
+                        cache.remove(path);
+                        retired.add(entry);
+                    }
+                    SafetensorLoadResult result = loader.load(path);
+                    entry = new CacheEntry(result, Instant.now());
+                    cache.put(path, entry);
+                    acquired = entry.acquire();
+                    evictOverflow(retired);
+                    log.debugf("SafetensorLoadCache: MISS [%s]", path.getFileName());
                 }
-                SafetensorLoadResult result = loader.load(path);
-                entry = new CacheEntry(result, Instant.now());
-                cache.put(path, entry);
-                acquired = entry.acquire();
-                evictOverflow(retired);
-                log.debugf("SafetensorLoadCache: MISS [%s]", path.getFileName());
             }
+        } finally {
+            retired.forEach(CacheEntry::retire);
         }
-        retired.forEach(CacheEntry::retire);
         return acquired;
     }
 
