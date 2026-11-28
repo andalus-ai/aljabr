@@ -41,6 +41,9 @@ public final class MetalKVCacheAttentionConsumer {
         Objects.requireNonNull(lease, "lease");
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(query, "query");
+        if (!output.isNative() || !query.isNative()) {
+            throw new IllegalArgumentException("Metal attention query and output must use native memory segments");
+        }
         if (!"metal".equals(lease.backendId())) {
             throw new IllegalArgumentException("Borrowed KV lease is not owned by Metal");
         }
