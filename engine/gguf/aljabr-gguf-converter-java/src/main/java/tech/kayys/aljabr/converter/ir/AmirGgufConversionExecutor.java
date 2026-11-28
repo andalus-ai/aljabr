@@ -123,8 +123,11 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        CompatibilityReport assessed = new AmirFidelityEvaluator().evaluate(
-                model, AmirFormatCapabilities.forTarget(TARGET_FORMAT));
+        CompatibilityReport assessed = new GgufTargetCapability().assess(model);
+        if (assessed.fidelity() == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
+            throw new IOException("GGUF target capability assessment is UNSUPPORTED: "
+                    + assessed.diagnostics());
+        }
         if (assessed.fidelity() == CompatibilityReport.ConversionFidelity.PARTIAL
                 && fidelity == CompatibilityReport.ConversionFidelity.FULL) {
             throw new IOException("The target capability profile requires PARTIAL fidelity: "

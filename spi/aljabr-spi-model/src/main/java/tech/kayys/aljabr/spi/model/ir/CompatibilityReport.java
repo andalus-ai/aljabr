@@ -2,6 +2,7 @@ package tech.kayys.aljabr.spi.model.ir;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Explicit statement of how faithfully a model can be represented by a target.
@@ -32,7 +33,21 @@ public record CompatibilityReport(
         ERROR
     }
 
-    public record Diagnostic(Severity severity, String code, String message) {
+    /**
+     * One preflight finding. A path identifies the exact descriptor field or
+     * metadata key affected; it is empty for global findings.
+     */
+    public record Diagnostic(Severity severity, String code, String message, Optional<String> path) {
+        /** Compatibility constructor for diagnostics without a structured path. */
+        public Diagnostic(Severity severity, String code, String message) {
+            this(severity, code, message, Optional.empty());
+        }
+
+        /** Creates a diagnostic associated with an exact AMIR descriptor path. */
+        public Diagnostic(Severity severity, String code, String message, String path) {
+            this(severity, code, message, Optional.of(requirePath(path)));
+        }
+
         public Diagnostic {
             Objects.requireNonNull(severity, "severity must not be null");
             if (code == null || code.isBlank()) {
@@ -41,6 +56,15 @@ public record CompatibilityReport(
             if (message == null || message.isBlank()) {
                 throw new IllegalArgumentException("message must not be blank");
             }
+            path = Objects.requireNonNull(path, "path must not be null");
+            path.ifPresent(CompatibilityReport.Diagnostic::requirePath);
+        }
+
+        private static String requirePath(String path) {
+            if (path == null || path.isBlank()) {
+                throw new IllegalArgumentException("path must not be blank");
+            }
+            return path;
         }
     }
 }

@@ -9,6 +9,9 @@ import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
+import tech.kayys.aljabr.spi.model.ir.GraphCollection;
+import tech.kayys.aljabr.spi.model.ir.GraphDescriptor;
+import tech.kayys.aljabr.spi.model.ir.GraphSignature;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
 import java.util.List;
@@ -33,6 +36,7 @@ class FormatTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.UNSUPPORTED, report.fidelity());
         assertEquals("GGUF_QUANTIZATION_BLOCK_MISMATCH", report.diagnostics().getFirst().code());
+        assertEquals("/tensors/weight/shape", report.diagnostics().getFirst().path().orElseThrow());
     }
 
     @Test
@@ -42,6 +46,7 @@ class FormatTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.UNSUPPORTED, report.fidelity());
         assertEquals("GGUF_DTYPE_UNSUPPORTED", report.diagnostics().getFirst().code());
+        assertEquals("/tensors/weight/dataType", report.diagnostics().getFirst().path().orElseThrow());
     }
 
     @Test
@@ -116,7 +121,7 @@ class FormatTargetCapabilityTest {
     }
 
     @Test
-    void opaqueExtensionsArePreservedInSafetensorsFileMetadata() {
+    void opaqueExtensionsAreReportedAsUntransferredBySafetensors() {
         var source = new ModelDescriptor(
                 ModelIdentity.of("test"), "llama", "gguf", Map.of(),
                 Map.of("gguf.metadata.json", "{\"custom\":true}"),
@@ -124,7 +129,8 @@ class FormatTargetCapabilityTest {
 
         var report = new SafetensorsTargetCapability().assess(source);
 
-        assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
+        assertEquals("/extensions/gguf.metadata.json", report.diagnostics().getFirst().path().orElseThrow());
     }
 
     @Test
@@ -147,6 +153,20 @@ class FormatTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.FULL,
                 new GgufTargetCapability().assess(source).fidelity());
+    }
+
+
+    @Test
+    void graphEnvelopeIsRecognizedByBothTargetFormatProviders() {
+        var source = new ModelDescriptor(ModelIdentity.of("graph-model"), "llama", "safetensors",
+                Map.of(), Map.of(), List.of())
+                .withGraphCollection(new GraphCollection(List.of(
+                        GraphDescriptor.of("encoder", Map.of(), List.of(), GraphSignature.empty()))));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL,
+                new GgufTargetCapability().assess(source).fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL,
+                new SafetensorsTargetCapability().assess(source).fidelity());
     }
 
     private static ModelDescriptor model(String architecture, String format, TensorDescriptor tensor) {
