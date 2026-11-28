@@ -52,8 +52,12 @@ public final class TimestampIntervalVideoFrameSamplingPolicy implements VideoFra
                 break;
             }
             selected.add(candidate);
+            // Skip cadence targets already passed by this selected frame. This
+            // prevents a large timestamp gap from degenerating into every-frame selection.
             try {
-                target = target.plus(interval);
+                do {
+                    target = target.plus(interval);
+                } while (!target.isAfter(candidate.timestamp()));
             } catch (DateTimeException | ArithmeticException overflow) {
                 break;
             }
