@@ -35,7 +35,7 @@ class SafetensorsTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
         assertTrue(report.diagnostics().stream().noneMatch(d ->
-                d.path().orElse("").equals("extensions.gguf.metadata.general.alignment")));
+                d.path().orElse("").equals("/extensions/gguf.metadata.general.alignment")));
     }
     @Test
     void reportsModelAndTensorStringExtensionsAsUntransferred() {
@@ -53,9 +53,9 @@ class SafetensorsTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
         assertTrue(report.diagnostics().stream().anyMatch(d ->
-                d.path().orElse("").equals("extensions.vendor.model.attribute")));
+                d.path().orElse("").equals("/extensions/vendor.model.attribute")));
         assertTrue(report.diagnostics().stream().anyMatch(d ->
-                d.path().orElse("").equals("tensors.weight.extensions.vendor.attribute")));
+                d.path().orElse("").equals("/tensors/weight/extensions/vendor.attribute")));
     }
 
     @Test
@@ -108,7 +108,7 @@ class SafetensorsTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
         assertTrue(report.diagnostics().stream().anyMatch(d ->
-                d.code().equals("GGUF_TYPED_METADATA_FLATTENED")));
+                d.path().orElse("").equals("/extensions/gguf.metadata.general.alignment")));
     }
 
 }
