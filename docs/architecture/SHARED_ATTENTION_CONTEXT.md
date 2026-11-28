@@ -174,7 +174,7 @@ The optional `MetalKVCacheStorage` provider allocates retained `MTLBuffer` K/V r
 
 The built-in heap, native-memory, and Metal providers currently use contiguous sequence-major `[sequence, kvHead, headDimension]` storage. Consumers must validate the declared geometry against the region's element encoding and byte length; they must not infer a layout from the backend name or assume that paged/block-table storage is interchangeable with a contiguous region.
 
-This metadata is the boundary for future direct attention consumers. A Metal consumer may bind an `MTLBuffer` only when its kernel supports the declared geometry and the lease's readiness dependency has completed. The existing paged decode-attention kernel is not compatible merely because both representations contain K/V values.
+`MetalKVCacheAttentionConsumer` now provides an opt-in direct-buffer path for single-query Metal decode. It binds the retained K/V `MTLBuffer` objects to the existing flat SDPA kernel, after validating the declared sequence-major geometry, FLOAT32 region bounds, device identity, and lease readiness. The command buffer is synchronously completed before the scoped views close. This path is limited to at most 4096 visible positions; it does not adapt the existing paged/block-table kernel or cover multi-token prefill. See [Metal KV Storage](METAL_KV_STORAGE.md).
 
 ### Optional HAT execution
 

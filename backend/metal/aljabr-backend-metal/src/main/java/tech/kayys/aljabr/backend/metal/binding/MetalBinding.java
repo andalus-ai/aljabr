@@ -116,6 +116,7 @@ public class MetalBinding {
     private static final String FN_ATTENTION_WINDOWED = "aljabr_metal_attention_windowed";
     private static final String FN_ATTENTION_GQA_WINDOWED = "aljabr_metal_attention_gqa_windowed";
     private static final String FN_FLASH_ATTENTION = "aljabr_metal_flash_attention";
+    private static final String FN_SDPA_BORROWED_KV = "aljabr_metal_sdpa_borrowed_kv";
     private static final String FN_RMSNORM = "aljabr_metal_rmsnorm";
     private static final String FN_RMSNORM_ROWS = "aljabr_metal_rmsnorm_rows";
     private static final String FN_SOFTCAP = "aljabr_metal_softcap";
@@ -1375,6 +1376,29 @@ public class MetalBinding {
         }
     }
 
+    /**
+     * Runs single-query SDPA against cache-owned contiguous sequence-major
+     * Metal buffers. The caller must keep the originating cache lease open
+     * until this synchronous call returns.
+     */
+    public int borrowedKvAttention(MemorySegment out, MemorySegment query,
+            MemorySegment keyBuffer, MemorySegment valueBuffer,
+            int numHeads, int kvHeads, int headDimension, int sequenceStride,
+            int position, int startPosition, float scale, float softCap) {
+        if (!isRuntimeActive()) return -1;
+        if (out == null || query == null || keyBuffer == null || valueBuffer == null) return -2;
+        MethodHandle handle = handles.get(FN_SDPA_BORROWED_KV);
+        if (handle == null) return -1;
+        try {
+            return (int) invoke(FN_SDPA_BORROWED_KV, out, query, keyBuffer, valueBuffer,
+                    numHeads, kvHeads, headDimension, sequenceStride,
+                    position, startPosition, scale, softCap);
+        } catch (Throwable failure) {
+            LOG.errorf(failure, "Failed to invoke %s", FN_SDPA_BORROWED_KV);
+            return -1;
+        }
+    }
+
     public int attentionWindowed(MemorySegment out, MemorySegment Q,
             MemorySegment K_cache, MemorySegment V_cache,
             MemorySegment blockTable, MemorySegment contextLens,
@@ -2060,6 +2084,11 @@ public class MetalBinding {
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT));
+
+        bind(FN_SDPA_BORROWED_KV, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_FLOAT, ValueLayout.JAVA_FLOAT));
 
         bind(FN_FLASH_ATTENTION, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS,
