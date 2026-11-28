@@ -34,6 +34,17 @@ class KVCacheBufferLayoutValidatorTest {
     }
 
     @Test
+    void rejectsRegionSpanOverflow() {
+        KVCacheBufferRegion region = new KVCacheBufferRegion(
+                new TestHandle(), KVCacheMemoryDomain.HOST_HEAP, "cpu", "",
+                KVCacheElementType.FLOAT32, Long.MAX_VALUE - 3, 4);
+        KVCacheBufferLayout layout = KVCacheBufferLayout.sequenceMajor(1, 1, 1);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> KVCacheBufferLayoutValidator.validateRegion(region, layout));
+    }
+
+    @Test
     void validatesViewBackendAndLogicalDimensions() {
         KVCacheBufferReadView valid = view("cpu",
                 region(KVCacheElementType.FLOAT32, 256),
