@@ -2,6 +2,9 @@ package tech.kayys.aljabr.cache;
 
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Heap-array implementation of {@link KVCacheStorage}.
@@ -10,10 +13,11 @@ import java.util.Objects;
  * straightforward portable implementation; optimized CPU/native/device
  * providers can implement the same contract without changing model formats.
  */
-public final class HeapKVCacheStorage implements KVCacheStorage {
+public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRegionProvider {
     private final KVCacheLayout layout;
     private float[][] keys;
     private float[][] values;
+    private final List<HeapBufferLease> activeBufferLeases = new ArrayList<>();
 
     public HeapKVCacheStorage(KVCacheLayout layout) {
         this.layout = Objects.requireNonNull(layout, "layout");
@@ -40,6 +44,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage {
         int stride = checkedPosition(layer, position);
         checkArrayRange(key, keyOffset, stride, "key");
         checkArrayRange(value, valueOffset, stride, "value");
+        checkBorrowedPrefixMutation(position, 1);
         int cacheOffset = Math.multiplyExact(position, stride);
 
         // All arguments and ranges are validated before either cache is mutated.
@@ -73,6 +78,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage {
         int elements = Math.multiplyExact(tokenCount, stride);
         checkArrayRange(sourceKeys, keysOffset, elements, "keys");
         checkArrayRange(sourceValues, valuesOffset, elements, "values");
+        checkBorrowedPrefixMutation(firstPosition, tokenCount);
         int destinationOffset = Math.multiplyExact(firstPosition, stride);
 
         // Validate both source ranges before mutating either backing array.
@@ -115,6 +121,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage {
     @Override
     public void clearLayer(int layer) {
         ensureOpen();
+        checkNoActiveBufferLeases("clear layer");
         checkLayer(layer);
         Arrays.fill(keys[layer], 0.0f);
         Arrays.fill(values[layer], 0.0f);
@@ -131,6 +138,11 @@ public final class HeapKVCacheStorage implements KVCacheStorage {
     @Override
     public void truncate(int firstPosition) {
         ensureOpen();
+        for (HeapBufferLease lease : activeBufferLeases) {
+            if (!lease.closed && firstPosition < lease.visibleSequenceLength) {
+                throw new IllegalStateException("Cannot truncate a borrowed KV prefix");
+            }
+        }
         if (firstPosition < 0 || firstPosition > layout.maxSequenceLength()) {
             throw new IllegalArgumentException(
                     "firstPosition must be within cache capacity: " + firstPosition);
@@ -143,7 +155,126 @@ public final class HeapKVCacheStorage implements KVCacheStorage {
     }
 
     @Override
-    public void close() {
+    public synchronized KVCacheBufferReadView openBufferReadView(int visibleSequenceLength) {
+        ensureOpen();
+        if (visibleSequenceLength < 0 || visibleSequenceLength > layout.maxSequenceLength()) {
+            throw new IllegalArgumentException("visibleSequenceLength exceeds cache capacity");
+        }
+        HeapBufferLease lease = new HeapBufferLease(visibleSequenceLength);
+        activeBufferLeases.add(lease);
+        return lease;
+    }
+
+    private void checkBorrowedPrefixMutation(int firstPosition, int tokenCount) {
+        if (tokenCount == 0) return;
+        for (HeapBufferLease lease : activeBufferLeases) {
+            if (!lease.closed && firstPosition < lease.visibleSequenceLength) {
+                throw new IllegalStateException(
+                        "Cannot mutate KV positions visible to an active buffer lease");
+            }
+        }
+    }
+
+    private void checkNoActiveBufferLeases(String operation) {
+        for (HeapBufferLease lease : activeBufferLeases) {
+            if (!lease.closed) {
+                throw new IllegalStateException("Cannot " + operation
+                        + " while a KV buffer lease is open");
+            }
+        }
+    }
+
+    private final class HeapBufferLease implements KVCacheBufferReadView {
+        private final int visibleSequenceLength;
+        private final KVCacheBufferRegion[] keyRegions;
+        private final KVCacheBufferRegion[] valueRegions;
+        private boolean closed;
+
+        private HeapBufferLease(int visibleSequenceLength) {
+            this.visibleSequenceLength = visibleSequenceLength;
+            this.keyRegions = new KVCacheBufferRegion[layout.layerCount()];
+            this.valueRegions = new KVCacheBufferRegion[layout.layerCount()];
+            for (int layer = 0; layer < layout.layerCount(); layer++) {
+                long byteLength = Math.multiplyExact(
+                        Math.multiplyExact((long) visibleSequenceLength,
+                                layout.layerStride(layer)), Float.BYTES);
+                keyRegions[layer] = new KVCacheBufferRegion(
+                        new HeapKVCacheBufferHandle(keys[layer]),
+                        KVCacheMemoryDomain.HOST_HEAP, "cpu", "",
+                        KVCacheElementType.FLOAT32, 0, byteLength);
+                valueRegions[layer] = new KVCacheBufferRegion(
+                        new HeapKVCacheBufferHandle(values[layer]),
+                        KVCacheMemoryDomain.HOST_HEAP, "cpu", "",
+                        KVCacheElementType.FLOAT32, 0, byteLength);
+            }
+        }
+
+        private void ensureLeaseOpen() {
+            if (closed) throw new IllegalStateException("KV buffer lease is closed");
+            ensureOpen();
+        }
+
+        @Override
+        public KVCacheLayout layout() {
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                return layout;
+            }
+        }
+
+        @Override
+        public int visibleSequenceLength() {
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                return visibleSequenceLength;
+            }
+        }
+
+        @Override
+        public KVCacheBufferRegion keyRegion(int layer) {
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                return keyRegions[checkedLayer(layer)];
+            }
+        }
+
+        @Override
+        public KVCacheBufferRegion valueRegion(int layer) {
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                return valueRegions[checkedLayer(layer)];
+            }
+        }
+
+        @Override
+        public java.util.concurrent.CompletionStage<Void> readiness() {
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                return CompletableFuture.completedFuture(null);
+            }
+        }
+
+        @Override
+        public String backendId() {
+            return "cpu";
+        }
+
+        @Override
+        public void close() {
+            synchronized (HeapKVCacheStorage.this) {
+                if (!closed) {
+                    closed = true;
+                    activeBufferLeases.remove(this);
+                }
+            }
+        }
+    }
+
+    @Override
+    public synchronized void close() {
+        if (!activeBufferLeases.isEmpty()) {
+            throw new IllegalStateException("Cannot close KV storage while buffer leases are open");
+        }
         keys = null;
         values = null;
     }
@@ -154,6 +285,11 @@ public final class HeapKVCacheStorage implements KVCacheStorage {
             throw new IndexOutOfBoundsException("Cache position out of range: " + position);
         }
         return layout.layerStride(layer);
+    }
+
+    private int checkedLayer(int layer) {
+        checkLayer(layer);
+        return layer;
     }
 
     private void checkLayer(int layer) {
