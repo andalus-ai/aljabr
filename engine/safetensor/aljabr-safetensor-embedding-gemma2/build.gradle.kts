@@ -28,4 +28,12 @@ publishing {
     repositories { mavenLocal() }
 }
 
-tasks.withType<Test>().configureEach { useJUnitPlatform() }
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    // The opt-in official checkpoint test materializes large BF16 tensors as Java arrays.
+    // Give only that test invocation a larger worker heap; ordinary module tests keep
+    // Gradle's default test-worker memory limit.
+    if (providers.environmentVariable("ALJABR_EMBEDDING_GEMMA2_CHECKPOINT").isPresent) {
+        maxHeapSize = "4g"
+    }
+}
