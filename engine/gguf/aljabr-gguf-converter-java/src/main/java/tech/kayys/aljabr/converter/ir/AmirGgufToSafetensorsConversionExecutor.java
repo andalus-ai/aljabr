@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. IQ1_M, IQ1_S, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -868,6 +868,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "Q5_0" -> (quantized - 16) * scale;
             default -> throw new IllegalArgumentException("Unsupported quantization type: " + type);
         };
+    }
+
+    private static int readUInt16LE(byte[] bytes, int offset) {
+        return (bytes[offset] & 0xff) | ((bytes[offset + 1] & 0xff) << 8);
     }
 
     private static long readUInt32LE(byte[] bytes, int offset) {
