@@ -67,8 +67,8 @@ public final class MetalKVCacheAttentionConsumer {
 
         KVCacheBufferRegion keyRegion = lease.keyRegion(layer);
         KVCacheBufferRegion valueRegion = lease.valueRegion(layer);
-        validateRegion(keyRegion, keyLayout);
-        validateRegion(valueRegion, valueLayout);
+        validateRegion(keyRegion);
+        validateRegion(valueRegion);
         if (!keyRegion.deviceId().equals(valueRegion.deviceId())) {
             throw new IllegalArgumentException("K and V buffers belong to different Metal devices");
         }
@@ -103,7 +103,7 @@ public final class MetalKVCacheAttentionConsumer {
         }
     }
 
-    private static void validateRegion(KVCacheBufferRegion region, KVCacheBufferLayout layout) {
+    private static void validateRegion(KVCacheBufferRegion region) {
         if (region.memoryDomain() != KVCacheMemoryDomain.DEVICE
                 || !"metal".equals(region.backendId())
                 || region.elementType() != KVCacheElementType.FLOAT32
