@@ -400,6 +400,84 @@ int aljabr_metal_attention_gqa_windowed(
       soft_cap);
 }
 
+
+/*
+ * Decode attention over cache-owned contiguous [sequence, kvHead, headDim]
+ * MTLBuffers. K/V are bound directly: they are never wrapped from contents
+ * pointers and never copied into temporary Metal allocations.
+ */
+int aljabr_metal_sdpa_borrowed_kv(
+    void *out, const void *q, void *k_buffer, void *v_buffer,
+    int num_heads, int kv_heads, int head_dim, int sequence_stride,
+    int position, int start_position, float scale, float soft_cap) {
+  id<MTLComputePipelineState> pipeline = aljabr_metal_pipelines()->sdpa_flat;
+  if (!g_initialized || pipeline == nil || g_queue == nil || g_device == nil)
+    return -3;
+  if (out == NULL || q == NULL || k_buffer == NULL || v_buffer == NULL ||
+      num_heads <= 0 || kv_heads <= 0 || head_dim <= 0 ||
+      sequence_stride < kv_heads * head_dim || position < 0 ||
+      start_position < 0 || start_position > position ||
+      num_heads % kv_heads != 0 || !isfinite(scale) || scale <= 0.0f ||
+      !isfinite(soft_cap) || soft_cap < 0.0f)
+    return -2;
+  if (position + 1 > 4096 || pipeline.maxTotalThreadsPerThreadgroup < 256)
+    return -8;
+
+  @autoreleasepool {
+    id<MTLBuffer> kBuffer = (__bridge id<MTLBuffer>)k_buffer;
+    id<MTLBuffer> vBuffer = (__bridge id<MTLBuffer>)v_buffer;
+    if (kBuffer == nil || vBuffer == nil ||
+        kBuffer.storageMode != MTLStorageModeShared ||
+        vBuffer.storageMode != MTLStorageModeShared ||
+        kBuffer.device.registryID != g_device.registryID ||
+        vBuffer.device.registryID != g_device.registryID)
+      return -7;
+
+    size_t kvBytes = (size_t)(position + 1) * (size_t)sequence_stride * sizeof(float);
+    size_t queryBytes = (size_t)num_heads * (size_t)head_dim * sizeof(float);
+    if (kBuffer.length < kvBytes || vBuffer.length < kvBytes)
+      return -2;
+
+    id<MTLBuffer> outBuffer = wrap_ptr(out, queryBytes);
+    id<MTLBuffer> queryBuffer = wrap_ptr((void *)q, queryBytes);
+    if (outBuffer == nil || queryBuffer == nil)
+      return -4;
+
+    uint32_t h = (uint32_t)num_heads;
+    uint32_t hkv = (uint32_t)kv_heads;
+    uint32_t d = (uint32_t)head_dim;
+    uint32_t stride = (uint32_t)sequence_stride;
+    uint32_t pos = (uint32_t)position;
+    uint32_t start = (uint32_t)start_position;
+
+    id<MTLCommandBuffer> commandBuffer = [g_queue commandBuffer];
+    if (commandBuffer == nil)
+      return -5;
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (encoder == nil)
+      return -5;
+    [encoder setComputePipelineState:pipeline];
+    [encoder setBuffer:outBuffer offset:0 atIndex:0];
+    [encoder setBuffer:queryBuffer offset:0 atIndex:1];
+    [encoder setBuffer:kBuffer offset:0 atIndex:2];
+    [encoder setBuffer:vBuffer offset:0 atIndex:3];
+    [encoder setBytes:&h length:sizeof(h) atIndex:4];
+    [encoder setBytes:&hkv length:sizeof(hkv) atIndex:5];
+    [encoder setBytes:&d length:sizeof(d) atIndex:6];
+    [encoder setBytes:&stride length:sizeof(stride) atIndex:7];
+    [encoder setBytes:&pos length:sizeof(pos) atIndex:8];
+    [encoder setBytes:&start length:sizeof(start) atIndex:9];
+    [encoder setBytes:&scale length:sizeof(scale) atIndex:10];
+    [encoder setBytes:&soft_cap length:sizeof(soft_cap) atIndex:11];
+    [encoder dispatchThreadgroups:MTLSizeMake((NSUInteger)num_heads, 1, 1)
+        threadsPerThreadgroup:MTLSizeMake(256, 1, 1)];
+    [encoder endEncoding];
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    return commandBuffer.status == MTLCommandBufferStatusCompleted ? 0 : -1;
+  }
+}
+
 int aljabr_metal_flash_attention(void *out, const void *q, const void *k,
                                       const void *v, int B, int seq_len,
                                       int num_heads, int head_dim) {
