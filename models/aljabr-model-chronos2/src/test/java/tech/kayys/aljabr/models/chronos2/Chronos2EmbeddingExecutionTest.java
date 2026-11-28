@@ -28,8 +28,8 @@ class Chronos2EmbeddingExecutionTest {
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
         float[][][] embedded = execution.embed(
-                new float[][][] {{{1f, 0f, 0f, 0f, 0f, 0f}, {0f, 1f, 0f, 0f, 0f, 0f}}},
-                new float[][][] {{{0f, 0f, 1f, 0f, 0f, 0f}}});
+                new float[][][] {{{1f, 0f, 0f}, {0f, 1f, 0f}}},
+                new float[][][] {{{0f, 0f, 1f}}});
         assertEquals(4, embedded[0].length);
         assertEquals(7f, embedded[0][2][0], 1e-6f);
         assertEquals(8f, embedded[0][2][1], 1e-6f);
@@ -55,7 +55,7 @@ class Chronos2EmbeddingExecutionTest {
     void rejectsInvalidProjectionGeometry() {
         Chronos2Config config = config(false);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config,
-                projection(6, 2, 2), projection(2, 2, 4), new float[][] {{0f, 0f}});
+                projection(3, 3, 2), projection(2, 3, 2), new float[][] {{0f, 0f}});
         assertThrows(IllegalArgumentException.class,
                 () -> execution.embed(new float[][][] {{{1f}}}, new float[][][] {{{1f, 2f, 3f}}}));
     }
@@ -71,8 +71,8 @@ class Chronos2EmbeddingExecutionTest {
     }
 
     private static Weights quantileProjection() {
-        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
-                new float[][] {{1f, 0f}, {0f, 1f}}, new float[2],
+        return new Weights(new float[][] {{1f, 0f}, {0f, 1f}, {0f, 0f}}, new float[3],
+                new float[][] {{1f, 0f, 0f}, {0f, 1f, 0f}}, new float[2],
                 new float[2][2], new float[2]);
     }
 
