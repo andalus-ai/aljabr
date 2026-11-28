@@ -98,7 +98,7 @@ class UNet2DConditionalBackendTest {
 
     @Test
     void rejectsChannelWidthsIncompatibleWithNormalizationOrAttention() {
-        assertThatThrownBy(() -> new UNet2DConditionalConfig(4, 4, 8, 12, 48, 96, 8))
+        assertThatThrownBy(() -> new UNet2DConditionalConfig(4, 4, 8, 12, 32, 64, 6))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("attentionHeads");
         assertThatThrownBy(() -> new UNet2DConditionalConfig(4, 4, 8, 12, 24, 64, 8))
