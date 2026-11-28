@@ -31,14 +31,14 @@ public final class GgufTargetCapability implements TargetFormatCapability {
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            String path = "tensors." + tensor.name();
+            String path = "/tensors/" + pointerSegment(tensor.name());
             if (!SUPPORTED.contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.ERROR,
                         "GGUF_DTYPE_UNSUPPORTED",
                         "Tensor '" + tensor.name() + "' uses dtype '" + tensor.dataType()
                                 + "', which has no supported GGML storage type.",
-                        path + ".dataType"));
+                        path + "/dataType"));
                 continue;
             }
 
@@ -52,7 +52,7 @@ public final class GgufTargetCapability implements TargetFormatCapability {
                             "Tensor '" + tensor.name() + "' has " + elements
                                     + " elements, not divisible by GGML block size "
                                     + ggmlType.blockSize + " for " + ggmlType.label + ".",
-                            path + ".shape"));
+                            path + "/shape"));
                 }
             } catch (IllegalArgumentException | ArithmeticException exception) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
@@ -64,6 +64,10 @@ public final class GgufTargetCapability implements TargetFormatCapability {
         }
 
         return report(diagnostics);
+    }
+
+    private static String pointerSegment(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
     }
 
     private static CompatibilityReport report(List<CompatibilityReport.Diagnostic> diagnostics) {
