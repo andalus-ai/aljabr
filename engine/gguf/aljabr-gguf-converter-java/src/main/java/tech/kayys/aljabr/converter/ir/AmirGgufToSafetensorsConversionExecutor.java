@@ -343,8 +343,8 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
                 if (type.equals("Q2_0")) {
                     for (int j = 0; j < 64; j++) {
-                        int packed = source[base + 2 + (j >>> 2)] & 0xff;
-                        int quantized = (packed >>> ((j & 3) * 2)) & 0x03;
+                        int packedByte = source[base + 2 + (j >>> 2)] & 0xff;
+                        int quantized = (packedByte >>> ((j & 3) * 2)) & 0x03;
                         values.putFloat((quantized - 1) * scale);
                     }
                     continue;
