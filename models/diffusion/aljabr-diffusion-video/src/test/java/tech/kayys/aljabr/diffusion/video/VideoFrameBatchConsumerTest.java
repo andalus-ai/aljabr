@@ -25,7 +25,7 @@ class VideoFrameBatchConsumerTest {
         return VideoFrameSequence.of(frames);
     }
 
-    private static final class TestBatch implements AutoCloseable {
+    private static class TestBatch implements AutoCloseable {
         private final int start;
         private boolean closed;
         private final Exception closeFailure;
@@ -112,7 +112,7 @@ class VideoFrameBatchConsumerTest {
     @Test
     void propagatesCloseFailureAndDoesNotRequestAnotherBatch() {
         IOException closeFailure = new IOException("close failed");
-        TestBatch first = new TestBatch(0);
+        TestBatch first = new TestBatch(0, closeFailure);
         AtomicReference<Integer> requested = new AtomicReference<>(0);
         Iterable<TestBatch> source = () -> new java.util.Iterator<>() {
             private int index;
@@ -126,7 +126,7 @@ class VideoFrameBatchConsumerTest {
             public TestBatch next() {
                 requested.set(requested.get() + 1);
                 index++;
-                return index == 1 ? new TestBatchWithFailure(first, closeFailure) : new TestBatch(1);
+                return index == 1 ? first : new TestBatch(1);
             }
         };
 
@@ -140,11 +140,6 @@ class VideoFrameBatchConsumerTest {
         assertEquals(1, requested.get());
     }
 
-    private static final class TestBatchWithFailure extends TestBatch {
-        private TestBatchWithFailure(TestBatch original, Exception failure) {
-            super(original.start, failure);
-        }
-    }
 
     @Test
     void rejectsNullSourceProcessorAndBatch() {
