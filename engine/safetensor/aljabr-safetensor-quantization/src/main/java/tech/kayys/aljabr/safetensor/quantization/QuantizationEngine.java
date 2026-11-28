@@ -28,10 +28,8 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -483,7 +481,7 @@ public class QuantizationEngine {
         // Check cache first (serial, cheap)
         AtomicInteger cacheHits = new AtomicInteger(0);
         Map<String, AccelTensor> fromCache = new ConcurrentHashMap<>();
-        CopyOnWriteArrayList<Map.Entry<String, AccelTensor>> needsQuant = new CopyOnWriteArrayList<>();
+        List<Map.Entry<String, AccelTensor>> needsQuant = new ArrayList<>();
         for (Map.Entry<String, AccelTensor> entry : toQuantize.entrySet()) {
             String name = entry.getKey();
             InferenceQuantizationCache.CachedTensor cached = cachedTensors.get(name);
@@ -507,49 +505,40 @@ public class QuantizationEngine {
                     totalToQuant, cpuCores);
         }
 
-        // Parallel quantization — uses all CPU cores via ForkJoinPool work-stealing.
+        // Execute independent tensor tasks in a bounded, invocation-scoped pool.
         AtomicInteger doneCount = new AtomicInteger(0);
         AtomicInteger quantizedFresh = new AtomicInteger(0);
         Map<String, AccelTensor> freshQuant = new ConcurrentHashMap<>();
 
-        ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
-        try {
-            pool.submit(() -> needsQuant.parallelStream().forEach(entry -> {
-                String name = entry.getKey();
-                AccelTensor source = entry.getValue();
-                int idx = doneCount.incrementAndGet();
-                long t0 = System.currentTimeMillis();
-                try {
-                    AccelTensor materialized = materializeForQuantization(source);
-                    AccelTensor candidate = quantizer.quantizeTensor(materialized, config);
-                    long ms = System.currentTimeMillis() - t0;
-                    if (!isUsableQuantizedTensor(candidate)) {
-                        System.err.printf("[Aljabr] [%d/%d] SKIP (unsupported output) %s  (%.1fs)%n",
-                                idx, totalToQuant, name, ms / 1000.0);
-                        log.warnf("Quantizer %s produced unsupported tensor for %s", effectiveStrategy, name);
-                        if (candidate != null && candidate != source && candidate != materialized) candidate.close();
-                        freshQuant.put(name, source);
-                        return;
-                    }
-                    System.err.printf("[Aljabr] [%d/%d] OK  %s  (%.1fs, %s → NF4)%n",
-                            idx, totalToQuant, name, ms / 1000.0, source.quantType());
-                    freshQuant.put(name, candidate);
-                    quantizedFresh.incrementAndGet();
-                    if (materialized != source) materialized.close();
-                    source.close();
-                } catch (Exception e) {
-                    long ms = System.currentTimeMillis() - t0;
-                    System.err.printf("[Aljabr] [%d/%d] ERR %s  (%.1fs): %s%n",
-                            idx, totalToQuant, name, ms / 1000.0, e.getMessage());
-                    log.warnf(e, "Failed to quantize %s; keeping original", name);
+        InferenceTensorTaskExecutor.execute(needsQuant, entry -> {
+            String name = entry.getKey();
+            AccelTensor source = entry.getValue();
+            int idx = doneCount.incrementAndGet();
+            long t0 = System.currentTimeMillis();
+            try {
+                AccelTensor materialized = materializeForQuantization(source);
+                AccelTensor candidate = quantizer.quantizeTensor(materialized, config);
+                long ms = System.currentTimeMillis() - t0;
+                if (!isUsableQuantizedTensor(candidate)) {
+                    log.warnf("Quantizer %s produced unsupported tensor for %s (%d/%d, %d ms)",
+                            effectiveStrategy, name, idx, totalToQuant, ms);
+                    if (candidate != null && candidate != source && candidate != materialized) candidate.close();
                     freshQuant.put(name, source);
+                    return;
                 }
-            })).get();
-        } catch (Exception e) {
-            log.errorf(e, "Parallel quantization pool failed");
-        } finally {
-            pool.shutdown();
-        }
+                log.debugf("Quantized inference tensor %s (%d/%d, %d ms)",
+                        name, idx, totalToQuant, ms);
+                freshQuant.put(name, candidate);
+                quantizedFresh.incrementAndGet();
+                if (materialized != source) materialized.close();
+                source.close();
+            } catch (Exception e) {
+                long ms = System.currentTimeMillis() - t0;
+                log.warnf(e, "Failed to quantize inference tensor %s (%d/%d, %d ms); keeping original",
+                        name, idx, totalToQuant, ms);
+                freshQuant.put(name, source);
+            }
+        });
 
         // Merge results
         Map<String, AccelTensor> quantized = new HashMap<>(weights.size() * 2);
