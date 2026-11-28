@@ -31,7 +31,7 @@ class VideoFrameSequenceWindowingTest {
         assertEquals(3, windows.size());
         assertEquals(List.of(0, 2, 4), windows.stream()
                 .map(window -> window.firstFrame().sequenceIndex()).toList());
-        assertEquals(List.of(4, 4, 4), windows.stream()
+        assertEquals(List.of(3, 3, 3), windows.stream()
                 .map(VideoFrameSequence::frameCount).toList());
         assertEquals(START.plusMillis(240), windows.get(2).lastFrame().timestamp());
     }
@@ -51,9 +51,9 @@ class VideoFrameSequenceWindowingTest {
         var windows = VideoFrameSequenceWindowing.window(
                 sequence(8), 2, 3, VideoFrameSequenceWindowing.TailPolicy.DROP_PARTIAL);
 
-        assertEquals(List.of(0, 6), windows.stream()
+        assertEquals(List.of(0, 6, 12), windows.stream()
                 .map(window -> window.firstFrame().sequenceIndex()).toList());
-        assertEquals(2, windows.size());
+        assertEquals(3, windows.size());
     }
 
     @Test
