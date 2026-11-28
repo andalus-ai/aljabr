@@ -273,3 +273,24 @@ quantization choices or modality pathways. A family adapter can now implement
 its verified tensor contract using this generic API once a real artifact
 inventory is available. This is structural artifact validation only; it does
 not establish operator support or executable model capability.
+
+
+### M2 — Tensor-validated model-family adapter
+
+The generic tensor requirement matcher is now connected to a reusable model-family
+adapter contract through `GgufTensorValidatedModelFamilyAdapter`:
+
+- Family modules declare exact supported GGUF architecture identifiers.
+- They declare required tensor names and optional exact dimensions / accepted
+  GGML type identifiers using `GgufTensorRequirement`.
+- The default inspection implementation rejects missing or unknown
+  architectures as `UNSUPPORTED_ARCHITECTURE`.
+- Tensor inventory mismatches are returned as `INCOMPLETE_ARTIFACT` with
+  all matcher diagnostics; only a complete structural match returns `MATCH`.
+- The adapter consumes descriptor metadata only and does not load weights,
+  infer modalities, or claim that a backend can execute the model.
+
+This provides a reusable path for future model-family modules without placing
+family-specific rules in the GGUF parser or backend. A concrete Saina adapter
+is still intentionally withheld until the real model artifact establishes its
+architecture identifier and tensor contract.
