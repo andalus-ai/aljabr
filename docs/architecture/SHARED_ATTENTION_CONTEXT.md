@@ -99,13 +99,17 @@ A `KVCacheBufferReadView` is a lease over target-owned storage. Its K/V
 `KVCacheBufferRegion` descriptors identify an opaque allocation handle,
 memory domain, backend/device identity, element encoding, and byte range.
 The descriptor does not expose a pointer or permit arbitrary dereferencing.
-Only a compatible backend may interpret the handle while the lease remains
-open. Closing the lease releases the borrow, never the target allocation.
+Its byte range must describe only the committed prefix visible to the lease,
+not uncommitted capacity. Only a compatible backend may interpret the handle
+while the lease remains open. Closing the lease releases the borrow, never the
+target allocation. The lease also exposes an asynchronous readiness dependency;
+consumers must wait for target writes to become visible before submitting work
+that reads the borrowed regions.
 
 Memory domains distinguish Java heap, native host, and accelerator device
 memory. Device regions require a device identity; host regions do not. Element
-encodings are explicit so consumers cannot silently interpret FP16/BF16/FP8
-storage as float32. Region offsets and lengths are byte-based and element
+encodings are explicit so consumers cannot silently interpret FP16/BF16 or
+distinct FP8 encodings as float32. Region offsets and lengths are byte-based and element
 aligned.
 
 ### Interoperability and fallback rules
