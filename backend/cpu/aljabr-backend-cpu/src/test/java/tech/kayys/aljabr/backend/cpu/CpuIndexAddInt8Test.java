@@ -43,7 +43,7 @@ class CpuIndexAddInt8Test {
                 Tensor sourceBase = Tensor.of(new byte[] {10, 30, 20, 40}, backend, DType.I8, 2, 2);
                 Tensor source = sourceBase.transpose(0, 1);
                 Tensor result = destination.indexAdd(0, indices, source)) {
-            assertArrayEquals(new byte[] {21, 44, 2, 5, 13, 36}, result.toByteArray());
+            assertArrayEquals(new byte[] {31, 44, 2, 5, 13, 26}, result.toByteArray());
         }
     }
 
