@@ -123,7 +123,7 @@ class MiniLmOfficialCheckpointParityTest {
                     Class<?> result = method.getReturnType();
                     if (result == boolean.class) return true;
                     if (result == int.class) return 8_388_608;
-                    if (result == long.class) return 300L;
+                    if (result == long.class) return method.getName().equals("maxHeaderBytes") ? 104_857_600L : 300L;
                     if (result.isInterface()) return proxy(result);
                     return null;
                 });
