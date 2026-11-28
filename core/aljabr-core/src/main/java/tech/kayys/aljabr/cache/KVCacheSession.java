@@ -17,11 +17,12 @@ import java.util.Objects;
  * cross-thread synchronization. A session should normally be confined to one
  * active model sequence.</p>
  */
-public final class KVCacheSession {
+public final class KVCacheSession implements KVCacheSharingCapability {
 
     private final KVCacheStorage storage;
     private final boolean[] currentPositionWritten;
     private int committedLength;
+    private int activeReadViews;
 
     public KVCacheSession(KVCacheStorage storage) {
         this.storage = Objects.requireNonNull(storage, "storage");
@@ -34,22 +35,116 @@ public final class KVCacheSession {
     }
 
     /** Number of sequence positions visible to attention reads. */
-    public int committedLength() {
+    public synchronized int committedLength() {
         return committedLength;
     }
 
+    /**
+     * Opens a read-only borrowed view of the currently committed prefix.
+     *
+     * <p>The view does not allocate or own another KV cache. It reads from this
+     * session's storage and remains bounded to the committed length captured
+     * when it was opened. Appends beyond that snapshot are allowed. Rewriting
+     * the committed prefix, truncating, or resetting is rejected while any
+     * borrowed view is open. Close the view promptly when drafting/attention
+     * no longer needs it.</p>
+     *
+     * <p>Session-mediated reads and writes are coordinated by this session.
+     * Direct mutation through the underlying storage bypasses this protection
+     * and is forbidden while a borrowed view is open.</p>
+     */
+    @Override
+    public synchronized KVCacheReadView openReadView() {
+        int visibleLength = committedLength;
+        activeReadViews++;
+        return new KVCacheReadView() {
+            private boolean closed;
+
+            private void ensureOpen() {
+                if (closed) {
+                    throw new IllegalStateException("KV cache read view is closed");
+                }
+            }
+
+            private void checkRange(int firstPosition, int tokenCount) {
+                ensureOpen();
+                if (firstPosition < 0 || tokenCount < 0
+                        || firstPosition > visibleLength
+                        || tokenCount > visibleLength - firstPosition) {
+                    throw new IndexOutOfBoundsException(
+                            "Read exceeds the borrowed KV cache prefix");
+                }
+            }
+
+            @Override
+            public KVCacheLayout layout() {
+                synchronized (KVCacheSession.this) {
+                    ensureOpen();
+                    return KVCacheSession.this.layout();
+                }
+            }
+
+            @Override
+            public int visibleSequenceLength() {
+                synchronized (KVCacheSession.this) {
+                    ensureOpen();
+                    return visibleLength;
+                }
+            }
+
+            @Override
+            public void readKeyRange(int layer, int firstPosition, int tokenCount,
+                    float[] destination, int destinationOffset) {
+                synchronized (KVCacheSession.this) {
+                    checkRange(firstPosition, tokenCount);
+                    storage.readKeyRange(layer, firstPosition, tokenCount,
+                            destination, destinationOffset);
+                }
+            }
+
+            @Override
+            public void readValueRange(int layer, int firstPosition, int tokenCount,
+                    float[] destination, int destinationOffset) {
+                synchronized (KVCacheSession.this) {
+                    checkRange(firstPosition, tokenCount);
+                    storage.readValueRange(layer, firstPosition, tokenCount,
+                            destination, destinationOffset);
+                }
+            }
+
+            @Override
+            public void close() {
+                synchronized (KVCacheSession.this) {
+                    if (!closed) {
+                        closed = true;
+                        activeReadViews--;
+                    }
+                }
+            }
+        };
+    }
+
+    private void checkWritablePrefixIsNotBorrowed(int firstPosition, int tokenCount) {
+        if (activeReadViews > 0 && tokenCount > 0 && firstPosition < committedLength) {
+            throw new IllegalStateException(
+                    "Cannot modify committed KV positions while a read-only view is open");
+        }
+    }
+
     /** Writes one layer/position, including positions not yet committed. */
-    public void write(int layer, int position,
+    public synchronized void write(int layer, int position,
             float[] key, int keyOffset, float[] value, int valueOffset) {
         checkWritablePosition(position);
+        checkWritablePrefixIsNotBorrowed(position, 1);
         storage.write(layer, position, key, keyOffset, value, valueOffset);
         markCurrentPositionWritten(layer, position);
     }
 
     /** Writes a contiguous layer range, commonly used by prefill. */
-    public void writeRange(int layer, int firstPosition, int tokenCount,
+    public synchronized void writeRange(int layer, int firstPosition, int tokenCount,
             float[] keys, int keysOffset, float[] values, int valuesOffset) {
         checkWritableRange(firstPosition, tokenCount);
+        checkWritablePrefixIsNotBorrowed(firstPosition, tokenCount);
         storage.writeRange(layer, firstPosition, tokenCount,
                 keys, keysOffset, values, valuesOffset);
         if (tokenCount > 0 && firstPosition <= committedLength
@@ -170,7 +265,7 @@ public final class KVCacheSession {
      * <p>The caller is responsible for ensuring every layer has been written
      * for the newly committed positions before invoking this method.</p>
      */
-    public void commit(int newCommittedLength) {
+    public synchronized void commit(int newCommittedLength) {
         if (newCommittedLength < committedLength
                 || newCommittedLength > layout().maxSequenceLength()) {
             throw new IllegalArgumentException(
@@ -184,7 +279,10 @@ public final class KVCacheSession {
      * Discards the suffix beginning at {@code newLength}, clearing its storage
      * across all layers and reducing the visible sequence length.
      */
-    public void truncate(int newLength) {
+    public synchronized void truncate(int newLength) {
+        if (activeReadViews > 0) {
+            throw new IllegalStateException("Cannot truncate KV cache while read-only views are open");
+        }
         if (newLength < 0 || newLength > committedLength) {
             throw new IllegalArgumentException(
                     "Truncation length must be within the committed sequence");
@@ -195,7 +293,10 @@ public final class KVCacheSession {
     }
 
     /** Clears all storage and resets the visible sequence length. */
-    public void reset() {
+    public synchronized void reset() {
+        if (activeReadViews > 0) {
+            throw new IllegalStateException("Cannot reset KV cache while read-only views are open");
+        }
         storage.clear();
         committedLength = 0;
         clearCurrentPositionWrites();
