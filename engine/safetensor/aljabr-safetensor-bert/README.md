@@ -81,6 +81,51 @@ validation. An official-checkpoint embedding parity run against Sentence
 Transformers remains a separate integration-validation milestone; unit tests
 are not numerical parity evidence.
 
+
+### Opt-in official-checkpoint parity test
+
+An integration test loads the official local checkpoint through the Java
+Safetensors, tokenizer, encoder, pooling, and normalization path, then compares
+its embeddings with independently generated Sentence Transformers reference
+vectors. It is skipped in ordinary CI unless both environment variables below
+are set. The model and reference files are not downloaded by the test.
+
+Generate an independent reference file with the official Python package. This
+is a reference-generation tool only, not an Aljabr runtime dependency:
+
+```python
+import json
+from sentence_transformers import SentenceTransformer
+
+sentences = [
+    "That is a happy person",
+    "That is a happy dog",
+    "Today is a sunny day",
+    "The weather is pleasant outside.",
+]
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+embeddings = model.encode(
+    sentences, normalize_embeddings=True, convert_to_numpy=True
+).tolist()
+with open("minilm-reference.json", "w", encoding="utf-8") as output:
+    json.dump({"sentences": sentences, "embeddings": embeddings}, output)
+```
+
+Run the test with JDK 25:
+
+```bash
+ALJABR_MINILM_MODEL_DIR=./models/all-MiniLM-L6-v2 \
+ALJABR_MINILM_REFERENCE_FILE=./minilm-reference.json \
+./gradlew :engine:safetensor:aljabr-safetensor-bert:test \
+  --tests '*MiniLmOfficialCheckpointParityTest'
+```
+
+Default thresholds are cosine similarity >= 0.999 and maximum absolute error
+<= 0.005. They can be overridden with `ALJABR_MINILM_MIN_COSINE` and
+`ALJABR_MINILM_MAX_ABS_ERROR`. A passing run is the numerical parity evidence;
+the presence of this harness alone does not imply that parity has already
+been measured.
+
 References:
 - [Official Hugging Face model](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
 - [Sentence Transformers modular model architecture](https://sbert.net/docs/sentence_transformer/usage/custom_models.html)
