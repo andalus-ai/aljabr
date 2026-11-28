@@ -38,7 +38,7 @@ class SafetensorsTargetCapabilityTest {
                 d.code().equals("GGUF_TYPED_METADATA_FLATTENED")));
     }
     @Test
-    void treatsModelAndTensorStringExtensionsAsPreservedByEnvelope() {
+    void reportsModelAndTensorStringExtensionsAsUntransferred() {
         var tensor = new TensorDescriptor("weight", "F32", List.of(2L),
                 "contiguous", null, null, Map.of("vendor.attribute", "value"));
         var model = new ModelDescriptor(
@@ -51,9 +51,11 @@ class SafetensorsTargetCapabilityTest {
 
         CompatibilityReport report = new SafetensorsTargetCapability().assess(model);
 
-        assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
-        assertTrue(report.diagnostics().stream().noneMatch(d ->
-                d.code().equals("OPAQUE_METADATA_REQUIRES_MAPPING")));
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
+        assertTrue(report.diagnostics().stream().anyMatch(d ->
+                d.path().orElse("").equals("/extensions/vendor.model.attribute")));
+        assertTrue(report.diagnostics().stream().anyMatch(d ->
+                d.path().orElse("").equals("/tensors/weight/extensions/vendor.attribute")));
     }
 
     @Test
@@ -117,7 +119,7 @@ class SafetensorsTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
         assertTrue(report.diagnostics().stream().anyMatch(d ->
-                d.code().equals("GGUF_TYPED_METADATA_FLATTENED")));
+                d.path().orElse("").equals("/extensions/gguf.metadata.general.alignment")));
     }
 
 }
