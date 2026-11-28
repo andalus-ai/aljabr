@@ -7,6 +7,12 @@ import tech.kayys.aljabr.spi.model.ir.ComponentCollection;
 import tech.kayys.aljabr.spi.model.ir.ComponentGraphBinding;
 import tech.kayys.aljabr.spi.model.ir.ConfigurationValue;
 import tech.kayys.aljabr.spi.model.ir.GraphCollection;
+import tech.kayys.aljabr.spi.model.ir.GraphDescriptor;
+import tech.kayys.aljabr.spi.model.ir.GraphSignature;
+import tech.kayys.aljabr.spi.model.ir.GraphValue;
+import tech.kayys.aljabr.spi.model.ir.TensorDataType;
+import tech.kayys.aljabr.spi.model.ir.TensorShape;
+import tech.kayys.aljabr.spi.model.ir.TensorType;
 import tech.kayys.aljabr.spi.model.ir.ModelComponent;
 import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
@@ -53,12 +59,16 @@ class AmirModelLayerCodecTest {
     @Test
     void graphBoundComponentsAreNotEncodedWithoutTheirGraphCollection() {
         ComponentCollection components = new ComponentCollection(List.of(
-                new ModelComponent("vision-encoder", ModelComponentKind.IMAGE_ENCODER,
+                new ModelComponent("vision-encoder", ModelComponentKind.IMAGE_PROCESSOR,
                         Map.of(), List.of(), List.of(new ComponentGraphBinding(
                                 "vision-forward", Map.of("pixels", "input"), Map.of("embedding", "output"))),
                         Map.of())));
         ModelDescriptor source = model()
-                .withGraphCollection(GraphCollection.empty())
+                .withGraphCollection(new GraphCollection(List.of(GraphDescriptor.of(
+                        "vision-forward",
+                        List.of(new GraphValue("input", TensorType.of(TensorDataType.F32, TensorShape.of(1)))),
+                        List.of(),
+                        new GraphSignature(Map.of("pixels", "input"), Map.of("embedding", "input"))))))
                 .withComponentCollection(components);
 
         Map<String, String> encoded = AmirModelLayerCodec.encode(source);
