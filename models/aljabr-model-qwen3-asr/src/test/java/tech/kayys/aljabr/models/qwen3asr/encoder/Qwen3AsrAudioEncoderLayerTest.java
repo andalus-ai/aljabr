@@ -66,10 +66,11 @@ class Qwen3AsrAudioEncoderLayerTest {
     }
 
     @Test
-    void configFactoryUsesQwen3AsrAudioDimensions() {
-        var config = tech.kayys.aljabr.models.qwen3asr.Qwen3AsrConfig.qwen3Asr17B().audio();
-        assertThrows(IllegalArgumentException.class,
-                () -> Qwen3AsrAudioEncoderLayer.from(config, weights()));
+    void configFactoryUsesTheSuppliedAudioArchitecture() {
+        var config = new tech.kayys.aljabr.models.qwen3asr.Qwen3AsrConfig.AudioEncoderConfig(
+                128, 2, 1, 1, 1, 2, 1, 2, 50, 800, 500);
+        var layer = Qwen3AsrAudioEncoderLayer.from(config, weights());
+        assertNotNull(layer);
     }
 
     private static Qwen3AsrAudioEncoderLayer.Weights weights() {
