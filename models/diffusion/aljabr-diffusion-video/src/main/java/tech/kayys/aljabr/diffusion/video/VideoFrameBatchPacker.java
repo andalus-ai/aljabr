@@ -25,7 +25,13 @@ public final class VideoFrameBatchPacker {
         int width = first.width();
         int height = first.height();
         int channels = first.channels();
-        long valueCount = (long) sequence.frameCount() * height * width * channels;
+        long valueCount;
+        try {
+            long valuesPerFrame = Math.multiplyExact(Math.multiplyExact((long) height, width), channels);
+            valueCount = Math.multiplyExact((long) sequence.frameCount(), valuesPerFrame);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("packed video batch dimensions overflow", overflow);
+        }
         if (valueCount > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("packed video batch exceeds Java array capacity");
         }
