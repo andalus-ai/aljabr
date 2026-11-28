@@ -158,6 +158,74 @@ class VideoFrameBatchConsumerTest {
     }
 
     @Test
+    void reportsProgressOnlyAfterBatchHasBeenClosed() throws Exception {
+        List<VideoBatchProgress> progress = new ArrayList<>();
+        TestBatch first = new TestBatch(0);
+        TestBatch second = new TestBatch(1);
+        VideoBatchProcessingContext context = VideoBatchProcessingContext.create(
+                () -> false, OptionalLong.of(2), progress::add);
+
+        long count = VideoFrameBatchConsumer.consume(
+                List.of(first, second), ignored -> { }, context);
+
+        assertEquals(2, count);
+        assertTrue(first.closed);
+        assertTrue(second.closed);
+        assertEquals(List.of(
+                new VideoBatchProgress(1, OptionalLong.of(2)),
+                new VideoBatchProgress(2, OptionalLong.of(2))), progress);
+    }
+
+    @Test
+    void cancellationStopsBeforeRequestingOrPackingTheNextBatch() throws Exception {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        AtomicReference<Integer> packed = new AtomicReference<>(0);
+        List<VideoBatchProgress> progress = new ArrayList<>();
+        VideoBatchProcessingContext context = VideoBatchProcessingContext.create(
+                cancelled::get, OptionalLong.empty(), update -> {
+                    progress.add(update);
+                    cancelled.set(true);
+                });
+        Iterable<TestBatch> source = VideoFrameBatchStream.mapChunks(
+                sequence(4), 2, VideoFrameSequenceChunker.TailPolicy.INCLUDE_PARTIAL,
+                chunk -> {
+                    packed.set(packed.get() + 1);
+                    return new TestBatch(chunk.firstFrame().sequenceIndex());
+                });
+
+        long count = VideoFrameBatchConsumer.consume(source, batch -> { }, context);
+
+        assertEquals(1, count);
+        assertEquals(1, packed.get(), "cancellation must be checked before requesting the next chunk");
+        assertEquals(List.of(new VideoBatchProgress(1, OptionalLong.empty())), progress);
+    }
+
+    @Test
+    void cancellationDuringProcessingClosesCurrentBatchWithoutProgress() {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        List<VideoBatchProgress> progress = new ArrayList<>();
+        TestBatch batch = new TestBatch(0);
+        VideoBatchProcessingContext context = VideoBatchProcessingContext.create(
+                cancelled::get, OptionalLong.of(1), progress::add);
+
+        assertThrows(CancellationException.class,
+                () -> VideoFrameBatchConsumer.consume(
+                        List.of(batch), ignored -> cancelled.set(true), context));
+
+        assertTrue(batch.closed);
+        assertTrue(progress.isEmpty());
+    }
+
+    @Test
+    void rejectsInvalidKnownTotalAndNullContext() {
+        assertThrows(IllegalArgumentException.class,
+                () -> VideoBatchProcessingContext.create(
+                        () -> false, OptionalLong.of(-1), ignored -> { }));
+        assertThrows(NullPointerException.class,
+                () -> VideoFrameBatchConsumer.consume(List.of(), ignored -> { }, null));
+    }
+
+    @Test
     void returnsZeroForAnEmptySource() throws Exception {
         assertEquals(0, VideoFrameBatchConsumer.consume(List.of(), ignored -> {
         }));
