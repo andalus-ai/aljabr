@@ -122,7 +122,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
                 .slice().order(ByteOrder.LITTLE_ENDIAN);
         assertEquals(-1.0f, values.getFloat(0), 0.0f);
-        assertEquals(1.0f, values.getFloat(64 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(32 * Float.BYTES), 0.0f);
         assertEquals(1.0f, values.getFloat(64 * Float.BYTES), 0.0f);
         assertEquals(1.0f, values.getFloat(96 * Float.BYTES), 0.0f);
         assertEquals(1.0f, values.getFloat(128 * Float.BYTES), 0.0f);
@@ -178,7 +178,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         assertEquals(64L * Float.BYTES, result.payloadBytes());
         byte[] file = Files.readAllBytes(output);
         assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
-        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 32 * Float.BYTES)
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 64 * Float.BYTES)
                 .slice().order(ByteOrder.LITTLE_ENDIAN);
         float[] codebook = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
         for (int i = 0; i < 16; i++) {
