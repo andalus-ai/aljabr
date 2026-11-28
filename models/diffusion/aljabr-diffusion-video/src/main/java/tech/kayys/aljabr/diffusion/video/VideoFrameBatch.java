@@ -32,7 +32,13 @@ public final class VideoFrameBatch {
             throw new IllegalArgumentException("metadata count must match frame count");
         }
         float[] ownedValues = Objects.requireNonNull(values, "values");
-        long expected = (long) frameCount * height * width * channels;
+        long expected;
+        try {
+            long valuesPerFrame = Math.multiplyExact(Math.multiplyExact((long) height, width), channels);
+            expected = Math.multiplyExact((long) frameCount, valuesPerFrame);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException("batch dimensions overflow", overflow);
+        }
         if (expected > Integer.MAX_VALUE || ownedValues.length != (int) expected) {
             throw new IllegalArgumentException("packed value count does not match batch dimensions");
         }
