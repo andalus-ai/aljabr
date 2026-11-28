@@ -330,3 +330,14 @@ First minimize the resolved dependency graph. JPMS/jlink, GraalVM Native Image a
 ## 18. Updated competitive principle
 
 Aljabr's differentiation is not a claim that Java universally replaces Python. It is a coherent Java-native computational platform: one set of Aljabr-owned semantics across scientific and AI workloads, strong static typing and IDE support, explicit resource ownership, optional high-performance providers, integrated diagnostics, modular distribution and interoperability with the JVM ecosystem. Evaluate this through comparable developer tasks, correctness, performance, memory behavior, portability and deployment complexity.
+
+
+## Audio and speech capability boundary
+
+Audio and speech are optional, independently consumable Aljabr capabilities. Their public data and model contracts live in Aljabr-owned SPIs; reusable reference implementations and audio processing live in cohesive engine modules; model-specific architectures remain in their respective model-family modules.
+
+ASR/STT and TTS are distinct capabilities. Audio formats, buffer ownership, and sample semantics are shared foundations, but recognition and synthesis do not share a forced universal model interface. Audio preprocessing, codecs, resampling, VAD, feature extraction and tokenization must be reusable without pulling in a speech model.
+
+Aljabr does not own HTTP audio endpoints, serving request scheduling, deployment, or client-facing serving policy. AQLI adapts the reusable capabilities to its serving contracts. The presence of an audio frontend, checkpoint inspector, model-family descriptor or tokenizer is not evidence of executable or validated speech inference; capability maturity must be documented explicitly.
+
+The initial module contracts are documented in [Audio and Speech Foundation](../speech/AUDIO_AND_SPEECH_FOUNDATION.md). Existing Whisper, SpeechT5, Bark, Qwen-Audio and EmbeddingGemma2 implementations remain authoritative until a consumer- and test-backed extraction is completed.
