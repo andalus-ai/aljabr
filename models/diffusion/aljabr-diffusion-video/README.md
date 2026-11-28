@@ -20,4 +20,15 @@ VideoFrameSequence groups prepared frame results into a validated temporal view.
 - The sequence is non-owning. PreparedDiffusionConditioningSet remains the single owner and must stay open while the sequence is in use.
 - Mixed prepared conditioning data can be filtered to a video-only view; every VIDEO_FRAME entry must use VideoFrameConditioningData.
 
+## Temporal sampling
+
+Sampling is an independent policy capability applied after frame preparation.
+
+- `VideoFrameSamplingPolicy` allows applications to provide custom deterministic selection strategies.
+- `EvenlySpacedVideoFrameSamplingPolicy` selects a requested count across the sequence, including both endpoints when count is greater than one. A one-frame request selects the lower middle frame. Requests larger than the available sequence are rejected.
+- `TimestampIntervalVideoFrameSamplingPolicy` keeps the first frame and then selects the first available frame at or after each fixed interval target measured from the first timestamp. Targets missed by a large gap are skipped rather than causing dense catch-up selection.
+- `TimestampWindowVideoFrameSamplingPolicy` selects frames inside an inclusive timestamp window. A window containing no frames yields an empty sampling result.
+- `VideoFrameSampler` validates custom policy output: selected frames must be original instances from the source sequence, unique, and in source order.
+- Sampling returns a non-owning sequence view. It preserves original sequence indices and timestamps, does not copy pixel data, and does not change ownership.
+
 No FFmpeg, ImageIO, Python, PyTorch, ComfyUI, tensor backend, or device-selection dependency is introduced.
