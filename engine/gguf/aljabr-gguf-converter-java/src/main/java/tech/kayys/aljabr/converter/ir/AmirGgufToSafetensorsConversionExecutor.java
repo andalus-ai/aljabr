@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. TQ2_0, IQ1_M, IQ1_S, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. TQ1_0, TQ2_0, IQ1_M, IQ1_S, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -161,6 +161,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
+            case "TQ1_0" -> TensorEncoding.dequantized("TQ1_0", 54, 256);
             case "TQ2_0" -> TensorEncoding.dequantized("TQ2_0", 66, 256);
             case "IQ1_M" -> TensorEncoding.dequantized("IQ1_M", 56, 256);
             case "IQ1_S" -> TensorEncoding.dequantized("IQ1_S", 50, 256);
@@ -189,7 +190,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "TQ1_0", "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -290,6 +291,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("TQ1_0")) {
+                    dequantizeTQ1Block(source, base, values);
+                    continue;
+                }
                 if (type.equals("TQ2_0")) {
                     dequantizeTQ2Block(source, base, values);
                     continue;
@@ -459,6 +464,35 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                     float sign = (signs & (1 << lane)) != 0 ? -1.0f : 1.0f;
                     output.putFloat(vectorScale * Iq2XSGrid.value(gridIndex, lane) * sign);
                 }
+            }
+        }
+    }
+
+    /** Decodes one 256-value TQ1_0 block using GGML's base-3 packed ternary digits. */
+    private static void dequantizeTQ1Block(byte[] source, int base, ByteBuffer values) {
+        float scale = halfToFloat(source[base + 52] & 0xff, source[base + 53] & 0xff);
+        int highBase = base + 48;
+        int[] powersOfThree = {1, 3, 9, 27, 81};
+
+        // GGML emits the first 32 low-plane bytes, then the final 16-byte group.
+        for (int groupStart = 0; groupStart < 48; groupStart += (groupStart == 0 ? 32 : 16)) {
+            int groupLength = groupStart == 0 ? 32 : 16;
+            for (int plane = 0; plane < 5; plane++) {
+                for (int lane = 0; lane < groupLength; lane++) {
+                    int packed = source[base + groupStart + lane] & 0xff;
+                    int digit = (packed * powersOfThree[plane]) & 0xff;
+                    int ternary = (digit * 3) >>> 8;
+                    values.putFloat((ternary - 1) * scale);
+                }
+            }
+        }
+        // Four high-plane bytes carry four additional ternary values per plane.
+        for (int plane = 0; plane < 4; plane++) {
+            for (int lane = 0; lane < 4; lane++) {
+                int packed = source[highBase + lane] & 0xff;
+                int digit = (packed * powersOfThree[plane]) & 0xff;
+                int ternary = (digit * 3) >>> 8;
+                values.putFloat((ternary - 1) * scale);
             }
         }
     }
