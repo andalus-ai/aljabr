@@ -33,9 +33,12 @@ class AmirTensorTypeCodecTest {
         var source = TensorDescriptor.typed("weight/主", type, null, Map.of("source", "extension"));
 
         Map<String, String> encoded = AmirTensorTypeCodec.encode(List.of(source));
+        // Tensor extensions are carried by AmirSourceMetadataCodec. This codec
+        // restores only the typed TensorType and must preserve extensions already
+        // present on the descriptor supplied by its caller.
         List<TensorDescriptor> restored = AmirTensorTypeCodec.restore(encoded,
                 List.of(new TensorDescriptor("weight/主", "F16", List.of(128L, 32L),
-                        "unknown", null, null)));
+                        "unknown", null, null, Map.of("source", "extension"))));
 
         assertEquals(Optional.of(type), restored.get(0).tensorType());
         assertEquals("extension", restored.get(0).extensions().get("source"));
