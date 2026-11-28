@@ -166,3 +166,18 @@ The optional `NativeKVCacheStorage` implementation uses the JDK 25 Foreign Funct
 ### Metal shared-buffer provider
 
 The optional `MetalKVCacheStorage` provider allocates retained `MTLBuffer` K/V regions for unified-memory devices. It is implemented in the Metal backend module and uses the same opaque region contracts as CPU providers. The bridge retains Objective-C buffers for storage lifetime, while cache sessions scope leases to committed prefixes. The current implementation supports synchronous CPU writes into shared buffers and callback-scoped native handle access; asynchronous GPU-produced cache updates and cross-queue fences are not yet exposed. See [Metal KV Storage](METAL_KV_STORAGE.md).
+
+
+## Borrowed KV tensor geometry
+
+`KVCacheBufferReadView` exposes `keyLayout(layer)` and `valueLayout(layer)` alongside each opaque buffer region. `KVCacheBufferLayout` describes logical dimensions and element strides independently of backend, memory domain, and allocation handle.
+
+The built-in heap, native-memory, and Metal providers currently use contiguous sequence-major `[sequence, kvHead, headDimension]` storage. Consumers must validate the declared geometry against the region's element encoding and byte length; they must not infer a layout from the backend name or assume that paged/block-table storage is interchangeable with a contiguous region.
+
+This metadata is the boundary for future direct attention consumers. A Metal consumer may bind an `MTLBuffer` only when its kernel supports the declared geometry and the lease's readiness dependency has completed. The existing paged decode-attention kernel is not compatible merely because both representations contain K/V values.
+
+### Optional HAT execution
+
+HAT remains an optional compute backend, not a cache-storage owner and not a requirement of the core contracts. Its current Aljabr integration materializes tensors into HAT-owned arrays and copies values at dispatch boundaries. Therefore, a HAT attention implementation must report staging explicitly and must not advertise the Metal `DEVICE` buffer as directly consumable or claim zero-copy interoperability.
+
+A future HAT path can consume the same logical `KVCacheBufferLayout` after an explicit supported host-memory adapter is implemented. Direct interoperability with Metal allocations requires a verified HAT external-memory/import API; until then, Metal direct-buffer execution and HAT staged execution remain separate paths.
