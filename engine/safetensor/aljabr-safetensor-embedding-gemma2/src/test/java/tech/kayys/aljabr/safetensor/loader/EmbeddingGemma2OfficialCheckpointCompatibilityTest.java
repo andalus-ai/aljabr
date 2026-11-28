@@ -52,8 +52,12 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
                 gradientImage(16, 16),
                 gradientImage(31, 19));
 
-        int[] expectedSoftTokens = pipeline.preprocess(images).numSoftTokensPerImage();
-        List<float[][]> batchFeatures = pipeline.encodeBatch(images);
+        var processorOutput = pipeline.preprocess(images);
+        int[] expectedSoftTokens = processorOutput.numSoftTokensPerImage();
+        // Reuse the exact processor output whose token budget is asserted below.
+        // This keeps the official-checkpoint test representative of the production
+        // multimodal path and avoids running expensive resize/patch extraction twice.
+        List<float[][]> batchFeatures = pipeline.encodeBatch(processorOutput);
 
         assertEquals(images.size(), batchFeatures.size(),
                 "vision output must preserve the number and boundaries of input images");
