@@ -30,19 +30,18 @@ public interface KVCacheBufferReadView extends AutoCloseable {
     KVCacheBufferRegion valueRegion(int layer);
 
     /**
-     * Logical layout of the borrowed K region. The default describes the
-     * sequence-major layout used by the built-in CPU and Metal providers.
+     * Logical layout of the borrowed K region for one layer.
+     *
+     * <p>Every provider must report its physical logical layout explicitly.
+     * Consumers must not infer it from the backend identifier or cache
+     * dimensions. Use {@link KVCacheBufferLayout#sequenceMajor(int, int, int)}
+     * when the provider actually stores contiguous [sequence, head, dimension]
+     * data.</p>
      */
-    default KVCacheBufferLayout keyLayout(int layer) {
-        return KVCacheBufferLayout.sequenceMajor(
-                visibleSequenceLength(), layout().kvHeads(layer), layout().headDimension(layer));
-    }
+    KVCacheBufferLayout keyLayout(int layer);
 
-    /** Logical layout of the borrowed V region. */
-    default KVCacheBufferLayout valueLayout(int layer) {
-        return KVCacheBufferLayout.sequenceMajor(
-                visibleSequenceLength(), layout().kvHeads(layer), layout().headDimension(layer));
-    }
+    /** Logical layout of the borrowed V region for one layer. */
+    KVCacheBufferLayout valueLayout(int layer);
 
     /**
      * Completes when all target writes represented by this lease are visible
