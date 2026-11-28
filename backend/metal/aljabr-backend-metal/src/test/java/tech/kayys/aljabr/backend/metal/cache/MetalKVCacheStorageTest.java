@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.lang.foreign.MemorySegment;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -47,6 +49,25 @@ class MetalKVCacheStorageTest {
                             return null;
                         }));
             }
+        }
+    }
+
+    @Test
+    void invalidatesBorrowedSegmentAfterCallbackReturns() {
+        MetalBinding binding = availableBinding().orElse(null);
+        Assumptions.assumeTrue(binding != null, "Requires an available unified-memory Metal device");
+        try (MetalKVCacheStorage storage = new MetalKVCacheStorage(
+                KVCacheLayout.uniform(1, 4, 1, 2), binding)) {
+            KVCacheSession session = new KVCacheSession(storage);
+            KVCacheBufferReadView lease = session.openBufferReadView();
+            KVCacheBufferRegion region = lease.keyRegion(0);
+            AtomicReference<MemorySegment> escaped = new AtomicReference<>();
+            MetalKVCacheBufferAccess.withBuffer(lease, region, view -> {
+                escaped.set(view.readOnlyContents());
+                return null;
+            });
+            assertThrows(IllegalStateException.class, () -> escaped.get().byteSize());
+            lease.close();
         }
     }
 
