@@ -158,6 +158,32 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesMXFP4UsingE8M0ScaleAndBothE2M1Nibbles() throws Exception {
+        byte[] block = new byte[17];
+        block[0] = (byte) 128; // E8M0 / 2 = 1.0
+        for (int i = 0; i < 16; i++) block[i + 1] = (byte) (i | (i << 4));
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "MXFP4", List.of(32L), source, 8L, block.length);
+        var model = model("mxfp4", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("mxfp4.safetensors");
+
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        assertEquals(32L * Float.BYTES, result.payloadBytes());
+        byte[] file = Files.readAllBytes(output);
+        assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 32 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        float[] codebook = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
+        for (int i = 0; i < 16; i++) {
+            assertEquals(codebook[i], values.getFloat(i * Float.BYTES), 0.0f);
+            assertEquals(codebook[i], values.getFloat((i + 16) * Float.BYTES), 0.0f);
+        }
+    }
+
+    @Test
     void dequantizesIQ1MUsingSharedGridAndPackedMixedScales() throws Exception {
         byte[] block = new byte[56];
         block[48] = 0x08; // second scale of first sub-block is 3x
