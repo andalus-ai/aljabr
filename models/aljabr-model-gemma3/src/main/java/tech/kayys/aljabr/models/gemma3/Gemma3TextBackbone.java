@@ -320,7 +320,7 @@ public final class Gemma3TextBackbone {
                 }
             }
             float[][] feedForward = linear(gate, layer.feedForwardDown());
-            rmsNormVectorInPlace(feedForward[0], layer.postFeedForwardNorm());
+            feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
             return add(afterAttention, feedForward);
         }
 
