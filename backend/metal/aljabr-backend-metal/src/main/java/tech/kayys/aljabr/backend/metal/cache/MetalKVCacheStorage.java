@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.backend.metal.cache;
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.ValueLayout;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
@@ -209,9 +210,18 @@ public final class MetalKVCacheStorage
             throw new IllegalStateException("The active lease does not own this Metal KV region");
         }
         lease.ensureLeaseOpen();
-        MemorySegment readOnlyContents = handle.contents().asSlice(region.byteOffset(), region.byteLength()).asReadOnly();
-        return consumer.apply(new MetalKVCacheBufferAccess.View(
-                handle.objectHandle(), readOnlyContents, region.byteLength(), deviceId));
+        // Bind both pointer views to a confined callback arena so retaining
+        // either segment cannot accidentally extend the lease's access window.
+        try (Arena callbackArena = Arena.ofConfined()) {
+            MemorySegment nativeBuffer = MemorySegment.ofAddress(handle.objectHandle().address())
+                    .reinterpret(ValueLayout.ADDRESS.byteSize(), callbackArena, null);
+            MemorySegment readOnlyContents = MemorySegment.ofAddress(
+                    handle.contents().address())
+                    .reinterpret(region.byteLength(), callbackArena, null)
+                    .asReadOnly();
+            return consumer.apply(new MetalKVCacheBufferAccess.View(
+                    nativeBuffer, readOnlyContents, region.byteLength(), deviceId));
+        }
     }
 
     private void checkBorrowedPrefixMutation(int firstPosition, int tokenCount) {
