@@ -307,9 +307,9 @@ public final class Gemma3TextBackbone {
                     flattenTokens(flatten(value)), 0);
 
             float[][][] attended = causalAttention(query, key, value, layerIndex);
-            float[] attentionOutputVector = linearVector(attended, layer.attentionOutput());
-            rmsNormVectorInPlace(attentionOutputVector, layer.postAttentionNorm());
-            float[][] afterAttention = add(input, new float[][] { attentionOutputVector });
+            float[][] attentionOutput = linear(flatten(attended), layer.attentionOutput());
+            attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
+            float[][] afterAttention = add(input, attentionOutput);
 
             normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
             float[][] gate = linear(normalized, layer.feedForwardGate());
@@ -320,7 +320,7 @@ public final class Gemma3TextBackbone {
                 }
             }
             float[][] feedForward = linear(gate, layer.feedForwardDown());
-            rmsNormVectorInPlace(feedForward[0], layer.postFeedForwardNorm());
+            feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
             return add(afterAttention, feedForward);
         }
 
