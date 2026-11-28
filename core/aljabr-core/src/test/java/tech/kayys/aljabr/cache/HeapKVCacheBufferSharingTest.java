@@ -2,7 +2,6 @@ package tech.kayys.aljabr.cache;
 
 import org.junit.jupiter.api.Test;
 
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class HeapKVCacheBufferSharingTest {
@@ -90,4 +89,33 @@ class HeapKVCacheBufferSharingTest {
         second.close();
         assertDoesNotThrow(() -> storage.write(0, 1, vector, 0, vector, 0));
     }
+    @Test
+    void storageCannotCloseUntilLeaseIsReleased() {
+        HeapKVCacheStorage storage = new HeapKVCacheStorage(
+                KVCacheLayout.uniform(1, 4, 1, 4));
+        KVCacheSession session = new KVCacheSession(storage);
+        KVCacheBufferReadView view = session.openBufferReadView();
+
+        assertThrows(IllegalStateException.class, storage::close);
+        view.close();
+        assertDoesNotThrow(storage::close);
+        assertThrows(IllegalStateException.class, () -> session.openBufferReadView());
+    }
+
+    @Test
+    void truncationAtVisibleBoundaryDoesNotInvalidateLease() {
+        HeapKVCacheStorage storage = new HeapKVCacheStorage(
+                KVCacheLayout.uniform(1, 4, 1, 2));
+        KVCacheSession session = new KVCacheSession(storage);
+        float[] vector = new float[2];
+        session.write(0, 0, vector, 0, vector, 0);
+        session.commit(1);
+        KVCacheBufferReadView view = session.openBufferReadView();
+
+        assertDoesNotThrow(() -> storage.truncate(1));
+        assertEquals(1, view.visibleSequenceLength());
+        assertThrows(IllegalStateException.class, () -> storage.truncate(0));
+        view.close();
+    }
+
 }
