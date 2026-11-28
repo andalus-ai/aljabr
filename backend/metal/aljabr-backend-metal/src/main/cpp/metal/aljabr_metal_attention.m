@@ -438,8 +438,16 @@ int aljabr_metal_sdpa_borrowed_kv(
     if (kBuffer.length < kvBytes || vBuffer.length < kvBytes)
       return -2;
 
-    id<MTLBuffer> outBuffer = wrap_ptr(out, queryBytes);
-    id<MTLBuffer> queryBuffer = wrap_ptr((void *)q, queryBytes);
+    // Query is input-only, so a shared Metal copy is sufficient. Output
+    // needs an explicit copy-back: wrap_ptr() may fall back to a copied
+    // buffer when the caller's FFM segment is not page-aligned.
+    id<MTLBuffer> outBuffer =
+        [g_device newBufferWithLength:queryBytes
+                              options:MTLResourceStorageModeShared];
+    id<MTLBuffer> queryBuffer =
+        [g_device newBufferWithBytes:q
+                              length:queryBytes
+                             options:MTLResourceStorageModeShared];
     if (outBuffer == nil || queryBuffer == nil)
       return -4;
 
@@ -474,7 +482,13 @@ int aljabr_metal_sdpa_borrowed_kv(
     [encoder endEncoding];
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
-    return commandBuffer.status == MTLCommandBufferStatusCompleted ? 0 : -1;
+    if (commandBuffer.status != MTLCommandBufferStatusCompleted)
+      return -1;
+
+    // The output buffer is owned by this dispatch, so copy the completed
+    // result back before returning to the caller.
+    memcpy(out, [outBuffer contents], queryBytes);
+    return 0;
   }
 }
 
