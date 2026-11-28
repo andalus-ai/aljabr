@@ -111,8 +111,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         block[3] = 0x7f; // reserved NaN encoding maps to zero in GGML
         for (int subBlock = 0; subBlock < 4; subBlock++) {
             for (int lane = 0; lane < 8; lane++) {
-                int value = lane + 1;
-                block[4 + subBlock * 8 + lane] = (byte) (value | (value << 4));
+                block[4 + subBlock * 8 + lane] = (byte) (lane | ((lane + 8) << 4));
             }
         }
         Path source = writeContainer(block);
@@ -137,9 +136,9 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                 default -> 0.0f;
             };
             for (int lane = 0; lane < 8; lane++) {
-                assertEquals(codebook[lane + 1] * scale,
+                assertEquals(codebook[lane] * scale,
                         values.getFloat((subBlock * 16 + lane) * Float.BYTES), 0.0f);
-                assertEquals(codebook[lane + 1] * scale,
+                assertEquals(codebook[lane + 8] * scale,
                         values.getFloat((subBlock * 16 + lane + 8) * Float.BYTES), 0.0f);
             }
         }
