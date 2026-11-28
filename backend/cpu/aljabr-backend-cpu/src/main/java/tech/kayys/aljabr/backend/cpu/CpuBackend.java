@@ -636,14 +636,14 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             long[] destinationDims = input.shape().dims();
             for (long logical = 0; logical < outputElements; logical++) {
                 if (dtype == DType.I32) {
-                    writeIndexAddInt(result, logical,
-                            readIndexAddInt(destination, destinationDims, destinationLayout, logical));
+                    CpuIndexAddValueAccess.writeIndexAddInt(result, logical,
+                            CpuIndexAddValueAccess.readIndexAddInt(destination, destinationDims, destinationLayout, logical));
                 } else if (dtype == DType.I8 || dtype == DType.INT8) {
-                    writeIndexAddByte(result, logical,
-                            readIndexAddByte(destination, destinationDims, destinationLayout, logical));
+                    CpuIndexAddValueAccess.writeIndexAddByte(result, logical,
+                            CpuIndexAddValueAccess.readIndexAddByte(destination, destinationDims, destinationLayout, logical));
                 } else {
-                    float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
-                    writeIndexAddValue(result, logical, dtype, value);
+                    float value = CpuIndexAddValueAccess.readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
+                    CpuIndexAddValueAccess.writeIndexAddValue(result, logical, dtype, value);
                 }
             }
 
@@ -658,23 +658,23 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                         long sourceLogical = Math.addExact(sourceBase, innerIndex);
                         long destinationLogical = Math.addExact(destinationBase, innerIndex);
                         if (dtype == DType.I32) {
-                            int update = readIndexAddInt(
+                            int update = CpuIndexAddValueAccess.readIndexAddInt(
                                     updates, sourceDimensions, sourceLayout, sourceLogical);
-                            int current = readIndexAddInt(
+                            int current = CpuIndexAddValueAccess.readIndexAddInt(
                                     result, destinationDimensions, resultLayout, destinationLogical);
-                            writeIndexAddInt(result, destinationLogical, current + update);
+                            CpuIndexAddValueAccess.writeIndexAddInt(result, destinationLogical, current + update);
                         } else if (dtype == DType.I8 || dtype == DType.INT8) {
-                            byte update = readIndexAddByte(
+                            byte update = CpuIndexAddValueAccess.readIndexAddByte(
                                     updates, sourceDimensions, sourceLayout, sourceLogical);
-                            byte current = readIndexAddByte(
+                            byte current = CpuIndexAddValueAccess.readIndexAddByte(
                                     result, destinationDimensions, resultLayout, destinationLogical);
-                            writeIndexAddByte(result, destinationLogical, (byte) (current + update));
+                            CpuIndexAddValueAccess.writeIndexAddByte(result, destinationLogical, (byte) (current + update));
                         } else {
-                            float update = readIndexAddValue(
+                            float update = CpuIndexAddValueAccess.readIndexAddValue(
                                     updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
-                            float current = readIndexAddValue(result, destinationDimensions,
+                            float current = CpuIndexAddValueAccess.readIndexAddValue(result, destinationDimensions,
                                     resultLayout, destinationLogical, dtype);
-                            writeIndexAddValue(result, destinationLogical, dtype, current + update);
+                            CpuIndexAddValueAccess.writeIndexAddValue(result, destinationLogical, dtype, current + update);
                         }
                     }
                 }
