@@ -11,7 +11,6 @@ import java.util.concurrent.CompletionStage;
 import tech.kayys.aljabr.cache.KVCacheBufferReadView;
 import tech.kayys.aljabr.cache.KVCacheBufferRegion;
 import tech.kayys.aljabr.cache.KVCacheBufferRegionProvider;
-import tech.kayys.aljabr.cache.KVCacheBufferSharingCapability;
 import tech.kayys.aljabr.cache.KVCacheElementType;
 import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.cache.KVCacheMemoryDomain;
@@ -30,7 +29,7 @@ import tech.kayys.aljabr.metal.binding.MetalBinding;
  * It is not selected automatically and is not a fallback for non-Apple hosts.</p>
  */
 public final class MetalKVCacheStorage
-        implements KVCacheStorage, KVCacheBufferRegionProvider, KVCacheBufferSharingCapability {
+        implements KVCacheStorage, KVCacheBufferRegionProvider {
 
     private final KVCacheLayout layout;
     private final MetalBinding binding;
@@ -188,13 +187,6 @@ public final class MetalKVCacheStorage
             keys[layer].contents().asSlice(offset).fill((byte) 0);
             values[layer].contents().asSlice(offset).fill((byte) 0);
         }
-    }
-
-    @Override
-    public synchronized KVCacheBufferReadView openBufferReadView() {
-        ensureOpen();
-        throw new UnsupportedOperationException(
-                "Open Metal buffer leases through KVCacheSession so the committed prefix is captured");
     }
 
     @Override
