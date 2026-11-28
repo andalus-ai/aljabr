@@ -79,21 +79,17 @@ final class CpuIndexAddExecution {
             }
 
             long sourceAxisSize = sourceDimensions[selectedAxis];
-            for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
-                for (int indexPosition = 0; indexPosition < selected.length; indexPosition++) {
-                    long sourceBase = Math.multiplyExact(
-                            Math.addExact(Math.multiplyExact(outerIndex, sourceAxisSize), indexPosition), inner);
-                    long destinationBase = Math.multiplyExact(
-                            Math.addExact(Math.multiplyExact(outerIndex, destinationAxisSize), selected[indexPosition]), inner);
-                    for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
-                        long sourceLogical = Math.addExact(sourceBase, innerIndex);
-                        long destinationLogical = Math.addExact(destinationBase, innerIndex);
+            CpuIndexedAxisTraversal.forEach(outer, sourceAxisSize, inner, selected,
+                    (outerIndex, selectionPosition, selectedIndex, innerIndex, sourceLogical, outputLogical) -> {
+                        long destinationLogical = Math.addExact(
+                                Math.multiplyExact(
+                                        Math.addExact(Math.multiplyExact(outerIndex, destinationAxisSize), selectedIndex),
+                                        inner),
+                                innerIndex);
                         arithmetic.add(updates, sourceDimensions, sourceLayout,
                                 result, destinationDimensions, resultLayout,
                                 sourceLogical, destinationLogical);
-                    }
-                }
-            }
+                    });
             return backend.out(plan.outputShape(), dtype, output);
         } catch (RuntimeException | Error failure) {
             output.release();
