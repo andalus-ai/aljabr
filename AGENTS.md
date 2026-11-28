@@ -654,3 +654,36 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Keep resource cleanup outside the cache monitor. Cache synchronization protects lookup, LRU ordering and owner detachment only; it must not be held while mapped arenas are released.
 - Record close metrics only when the underlying mapped resources are physically released, not merely when the cache entry is retired.
 - Add regression tests for eviction, invalidation, shutdown and disabled-cache behavior with active leases. Verify tensor reads remain valid until final lease release and fail after physical close.
+
+
+## Audio and speech capability rules
+
+- Treat audio and speech as independently consumable computational capabilities, not as serving endpoints.
+- Keep audio data contracts model-neutral. ASR/STT and TTS are separate capabilities with separate request/result contracts; ASR and STT are terminology aliases, not separate implementations.
+- Keep codec handling, resampling, channel mixing, VAD, feature extraction, tokenization and model-specific preprocessing in cohesive modules with explicit ownership. Do not duplicate these implementations inside each model family.
+- Model implementations may depend on stable audio/speech SPIs; SPIs must never depend on model implementations, AQLI, HTTP frameworks, codecs, native runtimes or accelerator SDKs.
+- Define ownership, borrowing, aliasing, mutability and lifetime for every audio/tensor/native-memory boundary. A borrowed view must not outlive its owner; closeable outputs must document who closes them.
+- Keep portable pure-Java reference implementations available where practical. Native/FFM and hardware-specific audio paths are optional implementations, not mandatory dependencies.
+- Do not claim a speech model is executable because its family metadata, checkpoint inspector, tokenizer or audio frontend exists. Capability maturity must distinguish metadata recognition, preprocessing, model execution, validated inference and optimized inference.
+- Keep streaming lifecycle, cancellation, backpressure, batching and serving policy explicit. AQLI owns serving orchestration and client-facing serving behavior; Aljabr owns reusable computational/session primitives only where they are genuinely model- or provider-independent.
+- Reuse existing Whisper, SpeechT5, Bark, Qwen-Audio and multimodal audio work after inspecting dependencies and tests. Do not create parallel abstractions or move code merely to match a proposed directory diagram.
+- Speech APIs must remain Java-native and must not require Python, PyTorch or LibTorch.
+
+
+### 19.5 Reusable audio processing boundaries
+
+- Keep generic PCM transformations in the reusable audio engine, not copied into each model frontend. Start with demonstrated shared operations such as channel mixing and sample-rate conversion.
+- Audio transforms must state input/output format, frame-count behavior, normalization/clipping policy, numerical limitations and ownership. Inputs remain caller-owned; newly allocated outputs are caller-owned and closeable.
+- Preserve channels and channel layout for per-channel transforms. A downmix must declare its mixing policy; do not silently reinterpret multichannel layouts.
+- Keep model-specific frontend semantics (for example Whisper's exact FFT, Mel filter bank, chunk geometry and log normalization) in the model module unless multiple real consumers demonstrate identical semantics.
+- Add deterministic tests for impulse/constant/sine inputs, frame counts, channel preservation, non-finite samples, edge behavior and same-rate/no-op paths. Do not claim DSP parity without numerical reference fixtures.
+- Keep the portable Java implementation dependency-light. Optimized Vector API, FFM or hardware paths are optional providers with conformance tests against the reference behavior.
+
+
+### 19.6 Model-specific PCM reference semantics
+
+- Reuse the shared PCM mixer and resampler when a model frontend has the same underlying operation, but preserve its published numerical choices explicitly.
+- Downmix clipping policy must be explicit: preserve input amplitudes or clamp each channel sample to the normalized PCM range. Do not silently change the policy during extraction.
+- Resampling options must identify the window function and cutoff margin. The default reference path is not automatically equivalent to every model's reference frontend.
+- When extracting a model-local DSP implementation, add deterministic numerical reference fixtures before deleting the old implementation. Verify the shared implementation against those fixtures, including boundary samples.
+- Keep FFT, Mel filter bank, framing, masks, model token-budget truncation and model-specific normalization in the model frontend unless shared numerical semantics are demonstrated.

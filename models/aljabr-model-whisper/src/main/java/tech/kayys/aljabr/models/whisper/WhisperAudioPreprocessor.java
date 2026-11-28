@@ -1,20 +1,23 @@
 package tech.kayys.aljabr.models.whisper;
 
+import tech.kayys.aljabr.audio.PcmChannelMixer;
+import tech.kayys.aljabr.audio.WindowedSincPcmResampler;
+import tech.kayys.aljabr.audio.HeapAudioBuffer;
+import tech.kayys.aljabr.spi.audio.AudioFormat;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
 /**
- * Reusable PCM-to-Whisper frontend for mono conversion, resampling, and
- * large-v3 log-Mel chunk preparation.
+ * Whisper-specific frontend: canonical mono sampling, 30-second windowing,
+ * and large-v3 log-Mel feature extraction.
  *
- * <p>Input samples are interleaved floating-point PCM in the normalized
- * [-1, 1] range. Downmixing averages channels; resampling uses a windowed-sinc
- * low-pass interpolator to avoid aliasing when reducing sample rates.</p>
+ * <p>Generic channel mixing and sample-rate conversion are delegated to the
+ * reusable audio engine. Whisper's exact feature geometry remains model-owned.</p>
  */
 public final class WhisperAudioPreprocessor {
     public static final int TARGET_SAMPLE_RATE = WhisperLargeV3Config.EXPECTED_SAMPLE_RATE;
-    private static final int RESAMPLER_RADIUS = 16;
 
     private final WhisperLogMelSpectrogram spectrogram;
 
@@ -45,28 +48,35 @@ public final class WhisperAudioPreprocessor {
             throw new IllegalArgumentException("interleaved PCM length must be divisible by channel count");
         }
 
-        float[] mono = downmix(interleavedPcm, channels);
-        float[] normalized = sampleRate == TARGET_SAMPLE_RATE
-                ? mono : resample(mono, sampleRate, TARGET_SAMPLE_RATE);
-
-        List<AudioChunk> chunks = new ArrayList<>();
-        for (int offset = 0, chunkIndex = 0; offset < normalized.length;
-                offset += WhisperLogMelSpectrogram.CHUNK_SAMPLES, chunkIndex++) {
-            int length = Math.min(WhisperLogMelSpectrogram.CHUNK_SAMPLES, normalized.length - offset);
-            float[] chunkSamples = new float[length];
-            System.arraycopy(normalized, offset, chunkSamples, 0, length);
-            float[][] features = spectrogram.extract(chunkSamples);
-            chunks.add(new AudioChunk(chunkIndex, offset, length, features));
+        AudioFormat inputFormat = new AudioFormat(sampleRate, channels, AudioFormat.ChannelLayout.UNKNOWN);
+        try (HeapAudioBuffer input = HeapAudioBuffer.copyOf(inputFormat, interleavedPcm);
+             HeapAudioBuffer mono = PcmChannelMixer.downmixToMono(input);
+             HeapAudioBuffer normalized = sampleRate == TARGET_SAMPLE_RATE
+                     ? HeapAudioBuffer.copyOf(mono.format(), readSamples(mono))
+                     : WindowedSincPcmResampler.resample(mono, TARGET_SAMPLE_RATE)) {
+            float[] monoSamples = readSamples(normalized);
+            List<AudioChunk> chunks = new ArrayList<>();
+            for (int offset = 0, chunkIndex = 0; offset < monoSamples.length;
+                    offset += WhisperLogMelSpectrogram.CHUNK_SAMPLES, chunkIndex++) {
+                int length = Math.min(WhisperLogMelSpectrogram.CHUNK_SAMPLES, monoSamples.length - offset);
+                float[] chunkSamples = new float[length];
+                System.arraycopy(monoSamples, offset, chunkSamples, 0, length);
+                float[][] features = spectrogram.extract(chunkSamples);
+                chunks.add(new AudioChunk(chunkIndex, offset, length, features));
+            }
+            return List.copyOf(chunks);
         }
-        return List.copyOf(chunks);
+    }
+
+    private static float[] readSamples(HeapAudioBuffer audio) {
+        var samples = audio.samples();
+        float[] result = new float[samples.remaining()];
+        samples.get(result);
+        return result;
     }
 
     /** A single feature window; feature matrix is [melBin][frame]. */
-    public record AudioChunk(
-            int index,
-            long startSample,
-            int sourceSampleCount,
-            float[][] logMelFeatures) {
+    public record AudioChunk(int index, long startSample, int sourceSampleCount, float[][] logMelFeatures) {
         public AudioChunk {
             if (index < 0 || startSample < 0 || sourceSampleCount <= 0) {
                 throw new IllegalArgumentException("audio chunk metadata is invalid");
@@ -81,60 +91,5 @@ public final class WhisperAudioPreprocessor {
                 }
             }
         }
-    }
-
-    private static float[] downmix(float[] interleaved, int channels) {
-        int frames = interleaved.length / channels;
-        float[] mono = new float[frames];
-        for (int frame = 0; frame < frames; frame++) {
-            double sum = 0.0;
-            for (int channel = 0; channel < channels; channel++) {
-                float sample = interleaved[frame * channels + channel];
-                if (!Float.isFinite(sample)) {
-                    throw new IllegalArgumentException("audio samples must be finite");
-                }
-                sum += Math.max(-1.0f, Math.min(1.0f, sample));
-            }
-            mono[frame] = (float) (sum / channels);
-        }
-        return mono;
-    }
-
-    private static float[] resample(float[] input, int sourceRate, int targetRate) {
-        int outputLength = Math.toIntExact(Math.round((double) input.length * targetRate / sourceRate));
-        float[] output = new float[outputLength];
-        double cutoff = Math.min(1.0, (double) targetRate / sourceRate) * 0.95;
-
-        for (int out = 0; out < outputLength; out++) {
-            double sourcePosition = (double) out * sourceRate / targetRate;
-            int center = (int) Math.floor(sourcePosition);
-            double weighted = 0.0;
-            double weightSum = 0.0;
-            for (int tap = center - RESAMPLER_RADIUS + 1;
-                    tap <= center + RESAMPLER_RADIUS; tap++) {
-                if (tap < 0 || tap >= input.length) {
-                    continue;
-                }
-                double distance = sourcePosition - tap;
-                double normalizedDistance = distance / RESAMPLER_RADIUS;
-                if (Math.abs(normalizedDistance) >= 1.0) {
-                    continue;
-                }
-                double window = 0.5 + 0.5 * Math.cos(Math.PI * normalizedDistance);
-                double weight = cutoff * sinc(distance * cutoff) * window;
-                weighted += input[tap] * weight;
-                weightSum += weight;
-            }
-            output[out] = weightSum == 0.0 ? 0.0f : (float) (weighted / weightSum);
-        }
-        return output;
-    }
-
-    private static double sinc(double value) {
-        if (Math.abs(value) < 1.0e-12) {
-            return 1.0;
-        }
-        double argument = Math.PI * value;
-        return Math.sin(argument) / argument;
     }
 }
