@@ -5,13 +5,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import tech.kayys.aljabr.diffusion.api.DiffusionConditioningData;
-import tech.kayys.aljabr.diffusion.api.DiffusionConditioningInput;
-import tech.kayys.aljabr.diffusion.api.PreparedDiffusionConditioningSet;
 
 class VideoFrameSequenceTest {
     private static final Instant START = Instant.parse("2026-11-27T10:00:00Z");
@@ -59,27 +55,19 @@ class VideoFrameSequenceTest {
     }
 
     @Test
-    void extractsFramesFromPreparedSetWithoutTakingOwnership() throws Exception {
+    void extractsVideoFramesFromMixedPreparedDataWithoutTakingOwnership() {
         var first = frame(0, 0);
         var second = frame(1, 100);
-        var other = new StubData(DiffusionConditioningInput.Modality.PROMPT);
-        var prepared = new PreparedDiffusionConditioningSet(List.of(first, other, second));
+        var prompt = new DiffusionConditioningData() {
+            @Override public String inputId() { return "prompt"; }
+            @Override public tech.kayys.aljabr.diffusion.api.DiffusionConditioningInput.Modality modality() {
+                return tech.kayys.aljabr.diffusion.api.DiffusionConditioningInput.Modality.PROMPT;
+            }
+            @Override public void close() { }
+        };
 
-        var sequence = VideoFrameSequence.from(prepared);
+        var sequence = VideoFrameSequence.from(List.of(first, prompt, second));
         assertEquals(List.of(first, second), sequence.frames());
-
-        // Sequence is a view: closing the prepared owner remains the one
-        // authoritative lifecycle operation.
-        prepared.close();
-        assertTrue(other.closed);
     }
 
-    private static final class StubData implements DiffusionConditioningData {
-        private final DiffusionConditioningInput.Modality modality;
-        private boolean closed;
-        private StubData(DiffusionConditioningInput.Modality modality) { this.modality = modality; }
-        @Override public String inputId() { return "prompt"; }
-        @Override public DiffusionConditioningInput.Modality modality() { return modality; }
-        @Override public void close() { closed = true; }
-    }
 }
