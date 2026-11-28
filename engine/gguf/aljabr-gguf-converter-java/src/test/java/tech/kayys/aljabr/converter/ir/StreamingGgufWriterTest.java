@@ -36,7 +36,7 @@ class StreamingGgufWriterTest {
         assertEquals(3, header.getInt());
         assertEquals(1L, header.getLong());
         assertEquals(2L, header.getLong()); // caller metadata + generated alignment
-        assertEquals(32L, result.dataStart() % 32L);
+        assertEquals(0L, result.dataStart() % 32L);
         assertEquals(0L, result.tensorOffsets().get("weight"));
         assertEquals(8L, result.payloadBytes());
         assertArrayEquals(payload, java.util.Arrays.copyOfRange(

@@ -585,6 +585,48 @@ class DefaultTensorTest {
     }
 
     @Test
+    void gradientAccessAndMutationAreRejectedAfterRelease() {
+        DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
+        DefaultTensor tensor = new DefaultTensor(
+                new Shape(1), DType.F32, DeviceType.METAL, storage, unusedBackend());
+
+        tensor.release();
+
+        assertNull(tensor.grad(), "Release clears the tensor-owned gradient reference");
+        assertThrows(IllegalStateException.class, () -> tensor.setRequiresGrad(true));
+        assertEquals(0, storage.references());
+    }
+
+    @Test
+    void concurrentGradientTransferAndReleaseCannotLeakGradientStorage() {
+        for (int iteration = 0; iteration < 64; iteration++) {
+            DefaultTensor owner = new DefaultTensor(
+                    new Shape(1), DType.F32, DeviceType.METAL,
+                    new DeviceOnlyStorage(Float.BYTES), unusedBackend());
+            DeviceOnlyStorage gradientStorage = new DeviceOnlyStorage(Float.BYTES);
+            DefaultTensor gradient = new DefaultTensor(
+                    new Shape(1), DType.F32, DeviceType.METAL, gradientStorage, unusedBackend());
+
+            CompletableFuture<Void> transfer = CompletableFuture.runAsync(() -> {
+                try {
+                    owner.setGrad(gradient);
+                } catch (IllegalStateException releasedFirst) {
+                    // The owner was released before ownership transfer began;
+                    // the caller therefore still owns and must release the gradient.
+                    gradient.release();
+                }
+            });
+            CompletableFuture<Void> release = CompletableFuture.runAsync(owner::release);
+
+            CompletableFuture.allOf(transfer, release).join();
+            owner.release();
+
+            assertEquals(0, gradientStorage.references(),
+                    "A gradient transferred concurrently with release must not leak");
+        }
+    }
+
+    @Test
     void concurrentReleaseReleasesOwnedStorageExactlyOnce() {
         DeviceOnlyStorage storage = new DeviceOnlyStorage(Float.BYTES);
         DefaultTensor tensor = new DefaultTensor(
