@@ -24,35 +24,35 @@ public final class AmirFidelityEvaluator {
         model.tensors().forEach(tensor -> {
             if (tensor.tensorType().isPresent()) {
                 requireAtPath(AmirFormatCapabilities.Feature.TYPED_TENSOR_METADATA,
-                        capabilities, diagnostics, "tensors." + tensor.name() + ".type");
+                        capabilities, diagnostics, "/tensors/" + pointerSegment(tensor.name()) + "/type");
             }
             tensor.extensions().keySet().forEach(key ->
                     requireAtPath(AmirFormatCapabilities.Feature.OPAQUE_TENSOR_EXTENSIONS,
                             capabilities, diagnostics,
-                            "tensors." + tensor.name() + ".extensions." + key));
+                            "/tensors/" + pointerSegment(tensor.name()) + "/extensions/" + pointerSegment(key)));
         });
 
         if (model.architectureDescriptor().isPresent()) {
             requireAtPath(AmirFormatCapabilities.Feature.ARCHITECTURE_DESCRIPTOR,
-                    capabilities, diagnostics, "architectureDescriptor");
+                    capabilities, diagnostics, "/architectureDescriptor");
         }
         model.typedMetadata().keySet().forEach(key ->
                 requireAtPath(AmirFormatCapabilities.Feature.TYPED_MODEL_METADATA,
-                        capabilities, diagnostics, "typedMetadata." + key));
+                        capabilities, diagnostics, "/typedMetadata/" + pointerSegment(key)));
 
         model.graphCollection().ifPresent(collection ->
                 requireAtPath(AmirFormatCapabilities.Feature.GRAPH_COLLECTION,
-                        capabilities, diagnostics, "graphs"));
+                        capabilities, diagnostics, "/graphs"));
         model.assetCollection().ifPresent(collection ->
                 requireAtPath(AmirFormatCapabilities.Feature.ASSET_COLLECTION,
-                        capabilities, diagnostics, "assets"));
+                        capabilities, diagnostics, "/assets"));
         model.componentCollection().ifPresent(collection ->
                 requireAtPath(AmirFormatCapabilities.Feature.COMPONENT_COLLECTION,
-                        capabilities, diagnostics, "components"));
+                        capabilities, diagnostics, "/components"));
 
         model.extensions().keySet().forEach(key ->
                 requireAtPath(AmirFormatCapabilities.Feature.OPAQUE_MODEL_EXTENSIONS,
-                        capabilities, diagnostics, "extensions." + key));
+                        capabilities, diagnostics, "/extensions/" + pointerSegment(key)));
 
         if (capabilities.requiresKnownArchitecture()
                 && "unknown".equalsIgnoreCase(model.architecture())) {
@@ -61,13 +61,18 @@ public final class AmirFidelityEvaluator {
                     "UNKNOWN_ARCHITECTURE",
                     "Target format '" + capabilities.format()
                             + "' requires a recognized architecture for full-fidelity conversion",
-                    "architecture"));
+                    "/architecture"));
         }
 
         CompatibilityReport.ConversionFidelity fidelity = diagnostics.isEmpty()
                 ? CompatibilityReport.ConversionFidelity.FULL
                 : CompatibilityReport.ConversionFidelity.PARTIAL;
         return new CompatibilityReport(fidelity, List.copyOf(diagnostics));
+    }
+
+    /** Escapes one RFC 6901 JSON Pointer segment. */
+    private static String pointerSegment(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
     }
 
     private static void requireAtPath(
