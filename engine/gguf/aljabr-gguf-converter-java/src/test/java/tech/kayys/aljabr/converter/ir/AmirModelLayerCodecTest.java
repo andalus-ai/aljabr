@@ -84,13 +84,13 @@ class AmirModelLayerCodecTest {
                 AmirModelLayerCodec.restore(
                         new java.util.LinkedHashMap<>(Map.of(
                                 AmirModelLayerCodec.ASSETS_KEY,
-                                "{\\"version\\":2,\\"assets\\":[]}")),
+                                "{\"version\":2,\"assets\":[]}")),
                         model()));
         assertThrows(IllegalArgumentException.class, () ->
                 AmirModelLayerCodec.restore(
                         new java.util.LinkedHashMap<>(Map.of(
                                 AmirModelLayerCodec.COMPONENTS_KEY,
-                                "{\\"version\\":1,\\"components\\":[],\\"future\\":true}")),
+                                "{\"version\":1,\"components\":[],\"future\":true}")),
                         model()));
     }
 
