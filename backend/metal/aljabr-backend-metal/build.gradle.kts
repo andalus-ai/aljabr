@@ -27,6 +27,9 @@ sourceSets {
             include("tech/kayys/aljabr/backend/metal/MetalFallbackPolicy.java")
             include("tech/kayys/aljabr/backend/metal/MetalExecutionEvent.java")
             include("tech/kayys/aljabr/backend/metal/MetalExecutionObserver.java")
+            include("tech/kayys/aljabr/backend/metal/cache/MetalKVCacheStorage.java")
+            include("tech/kayys/aljabr/backend/metal/cache/MetalKVCacheBufferHandle.java")
+            include("tech/kayys/aljabr/backend/metal/cache/MetalKVCacheBufferAccess.java")
         }
         resources {
             // src/main/resources is already part of Gradle's default source set.
@@ -40,6 +43,7 @@ sourceSets {
 
 dependencies {
     api(project(":spi:aljabr-spi-compute"))
+    api(project(":core:aljabr-core"))
     implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":backend:cpu:aljabr-backend-cpu"))
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")
