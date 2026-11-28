@@ -19,6 +19,14 @@ class WordPieceTokenizerTest {
     }
 
     @Test
+    void emitsRequestedSpecialTokensForEmptyInput() {
+        WordPieceTokenizer tokenizer = tokenizer();
+        assertArrayEquals(new long[] {1, 2},
+                tokenizer.encode("", new EncodeOptions().addBos(true).addEos(true)));
+        assertArrayEquals(new long[0], tokenizer.encode("", EncodeOptions.defaultOptions()));
+    }
+
+    @Test
     void encodesBasicTokensAndGreedySubwords() {
         assertArrayEquals(new long[] {1, 4, 5, 2},
                 tokenizer().encode("Hello world", new EncodeOptions().addBos(true).addEos(true)));
