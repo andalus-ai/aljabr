@@ -66,3 +66,13 @@ This is synchronous pull-based flow control. It does not create worker threads, 
 - The consumer owns each produced batch, but not the source sequence or its prepared conditioning set.
 
 Compose it with `VideoFrameBatchStream.mapChunks` to pack and consume one bounded chunk at a time. Keep the source conditioning owner open for the duration of the call. The processor must not retain a batch beyond its callback unless it explicitly copies or retains the needed data into independently owned storage.
+
+## Batch processing controls
+
+`VideoBatchProcessingContext` supplies optional synchronous cancellation and progress reporting to `VideoFrameBatchConsumer.consume`.
+
+- Cancellation is polled before requesting the next batch, before processing, and after the processor callback. It does not interrupt an active callback.
+- A batch is always closed when cancellation is observed while it is being processed. Cancellation observed before successful completion does not increment the completed count or emit a progress event.
+- Progress is emitted after successful processing and close, with the completed batch count and an `OptionalLong` total. Unknown totals remain unknown; the consumer does not pre-count or materialize a lazy source.
+- Progress-listener failures stop consumption after the current batch has been closed.
+- The context is synchronous and per invocation. It does not introduce executors, scheduling, threads, or asynchronous prefetch.
