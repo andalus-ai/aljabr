@@ -32,7 +32,7 @@ This provider does not yet expose asynchronous command-buffer submission, GPU-si
 
 `MetalKVCacheAttentionConsumer` provides an opt-in single-query decode path over the committed prefix of a Metal cache lease. It consumes the existing `aljabr_sdpa_flat_kernel` pipeline, whose K/V addressing matches contiguous sequence-major `[sequence, kvHead, headDimension]` storage.
 
-The Objective-C bridge receives the retained K/V `MTLBuffer` object handles and binds those objects directly at the kernel's K/V buffer slots. It does not wrap the CPU contents pointer as a second Metal buffer and does not copy K/V into temporary storage. Query and output remain caller-owned buffers wrapped for the dispatch.
+The Objective-C bridge receives the retained K/V `MTLBuffer` object handles and binds those objects directly at the kernel's K/V buffer slots. It does not wrap the CPU contents pointer as a second Metal buffer and does not copy K/V into temporary storage. Query input is copied into a dispatch-owned shared Metal buffer, and the result is copied back from a dispatch-owned output buffer after command completion; this staging is limited to query/output and does not stage the cache.
 
 The consumer validates the lease backend, device identity, FLOAT32 encoding, byte span, and exact sequence-major stride requirements. It waits for the lease readiness stage and keeps both scoped buffer views—and therefore the originating lease—open until the command buffer completes. The current kernel supports one decode query, up to 4096 visible positions, and synchronous completion.
 
