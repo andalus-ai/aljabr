@@ -20,4 +20,14 @@ VideoFrameSequence groups prepared frame results into a validated temporal view.
 - The sequence is non-owning. PreparedDiffusionConditioningSet remains the single owner and must stay open while the sequence is in use.
 - Mixed prepared conditioning data can be filtered to a video-only view; every VIDEO_FRAME entry must use VideoFrameConditioningData.
 
+## Sequence windowing
+
+VideoFrameSequenceWindowing creates immutable, non-owning windows for bounded-memory or chunked processing.
+
+- Window size and start stride are expressed in frame counts; both must be positive.
+- A stride smaller than the window size creates overlap; a larger stride intentionally skips frames between windows.
+- INCLUDE_PARTIAL retains a final non-empty short window; DROP_PARTIAL emits only complete windows and may return an empty list.
+- Windows preserve original frame instances, sequence indices, timestamps, and source ownership. They do not copy pixels, decode, interpolate, or alter temporal metadata.
+- Windowing is independent of temporal sampling and can be applied to an already sampled sequence.
+
 No FFmpeg, ImageIO, Python, PyTorch, ComfyUI, tensor backend, or device-selection dependency is introduced.
