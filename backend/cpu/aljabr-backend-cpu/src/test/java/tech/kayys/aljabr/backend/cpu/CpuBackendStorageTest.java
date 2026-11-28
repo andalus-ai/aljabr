@@ -141,6 +141,31 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void flattenRegularStrideViewIgnoresInterleavedSingletonAxes() {
+        HostStorage storage = new HostStorage(
+                99f, 1f, 0f, 2f, 0f, 3f, 0f, 4f, 0f, 5f, 0f, 6f, 88f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 1, 3), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 1, 3), new long[] {6, 91, 2}, 1));
+        Tensor flattened = null;
+        try {
+            flattened = backend.flatten(input);
+            assertArrayEquals(new long[] {6}, flattened.shape().dims());
+            assertArrayEquals(new long[] {2}, flattened.layout().strides());
+            assertEquals(1, flattened.layout().storageOffset());
+            assertArrayEquals(new float[] {1f, 2f, 3f, 4f, 5f, 6f},
+                    flattened.toFloatArray(), 0f);
+            assertSame(storage, flattened.storage());
+            assertEquals(2, storage.references());
+        } finally {
+            if (flattened != null) flattened.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
     void flattenPreservesSingleAxisStrideAndStorageOffsetWithoutMaterializing() {
         HostStorage storage = new HostStorage(99f, 1f, 99f, 2f, 99f, 3f, 99f, 4f);
         DefaultTensor input = new DefaultTensor(
