@@ -94,6 +94,9 @@ public class MetalBinding {
     private static final String FN_WO_FFN_LOGITS_FUSED = "aljabr_metal_wo_ffn_logits_fused";
     private static final String FN_INIT_KV_CACHE = "aljabr_metal_init_kv_cache";
     private static final String FN_SYNC_KV_CACHE = "aljabr_metal_sync_kv_cache";
+    private static final String FN_KV_BUFFER_CREATE = "aljabr_metal_kv_buffer_create";
+    private static final String FN_KV_BUFFER_CONTENTS = "aljabr_metal_kv_buffer_contents";
+    private static final String FN_KV_BUFFER_RELEASE = "aljabr_metal_kv_buffer_release";
     private static final String FN_REGISTER_NORM_BUFFER = "aljabr_metal_register_norm_buffer";
     private static final String FN_REGISTER_ROPE_FREQS = "aljabr_metal_register_rope_freqs";
     private static final String FN_REGISTER_DECODE_LAYER = "aljabr_metal_register_decode_layer";
@@ -1097,6 +1100,40 @@ public class MetalBinding {
         return (int) invoke(FN_SYNC_KV_CACHE, layer, seqLen, kData, vData);
     }
 
+    /** Allocates a retained Metal shared-storage buffer for a KV cache region. */
+    public MemorySegment createKVBuffer(long bytes) {
+        if (!isRuntimeActive() || bytes <= 0 || !handles.containsKey(FN_KV_BUFFER_CREATE)) {
+            throw new UnsupportedOperationException("Native Metal KV buffer allocation is unavailable");
+        }
+        return (MemorySegment) invoke(FN_KV_BUFFER_CREATE, bytes);
+    }
+
+    /** Returns the CPU-visible contents pointer of a retained shared Metal buffer. */
+    public MemorySegment kvBufferContents(MemorySegment buffer) {
+        if (!isRuntimeActive() || buffer == null || buffer.equals(MemorySegment.NULL)
+                || !handles.containsKey(FN_KV_BUFFER_CONTENTS)) {
+            throw new IllegalStateException("Metal KV buffer is unavailable");
+        }
+        return (MemorySegment) invoke(FN_KV_BUFFER_CONTENTS, buffer);
+    }
+
+    /** Releases the retained Objective-C MTLBuffer reference. */
+    public void releaseKVBuffer(MemorySegment buffer) {
+        if (buffer == null || buffer.equals(MemorySegment.NULL)) return;
+        if (!handles.containsKey(FN_KV_BUFFER_RELEASE)) {
+            throw new IllegalStateException("Metal KV buffer release symbol is unavailable");
+        }
+        int result = (int) invoke(FN_KV_BUFFER_RELEASE, buffer);
+        if (result != 0) throw new IllegalStateException("Metal KV buffer release failed: " + result);
+    }
+
+    public boolean supportsKVBufferAllocation() {
+        return isRuntimeActive() && isUnifiedMemory()
+                && handles.containsKey(FN_KV_BUFFER_CREATE)
+                && handles.containsKey(FN_KV_BUFFER_CONTENTS)
+                && handles.containsKey(FN_KV_BUFFER_RELEASE);
+    }
+
     public int registerNormBuffer(int slot, MemorySegment ptr, long bytes) {
         if (!handles.containsKey(FN_REGISTER_NORM_BUFFER))
             return -2;
@@ -1917,6 +1954,15 @@ public class MetalBinding {
 
         bind(FN_SYNC_KV_CACHE, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+
+        bind(FN_KV_BUFFER_CREATE, FunctionDescriptor.of(ValueLayout.ADDRESS,
+                ValueLayout.JAVA_LONG));
+
+        bind(FN_KV_BUFFER_CONTENTS, FunctionDescriptor.of(ValueLayout.ADDRESS,
+                ValueLayout.ADDRESS));
+
+        bind(FN_KV_BUFFER_RELEASE, FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS));
 
         bind(FN_REGISTER_NORM_BUFFER, FunctionDescriptor.of(ValueLayout.JAVA_INT,
                 ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_LONG));
