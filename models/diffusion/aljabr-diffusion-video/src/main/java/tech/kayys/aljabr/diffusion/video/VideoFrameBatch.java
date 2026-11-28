@@ -31,15 +31,18 @@ public final class VideoFrameBatch {
         if (this.metadata.size() != frameCount) {
             throw new IllegalArgumentException("metadata count must match frame count");
         }
+        float[] ownedValues = Objects.requireNonNull(values, "values");
         long expected = (long) frameCount * height * width * channels;
-        if (expected > Integer.MAX_VALUE || values.length != (int) expected) {
+        if (expected > Integer.MAX_VALUE || ownedValues.length != (int) expected) {
             throw new IllegalArgumentException("packed value count does not match batch dimensions");
         }
         this.frameCount = frameCount;
         this.height = height;
         this.width = width;
         this.channels = channels;
-        this.values = Objects.requireNonNull(values, "values").clone();
+        // Package-private construction transfers this newly packed array into the batch.
+        // Avoiding a second full-size copy reduces peak memory for large video inputs.
+        this.values = ownedValues;
         for (float value : this.values) {
             if (!Float.isFinite(value)) {
                 throw new IllegalArgumentException("packed values must be finite");
