@@ -9,6 +9,16 @@ Optional reusable per-frame conditioning integration for the generic diffusion c
 - Decoding and preprocessing are injected. Codec, source resolution, temporal sampling, resize/crop, normalization, and color-space policy remain application-owned.
 - Decoded pixels are immutable heap-owned float arrays with explicit HWC/CHW layout and finite-value validation.
 
+## Lazy sequence chunking
+
+`VideoFrameSequenceChunker` exposes contiguous frame chunks through a repeatable, pull-based `Iterable`.
+
+- Each iterator creates one non-owning sequence view when the consumer requests it; it does not materialize a list of all chunks.
+- `INCLUDE_PARTIAL` retains the final non-empty short chunk; `DROP_PARTIAL` emits only complete chunks.
+- Each iterator starts independently at the first source frame, and chunks preserve original frame objects, indices, and timestamps.
+- Pull-based iteration lets a downstream consumer control how quickly it requests more work. It does not create threads, schedule execution, or provide asynchronous backpressure.
+- Chunks do not own or close frame resources; the original prepared conditioning set remains the owner and must stay open while chunks are consumed.
+
 ## Sequence view
 
 VideoFrameSequence groups prepared frame results into a validated temporal view.
