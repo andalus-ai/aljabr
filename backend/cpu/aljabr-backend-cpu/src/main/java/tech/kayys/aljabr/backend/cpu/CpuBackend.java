@@ -635,7 +635,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             long[] dimensions = a.shape().dims();
             long[] strides = a.layout().strides();
             long flattenedStride = -1L;
-            long expectedStride = -1L;
+            long innerElements = 1L;
             boolean viewCompatible = true;
             for (int axis = dimensions.length - 1; axis >= 0; axis--) {
                 if (dimensions[axis] <= 1) {
@@ -643,14 +643,12 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                 }
                 if (flattenedStride < 0) {
                     flattenedStride = strides[axis];
-                    expectedStride = strides[axis];
-                } else {
-                    expectedStride = Math.multiplyExact(expectedStride, dimensions[axis + 1]);
-                    if (strides[axis] != expectedStride) {
-                        viewCompatible = false;
-                        break;
-                    }
+                } else if (strides[axis]
+                        != Math.multiplyExact(flattenedStride, innerElements)) {
+                    viewCompatible = false;
+                    break;
                 }
+                innerElements = Math.multiplyExact(innerElements, dimensions[axis]);
             }
             if (viewCompatible && flattenedStride >= 0) {
                 return shapeView(a, outputShape, new long[] {flattenedStride});
