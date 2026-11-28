@@ -686,53 +686,6 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         }
     }
 
-    private static int readIndexAddInt(
-            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex) {
-        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
-        return segment.get(ValueLayout.JAVA_INT, Math.multiplyExact(elementOffset, Integer.BYTES));
-    }
-
-    private static void writeIndexAddInt(MemorySegment segment, long logicalIndex, int value) {
-        segment.set(ValueLayout.JAVA_INT, Math.multiplyExact(logicalIndex, Integer.BYTES), value);
-    }
-
-    private static byte readIndexAddByte(
-            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex) {
-        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
-        return segment.get(ValueLayout.JAVA_BYTE, elementOffset);
-    }
-
-    private static void writeIndexAddByte(MemorySegment segment, long logicalIndex, byte value) {
-        segment.set(ValueLayout.JAVA_BYTE, logicalIndex, value);
-    }
-
-    private static float readIndexAddValue(
-            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex, DType dtype) {
-        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
-        return switch (dtype) {
-            case F32 -> segment.get(ValueLayout.JAVA_FLOAT,
-                    Math.multiplyExact(elementOffset, Float.BYTES));
-            case F16 -> CpuFloatingPointConversions.halfToFloat(segment.get(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(elementOffset, Short.BYTES)));
-            case BF16 -> CpuFloatingPointConversions.bfloat16ToFloat(segment.get(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(elementOffset, Short.BYTES)));
-            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
-        };
-    }
-
-    private static void writeIndexAddValue(
-            MemorySegment segment, long logicalIndex, DType dtype, float value) {
-        switch (dtype) {
-            case F32 -> segment.set(ValueLayout.JAVA_FLOAT,
-                    Math.multiplyExact(logicalIndex, Float.BYTES), value);
-            case F16 -> segment.set(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToHalf(value));
-            case BF16 -> segment.set(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToBfloat16(value));
-            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
-        }
-    }
-
     @Override
     public Tensor flatten(Tensor a) {
         Objects.requireNonNull(a, "input");
