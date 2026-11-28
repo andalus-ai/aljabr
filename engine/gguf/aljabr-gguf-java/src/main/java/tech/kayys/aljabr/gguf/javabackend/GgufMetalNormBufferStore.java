@@ -59,7 +59,7 @@ final class GgufMetalNormBufferStore {
 
     MemorySegment slice(int slot, int layer) {
         Generation generation = current;
-        if (generation == null || slot < 0 || slot >= MODEL_DIMENSION_SLOTS
+        if (generation == null || slot < 0 || slot >= SLOT_COUNT
                 || layer < 0 || layer >= generation.layers()) {
             return MemorySegment.NULL;
         }
