@@ -390,6 +390,42 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         }
     }
 
+    /**
+     * Returns output strides when a reshape only inserts or removes singleton
+     * dimensions, or {@code null} when the non-singleton dimension sequence
+     * changes. Singleton strides are set to one because their coordinate is
+     * always zero and therefore cannot affect the addressed storage elements.
+     */
+    private long[] singletonDimensionReshapeStrides(
+            Shape inputShape, long[] inputStrides, Shape outputShape) {
+        long[] inputDims = inputShape.dims();
+        long[] outputDims = outputShape.dims();
+        int inputIndex = 0;
+        int outputIndex = 0;
+        long[] outputStrides = new long[outputDims.length];
+
+        while (outputIndex < outputDims.length) {
+            if (outputDims[outputIndex] == 1) {
+                outputStrides[outputIndex++] = 1;
+                continue;
+            }
+            while (inputIndex < inputDims.length && inputDims[inputIndex] == 1) {
+                inputIndex++;
+            }
+            if (inputIndex >= inputDims.length
+                    || inputDims[inputIndex] != outputDims[outputIndex]) {
+                return null;
+            }
+            outputStrides[outputIndex++] = inputStrides[inputIndex++];
+        }
+        while (inputIndex < inputDims.length) {
+            if (inputDims[inputIndex++] != 1) {
+                return null;
+            }
+        }
+        return outputStrides;
+    }
+
     // ── Shape ops ────────────────────────────────────────────────────────────
 
     @Override
@@ -406,6 +442,16 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         // order, so preserve even a non-contiguous view and its storage offset.
         if (a.shape().equals(outputShape)) {
             return shapeView(a, outputShape, inputLayout.strides());
+        }
+        // Inserting or removing singleton dimensions does not change the
+        // logical coordinate sequence. Preserve the existing non-singleton
+        // strides instead of materializing an otherwise valid strided view.
+        if (!a.dtype().isQuantized()) {
+            long[] singletonReshapeStrides = singletonDimensionReshapeStrides(
+                    a.shape(), inputLayout.strides(), outputShape);
+            if (singletonReshapeStrides != null) {
+                return shapeView(a, outputShape, singletonReshapeStrides);
+            }
         }
         if (!inputLayout.isContiguous()) {
             // Reshape preserves logical row-major order. Materialize only when

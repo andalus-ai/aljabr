@@ -23,21 +23,14 @@ import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader.SafetensorShard
 import tech.kayys.aljabr.safetensor.quantization.quantizer.*;
 
 import java.io.IOException;
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 /**
  * Quantization engine for model compression.
@@ -94,7 +87,7 @@ public class QuantizationEngine {
     private final Map<String, Quantizer> quantizers = new ConcurrentHashMap<>();
     private volatile ExecutorService executor;
     private final Map<Path, QuantResult> resultsCache = new ConcurrentHashMap<>();
-    private static final int INFERENCE_CACHE_VERSION = 1;
+    private final InferenceQuantizationCache inferenceCache = new InferenceQuantizationCache();
 
     @Inject
     SafetensorShardLoader loader;
@@ -471,8 +464,8 @@ public class QuantizationEngine {
         }
 
         QuantConfig config = createDefaultConfig(effectiveStrategy);
-        Path cachePath = inferenceCachePath(modelPath, effectiveStrategy);
-        Map<String, CachedTensor> cachedTensors = loadInferenceCache(cachePath, effectiveStrategy);
+        Path cachePath = inferenceCache.cachePath(modelPath, effectiveStrategy);
+        Map<String, InferenceQuantizationCache.CachedTensor> cachedTensors = inferenceCache.load(cachePath, effectiveStrategy);
 
         // Separate tensors that need quantization from those that can pass through.
         Map<String, AccelTensor> passThrough = new ConcurrentHashMap<>();
@@ -488,10 +481,10 @@ public class QuantizationEngine {
         // Check cache first (serial, cheap)
         AtomicInteger cacheHits = new AtomicInteger(0);
         Map<String, AccelTensor> fromCache = new ConcurrentHashMap<>();
-        CopyOnWriteArrayList<Map.Entry<String, AccelTensor>> needsQuant = new CopyOnWriteArrayList<>();
+        List<Map.Entry<String, AccelTensor>> needsQuant = new ArrayList<>();
         for (Map.Entry<String, AccelTensor> entry : toQuantize.entrySet()) {
             String name = entry.getKey();
-            CachedTensor cached = cachedTensors.get(name);
+            InferenceQuantizationCache.CachedTensor cached = cachedTensors.get(name);
             if (cached != null) {
                 try {
                     fromCache.put(name, cached.toTensor());
@@ -512,49 +505,40 @@ public class QuantizationEngine {
                     totalToQuant, cpuCores);
         }
 
-        // Parallel quantization — uses all CPU cores via ForkJoinPool work-stealing.
+        // Execute independent tensor tasks in a bounded, invocation-scoped pool.
         AtomicInteger doneCount = new AtomicInteger(0);
         AtomicInteger quantizedFresh = new AtomicInteger(0);
         Map<String, AccelTensor> freshQuant = new ConcurrentHashMap<>();
 
-        ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
-        try {
-            pool.submit(() -> needsQuant.parallelStream().forEach(entry -> {
-                String name = entry.getKey();
-                AccelTensor source = entry.getValue();
-                int idx = doneCount.incrementAndGet();
-                long t0 = System.currentTimeMillis();
-                try {
-                    AccelTensor materialized = materializeForQuantization(source);
-                    AccelTensor candidate = quantizer.quantizeTensor(materialized, config);
-                    long ms = System.currentTimeMillis() - t0;
-                    if (!isUsableQuantizedTensor(candidate)) {
-                        System.err.printf("[Aljabr] [%d/%d] SKIP (unsupported output) %s  (%.1fs)%n",
-                                idx, totalToQuant, name, ms / 1000.0);
-                        log.warnf("Quantizer %s produced unsupported tensor for %s", effectiveStrategy, name);
-                        if (candidate != null && candidate != source && candidate != materialized) candidate.close();
-                        freshQuant.put(name, source);
-                        return;
-                    }
-                    System.err.printf("[Aljabr] [%d/%d] OK  %s  (%.1fs, %s → NF4)%n",
-                            idx, totalToQuant, name, ms / 1000.0, source.quantType());
-                    freshQuant.put(name, candidate);
-                    quantizedFresh.incrementAndGet();
-                    if (materialized != source) materialized.close();
-                    source.close();
-                } catch (Exception e) {
-                    long ms = System.currentTimeMillis() - t0;
-                    System.err.printf("[Aljabr] [%d/%d] ERR %s  (%.1fs): %s%n",
-                            idx, totalToQuant, name, ms / 1000.0, e.getMessage());
-                    log.warnf(e, "Failed to quantize %s; keeping original", name);
+        InferenceTensorTaskExecutor.execute(needsQuant, entry -> {
+            String name = entry.getKey();
+            AccelTensor source = entry.getValue();
+            int idx = doneCount.incrementAndGet();
+            long t0 = System.currentTimeMillis();
+            try {
+                AccelTensor materialized = materializeForQuantization(source);
+                AccelTensor candidate = quantizer.quantizeTensor(materialized, config);
+                long ms = System.currentTimeMillis() - t0;
+                if (!isUsableQuantizedTensor(candidate)) {
+                    log.warnf("Quantizer %s produced unsupported tensor for %s (%d/%d, %d ms)",
+                            effectiveStrategy, name, idx, totalToQuant, ms);
+                    if (candidate != null && candidate != source && candidate != materialized) candidate.close();
                     freshQuant.put(name, source);
+                    return;
                 }
-            })).get();
-        } catch (Exception e) {
-            log.errorf(e, "Parallel quantization pool failed");
-        } finally {
-            pool.shutdown();
-        }
+                log.debugf("Quantized inference tensor %s (%d/%d, %d ms)",
+                        name, idx, totalToQuant, ms);
+                freshQuant.put(name, candidate);
+                quantizedFresh.incrementAndGet();
+                if (materialized != source) materialized.close();
+                source.close();
+            } catch (Exception e) {
+                long ms = System.currentTimeMillis() - t0;
+                log.warnf(e, "Failed to quantize inference tensor %s (%d/%d, %d ms); keeping original",
+                        name, idx, totalToQuant, ms);
+                freshQuant.put(name, source);
+            }
+        });
 
         // Merge results
         Map<String, AccelTensor> quantized = new HashMap<>(weights.size() * 2);
@@ -563,7 +547,7 @@ public class QuantizationEngine {
         quantized.putAll(freshQuant);
 
         if (cachePath != null && quantizedFresh.get() > 0) {
-            persistInferenceCache(cachePath, effectiveStrategy, quantized);
+            inferenceCache.persist(cachePath, effectiveStrategy, quantized);
         }
 
         if (cacheHits.get() > 0) {
@@ -604,151 +588,6 @@ public class QuantizationEngine {
 
     private boolean shouldQuantizeForInference(String name, AccelTensor tensor) {
         return InferenceQuantizationPolicy.shouldQuantize(name, tensor);
-    }
-
-    private Path inferenceCachePath(Path modelPath, QuantizationStrategy strategy) {
-        if (modelPath == null || strategy == null || strategy == QuantizationStrategy.NONE) {
-            return null;
-        }
-        try {
-            String aljabrHome = System.getProperty("aljabr.home",
-                    Path.of(System.getProperty("user.home"), ".aljabr").toString());
-            Path cacheDir = ensureInferenceCacheDirectory(Path.of(aljabrHome, "cache", "direct-quant"));
-            Path normalized = modelPath.toAbsolutePath().normalize();
-            long lastModified = Files.exists(normalized) ? Files.getLastModifiedTime(normalized).toMillis() : 0L;
-            long size = Files.isRegularFile(normalized) ? Files.size(normalized) : 0L;
-            String cacheName = Integer.toHexString((normalized.toString() + "|" + strategy.name() + "|" + lastModified + "|" + size).hashCode());
-            return cacheDir.resolve(cacheName + ".dqcache");
-        } catch (IOException e) {
-            log.warnf(e, "Failed to prepare inference cache path for %s", modelPath);
-            return null;
-        }
-    }
-
-    private Path ensureInferenceCacheDirectory(Path preferred) throws IOException {
-        try {
-            Files.createDirectories(preferred);
-            return preferred;
-        } catch (IOException preferredFailure) {
-            Path fallback = Path.of(System.getProperty("java.io.tmpdir"), "aljabr-direct-quant");
-            Files.createDirectories(fallback);
-            log.warnf(preferredFailure, "Falling back to temp inference cache directory: %s", fallback);
-            return fallback;
-        }
-    }
-
-    private Map<String, CachedTensor> loadInferenceCache(Path cachePath, QuantizationStrategy strategy) {
-        if (cachePath == null || !Files.isRegularFile(cachePath)) {
-            return Collections.emptyMap();
-        }
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(cachePath)))) {
-            int version = in.readInt();
-            if (version != INFERENCE_CACHE_VERSION) {
-                log.warnf("Ignoring inference cache with unsupported version %d at %s", version, cachePath);
-                return Collections.emptyMap();
-            }
-            String strategyName = in.readUTF();
-            if (!strategy.name().equals(strategyName)) {
-                return Collections.emptyMap();
-            }
-            int count = in.readInt();
-            Map<String, CachedTensor> cached = new HashMap<>(count * 2);
-            for (int i = 0; i < count; i++) {
-                String name = in.readUTF();
-                int rank = in.readInt();
-                long[] shape = new long[rank];
-                for (int j = 0; j < rank; j++) {
-                    shape[j] = in.readLong();
-                }
-                int quantOrdinal = in.readInt();
-                int groupSize = in.readInt();
-                int dataLength = in.readInt();
-                byte[] data = in.readNBytes(dataLength);
-                int scalesLength = in.readInt();
-                float[] scales = new float[scalesLength];
-                for (int j = 0; j < scalesLength; j++) {
-                    scales[j] = in.readFloat();
-                }
-                int zerosLength = in.readInt();
-                float[] zeros = new float[zerosLength];
-                for (int j = 0; j < zerosLength; j++) {
-                    zeros[j] = in.readFloat();
-                }
-                cached.put(name, new CachedTensor(shape,
-                        AccelTensor.QuantType.values()[quantOrdinal],
-                        groupSize, data, scales, zeros));
-            }
-            log.infof("Loaded inference quant cache: %s (%d tensors)", cachePath, count);
-            return cached;
-        } catch (Exception e) {
-            log.warnf(e, "Failed to load inference quant cache from %s", cachePath);
-            return Collections.emptyMap();
-        }
-    }
-
-    private void persistInferenceCache(Path cachePath, QuantizationStrategy strategy, Map<String, AccelTensor> weights) {
-        if (cachePath == null) {
-            return;
-        }
-        try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(cachePath)))) {
-            List<Map.Entry<String, AccelTensor>> entries = weights.entrySet().stream()
-                    .filter(e -> isPersistableQuantizedTensor(e.getValue()))
-                    .sorted(Map.Entry.comparingByKey())
-                    .toList();
-            out.writeInt(INFERENCE_CACHE_VERSION);
-            out.writeUTF(strategy.name());
-            out.writeInt(entries.size());
-            for (Map.Entry<String, AccelTensor> entry : entries) {
-                AccelTensor tensor = entry.getValue();
-                out.writeUTF(entry.getKey());
-                out.writeInt(tensor.rank());
-                for (long dim : tensor.shape()) {
-                    out.writeLong(dim);
-                }
-                out.writeInt(tensor.quantType().ordinal());
-                out.writeInt(tensor.groupSize());
-                byte[] data = tensor.dataSegment().toArray(java.lang.foreign.ValueLayout.JAVA_BYTE);
-                out.writeInt(data.length);
-                out.write(data);
-                float[] scales = tensor.scales() != null
-                        ? tensor.scales().toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT)
-                        : new float[0];
-                out.writeInt(scales.length);
-                for (float scale : scales) {
-                    out.writeFloat(scale);
-                }
-                float[] zeros = tensor.zeros() != null
-                        ? tensor.zeros().toArray(java.lang.foreign.ValueLayout.JAVA_FLOAT)
-                        : new float[0];
-                out.writeInt(zeros.length);
-                for (float zero : zeros) {
-                    out.writeFloat(zero);
-                }
-            }
-            log.infof("Saved inference quant cache: %s (%d tensors)", cachePath, entries.size());
-        } catch (Exception e) {
-            log.warnf(e, "Failed to persist inference quant cache to %s", cachePath);
-        }
-    }
-
-    private boolean isPersistableQuantizedTensor(AccelTensor tensor) {
-        return tensor != null
-                && tensor.quantType() == AccelTensor.QuantType.INT4
-                && tensor.scales() != null;
-    }
-
-    private record CachedTensor(long[] shape, AccelTensor.QuantType quantType, int groupSize, byte[] data, float[] scales, float[] zeros) {
-        private AccelTensor toTensor() {
-            AccelTensor tensor = AccelTensor.fromByteArray(data, shape);
-            java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofAuto();
-            java.lang.foreign.MemorySegment scaleSeg = scales.length == 0
-                    ? null
-                    : arena.allocateFrom(java.lang.foreign.ValueLayout.JAVA_FLOAT, scales);
-            java.lang.foreign.MemorySegment zeroSeg = zeros.length == 0
-                    ? null
-                    : arena.allocateFrom(java.lang.foreign.ValueLayout.JAVA_FLOAT, zeros);
-            return tensor.withQuantization(quantType, scaleSeg, zeroSeg, groupSize);
-        }
     }
 
     private AccelTensor materializeForQuantization(AccelTensor tensor) {

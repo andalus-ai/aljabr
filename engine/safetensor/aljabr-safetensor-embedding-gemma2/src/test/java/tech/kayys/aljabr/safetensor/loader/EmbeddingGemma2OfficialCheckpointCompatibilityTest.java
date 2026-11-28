@@ -52,8 +52,9 @@ class EmbeddingGemma2OfficialCheckpointCompatibilityTest {
                 gradientImage(16, 16),
                 gradientImage(31, 19));
 
-        int[] expectedSoftTokens = pipeline.preprocess(images).numSoftTokensPerImage();
-        List<float[][]> batchFeatures = pipeline.encodeBatch(images);
+        var processorOutput = pipeline.preprocess(images);
+        int[] expectedSoftTokens = processorOutput.numSoftTokensPerImage();
+        List<float[][]> batchFeatures = pipeline.encodeBatch(processorOutput);
 
         assertEquals(images.size(), batchFeatures.size(),
                 "vision output must preserve the number and boundaries of input images");
