@@ -116,7 +116,7 @@ class FormatTargetCapabilityTest {
     }
 
     @Test
-    void opaqueExtensionsArePreservedInSafetensorsFileMetadata() {
+    void opaqueExtensionsAreReportedAsUntransferredBySafetensors() {
         var source = new ModelDescriptor(
                 ModelIdentity.of("test"), "llama", "gguf", Map.of(),
                 Map.of("gguf.metadata.json", "{\"custom\":true}"),
@@ -124,7 +124,8 @@ class FormatTargetCapabilityTest {
 
         var report = new SafetensorsTargetCapability().assess(source);
 
-        assertEquals(CompatibilityReport.ConversionFidelity.FULL, report.fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
+        assertEquals("extensions.gguf.metadata.json", report.diagnostics().getFirst().path().orElseThrow());
     }
 
     @Test
