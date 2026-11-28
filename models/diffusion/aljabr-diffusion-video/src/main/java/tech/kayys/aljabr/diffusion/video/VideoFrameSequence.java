@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+import tech.kayys.aljabr.diffusion.api.DiffusionConditioningData;
+import tech.kayys.aljabr.diffusion.api.DiffusionConditioningInput;
 import tech.kayys.aljabr.diffusion.api.PreparedDiffusionConditioningSet;
 
 /**
@@ -40,18 +42,28 @@ public final class VideoFrameSequence {
      */
     public static VideoFrameSequence from(PreparedDiffusionConditioningSet prepared) {
         Objects.requireNonNull(prepared, "prepared");
+        return from(prepared.data());
+    }
+
+    /**
+     * Creates a non-owning sequence view from a collection of prepared data.
+     * Non-video entries are ignored; VIDEO_FRAME entries must use this module's
+     * typed frame representation.
+     */
+    public static VideoFrameSequence from(List<? extends DiffusionConditioningData> preparedData) {
+        Objects.requireNonNull(preparedData, "preparedData");
         List<VideoFrameConditioningData> frames = new ArrayList<>();
-        prepared.data().stream()
-                .filter(data -> data.modality()
-                        == tech.kayys.aljabr.diffusion.api.DiffusionConditioningInput.Modality.VIDEO_FRAME)
-                .forEach(data -> {
-                    if (!(data instanceof VideoFrameConditioningData frame)) {
-                        throw new IllegalArgumentException(
-                                "VIDEO_FRAME conditioning data must be VideoFrameConditioningData, got "
-                                        + data.getClass().getName());
-                    }
-                    frames.add(frame);
-                });
+        for (DiffusionConditioningData data : preparedData) {
+            Objects.requireNonNull(data, "prepared data");
+            if (data.modality() == DiffusionConditioningInput.Modality.VIDEO_FRAME) {
+                if (!(data instanceof VideoFrameConditioningData frame)) {
+                    throw new IllegalArgumentException(
+                            "VIDEO_FRAME conditioning data must be VideoFrameConditioningData, got "
+                                    + data.getClass().getName());
+                }
+                frames.add(frame);
+            }
+        }
         return of(frames);
     }
 
