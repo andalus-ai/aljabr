@@ -30,6 +30,7 @@ sourceSets {
             include("tech/kayys/aljabr/backend/metal/cache/MetalKVCacheStorage.java")
             include("tech/kayys/aljabr/backend/metal/cache/MetalKVCacheBufferHandle.java")
             include("tech/kayys/aljabr/backend/metal/cache/MetalKVCacheBufferAccess.java")
+            include("tech/kayys/aljabr/backend/metal/cache/MetalKVCacheAttentionConsumer.java")
         }
         resources {
             // src/main/resources is already part of Gradle's default source set.

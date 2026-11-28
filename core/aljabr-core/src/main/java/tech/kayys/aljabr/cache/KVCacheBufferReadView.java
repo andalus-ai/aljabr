@@ -30,6 +30,20 @@ public interface KVCacheBufferReadView extends AutoCloseable {
     KVCacheBufferRegion valueRegion(int layer);
 
     /**
+     * Logical layout of the borrowed K region for one layer.
+     *
+     * <p>Every provider must report its physical logical layout explicitly.
+     * Consumers must not infer it from the backend identifier or cache
+     * dimensions. Use {@link KVCacheBufferLayout#sequenceMajor(int, int, int)}
+     * when the provider actually stores contiguous [sequence, head, dimension]
+     * data.</p>
+     */
+    KVCacheBufferLayout keyLayout(int layer);
+
+    /** Logical layout of the borrowed V region for one layer. */
+    KVCacheBufferLayout valueLayout(int layer);
+
+    /**
      * Completes when all target writes represented by this lease are visible
      * to a compatible consumer. Consumers must establish this dependency
      * before submitting work that reads the borrowed regions.

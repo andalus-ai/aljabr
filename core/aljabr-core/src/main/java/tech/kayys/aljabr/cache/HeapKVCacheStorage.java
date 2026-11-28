@@ -282,6 +282,26 @@ public final class HeapKVCacheStorage
         }
 
         @Override
+        public KVCacheBufferLayout keyLayout(int layer) {
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                int checkedLayer = checkedLayer(layer);
+                return KVCacheBufferLayout.sequenceMajor(
+                        visibleSequenceLength, layout.kvHeads(checkedLayer), layout.headDimension(checkedLayer));
+            }
+        }
+
+        @Override
+        public KVCacheBufferLayout valueLayout(int layer) {
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                int checkedLayer = checkedLayer(layer);
+                return KVCacheBufferLayout.sequenceMajor(
+                        visibleSequenceLength, layout.kvHeads(checkedLayer), layout.headDimension(checkedLayer));
+            }
+        }
+
+        @Override
         public java.util.concurrent.CompletionStage<Void> readiness() {
             synchronized (HeapKVCacheStorage.this) {
                 ensureLeaseOpen();

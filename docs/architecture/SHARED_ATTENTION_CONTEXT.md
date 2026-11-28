@@ -166,3 +166,20 @@ The optional `NativeKVCacheStorage` implementation uses the JDK 25 Foreign Funct
 ### Metal shared-buffer provider
 
 The optional `MetalKVCacheStorage` provider allocates retained `MTLBuffer` K/V regions for unified-memory devices. It is implemented in the Metal backend module and uses the same opaque region contracts as CPU providers. The bridge retains Objective-C buffers for storage lifetime, while cache sessions scope leases to committed prefixes. The current implementation supports synchronous CPU writes into shared buffers and callback-scoped native handle access; asynchronous GPU-produced cache updates and cross-queue fences are not yet exposed. See [Metal KV Storage](METAL_KV_STORAGE.md).
+
+
+## Borrowed KV tensor geometry
+
+`KVCacheBufferReadView` exposes `keyLayout(layer)` and `valueLayout(layer)` alongside each opaque buffer region. `KVCacheBufferLayout` describes logical dimensions and element strides independently of backend, memory domain, and allocation handle.
+
+Before a consumer interprets a borrowed region, it should call `KVCacheBufferLayoutValidator.validateView(view, layer)`. This checks that the K/V descriptors agree with the view's visible prefix and logical per-layer head geometry, that each region belongs to the declared backend, and that its encoded byte span can contain the declared strided layout. This is a metadata conformance check only: it does not prove opaque-handle accessibility, device compatibility, synchronization, or allocation capacity beyond the exported region descriptor. Consumers remain responsible for those checks.
+
+The built-in heap, native-memory, and Metal providers currently use contiguous sequence-major `[sequence, kvHead, headDimension]` storage. Consumers must validate the declared geometry against the region's element encoding and byte length; they must not infer a layout from the backend name or assume that paged/block-table storage is interchangeable with a contiguous region.
+
+`MetalKVCacheAttentionConsumer` now provides an opt-in direct-buffer path for single-query Metal decode. It binds the retained K/V `MTLBuffer` objects to the existing flat SDPA kernel, after validating the declared sequence-major geometry, FLOAT32 region bounds, device identity, and lease readiness. The command buffer is synchronously completed before the scoped views close. This path is limited to at most 4096 visible positions; it does not adapt the existing paged/block-table kernel or cover multi-token prefill. See [Metal KV Storage](METAL_KV_STORAGE.md).
+
+### Optional HAT execution
+
+HAT remains an optional compute backend, not a cache-storage owner and not a requirement of the core contracts. Its current Aljabr integration materializes tensors into HAT-owned arrays and copies values at dispatch boundaries. Therefore, a HAT attention implementation must report staging explicitly and must not advertise the Metal `DEVICE` buffer as directly consumable or claim zero-copy interoperability.
+
+A future HAT path can consume the same logical `KVCacheBufferLayout` after an explicit supported host-memory adapter is implemented. Direct interoperability with Metal allocations requires a verified HAT external-memory/import API; until then, Metal direct-buffer execution and HAT staged execution remain separate paths.

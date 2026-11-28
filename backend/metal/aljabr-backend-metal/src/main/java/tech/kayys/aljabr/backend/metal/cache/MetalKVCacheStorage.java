@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
+import tech.kayys.aljabr.cache.KVCacheBufferLayout;
 import tech.kayys.aljabr.cache.KVCacheBufferReadView;
 import tech.kayys.aljabr.cache.KVCacheBufferRegion;
 import tech.kayys.aljabr.cache.KVCacheBufferRegionProvider;
@@ -285,6 +286,22 @@ public final class MetalKVCacheStorage
         }
         @Override public KVCacheBufferRegion valueRegion(int layer) {
             synchronized (MetalKVCacheStorage.this) { ensureLeaseOpen(); return valueRegions[checkedLayer(layer)]; }
+        }
+        @Override public KVCacheBufferLayout keyLayout(int layer) {
+            synchronized (MetalKVCacheStorage.this) {
+                ensureLeaseOpen();
+                int checkedLayer = checkedLayer(layer);
+                return KVCacheBufferLayout.sequenceMajor(
+                        visibleSequenceLength, layout.kvHeads(checkedLayer), layout.headDimension(checkedLayer));
+            }
+        }
+        @Override public KVCacheBufferLayout valueLayout(int layer) {
+            synchronized (MetalKVCacheStorage.this) {
+                ensureLeaseOpen();
+                int checkedLayer = checkedLayer(layer);
+                return KVCacheBufferLayout.sequenceMajor(
+                        visibleSequenceLength, layout.kvHeads(checkedLayer), layout.headDimension(checkedLayer));
+            }
         }
         @Override public CompletionStage<Void> readiness() {
             synchronized (MetalKVCacheStorage.this) {
