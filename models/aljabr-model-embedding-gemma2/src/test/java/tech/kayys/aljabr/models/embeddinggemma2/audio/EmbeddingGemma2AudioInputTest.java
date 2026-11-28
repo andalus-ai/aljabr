@@ -19,6 +19,13 @@ class EmbeddingGemma2AudioInputTest {
     }
 
     @Test
+    void preservesModelAmplitudePolicyInsteadOfClampingInputChannels() {
+        var result = EmbeddingGemma2AudioInput.prepare(
+                new float[] {2.0f, 0.0f}, 2, 16_000, 16_000);
+        assertEquals(1.0f, result.samples()[0]);
+    }
+
+    @Test
     void resamplesEightKhzPcmToSixteenKhz() {
         float[] input = new float[800];
         for (int i = 0; i < input.length; i++) {
@@ -32,7 +39,6 @@ class EmbeddingGemma2AudioInputTest {
         for (float sample : result.samples()) {
             assertTrue(Float.isFinite(sample));
         }
-        // Away from the boundary, interpolation should preserve a unit-scale tone.
         assertTrue(Math.abs(result.samples()[400]) < 1.1f);
     }
 
@@ -48,6 +54,20 @@ class EmbeddingGemma2AudioInputTest {
         assertEquals(800, result.sampleCount());
         assertEquals(0.1, result.durationSeconds(), 1e-9);
         assertTrue(Math.abs(result.samples()[200]) <= 1.01f);
+    }
+
+    @Test
+    void retainsBlackmanWindowNumericalReferenceSamples() {
+        float[] input = new float[32];
+        for (int index = 0; index < input.length; index++) {
+            input[index] = (float) (0.2 * Math.sin(2.0 * Math.PI * 440.0 * index / 8_000));
+        }
+        var result = EmbeddingGemma2AudioInput.prepare(input, 1, 8_000, 16_000);
+        float[] output = result.samples();
+        assertEquals(0.024800611f, output[1], 1.0e-6f);
+        assertEquals(0.19418792f, output[7], 1.0e-6f);
+        assertEquals(0.19753767f, output[10], 1.0e-6f);
+        assertEquals(-0.15993640f, output[31], 1.0e-6f);
     }
 
     @Test

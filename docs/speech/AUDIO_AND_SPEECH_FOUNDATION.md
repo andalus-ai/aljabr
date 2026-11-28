@@ -20,12 +20,14 @@ The reference `HeapAudioBuffer.copyOf` copies caller data and owns that copy. Cl
 
 The audio core provides model-neutral primitives:
 
-- `PcmChannelMixer.downmixToMono` averages finite, clamped input channels into a new mono buffer.
-- `WindowedSincPcmResampler.resample` changes sample rate independently per channel, preserving channel count and layout.
+- `PcmChannelMixer.downmixToMono` averages finite input channels into a new mono buffer. Its clipping policy is explicit: clamp individual source samples to [-1, 1] by default, or preserve source amplitudes when a model frontend requires it.
+- `WindowedSincPcmResampler.resample` changes sample rate independently per channel, preserving channel count and layout. Its options identify the window function and cutoff margin; the default is Hann with a 0.95 cutoff scale, while named Blackman reference settings are available.
 
 Both operations leave the input buffer caller-owned and return a new independently owned heap buffer. They are portable reference implementations; they do not claim bit-exact parity with a specific codec library or production DSP engine.
 
-Whisper delegates channel mixing and sample-rate conversion to these shared primitives. Its 16 kHz target, 30-second windows, Mel filter bank, FFT geometry and log-Mel normalization remain Whisper-specific and stay in the Whisper model module. Do not extract model-specific feature semantics into generic audio APIs merely because another model also uses an FFT or Mel representation.
+Whisper delegates channel mixing and sample-rate conversion to these shared primitives. Its 16 kHz target, 30-second windows, Mel filter bank, FFT geometry and log-Mel normalization remain Whisper-specific and stay in the Whisper model module.
+
+EmbeddingGemma2 delegates PCM downmixing and resampling to the same shared primitives while explicitly selecting amplitude-preserving mixing and its Blackman-window resampler reference settings. Its feature extractor, validity mask, soft-token budget, and 30-second truncation policy remain model-specific.
 
 ## Speech contracts
 
@@ -38,7 +40,7 @@ These contracts are synchronous and model-neutral. They do not define streaming 
 
 ## Existing model integrations
 
-Existing Whisper, SpeechT5, Bark, Qwen2-Audio, and EmbeddingGemma2 implementations remain in place. This extraction is deliberately narrow: shared PCM channel mixing and resampling move into the audio engine, while Whisper's feature extraction remains model-owned. Continue auditing other model frontends before consolidating additional code.
+Existing Whisper, SpeechT5, Bark, Qwen2-Audio, and EmbeddingGemma2 implementations remain in place. The shared PCM extraction is intentionally narrow: channel mixing and sample-rate conversion are reusable, while model-specific feature semantics remain in model modules. Qwen2-Audio currently has model-family metadata only and must not be presented as an executable speech model.
 
 ## Dependency rules
 
