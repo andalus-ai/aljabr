@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.gguf.api;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -63,6 +64,6 @@ public interface GgufTensorValidatedModelFamilyAdapter extends GgufModelFamilyAd
         if (normalized.isEmpty()) {
             throw new IllegalStateException("at least one supported architecture is required");
         }
-        return Set.copyOf(normalized);
+        return Collections.unmodifiableSet(normalized);
     }
 }
