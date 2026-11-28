@@ -5,6 +5,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.nio.FloatBuffer;
+import java.util.function.Function;
 
 /**
  * Heap-array implementation of {@link KVCacheStorage}.
@@ -165,6 +167,29 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
         return lease;
     }
 
+    synchronized <T> T withReadOnlyBuffer(
+            KVCacheBufferReadView view,
+            KVCacheBufferRegion region,
+            HeapKVCacheBufferHandle handle,
+            Function<FloatBuffer, T> consumer) {
+        ensureOpen();
+        if (!(view instanceof HeapBufferLease lease) || !lease.owns(region)
+                || region.handle() != handle) {
+            throw new IllegalStateException("The active lease does not own this heap KV region");
+        }
+        lease.ensureLeaseOpen();
+        int offset = Math.toIntExact(region.byteOffset() / Float.BYTES);
+        int length = Math.toIntExact(region.elementCount());
+        float[] allocation = handle.storage();
+        if (offset < 0 || length < 0 || offset > allocation.length - length) {
+            throw new IllegalArgumentException("Heap KV region exceeds its allocation");
+        }
+        FloatBuffer readOnly = FloatBuffer.wrap(allocation, offset, length)
+                .slice()
+                .asReadOnlyBuffer();
+        return consumer.apply(readOnly);
+    }
+
     private void checkBorrowedPrefixMutation(int firstPosition, int tokenCount) {
         if (tokenCount == 0) return;
         for (HeapBufferLease lease : activeBufferLeases) {
@@ -199,14 +224,23 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
                         Math.multiplyExact((long) visibleSequenceLength,
                                 layout.layerStride(layer)), Float.BYTES);
                 keyRegions[layer] = new KVCacheBufferRegion(
-                        new HeapKVCacheBufferHandle(keys[layer]),
+                        new HeapKVCacheBufferHandle(HeapKVCacheStorage.this, keys[layer]),
                         KVCacheMemoryDomain.HOST_HEAP, "cpu", "",
                         KVCacheElementType.FLOAT32, 0, byteLength);
                 valueRegions[layer] = new KVCacheBufferRegion(
-                        new HeapKVCacheBufferHandle(values[layer]),
+                        new HeapKVCacheBufferHandle(HeapKVCacheStorage.this, values[layer]),
                         KVCacheMemoryDomain.HOST_HEAP, "cpu", "",
                         KVCacheElementType.FLOAT32, 0, byteLength);
             }
+        }
+
+        private boolean owns(KVCacheBufferRegion region) {
+            for (int layer = 0; layer < layout.layerCount(); layer++) {
+                if (keyRegions[layer] == region || valueRegions[layer] == region) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void ensureLeaseOpen() {
