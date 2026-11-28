@@ -87,3 +87,43 @@ or owns the cache view.
 - No assumption that selections are reusable across queries, layers, heads,
   requests, or cache generations. Reuse requires the caller to establish that
   the selection's source prefix and scope still match.
+
+## Backend-aware KV buffer borrowing
+
+Logical reads through `KVCacheReadView` remain the portable compatibility
+path. Providers may separately advertise `KVCacheBufferSharingCapability`
+when they can safely lend native allocation regions to compatible consumers.
+This capability is optional and does not replace logical reads.
+
+A `KVCacheBufferReadView` is a lease over target-owned storage. Its K/V
+`KVCacheBufferRegion` descriptors identify an opaque allocation handle,
+memory domain, backend/device identity, element encoding, and byte range.
+The descriptor does not expose a pointer or permit arbitrary dereferencing.
+Only a compatible backend may interpret the handle while the lease remains
+open. Closing the lease releases the borrow, never the target allocation.
+
+Memory domains distinguish Java heap, native host, and accelerator device
+memory. Device regions require a device identity; host regions do not. Element
+encodings are explicit so consumers cannot silently interpret FP16/BF16/FP8
+storage as float32. Region offsets and lengths are byte-based and element
+aligned.
+
+### Interoperability and fallback rules
+
+- Same-backend consumers may use a borrowed region without a host round trip
+  when the provider/backend explicitly supports that operation.
+- Cross-backend consumers must use an explicit transfer/import path. They must
+  not claim zero-copy merely because a descriptor is available.
+- Providers that cannot guarantee allocation lifetime, mutation exclusion,
+  and synchronization must not advertise buffer sharing.
+- Consumers must close leases on success, failure, cancellation, and timeout.
+- The existing logical `KVCacheReadView` remains the fallback for providers
+  that can safely copy values but cannot expose native/device allocations.
+- This phase defines the interop contract only. CPU, Metal, and CUDA storage
+  providers must implement and pass provider-specific conformance tests before
+  advertising the capability.
+
+No JDK Foreign Function & Memory type is exposed in the core contract. A CPU
+provider may internally use `MemorySegment`; Metal/CUDA providers may use their
+own device allocation handles. This keeps the common API usable across memory
+domains without pretending device pointers are host-dereferenceable.
