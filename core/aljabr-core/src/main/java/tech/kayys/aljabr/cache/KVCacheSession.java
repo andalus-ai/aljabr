@@ -17,7 +17,7 @@ import java.util.Objects;
  * cross-thread synchronization. A session should normally be confined to one
  * active model sequence.</p>
  */
-public final class KVCacheSession implements KVCacheSharingCapability {
+public final class KVCacheSession implements KVCacheSharingCapability, KVCacheBufferSharingCapability {
 
     private final KVCacheStorage storage;
     private final boolean[] currentPositionWritten;
@@ -122,6 +122,21 @@ public final class KVCacheSession implements KVCacheSharingCapability {
                 }
             }
         };
+    }
+
+    /**
+     * Opens a backend-aware lease over the currently committed prefix when
+     * the underlying storage provides native buffer borrowing.
+     *
+     * @throws UnsupportedOperationException when storage has no buffer provider
+     */
+    @Override
+    public synchronized KVCacheBufferReadView openBufferReadView() {
+        if (!(storage instanceof KVCacheBufferRegionProvider provider)) {
+            throw new UnsupportedOperationException(
+                    "KV cache storage does not support backend-aware buffer borrowing");
+        }
+        return provider.openBufferReadView(committedLength);
     }
 
     private void checkWritablePrefixIsNotBorrowed(int firstPosition, int tokenCount) {
