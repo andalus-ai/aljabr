@@ -156,3 +156,8 @@ claim that arbitrary asynchronous CPU kernels are synchronized; consumers
 must still respect the lease lifetime and region byte bounds. The heap handle
 is intentionally package-private and is resolved only by compatible CPU-side
 code. No raw Java array is exposed by the public cache API.
+
+
+### CPU native-memory provider (FFM)
+
+The optional `NativeKVCacheStorage` implementation uses the JDK 25 Foreign Function & Memory API and a storage-owned shared `Arena`. It exports `HOST_NATIVE` / `FLOAT32` regions through opaque handles and the scoped `NativeKVCacheBufferAccess.withReadOnlySegment(...)` adapter. Heap storage remains the default portable provider. The native provider does not imply end-to-end zero-copy or automatic kernel compatibility; provider selection remains explicit. See [CPU Native KV Storage](CPU_NATIVE_KV_STORAGE.md) for ownership, lifetime and validation details.
