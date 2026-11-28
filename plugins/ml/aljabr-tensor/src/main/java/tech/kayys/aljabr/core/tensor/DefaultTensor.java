@@ -868,6 +868,7 @@ public final class DefaultTensor implements Tensor {
      */
     @Override
     public Tensor grad() {
+        ensureOpen();
         return grad;
     }
 
@@ -876,7 +877,7 @@ public final class DefaultTensor implements Tensor {
      * gradient releases the previous gradient; passing {@code null} clears it.
      */
     @Override
-    public void setGrad(Tensor g) {
+    public synchronized void setGrad(Tensor g) {
         ensureOpen();
         if (g == this) {
             throw new IllegalArgumentException("A tensor cannot own itself as its gradient");
@@ -898,6 +899,7 @@ public final class DefaultTensor implements Tensor {
 
     @Override
     public void setRequiresGrad(boolean r) {
+        ensureOpen();
         if (autogradNode != null && autogradNode.getOp() != OpType.CONSTANT) {
             throw new IllegalStateException("requiresGrad can only be set on a leaf tensor");
         }
@@ -910,7 +912,7 @@ public final class DefaultTensor implements Tensor {
      * this tensor must no longer be used after release.
      */
     @Override
-    public void release() {
+    public synchronized void release() {
         if (released.compareAndSet(false, true)) {
             Tensor ownedGradient = grad;
             grad = null;
