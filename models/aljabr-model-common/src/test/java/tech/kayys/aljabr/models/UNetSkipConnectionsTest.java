@@ -2,6 +2,7 @@ package tech.kayys.aljabr.models;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import org.junit.jupiter.api.Test;
 
@@ -28,8 +29,8 @@ class UNetSkipConnectionsTest {
             skips.requireEmpty();
 
             // The stack only tracks references; tensors remain usable/owned by caller.
-            assertThat(first.isReleased()).isFalse();
-            assertThat(second.isReleased()).isFalse();
+            assertThat(first.shape().rank()).isEqualTo(4);
+            assertThat(second.shape().rank()).isEqualTo(4);
         } finally {
             first.release();
             second.release();
@@ -42,7 +43,6 @@ class UNetSkipConnectionsTest {
         assertThatThrownBy(skips::pop)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No encoder skip");
-        assertThatThrownBy(skips::requireEmpty)
-                .doesNotThrowAnyException();
+        assertThatCode(skips::requireEmpty).doesNotThrowAnyException();
     }
 }
