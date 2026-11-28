@@ -28,8 +28,9 @@ class HeapKVCacheBufferSharingTest {
                         return buffer.get() + buffer.get();
                     });
             assertEquals(8.0f, sum);
-            assertEquals(7.0f, HeapKVCacheBufferAccess.withReadOnlyBuffer(
-                    view, view.valueRegion(0), buffer -> buffer.get()));
+            float firstValue = HeapKVCacheBufferAccess.withReadOnlyBuffer(
+                    view, view.valueRegion(0), buffer -> buffer.get());
+            assertEquals(7.0f, firstValue, 0.0001f);
         } finally {
             view.close();
         }
