@@ -37,7 +37,7 @@ class BuiltInCapabilityDiscoveryTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL,
                 safetensors.compatibility().fidelity());
-        assertEquals(Set.of("extensions.vendor.model", "tensors.weight.extensions.vendor.scale"),
+        assertEquals(Set.of("/extensions/vendor.model", "/tensors/weight/extensions/vendor.scale"),
                 safetensors.compatibility().diagnostics().stream()
                         .map(diagnostic -> diagnostic.path().orElseThrow())
                         .collect(java.util.stream.Collectors.toSet()));
