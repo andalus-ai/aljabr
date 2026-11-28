@@ -54,3 +54,15 @@ No FFmpeg, ImageIO, Python, PyTorch, ComfyUI, tensor backend, or device-selectio
 - The mapper is injected, so this layer does not require a specific packed-batch class, tensor backend, device, codec, or scheduler.
 
 This is synchronous pull-based flow control. It does not create worker threads, prefetch, or provide asynchronous backpressure.
+
+## Bounded-memory batch consumption
+
+`VideoFrameBatchConsumer.consume` processes resource-owning batch values one at a time.
+
+- Each batch is closed with try-with-resources before the source iterator is asked for another value.
+- Processing failure still closes the current batch; a close failure is attached as a suppressed exception.
+- A close failure after successful processing stops consumption and is propagated; later batches are not requested.
+- The method returns the number of batches successfully processed and closed.
+- The consumer owns each produced batch, but not the source sequence or its prepared conditioning set.
+
+Compose it with `VideoFrameBatchStream.mapChunks` to pack and consume one bounded chunk at a time. Keep the source conditioning owner open for the duration of the call. The processor must not retain a batch beyond its callback unless it explicitly copies or retains the needed data into independently owned storage.
