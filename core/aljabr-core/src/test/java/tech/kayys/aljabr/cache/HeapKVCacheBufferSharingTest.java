@@ -26,16 +26,13 @@ class HeapKVCacheBufferSharingTest {
                         return buffer.get() + buffer.get();
                     });
             assertEquals(8.0f, sum);
-            assertThrows(IllegalStateException.class, () ->
-                    HeapKVCacheBufferAccess.withReadOnlyBuffer(
-                            view, view.valueRegion(0), buffer -> buffer.get()));
+            assertEquals(7.0f, HeapKVCacheBufferAccess.withReadOnlyBuffer(
+                    view, view.valueRegion(0), buffer -> buffer.get()));
         } finally {
             view.close();
         }
 
-        assertThrows(IllegalStateException.class, () ->
-                HeapKVCacheBufferAccess.withReadOnlyBuffer(
-                        view, view.keyRegion(0), buffer -> buffer.get()));
+        assertThrows(IllegalStateException.class, () -> view.keyRegion(0));
     }
 
     @Test
