@@ -65,6 +65,34 @@ static BOOL checked_aligned_region(uintptr_t address, size_t bytes,
   return YES;
 }
 
+/* KV cache buffers have storage lifetime rather than dispatch lifetime.
+   The retained Objective-C reference is released by the Java storage owner. */
+void *aljabr_metal_kv_buffer_create(size_t bytes) {
+  if (bytes == 0 || g_device == nil)
+    return NULL;
+  id<MTLBuffer> buffer =
+      [g_device newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+  if (buffer == nil)
+    return NULL;
+  return (__bridge_retained void *)buffer;
+}
+
+void *aljabr_metal_kv_buffer_contents(void *buffer_handle) {
+  if (buffer_handle == NULL)
+    return NULL;
+  id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)buffer_handle;
+  if (buffer == nil || buffer.storageMode != MTLStorageModeShared)
+    return NULL;
+  return [buffer contents];
+}
+
+int aljabr_metal_kv_buffer_release(void *buffer_handle) {
+  if (buffer_handle == NULL)
+    return -1;
+  (void)CFBridgingRelease(buffer_handle);
+  return 0;
+}
+
 id<MTLBuffer> aljabr_metal_wrap_ptr(void *ptr, size_t bytes) {
   if (ptr == NULL || bytes == 0 || g_device == nil)
     return nil;
