@@ -36,6 +36,7 @@ class FormatTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.UNSUPPORTED, report.fidelity());
         assertEquals("GGUF_QUANTIZATION_BLOCK_MISMATCH", report.diagnostics().getFirst().code());
+        assertEquals("/tensors/weight/shape", report.diagnostics().getFirst().path().orElseThrow());
     }
 
     @Test
@@ -45,6 +46,7 @@ class FormatTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.UNSUPPORTED, report.fidelity());
         assertEquals("GGUF_DTYPE_UNSUPPORTED", report.diagnostics().getFirst().code());
+        assertEquals("/tensors/weight/dataType", report.diagnostics().getFirst().path().orElseThrow());
     }
 
     @Test
