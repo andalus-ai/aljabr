@@ -28,4 +28,9 @@ publishing {
     repositories { mavenLocal() }
 }
 
-tasks.withType<Test>().configureEach { useJUnitPlatform() }
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    if (!System.getenv("ALJABR_EMBEDDING_GEMMA2_CHECKPOINT").isNullOrBlank()) {
+        maxHeapSize = "4g"
+    }
+}
