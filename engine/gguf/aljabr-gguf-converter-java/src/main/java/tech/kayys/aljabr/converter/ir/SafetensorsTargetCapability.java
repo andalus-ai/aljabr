@@ -22,7 +22,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64", "BOOL");
 
     private static final Set<String> GGML_QUANTIZED = Set.of(
-            "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS",
+            "MXFP4", "TQ1_0", "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS",
             "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K",
             "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0");
 
@@ -40,7 +40,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
             String path = "/tensors/" + pointerSegment(tensor.name()) + "/dataType";
             if (GGML_QUANTIZED.contains(type)) {
-            if (Set.of("TQ1_0", "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
+            if (Set.of("MXFP4", "TQ1_0", "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0").contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.WARNING,
                         "GGML_QUANTIZATION_DEQUANTIZED",
