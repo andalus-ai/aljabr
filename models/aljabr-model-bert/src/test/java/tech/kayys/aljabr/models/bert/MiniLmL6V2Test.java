@@ -54,4 +54,31 @@ class MiniLmL6V2Test {
             backend.close();
         }
     }
+
+    @Test
+    void maskedRightPaddingDoesNotChangeSentenceEmbedding() {
+        CpuBackend backend = new CpuBackend();
+        MiniLmL6V2 model = MiniLmL6V2.create(backend);
+        Tensor unpaddedIds = TensorFactory.of(new int[] {101, 2023, 102}, backend, 1, 3);
+        Tensor unpaddedMask = TensorFactory.of(new int[] {1, 1, 1}, backend, 1, 3);
+        Tensor paddedIds = TensorFactory.of(new int[] {101, 2023, 102, 0, 0}, backend, 1, 5);
+        Tensor paddedMask = TensorFactory.of(new int[] {1, 1, 1, 0, 0}, backend, 1, 5);
+        try {
+            float[] expected = model.embed(unpaddedIds, unpaddedMask)[0];
+            float[] actual = model.embed(paddedIds, paddedMask)[0];
+            assertEquals(expected.length, actual.length);
+            for (int i = 0; i < expected.length; i++) {
+                org.junit.jupiter.api.Assertions.assertEquals(expected[i], actual[i], 1.0e-5f,
+                        "Masked right padding changed embedding coordinate " + i);
+            }
+        } finally {
+            paddedMask.release();
+            paddedIds.release();
+            unpaddedMask.release();
+            unpaddedIds.release();
+            model.encoder().close();
+            backend.close();
+        }
+    }
+
 }
