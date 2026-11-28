@@ -17,7 +17,8 @@ import java.util.Objects;
  * cross-thread synchronization. A session should normally be confined to one
  * active model sequence.</p>
  */
-public final class KVCacheSession implements KVCacheSharingCapability, KVCacheBufferSharingCapability {
+public final class KVCacheSession
+        implements KVCacheSharingCapability, KVCacheBufferSharingCapability {
 
     private final KVCacheStorage storage;
     private final boolean[] currentPositionWritten;
