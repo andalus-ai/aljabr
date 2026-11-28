@@ -3,11 +3,10 @@ package tech.kayys.aljabr.backend.metal.cache;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
+import tech.kayys.aljabr.cache.KVCacheBufferCompatibilityValidator;
 import tech.kayys.aljabr.cache.KVCacheBufferLayout;
 import tech.kayys.aljabr.cache.KVCacheBufferReadView;
 import tech.kayys.aljabr.cache.KVCacheBufferRegion;
-import tech.kayys.aljabr.cache.KVCacheBufferLayoutValidator;
-import tech.kayys.aljabr.cache.KVCacheElementType;
 import tech.kayys.aljabr.cache.KVCacheMemoryDomain;
 import tech.kayys.aljabr.metal.binding.MetalBinding;
 
@@ -44,13 +43,12 @@ public final class MetalKVCacheAttentionConsumer {
         if (!output.isNative() || !query.isNative()) {
             throw new IllegalArgumentException("Metal attention query and output must use native memory segments");
         }
-        if (!"metal".equals(lease.backendId())) {
-            throw new IllegalArgumentException("Borrowed KV lease is not owned by Metal");
-        }
+        // Reject incompatible providers before interpreting their opaque handles.
+        KVCacheBufferCompatibilityValidator.validateForConsumer(
+                lease, layer, "metal", KVCacheMemoryDomain.DEVICE,
+                tech.kayys.aljabr.cache.KVCacheElementType.FLOAT32, binding.deviceName());
 
-        // Shared conformance checks are backend-neutral; Metal-specific
-        // restrictions are applied below before native dispatch.
-        KVCacheBufferLayoutValidator.validateView(lease, layer);
+        // Kernel-specific layout and offset restrictions are applied below.
 
         int sequenceLength = lease.visibleSequenceLength();
         if (queryHeads <= 0 || sequenceLength <= 0 || sequenceLength > MAX_SEQUENCE_LENGTH) {
@@ -120,11 +118,8 @@ public final class MetalKVCacheAttentionConsumer {
     }
 
     private static void validateRegion(KVCacheBufferRegion region) {
-        if (region.memoryDomain() != KVCacheMemoryDomain.DEVICE
-                || !"metal".equals(region.backendId())
-                || region.elementType() != KVCacheElementType.FLOAT32
-                || region.byteOffset() != 0) {
-            throw new IllegalArgumentException("Borrowed KV region is incompatible with Metal FLOAT32 SDPA");
+        if (region.byteOffset() != 0) {
+            throw new IllegalArgumentException("Metal flat SDPA requires a zero-based KV region");
         }
     }
 }
