@@ -37,7 +37,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
     private final CpuAttentionExecution attentionExecution;
     private final CpuSpatialExecution spatialExecution;
     private final CpuReductionExecution reductionExecution;
-    private final CpuNormalizationExecution normalizationExecution;
+    private final CpuNormalizationExecution normalizationExecution;\n    private final CpuIndexAddExecution indexAddExecution;
 
     public CpuBackend() {
         this(null, PoolOwnership.BORROWED, null);
@@ -72,7 +72,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         this.attentionExecution = new CpuAttentionExecution(this, this::allocateOutput, this::out);
         this.spatialExecution = new CpuSpatialExecution(this::allocateOutput, this::out);
         this.reductionExecution = new CpuReductionExecution(this::allocateOutput, this::out);
-        this.normalizationExecution = new CpuNormalizationExecution(this::allocateOutput, this::out);
+        this.normalizationExecution = new CpuNormalizationExecution(this::allocateOutput, this::out);\n        this.indexAddExecution = new CpuIndexAddExecution(this);
     }
 
     @Override
@@ -90,7 +90,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
      * CPU kernels currently require host-accessible segments; device-local
      * storage belongs to a different backend implementation.
      */
-    private HostAccessibleStorage allocateOutput(long byteSize) {
+    HostAccessibleStorage allocateOutput(long byteSize) {
         if (closed.get()) {
             throw new IllegalStateException("CPU backend is closed");
         }
@@ -139,7 +139,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         return out(shape, DType.F32, buf);
     }
 
-    private DefaultTensor out(Shape shape, DType dtype, HostAccessibleStorage buf) {
+    DefaultTensor out(Shape shape, DType dtype, HostAccessibleStorage buf) {
         return new DefaultTensor(shape, dtype, DeviceType.CPU, buf, this);
     }
     // ── Arithmetic ────────────────────────────────────────────────────────────
@@ -578,112 +578,7 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
 
     @Override
     public Tensor indexAdd(Tensor input, int axis, Tensor indices, Tensor source) {
-        Objects.requireNonNull(input, "input");
-        Objects.requireNonNull(indices, "indices");
-        Objects.requireNonNull(source, "source");
-        TensorOperationValidator.IndexAddPlan plan = TensorOperationValidator.validateIndexAdd(
-                input.shape(), indices.shape(), source.shape(), axis);
-        if (input.backend() != this || indices.backend() != this || source.backend() != this) {
-            throw new IllegalArgumentException("CPU indexAdd requires all tensors to use this backend");
-        }
-        if (input.dtype() != source.dtype()) {
-            throw new IllegalArgumentException(
-                    "CPU indexAdd source dtype " + source.dtype()
-                            + " must match destination dtype " + input.dtype());
-        }
-        if (input.dtype() != DType.F32 && input.dtype() != DType.F16 && input.dtype() != DType.BF16
-                && input.dtype() != DType.I32 && input.dtype() != DType.I8 && input.dtype() != DType.INT8) {
-            throw new UnsupportedOperationException(
-                    "CPU indexAdd currently supports F32, F16, BF16, I32, I8, and INT8 destination and source tensors; actual dtype="
-                            + input.dtype());
-        }
-        if (indices.dtype() != DType.I32) {
-            throw new IllegalArgumentException("CPU indexAdd indices must use I32; actual dtype=" + indices.dtype());
-        }
-
-        int[] selected = indices.toIntArray();
-        long destinationAxisSize = input.shape().dim(plan.axis());
-        for (int i = 0; i < selected.length; i++) {
-            if (selected[i] < 0 || selected[i] >= destinationAxisSize) {
-                throw new IndexOutOfBoundsException(
-                        "index-add index " + selected[i] + " at position " + i
-                                + " is outside axis " + plan.axis() + " with size " + destinationAxisSize);
-            }
-        }
-
-        long[] destinationDimensions = input.shape().dims();
-        long[] sourceDimensions = source.shape().dims();
-        int selectedAxis = plan.axis();
-        long outer = 1;
-        long inner = 1;
-        for (int i = 0; i < selectedAxis; i++) {
-            outer = Math.multiplyExact(outer, destinationDimensions[i]);
-        }
-        for (int i = selectedAxis + 1; i < destinationDimensions.length; i++) {
-            inner = Math.multiplyExact(inner, destinationDimensions[i]);
-        }
-
-        long outputElements = plan.outputShape().numel();
-        DType dtype = input.dtype();
-        HostAccessibleStorage output = allocateOutput(dtype.memoryFootprintBytes(outputElements));
-        try {
-            MemorySegment destination = seg(input);
-            MemorySegment updates = seg(source);
-            MemorySegment result = output.segment();
-            TensorLayout destinationLayout = input.layout();
-            TensorLayout sourceLayout = source.layout();
-            TensorLayout resultLayout = TensorLayout.contiguous(plan.outputShape());
-            long[] destinationDims = input.shape().dims();
-            for (long logical = 0; logical < outputElements; logical++) {
-                if (dtype == DType.I32) {
-                    CpuIndexAddValueAccess.writeIndexAddInt(result, logical,
-                            CpuIndexAddValueAccess.readIndexAddInt(destination, destinationDims, destinationLayout, logical));
-                } else if (dtype == DType.I8 || dtype == DType.INT8) {
-                    CpuIndexAddValueAccess.writeIndexAddByte(result, logical,
-                            CpuIndexAddValueAccess.readIndexAddByte(destination, destinationDims, destinationLayout, logical));
-                } else {
-                    float value = CpuIndexAddValueAccess.readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
-                    CpuIndexAddValueAccess.writeIndexAddValue(result, logical, dtype, value);
-                }
-            }
-
-            long sourceAxisSize = sourceDimensions[selectedAxis];
-            for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
-                for (int indexPosition = 0; indexPosition < selected.length; indexPosition++) {
-                    long sourceBase = Math.multiplyExact(
-                            Math.addExact(Math.multiplyExact(outerIndex, sourceAxisSize), indexPosition), inner);
-                    long destinationBase = Math.multiplyExact(
-                            Math.addExact(Math.multiplyExact(outerIndex, destinationAxisSize), selected[indexPosition]), inner);
-                    for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
-                        long sourceLogical = Math.addExact(sourceBase, innerIndex);
-                        long destinationLogical = Math.addExact(destinationBase, innerIndex);
-                        if (dtype == DType.I32) {
-                            int update = CpuIndexAddValueAccess.readIndexAddInt(
-                                    updates, sourceDimensions, sourceLayout, sourceLogical);
-                            int current = CpuIndexAddValueAccess.readIndexAddInt(
-                                    result, destinationDimensions, resultLayout, destinationLogical);
-                            CpuIndexAddValueAccess.writeIndexAddInt(result, destinationLogical, current + update);
-                        } else if (dtype == DType.I8 || dtype == DType.INT8) {
-                            byte update = CpuIndexAddValueAccess.readIndexAddByte(
-                                    updates, sourceDimensions, sourceLayout, sourceLogical);
-                            byte current = CpuIndexAddValueAccess.readIndexAddByte(
-                                    result, destinationDimensions, resultLayout, destinationLogical);
-                            CpuIndexAddValueAccess.writeIndexAddByte(result, destinationLogical, (byte) (current + update));
-                        } else {
-                            float update = CpuIndexAddValueAccess.readIndexAddValue(
-                                    updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
-                            float current = CpuIndexAddValueAccess.readIndexAddValue(result, destinationDimensions,
-                                    resultLayout, destinationLogical, dtype);
-                            CpuIndexAddValueAccess.writeIndexAddValue(result, destinationLogical, dtype, current + update);
-                        }
-                    }
-                }
-            }
-            return out(plan.outputShape(), dtype, output);
-        } catch (RuntimeException | Error failure) {
-            output.release();
-            throw failure;
-        }
+        return indexAddExecution.indexAdd(input, axis, indices, source);
     }
 
     @Override
