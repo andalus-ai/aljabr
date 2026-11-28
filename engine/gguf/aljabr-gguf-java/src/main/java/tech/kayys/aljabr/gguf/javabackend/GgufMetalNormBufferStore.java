@@ -13,7 +13,6 @@ import java.lang.foreign.ValueLayout;
  */
 final class GgufMetalNormBufferStore {
     private static final int SLOT_COUNT = 6;
-    private static final int MODEL_DIMENSION_SLOTS = 4;
 
     private volatile Generation current;
 
