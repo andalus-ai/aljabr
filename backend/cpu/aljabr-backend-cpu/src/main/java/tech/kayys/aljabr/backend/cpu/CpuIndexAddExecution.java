@@ -5,7 +5,6 @@ import java.util.Objects;
 
 import tech.kayys.aljabr.core.tensor.DType;
 import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
-import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorLayout;
 import tech.kayys.aljabr.core.tensor.internal.TensorOperationValidator;
@@ -38,11 +37,7 @@ final class CpuIndexAddExecution {
                     "CPU indexAdd source dtype " + source.dtype()
                             + " must match destination dtype " + dtype);
         }
-        if (!isSupported(dtype)) {
-            throw new UnsupportedOperationException(
-                    "CPU indexAdd currently supports F32, F16, BF16, I32, I8, and INT8 destination and source tensors; actual dtype="
-                            + dtype);
-        }
+        CpuIndexAddArithmetic arithmetic = CpuIndexAddArithmetic.forDType(dtype);
         if (indices.dtype() != DType.I32) {
             throw new IllegalArgumentException("CPU indexAdd indices must use I32; actual dtype=" + indices.dtype());
         }
@@ -79,25 +74,22 @@ final class CpuIndexAddExecution {
             TensorLayout sourceLayout = source.layout();
             TensorLayout resultLayout = TensorLayout.contiguous(plan.outputShape());
 
-            copyDestination(dtype, destination, destinationDimensions, destinationLayout,
-                    result, outputElements);
+            for (long logical = 0; logical < outputElements; logical++) {
+                arithmetic.copy(destination, destinationDimensions, destinationLayout, result, logical);
+            }
 
             long sourceAxisSize = sourceDimensions[selectedAxis];
-            for (long outerIndex = 0; outerIndex < outer; outerIndex++) {
-                for (int indexPosition = 0; indexPosition < selected.length; indexPosition++) {
-                    long sourceBase = Math.multiplyExact(
-                            Math.addExact(Math.multiplyExact(outerIndex, sourceAxisSize), indexPosition), inner);
-                    long destinationBase = Math.multiplyExact(
-                            Math.addExact(Math.multiplyExact(outerIndex, destinationAxisSize), selected[indexPosition]), inner);
-                    for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
-                        long sourceLogical = Math.addExact(sourceBase, innerIndex);
-                        long destinationLogical = Math.addExact(destinationBase, innerIndex);
-                        accumulate(dtype, updates, sourceDimensions, sourceLayout,
+            CpuIndexedAxisTraversal.forEach(outer, sourceAxisSize, inner, selected,
+                    (outerIndex, selectionPosition, selectedIndex, innerIndex, sourceLogical, outputLogical) -> {
+                        long destinationLogical = Math.addExact(
+                                Math.multiplyExact(
+                                        Math.addExact(Math.multiplyExact(outerIndex, destinationAxisSize), selectedIndex),
+                                        inner),
+                                innerIndex);
+                        arithmetic.add(updates, sourceDimensions, sourceLayout,
                                 result, destinationDimensions, resultLayout,
                                 sourceLogical, destinationLogical);
-                    }
-                }
-            }
+                    });
             return backend.out(plan.outputShape(), dtype, output);
         } catch (RuntimeException | Error failure) {
             output.release();
@@ -105,51 +97,5 @@ final class CpuIndexAddExecution {
         }
     }
 
-    private static boolean isSupported(DType dtype) {
-        return dtype == DType.F32 || dtype == DType.F16 || dtype == DType.BF16
-                || dtype == DType.I32 || dtype == DType.I8 || dtype == DType.INT8;
-    }
 
-    private static void copyDestination(
-            DType dtype, MemorySegment source, long[] dimensions, TensorLayout layout,
-            MemorySegment destination, long elements) {
-        for (long logical = 0; logical < elements; logical++) {
-            if (dtype == DType.I32) {
-                CpuIndexAddValueAccess.writeIndexAddInt(destination, logical,
-                        CpuIndexAddValueAccess.readIndexAddInt(source, dimensions, layout, logical));
-            } else if (dtype == DType.I8 || dtype == DType.INT8) {
-                CpuIndexAddValueAccess.writeIndexAddByte(destination, logical,
-                        CpuIndexAddValueAccess.readIndexAddByte(source, dimensions, layout, logical));
-            } else {
-                float value = CpuIndexAddValueAccess.readIndexAddValue(source, dimensions, layout, logical, dtype);
-                CpuIndexAddValueAccess.writeIndexAddValue(destination, logical, dtype, value);
-            }
-        }
-    }
-
-    private static void accumulate(
-            DType dtype,
-            MemorySegment updates, long[] sourceDimensions, TensorLayout sourceLayout,
-            MemorySegment result, long[] destinationDimensions, TensorLayout resultLayout,
-            long sourceLogical, long destinationLogical) {
-        if (dtype == DType.I32) {
-            int update = CpuIndexAddValueAccess.readIndexAddInt(
-                    updates, sourceDimensions, sourceLayout, sourceLogical);
-            int current = CpuIndexAddValueAccess.readIndexAddInt(
-                    result, destinationDimensions, resultLayout, destinationLogical);
-            CpuIndexAddValueAccess.writeIndexAddInt(result, destinationLogical, current + update);
-        } else if (dtype == DType.I8 || dtype == DType.INT8) {
-            byte update = CpuIndexAddValueAccess.readIndexAddByte(
-                    updates, sourceDimensions, sourceLayout, sourceLogical);
-            byte current = CpuIndexAddValueAccess.readIndexAddByte(
-                    result, destinationDimensions, resultLayout, destinationLogical);
-            CpuIndexAddValueAccess.writeIndexAddByte(result, destinationLogical, (byte) (current + update));
-        } else {
-            float update = CpuIndexAddValueAccess.readIndexAddValue(
-                    updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
-            float current = CpuIndexAddValueAccess.readIndexAddValue(
-                    result, destinationDimensions, resultLayout, destinationLogical, dtype);
-            CpuIndexAddValueAccess.writeIndexAddValue(result, destinationLogical, dtype, current + update);
-        }
-    }
 }
