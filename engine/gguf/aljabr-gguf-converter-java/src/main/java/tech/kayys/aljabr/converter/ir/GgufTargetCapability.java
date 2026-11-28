@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+/** Metadata-only preflight for GGUF tensor and AMIR envelope capabilities. */
 public final class GgufTargetCapability implements TargetFormatCapability {
 
     private static final Set<String> SUPPORTED = java.util.Arrays.stream(GgmlType.values())
@@ -25,23 +26,19 @@ public final class GgufTargetCapability implements TargetFormatCapability {
 
     @Override
     public CompatibilityReport assess(ModelDescriptor source) {
-        List<CompatibilityReport.Diagnostic> diagnostics = new ArrayList<>();
-        boolean partial = false;
-
-        if ("unknown".equalsIgnoreCase(source.architecture())) {
-            diagnostics.add(diagnostic(CompatibilityReport.Severity.WARNING,
-                    "ARCHITECTURE_UNSPECIFIED",
-                    "GGUF can store tensors, but model architecture metadata is unspecified."));
-            partial = true;
-        }
+        List<CompatibilityReport.Diagnostic> diagnostics = new ArrayList<>(
+                new AmirFidelityEvaluator().evaluate(source, AmirFormatCapabilities.gguf()).diagnostics());
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
+            String path = "/tensors/" + pointerSegment(tensor.name());
             if (!SUPPORTED.contains(type)) {
-                diagnostics.add(diagnostic(CompatibilityReport.Severity.ERROR,
+                diagnostics.add(new CompatibilityReport.Diagnostic(
+                        CompatibilityReport.Severity.ERROR,
                         "GGUF_DTYPE_UNSUPPORTED",
                         "Tensor '" + tensor.name() + "' uses dtype '" + tensor.dataType()
-                                + "', which has no supported GGML storage type."));
+                                + "', which has no supported GGML storage type.",
+                        path + "/dataType"));
                 continue;
             }
 
@@ -49,31 +46,35 @@ public final class GgufTargetCapability implements TargetFormatCapability {
                 GgmlType ggmlType = GgmlType.fromLabel(type);
                 long elements = elementCount(tensor);
                 if (elements % ggmlType.blockSize != 0) {
-                    diagnostics.add(diagnostic(CompatibilityReport.Severity.ERROR,
+                    diagnostics.add(new CompatibilityReport.Diagnostic(
+                            CompatibilityReport.Severity.ERROR,
                             "GGUF_QUANTIZATION_BLOCK_MISMATCH",
                             "Tensor '" + tensor.name() + "' has " + elements
                                     + " elements, not divisible by GGML block size "
-                                    + ggmlType.blockSize + " for " + ggmlType.label + "."));
+                                    + ggmlType.blockSize + " for " + ggmlType.label + ".",
+                            path + "/shape"));
                 }
             } catch (IllegalArgumentException | ArithmeticException exception) {
-                diagnostics.add(diagnostic(CompatibilityReport.Severity.ERROR,
+                diagnostics.add(new CompatibilityReport.Diagnostic(
+                        CompatibilityReport.Severity.ERROR,
                         "GGUF_SHAPE_INVALID",
-                        "Tensor '" + tensor.name() + "' cannot be represented: " + exception.getMessage()));
+                        "Tensor '" + tensor.name() + "' cannot be represented: " + exception.getMessage(),
+                        path + ".shape"));
             }
         }
 
-        if (source.graphCollection().isPresent()
-                || source.componentCollection().filter(collection ->
-                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent()) {
-            diagnostics.add(diagnostic(CompatibilityReport.Severity.WARNING,
-                    "AMIR_TYPED_LAYER_NOT_REPRESENTABLE",
-                    "GGUF conversion preserves assets and unbound components, but graph collections and "
-                            + "components with graph bindings are not yet encoded."));
-            partial = true;
-        }
+        return report(diagnostics);
+    }
 
+    private static String pointerSegment(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
+    }
+
+    private static CompatibilityReport report(List<CompatibilityReport.Diagnostic> diagnostics) {
         boolean unsupported = diagnostics.stream().anyMatch(
-                d -> d.severity() == CompatibilityReport.Severity.ERROR);
+                diagnostic -> diagnostic.severity() == CompatibilityReport.Severity.ERROR);
+        boolean partial = diagnostics.stream().anyMatch(
+                diagnostic -> diagnostic.severity() == CompatibilityReport.Severity.WARNING);
         return new CompatibilityReport(
                 unsupported ? CompatibilityReport.ConversionFidelity.UNSUPPORTED
                         : partial ? CompatibilityReport.ConversionFidelity.PARTIAL
@@ -87,10 +88,5 @@ public final class GgufTargetCapability implements TargetFormatCapability {
             elements = Math.multiplyExact(elements, dimension);
         }
         return elements;
-    }
-
-    private static CompatibilityReport.Diagnostic diagnostic(
-            CompatibilityReport.Severity severity, String code, String message) {
-        return new CompatibilityReport.Diagnostic(severity, code, message);
     }
 }
