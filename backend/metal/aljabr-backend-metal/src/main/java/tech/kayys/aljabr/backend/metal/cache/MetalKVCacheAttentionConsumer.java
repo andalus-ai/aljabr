@@ -35,7 +35,7 @@ public final class MetalKVCacheAttentionConsumer {
      * @return native bridge status (zero on success)
      */
     public int decode(KVCacheBufferReadView lease, int layer,
-            MemorySegment output, MemorySegment query,
+            MemorySegment output, MemorySegment query, int queryHeads,
             int startPosition, float scale, float softCap) {
         Objects.requireNonNull(lease, "lease");
         Objects.requireNonNull(output, "output");
@@ -45,7 +45,7 @@ public final class MetalKVCacheAttentionConsumer {
         }
 
         int sequenceLength = lease.visibleSequenceLength();
-        if (sequenceLength <= 0 || sequenceLength > MAX_SEQUENCE_LENGTH) {
+        if (queryHeads <= 0 || sequenceLength <= 0 || sequenceLength > MAX_SEQUENCE_LENGTH) {
             throw new IllegalArgumentException("Metal flat SDPA requires 1..4096 visible positions");
         }
         if (startPosition < 0 || startPosition >= sequenceLength) {
@@ -81,7 +81,7 @@ public final class MetalKVCacheAttentionConsumer {
                 }
                 return binding.borrowedKvAttention(output, query,
                         keyView.nativeBuffer(), valueView.nativeBuffer(),
-                        lease.layout().queryHeads(), keyLayout.kvHeads(),
+                        queryHeads, keyLayout.kvHeads(),
                         keyLayout.headDimension(), Math.toIntExact(keyLayout.sequenceStride()),
                         sequenceLength - 1, startPosition, scale, softCap);
             });
