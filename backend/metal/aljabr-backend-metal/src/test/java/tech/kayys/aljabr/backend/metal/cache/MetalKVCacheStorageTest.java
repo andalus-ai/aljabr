@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Assumptions;
@@ -48,6 +50,41 @@ class MetalKVCacheStorageTest {
                             view.readOnlyContents().set(java.lang.foreign.ValueLayout.JAVA_FLOAT, 0, 9);
                             return null;
                         }));
+            }
+        }
+    }
+
+    @Test
+    void directBorrowedKvAttentionMatchesGroupedQueryReference() {
+        MetalBinding binding = availableBinding().orElse(null);
+        Assumptions.assumeTrue(binding != null, "Requires an available unified-memory Metal device");
+
+        KVCacheLayout layout = KVCacheLayout.uniform(1, 8, 1, 2);
+        try (MetalKVCacheStorage storage = new MetalKVCacheStorage(layout, binding)) {
+            KVCacheSession session = new KVCacheSession(storage);
+            session.write(0, 0, new float[] {1, 0}, 0, new float[] {10, 0}, 0);
+            session.write(0, 1, new float[] {0, 1}, 0, new float[] {0, 20}, 0);
+            session.commit(2);
+
+            try (KVCacheBufferReadView lease = session.openBufferReadView();
+                    Arena arena = Arena.ofConfined()) {
+                float[] query = {1, 0, 0, 1};
+                MemorySegment querySegment = arena.allocate((long) query.length * Float.BYTES);
+                MemorySegment outputSegment = arena.allocate((long) query.length * Float.BYTES);
+                querySegment.copyFrom(MemorySegment.ofArray(query));
+
+                int status = new MetalKVCacheAttentionConsumer(binding).decode(
+                        lease, 0, outputSegment, querySegment,
+                        2, 0, 1.0f, 0.0f);
+                assertEquals(0, status, "Direct borrowed-KV Metal dispatch must complete");
+
+                float[] actual = outputSegment.toArray(ValueLayout.JAVA_FLOAT);
+                float w = (float) (1.0 / (1.0 + Math.exp(-1.0)));
+                float[] expected = {
+                        10.0f * w, 20.0f * (1.0f - w),
+                        10.0f * (1.0f - w), 20.0f * w
+                };
+                org.junit.jupiter.api.Assertions.assertArrayEquals(expected, actual, 1.0e-3f);
             }
         }
     }
