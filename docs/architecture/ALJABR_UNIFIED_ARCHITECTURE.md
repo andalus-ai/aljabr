@@ -341,3 +341,8 @@ ASR/STT and TTS are distinct capabilities. Audio formats, buffer ownership, and 
 Aljabr does not own HTTP audio endpoints, serving request scheduling, deployment, or client-facing serving policy. AQLI adapts the reusable capabilities to its serving contracts. The presence of an audio frontend, checkpoint inspector, model-family descriptor or tokenizer is not evidence of executable or validated speech inference; capability maturity must be documented explicitly.
 
 The initial module contracts are documented in [Audio and Speech Foundation](../speech/AUDIO_AND_SPEECH_FOUNDATION.md). Existing Whisper, SpeechT5, Bark, Qwen-Audio and EmbeddingGemma2 implementations remain authoritative until a consumer- and test-backed extraction is completed.
+
+
+## Reusable audio processing
+
+Generic PCM operations belong in `:engine:audio:aljabr-audio-core`, behind the model-neutral audio SPI. The initial reusable operations are channel downmixing and windowed-sinc sample-rate conversion. They return independently owned buffers and never close or mutate caller-owned input. Model-specific feature extraction remains in model modules: Whisper's 128-bin large-v3 log-Mel geometry, FFT and normalization are not generic audio semantics. Extend shared processing only after auditing multiple real consumers and adding numerical conformance tests. See [Audio and Speech Foundation](../speech/AUDIO_AND_SPEECH_FOUNDATION.md).
