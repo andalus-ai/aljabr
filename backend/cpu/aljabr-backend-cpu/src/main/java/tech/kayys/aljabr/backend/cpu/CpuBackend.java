@@ -400,6 +400,11 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         }
 
         TensorLayout inputLayout = a.layout();
+        // Reshaping to the identical logical shape cannot change element
+        // order, so preserve even a non-contiguous view and its storage offset.
+        if (a.shape().equals(outputShape)) {
+            return shapeView(a, outputShape, inputLayout.strides());
+        }
         if (!inputLayout.isContiguous()) {
             // Reshape preserves logical row-major order. Materialize only when
             // the source layout cannot be represented by canonical output strides.

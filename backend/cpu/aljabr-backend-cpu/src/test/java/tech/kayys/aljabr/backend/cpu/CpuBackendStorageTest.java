@@ -1600,6 +1600,29 @@ class CpuBackendStorageTest {
     }
 
     @Test
+    void reshapeToIdenticalShapePreservesNonContiguousLayoutAndStorage() {
+        HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f);
+        DefaultTensor input = new DefaultTensor(
+                new Shape(2, 3), DType.F32, DeviceType.CPU, (TensorStorage) storage, backend,
+                new tech.kayys.aljabr.core.tensor.TensorLayout(
+                        new Shape(2, 3), new long[] {1, 2}, 1));
+        Tensor reshaped = null;
+        try {
+            reshaped = backend.reshape(input, 2, 3);
+            assertArrayEquals(new long[] {2, 3}, reshaped.shape().dims());
+            assertArrayEquals(new long[] {1, 2}, reshaped.layout().strides());
+            assertEquals(1, reshaped.layout().storageOffset());
+            assertArrayEquals(new float[] {1f, 3f, 5f, 2f, 4f, 6f}, reshaped.toFloatArray(), 0f);
+            assertSame(storage, reshaped.storage());
+            assertEquals(2, storage.references());
+        } finally {
+            if (reshaped != null) reshaped.release();
+            input.release();
+        }
+        assertEquals(0, storage.references());
+    }
+
+    @Test
     void reshapeMaterializesNonContiguousInputInLogicalOrder() {
         HostStorage storage = new HostStorage(99f, 1f, 2f, 3f, 4f, 5f, 6f);
         DefaultTensor input = new DefaultTensor(
