@@ -1,28 +1,23 @@
 package tech.kayys.aljabr.models;
 
-import java.util.List;
 import java.util.Objects;
 
 import tech.kayys.aljabr.core.backend.ComputeBackend;
 import tech.kayys.aljabr.core.tensor.Tensor;
-import tech.kayys.aljabr.core.tensor.TensorOps;
 import tech.kayys.aljabr.core.nn.NNModule;
 import tech.kayys.aljabr.core.nn.GroupNorm;
 import tech.kayys.aljabr.core.nn.Linear;
 import tech.kayys.aljabr.core.nn.Sequential;
 import tech.kayys.aljabr.core.nn.Conv2d;
 import tech.kayys.aljabr.core.nn.Downsample2d;
-import tech.kayys.aljabr.core.nn.Upsample2d;
 import tech.kayys.aljabr.core.nn.SiLU;
 
 /**
  * Configurable two-resolution conditional 2D UNet scaffold for diffusion denoising.
  *
- * <p>Channel widths and attention head count are supplied by
- * {@link UNet2DConditionalConfig}; model-family adapters remain responsible for
- * checkpoint-specific timestep and conditioning mapping. This is still a
- * deliberately limited scaffold, not a claim of Stable Diffusion checkpoint
- * compatibility or a complete arbitrary-depth UNet implementation.</p>
+ * <p>Encoder, bottleneck, and decoder computation is delegated to reusable
+ * stage blocks. This remains a two-resolution scaffold, not an arbitrary-depth
+ * UNet or a claim of Stable Diffusion checkpoint compatibility.</p>
  */
 public class UNet2DConditional extends NNModule {
 
@@ -30,21 +25,11 @@ public class UNet2DConditional extends NNModule {
 
     private final Conv2d convIn;
     private final Sequential timeEmbedding;
-
-    private final ResnetBlock2D down1;
-    private final SpatialTransformer downAttn1;
+    private final UNetEncoderBlock2D down1;
     private final Downsample2d downsample;
-    private final ResnetBlock2D down2;
-    private final SpatialTransformer downAttn2;
-
-    private final ResnetBlock2D midRes;
-    private final SpatialTransformer midAttn;
-
-    private final Upsample2d upsample1;
-    private final ResnetBlock2D up1;
-    private final SpatialTransformer upAttn1;
-    private final ResnetBlock2D up2;
-
+    private final UNetEncoderBlock2D down2;
+    private final UNetMidBlock2D mid;
+    private final UNetDecoderBlock2D up1;
     private final GroupNorm convNormOut;
     private final Conv2d convOut;
 
@@ -64,43 +49,38 @@ public class UNet2DConditional extends NNModule {
         super(backend);
         this.config = Objects.requireNonNull(config, "config must not be null");
 
-        int inChannels = config.inChannels();
-        int outChannels = config.outChannels();
         int base = config.baseChannels();
         int expanded = config.expandedChannels();
         int timeDim = config.timeEmbeddingDim();
         int heads = config.attentionHeads();
 
-        this.convIn = register("conv_in", new Conv2d(backend, inChannels, base, 3, 1, 1));
+        this.convIn = register("conv_in",
+                new Conv2d(backend, config.inChannels(), base, 3, 1, 1));
         this.timeEmbedding = register("time_embedding", new Sequential(
                 backend,
                 new Linear(backend, config.tembDim(), timeDim),
                 new SiLU(backend),
                 new Linear(backend, timeDim, timeDim)));
 
-        this.down1 = register("down1_res", new ResnetBlock2D(backend, base, base, timeDim));
-        this.downAttn1 = register("down1_attn",
-                new SpatialTransformer(backend, base, heads, config.baseHeadDim(), config.contextDim()));
-
+        this.down1 = register("down1", new UNetEncoderBlock2D(
+                backend, base, base, timeDim, heads, config.baseHeadDim(), config.contextDim()));
         this.downsample = register("downsample", new Downsample2d(backend, base, expanded));
-        this.down2 = register("down2_res", new ResnetBlock2D(backend, expanded, expanded, timeDim));
-        this.downAttn2 = register("down2_attn",
-                new SpatialTransformer(backend, expanded, heads, config.expandedHeadDim(), config.contextDim()));
+        this.down2 = register("down2", new UNetEncoderBlock2D(
+                backend, expanded, expanded, timeDim, heads,
+                config.expandedHeadDim(), config.contextDim()));
 
-        this.midRes = register("mid_res", new ResnetBlock2D(backend, expanded, expanded, timeDim));
-        this.midAttn = register("mid_attn",
-                new SpatialTransformer(backend, expanded, heads, config.expandedHeadDim(), config.contextDim()));
+        this.mid = register("mid", new UNetMidBlock2D(
+                backend, expanded, timeDim, heads,
+                config.expandedHeadDim(), config.contextDim()));
 
-        this.upsample1 = register("up1_upsample", new Upsample2d(backend, 2.0f));
-        // Decoder features concatenate with the first-resolution encoder skip.
-        this.up1 = register("up1_res", new ResnetBlock2D(backend, expanded + base, base, timeDim));
-        this.upAttn1 = register("up1_attn",
-                new SpatialTransformer(backend, base, heads, config.baseHeadDim(), config.contextDim()));
-        this.up2 = register("up2_res", new ResnetBlock2D(backend, base, base, timeDim));
+        this.up1 = register("up1", new UNetDecoderBlock2D(
+                backend, expanded, base, base, timeDim, heads,
+                config.baseHeadDim(), config.contextDim()));
 
         this.convNormOut = register("conv_norm_out",
                 new GroupNorm(backend, UNet2DConditionalConfig.NORMALIZATION_GROUPS, base));
-        this.convOut = register("conv_out", new Conv2d(backend, base, outChannels, 3, 1, 1));
+        this.convOut = register("conv_out",
+                new Conv2d(backend, base, config.outChannels(), 3, 1, 1));
     }
 
     /**
@@ -140,25 +120,24 @@ public class UNet2DConditional extends NNModule {
         }
 
         Tensor temb = timeEmbedding.forward(timestep);
-        Tensor h = convIn.forward(latents);
-        Tensor s1 = down1.forward(h, temb);
-        s1 = downAttn1.forward(s1, context);
+        Tensor hidden = convIn.forward(latents);
 
-        h = downsample.forward(s1);
-        Tensor s2 = down2.forward(h, temb);
-        s2 = downAttn2.forward(s2, context);
+        // Each forward pass owns its stack; feature tensors remain owned by the
+        // tensor execution path and are borrowed by this bookkeeping object.
+        UNetSkipConnections skips = new UNetSkipConnections();
+        Tensor firstResolution = down1.forward(hidden, temb, context);
+        skips.push(firstResolution);
 
-        h = midRes.forward(s2, temb);
-        h = midAttn.forward(h, context);
+        hidden = downsample.forward(firstResolution);
+        hidden = down2.forward(hidden, temb, context);
+        hidden = mid.forward(hidden, temb, context);
 
-        h = upsample1.forwardTo(h, s1);
-        h = TensorOps.cat(List.of(h, s1), 1);
-        h = up1.forward(h, temb);
-        h = upAttn1.forward(h, context);
-        h = up2.forward(h, temb);
+        Tensor decoderSkip = skips.pop();
+        skips.requireEmpty();
+        hidden = up1.forward(hidden, decoderSkip, temb, context);
 
-        h = convNormOut.forward(h).silu();
-        return convOut.forward(h);
+        hidden = convNormOut.forward(hidden).silu();
+        return convOut.forward(hidden);
     }
 
     @Override
