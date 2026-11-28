@@ -6,6 +6,7 @@ import java.util.Objects;
 import tech.kayys.aljabr.cache.KVCacheBufferCompatibilityValidator;
 import tech.kayys.aljabr.cache.KVCacheBufferLayout;
 import tech.kayys.aljabr.cache.KVCacheBufferReadView;
+import tech.kayys.aljabr.cache.KVCacheElementType;
 import tech.kayys.aljabr.cache.KVCacheBufferRegion;
 import tech.kayys.aljabr.cache.KVCacheMemoryDomain;
 import tech.kayys.aljabr.metal.binding.MetalBinding;
@@ -46,9 +47,7 @@ public final class MetalKVCacheAttentionConsumer {
         // Reject incompatible providers before interpreting their opaque handles.
         KVCacheBufferCompatibilityValidator.validateForConsumer(
                 lease, layer, "metal", KVCacheMemoryDomain.DEVICE,
-                tech.kayys.aljabr.cache.KVCacheElementType.FLOAT32, binding.deviceName());
-
-        // Kernel-specific layout and offset restrictions are applied below.
+                KVCacheElementType.FLOAT32, binding.deviceName());
 
         int sequenceLength = lease.visibleSequenceLength();
         if (queryHeads <= 0 || sequenceLength <= 0 || sequenceLength > MAX_SEQUENCE_LENGTH) {
