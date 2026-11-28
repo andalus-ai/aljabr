@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. MXFP4, TQ1_0, TQ2_0, IQ1_M, IQ1_S, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. MXFP4, NVFP4, TQ1_0, TQ2_0, IQ1_M, IQ1_S, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -163,6 +163,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
             case "MXFP4" -> TensorEncoding.dequantized("MXFP4", 17, 32);
+            case "NVFP4" -> TensorEncoding.dequantized("NVFP4", 68, 64);
             case "TQ1_0" -> TensorEncoding.dequantized("TQ1_0", 54, 256);
             case "TQ2_0" -> TensorEncoding.dequantized("TQ2_0", 66, 256);
             case "IQ1_M" -> TensorEncoding.dequantized("IQ1_M", 56, 256);
@@ -192,7 +193,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "MXFP4", "TQ1_0", "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "MXFP4", "NVFP4", "TQ1_0", "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -295,6 +296,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 int base = i * blockBytes;
                 if (type.equals("MXFP4")) {
                     dequantizeMXFP4Block(source, base, values);
+                    continue;
+                }
+                if (type.equals("NVFP4")) {
+                    dequantizeNVFP4Block(source, base, values);
                     continue;
                 }
                 if (type.equals("TQ1_0")) {
@@ -497,6 +502,45 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 ? 0x00200000 << exponent
                 : (exponent - 1) << 23;
         return Float.intBitsToFloat(bits);
+    }
+
+    /**
+     * Decodes one 64-value GGML NVFP4 block: four UE4M3 sub-block scales followed
+     * by 32 packed E2M1 bytes. Each scale covers 16 values; the shared codebook
+     * is doubled, so the unsigned E4M3 scale is converted to its half-value.
+     */
+    private static void dequantizeNVFP4Block(byte[] source, int base, ByteBuffer output)
+            throws IOException {
+        for (int subBlock = 0; subBlock < 4; subBlock++) {
+            int scaleByte = source[base + subBlock] & 0xff;
+            float scale = ue4m3ToFloatHalf(scaleByte);
+            int quantizedBase = base + 4 + subBlock * 8;
+            for (int lane = 0; lane < 8; lane++) {
+                int packed = source[quantizedBase + lane] & 0xff;
+                output.putFloat(MXFP4_VALUES[packed & 0x0f] * scale);
+            }
+            for (int lane = 0; lane < 8; lane++) {
+                int packed = source[quantizedBase + lane] & 0xff;
+                output.putFloat(MXFP4_VALUES[packed >>> 4] * scale);
+            }
+        }
+    }
+
+    /**
+     * GGML UE4M3 scale conversion. The stored unsigned E4M3 scale is halved
+     * because the shared E2M1 codebook stores doubled values. GGML maps 0 and
+     * the reserved 0x7f NaN encoding to zero.
+     */
+    private static float ue4m3ToFloatHalf(int value) {
+        if (value == 0 || value == 0x7f) {
+            return 0.0f;
+        }
+        int exponent = (value >>> 3) & 0x0f;
+        int mantissa = value & 0x07;
+        float raw = exponent == 0
+                ? Math.scalb((float) mantissa, -9)
+                : Math.scalb(1.0f + mantissa / 8.0f, exponent - 7);
+        return raw * 0.5f;
     }
 
     /** Decodes one 256-value TQ1_0 block using GGML's base-3 packed ternary digits. */
