@@ -36,7 +36,7 @@ jobs:
       - name: Download, verify, and map official checkpoint
         shell: bash
         env:
-          GRADLE_OPTS: -Xmx4G
+          GRADLE_OPTS: -Xmx1G
         run: |
           set -euo pipefail
           if [[ "${{ inputs.run_forward }}" == "true" ]]; then
