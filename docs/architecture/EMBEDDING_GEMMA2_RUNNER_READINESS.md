@@ -13,6 +13,9 @@ The `aljabr-model-embedding-gemma2` module contains:
 - Float32 reference operations for the bidirectional text backbone.
 - A Gemma4-compatible image processor, vision tower, spatial pooling and image-to-text soft-token projection.
 - `EmbeddingGemma2VisionImagePipeline`, which accepts decoded image samples and returns text-hidden soft-token sequences.
+- A Gemma4-compatible audio feature extractor, shared-PCM adapter, Conformer audio tower, audio checkpoint mapper and Safetensors loader.
+- `EmbeddingGemma2AudioProcessor`, which composes decoded PCM preparation, model-specific log-Mel extraction, validity masks and audio-placeholder budgeting.
+- `EmbeddingGemma2AudioMultimodalEncoder`, which inserts projected audio soft tokens into an expanded text prompt and exposes token-level plus mean-pooled embedding outputs.
 - `EmbeddingGemma2MultimodalEncoder`, which combines projected image tokens with an expanded text prompt and executes the reference text backbone.
 
 These components are useful foundations for parity work and runner integration. They do not, by themselves, constitute a loadable inference model.
@@ -29,14 +32,15 @@ The module README also states that no `EmbeddingModelRunner` is registered. This
 
 Remaining work includes:
 
-1. Complete tokenizer execution and prompt/image-placeholder expansion from the selected checkpoint's processor contract.
-2. Complete checkpoint deserialization and connect decoded weights to the text and vision reference components.
-3. Complete the model's embedding task path, including pooling, Matryoshka dimension selection and normalization, with exact model-defined behavior.
-4. Implement and register an `EmbeddingModelRunner` through Aljabr's public inference SPI.
-5. Validate the complete forward pass against a published reference implementation and real checkpoint tensors.
-6. Verify text-query and image-document vectors inhabit the same trained embedding space. Matching dimensions are not sufficient.
-7. Validate CPU and any claimed accelerator backend, memory ownership, cancellation and deterministic cleanup.
-8. Only then advertise image support in the model-family descriptor.
+1. Complete tokenizer execution and prompt/audio/image-placeholder expansion from the selected checkpoint's processor contract.
+2. Complete checkpoint deserialization and connect decoded weights to the text, vision and audio reference components.
+3. Validate audio feature values, masks, soft-token counts, tower outputs and audio-to-text projection against the official processor/model using real checkpoint tensors. Synthetic mapper tests alone are insufficient.
+4. Complete the model's embedding task path, including modality-aware pooling, Matryoshka dimension selection and normalization, with exact model-defined behavior.
+5. Implement and register an `EmbeddingModelRunner` through Aljabr's public inference SPI.
+6. Validate complete text, image and audio forward passes against a published reference implementation and real checkpoint tensors.
+7. Verify text-query, image-document and audio-document vectors inhabit the same trained embedding space. Matching dimensions are not sufficient.
+8. Validate CPU and any claimed accelerator backend, memory ownership, cancellation and deterministic cleanup.
+9. Only then advertise image or audio support in the model-family descriptor.
 
 ## Java baseline
 
@@ -49,7 +53,9 @@ The model module currently configures a Java 25 toolchain. Downstream projects t
 - [ ] Registered runner is selected through public inference APIs.
 - [ ] Text-only embeddings match reference outputs within a documented tolerance.
 - [ ] Image embeddings match reference outputs within a documented tolerance.
-- [ ] Text-to-image retrieval is validated using paired examples from one checkpoint.
+- [ ] Audio features, masks and audio soft-token counts match the official processor.
+- [ ] Audio tower and audio-to-text projected states match reference outputs within a documented tolerance.
+- [ ] Text-to-image and text-to-audio retrieval are validated using paired examples from one checkpoint.
 - [ ] Unsupported modalities and missing runtime capabilities fail explicitly.
 - [ ] Model metadata reports only validated modality support.
 - [ ] Java baseline and published dependency coordinates are documented.
