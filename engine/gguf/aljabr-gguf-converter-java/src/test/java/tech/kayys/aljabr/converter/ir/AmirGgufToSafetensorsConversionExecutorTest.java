@@ -122,7 +122,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
                 .slice().order(ByteOrder.LITTLE_ENDIAN);
         assertEquals(-1.0f, values.getFloat(0), 0.0f);
-        assertEquals(1.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(64 * Float.BYTES), 0.0f);
         assertEquals(1.0f, values.getFloat(64 * Float.BYTES), 0.0f);
         assertEquals(1.0f, values.getFloat(96 * Float.BYTES), 0.0f);
         assertEquals(1.0f, values.getFloat(128 * Float.BYTES), 0.0f);
@@ -159,11 +159,15 @@ class AmirGgufToSafetensorsConversionExecutorTest {
 
     @Test
     void dequantizesMXFP4UsingE8M0ScaleAndBothE2M1Nibbles() throws Exception {
-        byte[] block = new byte[17];
+        byte[] block = new byte[34];
         block[0] = (byte) 128; // E8M0 / 2 = 1.0
-        for (int i = 0; i < 16; i++) block[i + 1] = (byte) (i | (i << 4));
+        block[17] = (byte) 127; // E8M0 / 2 = 0.5
+        for (int i = 0; i < 16; i++) {
+            block[i + 1] = (byte) (i | (i << 4));
+            block[i + 18] = (byte) (i | (i << 4));
+        }
         Path source = writeContainer(block);
-        var tensor = tensor("weight", "MXFP4", List.of(32L), source, 8L, block.length);
+        var tensor = tensor("weight", "MXFP4", List.of(64L), source, 8L, block.length);
         var model = model("mxfp4", "llama", List.of(tensor));
         Path output = temporaryDirectory.resolve("mxfp4.safetensors");
 
@@ -171,7 +175,7 @@ class AmirGgufToSafetensorsConversionExecutorTest {
                 model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
                 new ConversionRequest(output.toUri(), true, Map.of()));
 
-        assertEquals(32L * Float.BYTES, result.payloadBytes());
+        assertEquals(64L * Float.BYTES, result.payloadBytes());
         byte[] file = Files.readAllBytes(output);
         assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
         ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 32 * Float.BYTES)
@@ -180,6 +184,8 @@ class AmirGgufToSafetensorsConversionExecutorTest {
         for (int i = 0; i < 16; i++) {
             assertEquals(codebook[i], values.getFloat(i * Float.BYTES), 0.0f);
             assertEquals(codebook[i], values.getFloat((i + 16) * Float.BYTES), 0.0f);
+            assertEquals(codebook[i] * 0.5f, values.getFloat((i + 32) * Float.BYTES), 0.0f);
+            assertEquals(codebook[i] * 0.5f, values.getFloat((i + 48) * Float.BYTES), 0.0f);
         }
     }
 
