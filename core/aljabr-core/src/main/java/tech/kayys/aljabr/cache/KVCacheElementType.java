@@ -7,7 +7,8 @@ public enum KVCacheElementType {
     BFLOAT16(2),
     INT8(1),
     UINT8(1),
-    FP8(1);
+    FP8_E4M3(1),
+    FP8_E5M2(1);
 
     private final int bytes;
 
