@@ -30,7 +30,7 @@ public final class AttentionIndexSelection {
         this.sourceSequenceLength = sourceSequenceLength;
         this.positions = positions.clone();
 
-        HashSet<Integer> seen = new HashSet<>(Math.max(16, positions.length * 2));
+        HashSet<Integer> seen = new HashSet<>();
         for (int position : this.positions) {
             if (position < 0 || position >= sourceSequenceLength) {
                 throw new IllegalArgumentException(
