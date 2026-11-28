@@ -867,7 +867,7 @@ public final class DefaultTensor implements Tensor {
      * Callers must not release it.
      */
     @Override
-    public Tensor grad() {
+    public synchronized Tensor grad() {
         return grad;
     }
 
@@ -902,7 +902,7 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
-    public void setRequiresGrad(boolean r) {
+    public synchronized void setRequiresGrad(boolean r) {
         ensureOpen();
         if (autogradNode != null && autogradNode.getOp() != OpType.CONSTANT) {
             throw new IllegalStateException("requiresGrad can only be set on a leaf tensor");
