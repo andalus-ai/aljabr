@@ -5,6 +5,7 @@ import java.util.Objects;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioEncoder;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioFeatureExtractor;
 import tech.kayys.aljabr.models.embeddinggemma2.audio.EmbeddingGemma2AudioProcessor;
+import tech.kayys.aljabr.models.embeddinggemma2.output.EmbeddingGemma2MeanPooler;
 import tech.kayys.aljabr.models.embeddinggemma2.config.EmbeddingGemma2AudioConfig;
 import tech.kayys.aljabr.models.embeddinggemma2.vision.EmbeddingGemma2MultimodalEmbedder;
 
@@ -119,6 +120,41 @@ public final class EmbeddingGemma2AudioMultimodalEncoder {
         float[][] mergedEmbeddings = EmbeddingGemma2MultimodalInputAssembler.replaceModalityPlaceholders(
                 textEmbeddings, inputIds, audioTokenId, Collections.singletonList(projectedAudioStates), "audio");
         return textBackbone.encodeEmbeddings(mergedEmbeddings, validTokens, positionIds);
+    }
+
+    /**
+     * Encodes and mask-aware mean-pools one decoded waveform into the model's
+     * shared text/audio embedding space.
+     *
+     * <p>The pooling mask applies to the expanded text sequence, including
+     * caller-provided text and audio boundary tokens. Audio soft-token states
+     * have already replaced their placeholders before the text backbone runs.</p>
+     */
+    public float[] encodePooled(
+            int[] inputIds,
+            float[] interleavedPcm,
+            int channels,
+            int sourceSampleRate,
+            boolean[] validTokens,
+            int[] positionIds) {
+        float[][] tokenStates = encode(
+                inputIds, interleavedPcm, channels, sourceSampleRate, validTokens, positionIds);
+        boolean[] poolingMask = validTokens == null ? allValid(tokenStates.length) : validTokens;
+        return EmbeddingGemma2MeanPooler.meanPool(tokenStates, poolingMask);
+    }
+
+    /** Encodes and mean-pools one waveform using sequential text positions. */
+    public float[] encodePooled(
+            int[] inputIds, float[] interleavedPcm, int channels, int sourceSampleRate) {
+        Objects.requireNonNull(inputIds, "inputIds must not be null");
+        float[][] tokenStates = encode(inputIds, interleavedPcm, channels, sourceSampleRate);
+        return EmbeddingGemma2MeanPooler.meanPool(tokenStates, allValid(tokenStates.length));
+    }
+
+    private static boolean[] allValid(int length) {
+        boolean[] mask = new boolean[length];
+        java.util.Arrays.fill(mask, true);
+        return mask;
     }
 
     private static float[][] selectValidStates(float[][] states, boolean[] mask) {
