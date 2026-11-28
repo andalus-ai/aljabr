@@ -36,6 +36,7 @@ sourceSets {
 }
 
 dependencies {
+    implementation(project(":core:aljabr-core"))
     implementation(project(":plugins:ml:aljabr-tensor"))
     implementation(project(":spi:aljabr-spi-compute"))
     implementation(project(":backend:cpu:aljabr-backend-cpu"))
