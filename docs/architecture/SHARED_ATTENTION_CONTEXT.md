@@ -161,3 +161,8 @@ code. No raw Java array is exposed by the public cache API.
 ### CPU native-memory provider (FFM)
 
 The optional `NativeKVCacheStorage` implementation uses the JDK 25 Foreign Function & Memory API and a storage-owned shared `Arena`. It exports `HOST_NATIVE` / `FLOAT32` regions through opaque handles and the scoped `NativeKVCacheBufferAccess.withReadOnlySegment(...)` adapter. Heap storage remains the default portable provider. The native provider does not imply end-to-end zero-copy or automatic kernel compatibility; provider selection remains explicit. See [CPU Native KV Storage](CPU_NATIVE_KV_STORAGE.md) for ownership, lifetime and validation details.
+
+
+### Metal shared-buffer provider
+
+The optional `MetalKVCacheStorage` provider allocates retained `MTLBuffer` K/V regions for unified-memory devices. It is implemented in the Metal backend module and uses the same opaque region contracts as CPU providers. The bridge retains Objective-C buffers for storage lifetime, while cache sessions scope leases to committed prefixes. The current implementation supports synchronous CPU writes into shared buffers and callback-scoped native handle access; asynchronous GPU-produced cache updates and cross-queue fences are not yet exposed. See [Metal KV Storage](METAL_KV_STORAGE.md).

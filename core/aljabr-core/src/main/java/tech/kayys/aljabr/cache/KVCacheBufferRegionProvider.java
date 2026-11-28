@@ -7,6 +7,6 @@ package tech.kayys.aljabr.cache;
  * commit/visibility state. Implementations must enforce the lease against
  * direct storage mutations as well as session-mediated writes.</p>
  */
-interface KVCacheBufferRegionProvider {
+public interface KVCacheBufferRegionProvider {
     KVCacheBufferReadView openBufferReadView(int visibleSequenceLength);
 }

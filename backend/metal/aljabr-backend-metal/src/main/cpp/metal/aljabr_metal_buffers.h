@@ -10,6 +10,10 @@
 #include <stddef.h>
 
 id<MTLBuffer> aljabr_metal_wrap_ptr(void *ptr, size_t bytes);
+/* Retained shared buffers used by long-lived KV cache allocations. */
+void *aljabr_metal_kv_buffer_create(size_t bytes);
+void *aljabr_metal_kv_buffer_contents(void *buffer_handle);
+int aljabr_metal_kv_buffer_release(void *buffer_handle);
 id<MTLBuffer> aljabr_metal_wrap_weight_ptr(const void *ptr, size_t bytes);
 id<MTLBuffer> aljabr_metal_wrap_weight_ptr_offset(const void *ptr, size_t bytes, size_t *out_offset);
 int aljabr_metal_register_model_buffer(const void *base_ptr, size_t total_bytes);
