@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
+import tech.kayys.aljabr.cache.KVCacheBufferLayout;
 import tech.kayys.aljabr.cache.KVCacheBufferReadView;
 import tech.kayys.aljabr.cache.KVCacheBufferRegion;
 import tech.kayys.aljabr.cache.KVCacheBufferRegionProvider;
