@@ -636,14 +636,14 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             long[] destinationDims = input.shape().dims();
             for (long logical = 0; logical < outputElements; logical++) {
                 if (dtype == DType.I32) {
-                    writeIndexAddInt(result, logical,
-                            readIndexAddInt(destination, destinationDims, destinationLayout, logical));
+                    CpuIndexAddValueAccess.writeIndexAddInt(result, logical,
+                            CpuIndexAddValueAccess.readIndexAddInt(destination, destinationDims, destinationLayout, logical));
                 } else if (dtype == DType.I8 || dtype == DType.INT8) {
-                    writeIndexAddByte(result, logical,
-                            readIndexAddByte(destination, destinationDims, destinationLayout, logical));
+                    CpuIndexAddValueAccess.writeIndexAddByte(result, logical,
+                            CpuIndexAddValueAccess.readIndexAddByte(destination, destinationDims, destinationLayout, logical));
                 } else {
-                    float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
-                    writeIndexAddValue(result, logical, dtype, value);
+                    float value = CpuIndexAddValueAccess.readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
+                    CpuIndexAddValueAccess.writeIndexAddValue(result, logical, dtype, value);
                 }
             }
 
@@ -658,23 +658,23 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                         long sourceLogical = Math.addExact(sourceBase, innerIndex);
                         long destinationLogical = Math.addExact(destinationBase, innerIndex);
                         if (dtype == DType.I32) {
-                            int update = readIndexAddInt(
+                            int update = CpuIndexAddValueAccess.readIndexAddInt(
                                     updates, sourceDimensions, sourceLayout, sourceLogical);
-                            int current = readIndexAddInt(
+                            int current = CpuIndexAddValueAccess.readIndexAddInt(
                                     result, destinationDimensions, resultLayout, destinationLogical);
-                            writeIndexAddInt(result, destinationLogical, current + update);
+                            CpuIndexAddValueAccess.writeIndexAddInt(result, destinationLogical, current + update);
                         } else if (dtype == DType.I8 || dtype == DType.INT8) {
-                            byte update = readIndexAddByte(
+                            byte update = CpuIndexAddValueAccess.readIndexAddByte(
                                     updates, sourceDimensions, sourceLayout, sourceLogical);
-                            byte current = readIndexAddByte(
+                            byte current = CpuIndexAddValueAccess.readIndexAddByte(
                                     result, destinationDimensions, resultLayout, destinationLogical);
-                            writeIndexAddByte(result, destinationLogical, (byte) (current + update));
+                            CpuIndexAddValueAccess.writeIndexAddByte(result, destinationLogical, (byte) (current + update));
                         } else {
-                            float update = readIndexAddValue(
+                            float update = CpuIndexAddValueAccess.readIndexAddValue(
                                     updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
-                            float current = readIndexAddValue(result, destinationDimensions,
+                            float current = CpuIndexAddValueAccess.readIndexAddValue(result, destinationDimensions,
                                     resultLayout, destinationLogical, dtype);
-                            writeIndexAddValue(result, destinationLogical, dtype, current + update);
+                            CpuIndexAddValueAccess.writeIndexAddValue(result, destinationLogical, dtype, current + update);
                         }
                     }
                 }
@@ -683,53 +683,6 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         } catch (RuntimeException | Error failure) {
             output.release();
             throw failure;
-        }
-    }
-
-    private static int readIndexAddInt(
-            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex) {
-        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
-        return segment.get(ValueLayout.JAVA_INT, Math.multiplyExact(elementOffset, Integer.BYTES));
-    }
-
-    private static void writeIndexAddInt(MemorySegment segment, long logicalIndex, int value) {
-        segment.set(ValueLayout.JAVA_INT, Math.multiplyExact(logicalIndex, Integer.BYTES), value);
-    }
-
-    private static byte readIndexAddByte(
-            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex) {
-        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
-        return segment.get(ValueLayout.JAVA_BYTE, elementOffset);
-    }
-
-    private static void writeIndexAddByte(MemorySegment segment, long logicalIndex, byte value) {
-        segment.set(ValueLayout.JAVA_BYTE, logicalIndex, value);
-    }
-
-    private static float readIndexAddValue(
-            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex, DType dtype) {
-        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
-        return switch (dtype) {
-            case F32 -> segment.get(ValueLayout.JAVA_FLOAT,
-                    Math.multiplyExact(elementOffset, Float.BYTES));
-            case F16 -> CpuFloatingPointConversions.halfToFloat(segment.get(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(elementOffset, Short.BYTES)));
-            case BF16 -> CpuFloatingPointConversions.bfloat16ToFloat(segment.get(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(elementOffset, Short.BYTES)));
-            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
-        };
-    }
-
-    private static void writeIndexAddValue(
-            MemorySegment segment, long logicalIndex, DType dtype, float value) {
-        switch (dtype) {
-            case F32 -> segment.set(ValueLayout.JAVA_FLOAT,
-                    Math.multiplyExact(logicalIndex, Float.BYTES), value);
-            case F16 -> segment.set(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToHalf(value));
-            case BF16 -> segment.set(ValueLayout.JAVA_SHORT,
-                    Math.multiplyExact(logicalIndex, Short.BYTES), CpuFloatingPointConversions.floatToBfloat16(value));
-            default -> throw new UnsupportedOperationException("Unsupported CPU indexAdd dtype: " + dtype);
         }
     }
 
