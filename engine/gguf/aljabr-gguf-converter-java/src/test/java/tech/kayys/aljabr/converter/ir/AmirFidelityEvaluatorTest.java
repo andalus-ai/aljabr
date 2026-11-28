@@ -63,8 +63,8 @@ class AmirFidelityEvaluatorTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
         assertEquals(Set.of(
-                        "extensions.vendor.metadata",
-                        "tensors.weight.extensions.quant.scale"),
+                        "/extensions/vendor.metadata",
+                        "/tensors/weight/extensions/quant.scale"),
                 report.diagnostics().stream()
                         .map(diagnostic -> diagnostic.path().orElseThrow())
                         .collect(java.util.stream.Collectors.toSet()));
