@@ -37,7 +37,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
     }
 
     @Override
-    public void write(int layer, int position,
+    public synchronized void write(int layer, int position,
             float[] key, int keyOffset,
             float[] value, int valueOffset) {
         ensureOpen();
@@ -71,7 +71,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
     }
 
     @Override
-    public void writeRange(int layer, int firstPosition, int tokenCount,
+    public synchronized void writeRange(int layer, int firstPosition, int tokenCount,
             float[] sourceKeys, int keysOffset, float[] sourceValues, int valuesOffset) {
         ensureOpen();
         int stride = checkedRange(layer, firstPosition, tokenCount);
@@ -119,7 +119,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
     }
 
     @Override
-    public void clearLayer(int layer) {
+    public synchronized void clearLayer(int layer) {
         ensureOpen();
         checkNoActiveBufferLeases("clear layer");
         checkLayer(layer);
@@ -128,7 +128,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
     }
 
     @Override
-    public void clear() {
+    public synchronized void clear() {
         ensureOpen();
         for (int layer = 0; layer < layout.layerCount(); layer++) {
             clearLayer(layer);
@@ -136,7 +136,7 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
     }
 
     @Override
-    public void truncate(int firstPosition) {
+    public synchronized void truncate(int firstPosition) {
         ensureOpen();
         for (HeapBufferLease lease : activeBufferLeases) {
             if (!lease.closed && firstPosition < lease.visibleSequenceLength) {
