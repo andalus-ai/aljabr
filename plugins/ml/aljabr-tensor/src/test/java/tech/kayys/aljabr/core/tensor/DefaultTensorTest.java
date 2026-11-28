@@ -611,7 +611,9 @@ class DefaultTensorTest {
                 try {
                     owner.setGrad(gradient);
                 } catch (IllegalStateException releasedFirst) {
-                    // The owner was released before ownership transfer began.
+                    // The owner was released before ownership transfer began;
+                    // the caller therefore still owns and must release the gradient.
+                    gradient.release();
                 }
             });
             CompletableFuture<Void> release = CompletableFuture.runAsync(owner::release);
