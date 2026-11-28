@@ -36,8 +36,13 @@ final class CpuIndexedAxisTraversal {
                         innerSize);
                 for (long innerIndex = 0; innerIndex < innerSize; innerIndex++) {
                     long sourceLogicalIndex = Math.addExact(sourceBase, innerIndex);
+                    long outputLogicalIndex = Math.addExact(
+                            Math.multiplyExact(
+                                    Math.addExact(Math.multiplyExact(outerIndex, selected.length), selectionPosition),
+                                    innerSize),
+                            innerIndex);
                     consumer.accept(outerIndex, selectionPosition, selectedIndex,
-                            innerIndex, sourceLogicalIndex);
+                            innerIndex, sourceLogicalIndex, outputLogicalIndex);
                 }
             }
         }
@@ -46,6 +51,6 @@ final class CpuIndexedAxisTraversal {
     @FunctionalInterface
     interface ElementConsumer {
         void accept(long outerIndex, int selectionPosition, int selectedIndex,
-                long innerIndex, long sourceLogicalIndex);
+                long innerIndex, long sourceLogicalIndex, long outputLogicalIndex);
     }
 }
