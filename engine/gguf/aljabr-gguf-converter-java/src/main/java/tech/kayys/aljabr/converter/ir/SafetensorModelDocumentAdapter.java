@@ -157,9 +157,11 @@ public final class SafetensorModelDocumentAdapter {
     }
 
     private static String modelId(Path path) {
-        Path name = path.getFileName();
+        Path identity = Files.isRegularFile(path) && path.getParent() != null
+                ? path.getParent() : path;
+        Path name = identity.getFileName();
         String value = name == null ? "model" : name.toString();
-        if (Files.isRegularFile(path)) {
+        if (Files.isRegularFile(identity)) {
             int extension = value.lastIndexOf('.');
             if (extension > 0) {
                 value = value.substring(0, extension);

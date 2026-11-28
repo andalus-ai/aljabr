@@ -82,6 +82,17 @@ class SafetensorsTargetCapabilityTest {
     }
 
     @Test
+    void classifiesIQ1MAsPartialBecauseQuantizedStorageIsExpanded() {
+        var tensor = new TensorDescriptor("weight", "IQ1_M", List.of(256L),
+                "contiguous", null, null, Map.of());
+        var model = new ModelDescriptor(ModelIdentity.of("iq1_m"), "llama", "gguf",
+                Map.of("general.architecture", "llama"), Map.of(), List.of(tensor));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL,
+                new SafetensorsTargetCapability().assess(model).fidelity());
+    }
+
+    @Test
     void classifiesIQ1SAsPartialBecauseQuantizedStorageIsExpanded() {
         var tensor = new TensorDescriptor("weight", "IQ1_S", List.of(256L),
                 "contiguous", null, null, Map.of());

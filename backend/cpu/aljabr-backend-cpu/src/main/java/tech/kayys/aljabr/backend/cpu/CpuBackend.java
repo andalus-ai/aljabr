@@ -635,8 +635,16 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             TensorLayout resultLayout = TensorLayout.contiguous(plan.outputShape());
             long[] destinationDims = input.shape().dims();
             for (long logical = 0; logical < outputElements; logical++) {
-                CpuIndexAddElementKernels.copyElement(
-                        destination, destinationDims, destinationLayout, result, logical, dtype);
+                if (dtype == DType.I32) {
+                    CpuIndexAddValueAccess.writeIndexAddInt(result, logical,
+                            CpuIndexAddValueAccess.readIndexAddInt(destination, destinationDims, destinationLayout, logical));
+                } else if (dtype == DType.I8 || dtype == DType.INT8) {
+                    CpuIndexAddValueAccess.writeIndexAddByte(result, logical,
+                            CpuIndexAddValueAccess.readIndexAddByte(destination, destinationDims, destinationLayout, logical));
+                } else {
+                    float value = CpuIndexAddValueAccess.readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
+                    CpuIndexAddValueAccess.writeIndexAddValue(result, logical, dtype, value);
+                }
             }
 
             long sourceAxisSize = sourceDimensions[selectedAxis];
@@ -649,9 +657,25 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                     for (long innerIndex = 0; innerIndex < inner; innerIndex++) {
                         long sourceLogical = Math.addExact(sourceBase, innerIndex);
                         long destinationLogical = Math.addExact(destinationBase, innerIndex);
-                        CpuIndexAddElementKernels.accumulateElement(
-                                updates, sourceDimensions, sourceLayout, sourceLogical,
-                                result, destinationDimensions, resultLayout, destinationLogical, dtype);
+                        if (dtype == DType.I32) {
+                            int update = CpuIndexAddValueAccess.readIndexAddInt(
+                                    updates, sourceDimensions, sourceLayout, sourceLogical);
+                            int current = CpuIndexAddValueAccess.readIndexAddInt(
+                                    result, destinationDimensions, resultLayout, destinationLogical);
+                            CpuIndexAddValueAccess.writeIndexAddInt(result, destinationLogical, current + update);
+                        } else if (dtype == DType.I8 || dtype == DType.INT8) {
+                            byte update = CpuIndexAddValueAccess.readIndexAddByte(
+                                    updates, sourceDimensions, sourceLayout, sourceLogical);
+                            byte current = CpuIndexAddValueAccess.readIndexAddByte(
+                                    result, destinationDimensions, resultLayout, destinationLogical);
+                            CpuIndexAddValueAccess.writeIndexAddByte(result, destinationLogical, (byte) (current + update));
+                        } else {
+                            float update = CpuIndexAddValueAccess.readIndexAddValue(
+                                    updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
+                            float current = CpuIndexAddValueAccess.readIndexAddValue(result, destinationDimensions,
+                                    resultLayout, destinationLogical, dtype);
+                            CpuIndexAddValueAccess.writeIndexAddValue(result, destinationLogical, dtype, current + update);
+                        }
                     }
                 }
             }

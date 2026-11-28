@@ -867,7 +867,7 @@ public final class DefaultTensor implements Tensor {
      * Callers must not release it.
      */
     @Override
-    public Tensor grad() {
+    public synchronized Tensor grad() {
         return grad;
     }
 
@@ -877,15 +877,20 @@ public final class DefaultTensor implements Tensor {
      */
     @Override
     public void setGrad(Tensor g) {
-        ensureOpen();
-        if (g == this) {
-            throw new IllegalArgumentException("A tensor cannot own itself as its gradient");
+        final Tensor previous;
+        synchronized (this) {
+            ensureOpen();
+            if (g == this) {
+                throw new IllegalArgumentException("A tensor cannot own itself as its gradient");
+            }
+            previous = this.grad;
+            if (previous == g) {
+                return;
+            }
+            this.grad = g;
         }
-        Tensor previous = this.grad;
-        if (previous == g) {
-            return;
-        }
-        this.grad = g;
+        // Cleanup runs outside this tensor's monitor to avoid lock-order
+        // deadlocks when gradients themselves own other tensors.
         if (previous != null) {
             previous.release();
         }
@@ -897,7 +902,8 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
-    public void setRequiresGrad(boolean r) {
+    public synchronized void setRequiresGrad(boolean r) {
+        ensureOpen();
         if (autogradNode != null && autogradNode.getOp() != OpType.CONSTANT) {
             throw new IllegalStateException("requiresGrad can only be set on a leaf tensor");
         }
@@ -912,8 +918,11 @@ public final class DefaultTensor implements Tensor {
     @Override
     public void release() {
         if (released.compareAndSet(false, true)) {
-            Tensor ownedGradient = grad;
-            grad = null;
+            final Tensor ownedGradient;
+            synchronized (this) {
+                ownedGradient = grad;
+                grad = null;
+            }
 
             RuntimeException runtimeFailure = null;
             Error errorFailure = null;

@@ -131,3 +131,28 @@ No JDK Foreign Function & Memory type is exposed in the core contract. A CPU
 provider may internally use `MemorySegment`; Metal/CUDA providers may use their
 own device allocation handles. This keeps the common API usable across memory
 domains without pretending device pointers are host-dereferenceable.
+
+
+## CPU heap buffer-sharing provider
+
+The reference CPU implementation, `HeapKVCacheStorage`, implements the
+internal buffer-region provider and exposes committed-prefix K/V regions as
+`HOST_HEAP` / `FLOAT32` descriptors. The opaque handles retain the original
+per-layer arrays; they do not allocate a second cache or copy the committed
+prefix. The reported byte length is limited to the lease's visible sequence
+prefix, even though the backing array retains capacity for future appends.
+
+Heap leases are enforced at the storage boundary, including direct calls to
+the storage API: writes into any active lease's visible prefix are rejected;
+appends at or beyond that prefix remain possible; clearing a layer or closing
+storage is rejected while a lease is active; truncation is allowed only when
+it does not invalidate any active lease's prefix. Multiple leases protect the
+union of their visible prefixes until each lease closes. Storage mutation and
+lease creation are serialized.
+
+The CPU provider reports an already-completed readiness stage because its
+heap writes are synchronous under the storage mutation lock. This is not a
+claim that arbitrary asynchronous CPU kernels are synchronized; consumers
+must still respect the lease lifetime and region byte bounds. The heap handle
+is intentionally package-private and is resolved only by compatible CPU-side
+code. No raw Java array is exposed by the public cache API.
