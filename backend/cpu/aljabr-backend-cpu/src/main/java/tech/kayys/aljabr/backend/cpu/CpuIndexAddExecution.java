@@ -4,7 +4,7 @@ import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
 import tech.kayys.aljabr.core.tensor.DType;
-import tech.kayys.aljabr.core.tensor.HostAccessibleStorage;
+import tech.kayys.aljabr.core.memory.HostAccessibleStorage;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
 import tech.kayys.aljabr.core.tensor.TensorLayout;
