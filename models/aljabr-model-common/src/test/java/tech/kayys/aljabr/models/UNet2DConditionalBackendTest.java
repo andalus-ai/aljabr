@@ -26,6 +26,19 @@ class UNet2DConditionalBackendTest {
     }
 
     @Test
+    void acceptsCustomChannelWidthsAndDerivesAttentionHeadDimensions() {
+        UNet2DConditionalConfig config = new UNet2DConditionalConfig(4, 4, 8, 12, 32, 64, 8);
+        CpuBackend backend = new CpuBackend();
+        try (UNet2DConditional model = new UNet2DConditional(backend, config)) {
+            assertThat(model.config()).isSameAs(config);
+            assertThat(config.baseHeadDim()).isEqualTo(4);
+            assertThat(config.expandedHeadDim()).isEqualTo(8);
+            assertThat(model.children().values())
+                    .allSatisfy(child -> assertThat(child.computeBackend()).isSameAs(backend));
+        }
+    }
+
+    @Test
     void rejectsInputsOwnedByAnotherBackendBeforeExecution() {
         CpuBackend backend = new CpuBackend();
         CpuBackend other = new CpuBackend();
@@ -81,5 +94,15 @@ class UNet2DConditionalBackendTest {
         assertThatThrownBy(() -> new UNet2DConditional(backend, 0, 4, 8, 12))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("positive");
+    }
+
+    @Test
+    void rejectsChannelWidthsIncompatibleWithNormalizationOrAttention() {
+        assertThatThrownBy(() -> new UNet2DConditionalConfig(4, 4, 8, 12, 32, 64, 6))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("attentionHeads");
+        assertThatThrownBy(() -> new UNet2DConditionalConfig(4, 4, 8, 12, 24, 64, 8))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("divisible by 32");
     }
 }
