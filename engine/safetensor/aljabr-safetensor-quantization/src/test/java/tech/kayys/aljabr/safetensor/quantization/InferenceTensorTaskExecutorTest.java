@@ -8,7 +8,6 @@ package tech.kayys.aljabr.safetensor.quantization;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
