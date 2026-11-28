@@ -23,8 +23,8 @@ class Chronos2EmbeddingExecutionTest {
     @Test
     void embedsContextRegressionTokenAndFuturePatches() {
         Chronos2Config config = config(true);
-        Weights input = projection(6, 2, 2);
-        Weights output = projection(2, 2, 4);
+        Weights input = projection(3, 3, 2);
+        Weights output = projection(2, 3, 2);
         Chronos2EmbeddingExecution execution = new Chronos2EmbeddingExecution(config, input, output,
                 new float[][] {{0f, 0f}, {7f, 8f}});
         float[][][] embedded = execution.embed(
