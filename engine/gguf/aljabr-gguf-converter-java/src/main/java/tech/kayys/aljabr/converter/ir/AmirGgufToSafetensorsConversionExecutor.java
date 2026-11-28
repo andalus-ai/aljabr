@@ -161,6 +161,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
+            case "IQ1_M" -> TensorEncoding.dequantized("IQ1_M", 56, 256);
             case "IQ1_S" -> TensorEncoding.dequantized("IQ1_S", 50, 256);
             case "IQ2_XXS" -> TensorEncoding.dequantized("IQ2_XXS", 66, 256);
             case "IQ2_XS" -> TensorEncoding.dequantized("IQ2_XS", 74, 256);
@@ -187,7 +188,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -288,6 +289,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("IQ1_M")) {
+                    dequantizeIQ1MBlock(source, base, values);
+                    continue;
+                }
                 if (type.equals("IQ1_S")) {
                     dequantizeIQ1SBlock(source, base, values);
                     continue;
@@ -448,6 +453,43 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 for (int lane = 0; lane < 8; lane++) {
                     float sign = (signs & (1 << lane)) != 0 ? -1.0f : 1.0f;
                     output.putFloat(vectorScale * Iq2XSGrid.value(gridIndex, lane) * sign);
+                }
+            }
+        }
+    }
+
+    /** Decodes IQ1_M using IQ1_S grid vectors and the mixed-scale block header. */
+    private static void dequantizeIQ1MBlock(byte[] source, int base, ByteBuffer values) {
+        int scalesBase = base + 48;
+        int scale0 = readUInt16LE(source, scalesBase);
+        int scale1 = readUInt16LE(source, scalesBase + 2);
+        int scale2 = readUInt16LE(source, scalesBase + 4);
+        int scale3 = readUInt16LE(source, scalesBase + 6);
+        int packedScale = (scale0 >>> 12)
+                | ((scale1 >>> 8) & 0x00f0)
+                | ((scale2 >>> 4) & 0x0f00)
+                | (scale3 & 0xf000);
+        float scale = halfToFloat(packedScale & 0xff, (packedScale >>> 8) & 0xff);
+
+        int qsBase = base;
+        int qhBase = base + 32;
+        for (int subBlock = 0; subBlock < 8; subBlock++) {
+            int packedScaleWord = readUInt16LE(source, scalesBase + (subBlock / 2) * 2);
+            int shift = 6 * (subBlock % 2);
+            float firstScale = scale * (2 * ((packedScaleWord >>> shift) & 0x07) + 1);
+            float secondScale = scale * (2 * ((packedScaleWord >>> (shift + 3)) & 0x07) + 1);
+            int qh0 = source[qhBase + subBlock * 2] & 0xff;
+            int qh1 = source[qhBase + subBlock * 2 + 1] & 0xff;
+            for (int vector = 0; vector < 4; vector++) {
+                int packedHigh = vector < 2 ? qh0 : qh1;
+                int highShift = (vector & 1) * 4;
+                int signMask = (vector & 1) == 0 ? 0x08 : 0x80;
+                int gridIndex = (source[qsBase + subBlock * 4 + vector] & 0xff)
+                        | (((packedHigh >>> highShift) & 0x07) << 8);
+                float delta = (packedHigh & signMask) != 0 ? -0.125f : 0.125f;
+                float vectorScale = vector < 2 ? firstScale : secondScale;
+                for (int element = 0; element < 8; element++) {
+                    values.putFloat(vectorScale * (Iq1SGrid.value(gridIndex, element) + delta));
                 }
             }
         }
