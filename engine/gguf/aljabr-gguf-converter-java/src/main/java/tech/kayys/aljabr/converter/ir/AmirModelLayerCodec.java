@@ -14,6 +14,7 @@ import tech.kayys.aljabr.spi.model.ir.ConfigurationValue;
 import tech.kayys.aljabr.spi.model.ir.ModelComponent;
 import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
+import tech.kayys.aljabr.spi.model.ir.GraphCollection;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ import java.util.Set;
 final class AmirModelLayerCodec {
     static final String ASSETS_KEY = "aljabr.amir.assets.v1";
     static final String COMPONENTS_KEY = "aljabr.amir.components.v1";
+    static final String GRAPHS_KEY = "aljabr.amir.graphs.v1";
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
     private AmirModelLayerCodec() { }
@@ -35,7 +37,8 @@ final class AmirModelLayerCodec {
     static Map<String, String> encode(ModelDescriptor model) {
         Map<String, String> result = new LinkedHashMap<>();
         model.assetCollection().ifPresent(collection -> result.put(ASSETS_KEY, encodeAssets(collection)));
-        model.componentCollection().filter(AmirModelLayerCodec::hasNoGraphBindings).ifPresent(collection ->
+        model.graphCollection().ifPresent(collection -> result.put(GRAPHS_KEY, AmirGraphCodec.encode(collection)));
+        model.componentCollection().ifPresent(collection ->
                 result.put(COMPONENTS_KEY, encodeComponents(collection)));
         return Map.copyOf(result);
     }
@@ -43,8 +46,10 @@ final class AmirModelLayerCodec {
     static ModelDescriptor restore(Map<String, String> metadata, ModelDescriptor model) {
         String assets = metadata.remove(ASSETS_KEY);
         String components = metadata.remove(COMPONENTS_KEY);
+        String graphs = metadata.remove(GRAPHS_KEY);
         ModelDescriptor restored = model;
         if (assets != null) restored = restored.withAssetCollection(decodeAssets(assets));
+        if (graphs != null) restored = restored.withGraphCollection(AmirGraphCodec.decode(graphs));
         if (components != null) restored = restored.withComponentCollection(decodeComponents(components));
         return restored;
     }
@@ -54,7 +59,7 @@ final class AmirModelLayerCodec {
     }
 
     static boolean isEncodedKey(String key) {
-        return ASSETS_KEY.equals(key) || COMPONENTS_KEY.equals(key);
+        return ASSETS_KEY.equals(key) || COMPONENTS_KEY.equals(key) || GRAPHS_KEY.equals(key);
     }
 
     private static String encodeAssets(AssetCollection collection) {
