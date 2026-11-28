@@ -20,4 +20,15 @@ VideoFrameSequence groups prepared frame results into a validated temporal view.
 - The sequence is non-owning. PreparedDiffusionConditioningSet remains the single owner and must stay open while the sequence is in use.
 - Mixed prepared conditioning data can be filtered to a video-only view; every VIDEO_FRAME entry must use VideoFrameConditioningData.
 
+## Packed frame batches
+
+VideoFrameBatchPacker materializes a sequence into contiguous, backend-neutral heap memory.
+
+- Output layouts are explicit: THWC or TCHW. Per-frame HWC/CHW source layouts are normalized during packing.
+- Frames must have identical width, height, and channel count. Geometry changes are rejected rather than silently resized or padded.
+- The batch retains each frame's original input ID, sequence index, and timestamp in matching temporal order.
+- The batch owns an independent packed buffer and remains valid after the source prepared conditioning set is closed.
+- Public array access is defensive; scalar access is available through logical time/height/width/channel coordinates.
+- Packing performs a data copy intentionally. It does not create Aljabr tensors, choose a compute backend, normalize pixel ranges, or assume a model-specific channel convention.
+
 No FFmpeg, ImageIO, Python, PyTorch, ComfyUI, tensor backend, or device-selection dependency is introduced.
