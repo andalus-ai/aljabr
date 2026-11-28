@@ -2,8 +2,6 @@ package tech.kayys.aljabr.cache;
 
 import org.junit.jupiter.api.Test;
 
-import java.nio.FloatBuffer;
-import java.util.concurrent.CompletionStage;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -28,7 +26,7 @@ class HeapKVCacheBufferSharingTest {
             assertEquals(KVCacheMemoryDomain.HOST_HEAP, view.keyRegion(0).memoryDomain());
             assertEquals(KVCacheElementType.FLOAT32, view.keyRegion(0).elementType());
             assertEquals(8L * Float.BYTES, view.keyRegion(0).byteLength());
-            assertEquals(1, view.keyRegion(0).elementCount());
+            assertEquals(8, view.keyRegion(0).elementCount());
             assertInstanceOf(HeapKVCacheBufferHandle.class, view.keyRegion(0).handle());
             assertNotNull(view.readiness());
             assertDoesNotThrow(() -> view.readiness().toCompletableFuture().join());
