@@ -61,3 +61,16 @@ VideoFrameSequenceWindowing creates immutable, non-owning windows for bounded-me
 - Windowing is independent of temporal sampling and can be applied to an already sampled sequence.
 
 No FFmpeg, ImageIO, Python, PyTorch, ComfyUI, tensor backend, or device-selection dependency is introduced.
+
+## Lazy batch mapping
+
+`VideoFrameBatchStream.mapChunks` composes bounded chunking with an injected batch-packing function.
+
+- The mapper is invoked only when the consumer calls `next()`; checking `hasNext()` does not pack or prefetch.
+- Each output is handed to the consumer immediately. The stream does not retain previous chunks or produced batch values.
+- The consumer owns each returned value. If a packed value owns resources, the consumer must close it after use.
+- Iterators are independent and repeatable; each starts from the first frame.
+- The source conditioning owner must remain open while chunks are being mapped. A mapper that needs independent lifetime should copy or retain the required data into its returned value.
+- The mapper is injected, so this layer does not require a specific packed-batch class, tensor backend, device, codec, or scheduler.
+
+This is synchronous pull-based flow control. It does not create worker threads, prefetch, or provide asynchronous backpressure.
