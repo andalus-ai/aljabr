@@ -49,7 +49,7 @@ public final class KVCacheSession implements KVCacheSharingCapability {
      * borrowed view is open. Close the view promptly when drafting/attention
      * no longer needs it.</p>
      *
-     * <p>Session-mediated reads and writes are coordinated by this session.
+      * <p>Borrowed-view reads are serialized with session-mediated writes.
      * Direct mutation through the underlying storage bypasses this protection
      * and is forbidden while a borrowed view is open.</p>
      */
