@@ -1,9 +1,9 @@
 package tech.kayys.aljabr.cache;
 
-import java.util.Arrays;
-import java.util.Objects;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -138,14 +138,14 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
     @Override
     public synchronized void truncate(int firstPosition) {
         ensureOpen();
+        if (firstPosition < 0 || firstPosition > layout.maxSequenceLength()) {
+            throw new IllegalArgumentException(
+                    "firstPosition must be within cache capacity: " + firstPosition);
+        }
         for (HeapBufferLease lease : activeBufferLeases) {
             if (!lease.closed && firstPosition < lease.visibleSequenceLength) {
                 throw new IllegalStateException("Cannot truncate a borrowed KV prefix");
             }
-        }
-        if (firstPosition < 0 || firstPosition > layout.maxSequenceLength()) {
-            throw new IllegalArgumentException(
-                    "firstPosition must be within cache capacity: " + firstPosition);
         }
         for (int layer = 0; layer < layout.layerCount(); layer++) {
             int offset = Math.multiplyExact(firstPosition, layout.layerStride(layer));
@@ -256,7 +256,10 @@ public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRe
 
         @Override
         public String backendId() {
-            return "cpu";
+            synchronized (HeapKVCacheStorage.this) {
+                ensureLeaseOpen();
+                return "cpu";
+            }
         }
 
         @Override
