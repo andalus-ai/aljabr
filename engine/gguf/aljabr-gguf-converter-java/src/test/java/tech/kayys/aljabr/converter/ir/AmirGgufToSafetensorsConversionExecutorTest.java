@@ -103,6 +103,48 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesNVFP4UsingFourUE4M3SubBlockScales() throws Exception {
+        byte[] block = new byte[68];
+        block[0] = 0x40; // UE4M3 2.0; GGML's half-scale convention gives 1.0
+        block[1] = 0x38; // UE4M3 1.0; GGML's half-scale convention gives 0.5
+        block[2] = 0x00; // zero scale
+        block[3] = 0x7f; // reserved NaN encoding maps to zero in GGML
+        for (int subBlock = 0; subBlock < 4; subBlock++) {
+            for (int lane = 0; lane < 8; lane++) {
+                block[4 + subBlock * 8 + lane] = (byte) (lane | ((lane + 8) << 4));
+            }
+        }
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "NVFP4", List.of(64L), source, 8L, block.length);
+        var model = model("nvfp4", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("nvfp4.safetensors");
+
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        assertEquals(64L * Float.BYTES, result.payloadBytes());
+        byte[] file = Files.readAllBytes(output);
+        assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 64 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        float[] codebook = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
+        for (int subBlock = 0; subBlock < 4; subBlock++) {
+            float scale = switch (subBlock) {
+                case 0 -> 1.0f;
+                case 1 -> 0.5f;
+                default -> 0.0f;
+            };
+            for (int lane = 0; lane < 8; lane++) {
+                assertEquals(codebook[lane] * scale,
+                        values.getFloat((subBlock * 16 + lane) * Float.BYTES), 0.0f);
+                assertEquals(codebook[lane + 8] * scale,
+                        values.getFloat((subBlock * 16 + lane + 8) * Float.BYTES), 0.0f);
+            }
+        }
+    }
+
+    @Test
     void dequantizesTQ1BlocksInReferenceBaseThreePlaneOrder() throws Exception {
         byte[] block = new byte[54];
         block[0] = 0x55; // packed base-3 digits: -1, +1, +1, +1, +1
