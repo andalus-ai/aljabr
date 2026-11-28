@@ -6,6 +6,7 @@ import java.util.Objects;
 import tech.kayys.aljabr.cache.KVCacheBufferLayout;
 import tech.kayys.aljabr.cache.KVCacheBufferReadView;
 import tech.kayys.aljabr.cache.KVCacheBufferRegion;
+import tech.kayys.aljabr.cache.KVCacheBufferLayoutValidator;
 import tech.kayys.aljabr.cache.KVCacheElementType;
 import tech.kayys.aljabr.cache.KVCacheMemoryDomain;
 import tech.kayys.aljabr.metal.binding.MetalBinding;
@@ -43,6 +44,10 @@ public final class MetalKVCacheAttentionConsumer {
         if (!"metal".equals(lease.backendId())) {
             throw new IllegalArgumentException("Borrowed KV lease is not owned by Metal");
         }
+
+        // Shared conformance checks are backend-neutral; Metal-specific
+        // restrictions are applied below before native dispatch.
+        KVCacheBufferLayoutValidator.validateView(lease, layer);
 
         int sequenceLength = lease.visibleSequenceLength();
         if (queryHeads <= 0 || sequenceLength <= 0 || sequenceLength > MAX_SEQUENCE_LENGTH) {
@@ -102,8 +107,7 @@ public final class MetalKVCacheAttentionConsumer {
         if (region.memoryDomain() != KVCacheMemoryDomain.DEVICE
                 || !"metal".equals(region.backendId())
                 || region.elementType() != KVCacheElementType.FLOAT32
-                || region.byteOffset() != 0
-                || region.byteLength() < layout.minimumByteLength(Float.BYTES)) {
+                || region.byteOffset() != 0) {
             throw new IllegalArgumentException("Borrowed KV region is incompatible with Metal FLOAT32 SDPA");
         }
     }
