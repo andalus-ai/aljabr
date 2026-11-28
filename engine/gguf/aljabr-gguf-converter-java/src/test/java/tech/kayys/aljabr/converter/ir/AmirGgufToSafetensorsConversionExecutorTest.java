@@ -103,6 +103,36 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesTQ1BlocksInReferenceBaseThreePlaneOrder() throws Exception {
+        byte[] block = new byte[54];
+        block[0] = 0x55; // packed base-3 digits: -1, +1, +1, +1, +1
+        block[53] = 0x3c; // fp16 scale = 1
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "TQ1_0", List.of(256L), source, 8L, block.length);
+        var model = model("tq1_0", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("tq1_0.safetensors");
+
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        assertEquals(256L * Float.BYTES, result.payloadBytes());
+        byte[] file = Files.readAllBytes(output);
+        assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        assertEquals(-1.0f, values.getFloat(0), 0.0f);
+        assertEquals(1.0f, values.getFloat(32 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(64 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(96 * Float.BYTES), 0.0f);
+        assertEquals(1.0f, values.getFloat(128 * Float.BYTES), 0.0f);
+        for (int i = 1; i < 256; i++) {
+            if (i == 32 || i == 64 || i == 96 || i == 128) continue;
+            assertEquals(-1.0f, values.getFloat(i * Float.BYTES), 0.0f);
+        }
+    }
+
+    @Test
     void dequantizesTQ2BlocksInReferenceBitPlaneOrder() throws Exception {
         byte[] block = new byte[66];
         block[1] = 0x3c; // fp16 scale = 1
