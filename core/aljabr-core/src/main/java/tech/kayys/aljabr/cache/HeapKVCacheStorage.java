@@ -4,8 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.nio.FloatBuffer;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 /**
@@ -15,7 +15,8 @@ import java.util.function.Function;
  * straightforward portable implementation; optimized CPU/native/device
  * providers can implement the same contract without changing model formats.
  */
-public final class HeapKVCacheStorage implements KVCacheStorage, KVCacheBufferRegionProvider {
+public final class HeapKVCacheStorage
+        implements KVCacheStorage, KVCacheBufferRegionProvider {
     private final KVCacheLayout layout;
     private float[][] keys;
     private float[][] values;
