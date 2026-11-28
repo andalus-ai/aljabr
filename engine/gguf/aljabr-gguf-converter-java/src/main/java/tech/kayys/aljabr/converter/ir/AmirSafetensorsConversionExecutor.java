@@ -218,8 +218,7 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
 
     private static boolean hasUntransferredData(ModelDescriptor model) {
         return !model.extensions().isEmpty()
-                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty())
-                ;
+                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty());
     }
 
     private static List<String> untransferredExtensionKeys(ModelDescriptor model) {
