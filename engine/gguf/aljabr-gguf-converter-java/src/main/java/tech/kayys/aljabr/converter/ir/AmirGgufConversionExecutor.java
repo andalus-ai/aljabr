@@ -124,10 +124,7 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        boolean hasUnrepresentableLayers = "unknown".equalsIgnoreCase(model.architecture())
-                || model.graphCollection().isPresent()
-                || model.componentCollection().filter(collection ->
-                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent();
+        boolean hasUnrepresentableLayers = "unknown".equalsIgnoreCase(model.architecture());
         if (hasUnrepresentableLayers && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
             throw new IOException("Typed architecture, graph, asset, or component layers require a PARTIAL plan");
         }
@@ -220,10 +217,6 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
 
     private static List<String> untransferredKeys(ModelDescriptor model) {
         List<String> keys = new ArrayList<>();
-        model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
-        model.componentCollection().filter(collection ->
-                !AmirModelLayerCodec.hasNoGraphBindings(collection))
-                .ifPresent(ignored -> keys.add("model:componentCollection"));
         return List.copyOf(keys);
     }
 
