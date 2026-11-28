@@ -61,7 +61,7 @@ class AmirModelLayerCodecTest {
         ComponentCollection components = new ComponentCollection(List.of(
                 new ModelComponent("vision-encoder", ModelComponentKind.IMAGE_PROCESSOR,
                         Map.of(), List.of(), List.of(new ComponentGraphBinding(
-                                "vision-forward", Map.of("pixels", "input"), Map.of("embedding", "output"))),
+                                "vision-forward", Map.of("pixels", "pixels"), Map.of("embedding", "embedding"))),
                         Map.of())));
         ModelDescriptor source = model()
                 .withGraphCollection(new GraphCollection(List.of(GraphDescriptor.of(
