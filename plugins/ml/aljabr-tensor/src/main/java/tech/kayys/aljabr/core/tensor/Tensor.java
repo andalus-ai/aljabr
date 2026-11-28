@@ -302,6 +302,11 @@ public interface Tensor extends AutoCloseable {
     }
 
     /** Creates an I32 tensor from typed integer data using an explicit backend. */
+    /** Creates a signed 8-bit integer tensor using I8 or INT8 storage. */
+    static Tensor of(byte[] data, ComputeBackend backend, DType dtype, long... shape) {
+        return TensorFactory.of(data, backend, dtype, shape);
+    }
+
     static Tensor of(int[] data, ComputeBackend backend, long... shape) {
         return TensorFactory.of(data, backend, shape);
     }
@@ -417,6 +422,14 @@ public interface Tensor extends AutoCloseable {
     }
 
     /** Exports logical I32 values from host-accessible storage in row-major order. */
+    /**
+     * Exports I8 or INT8 values in logical row-major order.
+     * Requires host-accessible storage.
+     */
+    default byte[] toByteArray() {
+        throw new UnsupportedOperationException("toByteArray is not supported by " + getClass().getName());
+    }
+
     default int[] toIntArray() {
         throw new UnsupportedOperationException("Integer-array export is not supported by " + getClass().getSimpleName());
     }

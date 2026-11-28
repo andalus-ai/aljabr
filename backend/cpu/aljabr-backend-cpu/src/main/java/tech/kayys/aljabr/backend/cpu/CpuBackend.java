@@ -587,9 +587,9 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                             + " must match destination dtype " + input.dtype());
         }
         if (input.dtype() != DType.F32 && input.dtype() != DType.F16 && input.dtype() != DType.BF16
-                && input.dtype() != DType.I32) {
+                && input.dtype() != DType.I32 && input.dtype() != DType.I8 && input.dtype() != DType.INT8) {
             throw new UnsupportedOperationException(
-                    "CPU indexAdd currently supports F32, F16, BF16, and I32 destination and source tensors; actual dtype="
+                    "CPU indexAdd currently supports F32, F16, BF16, I32, I8, and INT8 destination and source tensors; actual dtype="
                             + input.dtype());
         }
         if (indices.dtype() != DType.I32) {
@@ -633,6 +633,9 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                 if (dtype == DType.I32) {
                     writeIndexAddInt(result, logical,
                             readIndexAddInt(destination, destinationDims, destinationLayout, logical));
+                } else if (dtype == DType.I8 || dtype == DType.INT8) {
+                    writeIndexAddByte(result, logical,
+                            readIndexAddByte(destination, destinationDims, destinationLayout, logical));
                 } else {
                     float value = readIndexAddValue(destination, destinationDims, destinationLayout, logical, dtype);
                     writeIndexAddValue(result, logical, dtype, value);
@@ -655,6 +658,12 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
                             int current = readIndexAddInt(
                                     result, destinationDimensions, resultLayout, destinationLogical);
                             writeIndexAddInt(result, destinationLogical, current + update);
+                        } else if (dtype == DType.I8 || dtype == DType.INT8) {
+                            byte update = readIndexAddByte(
+                                    updates, sourceDimensions, sourceLayout, sourceLogical);
+                            byte current = readIndexAddByte(
+                                    result, destinationDimensions, resultLayout, destinationLogical);
+                            writeIndexAddByte(result, destinationLogical, (byte) (current + update));
                         } else {
                             float update = readIndexAddValue(
                                     updates, sourceDimensions, sourceLayout, sourceLogical, dtype);
@@ -680,6 +689,16 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
 
     private static void writeIndexAddInt(MemorySegment segment, long logicalIndex, int value) {
         segment.set(ValueLayout.JAVA_INT, Math.multiplyExact(logicalIndex, Integer.BYTES), value);
+    }
+
+    private static byte readIndexAddByte(
+            MemorySegment segment, long[] dimensions, TensorLayout layout, long logicalIndex) {
+        long elementOffset = CpuTensorLayoutAccess.logicalElementOffset(dimensions, layout, logicalIndex);
+        return segment.get(ValueLayout.JAVA_BYTE, elementOffset);
+    }
+
+    private static void writeIndexAddByte(MemorySegment segment, long logicalIndex, byte value) {
+        segment.set(ValueLayout.JAVA_BYTE, logicalIndex, value);
     }
 
     private static float readIndexAddValue(

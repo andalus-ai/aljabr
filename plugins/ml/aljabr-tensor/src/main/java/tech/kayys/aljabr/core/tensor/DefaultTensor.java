@@ -704,6 +704,33 @@ public final class DefaultTensor implements Tensor {
     }
 
     @Override
+    public byte[] toByteArray() {
+        ensureOpen();
+        if (dtype != DType.I8 && dtype != DType.INT8) {
+            throw new UnsupportedOperationException(
+                    "toByteArray requires I8 or INT8 tensors; actual dtype is " + dtype);
+        }
+        int length = Math.toIntExact(numel());
+        byte[] values = new byte[length];
+        if (length == 0) {
+            return values;
+        }
+
+        MemorySegment segment = requireHostSegment("toByteArray");
+        long[] strides = layout.strides();
+        if (layout.isContiguous()) {
+            long byteOffset = layout.storageOffset();
+            return segment.asSlice(byteOffset, length).toArray(java.lang.foreign.ValueLayout.JAVA_BYTE);
+        }
+
+        for (int linearIndex = 0; linearIndex < length; linearIndex++) {
+            long elementOffset = elementOffsetForLinearIndex(linearIndex, strides);
+            values[linearIndex] = segment.get(java.lang.foreign.ValueLayout.JAVA_BYTE, elementOffset);
+        }
+        return values;
+    }
+
+    @Override
     public int[] toIntArray() {
         ensureOpen();
         if (dtype != DType.I32) {
