@@ -9,6 +9,9 @@ import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
 import tech.kayys.aljabr.spi.model.ir.CompatibilityReport;
 import tech.kayys.aljabr.spi.model.ir.ModelDescriptor;
 import tech.kayys.aljabr.spi.model.ir.ModelIdentity;
+import tech.kayys.aljabr.spi.model.ir.GraphCollection;
+import tech.kayys.aljabr.spi.model.ir.GraphDescriptor;
+import tech.kayys.aljabr.spi.model.ir.GraphSignature;
 import tech.kayys.aljabr.spi.model.ir.TensorDescriptor;
 
 import java.util.List;
@@ -148,6 +151,20 @@ class FormatTargetCapabilityTest {
 
         assertEquals(CompatibilityReport.ConversionFidelity.FULL,
                 new GgufTargetCapability().assess(source).fidelity());
+    }
+
+
+    @Test
+    void graphEnvelopeIsRecognizedByBothTargetFormatProviders() {
+        var source = new ModelDescriptor(ModelIdentity.of("graph-model"), "llama", "safetensors",
+                Map.of(), Map.of(), List.of())
+                .withGraphCollection(new GraphCollection(List.of(
+                        GraphDescriptor.of("encoder", Map.of(), List.of(), GraphSignature.empty()))));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL,
+                new GgufTargetCapability().assess(source).fidelity());
+        assertEquals(CompatibilityReport.ConversionFidelity.FULL,
+                new SafetensorsTargetCapability().assess(source).fidelity());
     }
 
     private static ModelDescriptor model(String architecture, String format, TensorDescriptor tensor) {
