@@ -1,6 +1,7 @@
 package tech.kayys.aljabr.backend.cpu;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +11,7 @@ import tech.kayys.aljabr.core.tensor.DefaultTensor;
 import tech.kayys.aljabr.core.tensor.DeviceType;
 import tech.kayys.aljabr.core.tensor.Shape;
 import tech.kayys.aljabr.core.tensor.Tensor;
+import tech.kayys.aljabr.core.tensor.TensorFactory;
 import tech.kayys.aljabr.testing.tensor.TensorLifecycleAssertions;
 
 /**
@@ -47,6 +49,32 @@ class CpuTensorLifecycleConformanceTest {
         } finally {
             backend.close();
         }
+    }
+
+    @Test
+    void sliceRetainsStorageAfterParentRelease() {
+        CpuBackend backend = new CpuBackend();
+        Tensor parent = TensorFactory.of(new float[] {1f, 2f, 3f, 4f}, backend, 2, 2);
+        Tensor view = parent.slice(new long[] {1, 0}, new long[] {1, 2});
+
+        parent.release();
+
+        assertArrayEquals(new float[] {3f, 4f}, view.toFloatArray());
+        assertDoesNotThrow(view::release);
+        backend.close();
+    }
+
+    @Test
+    void reshapeViewRetainsStorageAfterParentRelease() {
+        CpuBackend backend = new CpuBackend();
+        Tensor parent = TensorFactory.of(new float[] {1f, 2f, 3f, 4f}, backend, 2, 2);
+        Tensor view = parent.reshape(4);
+
+        parent.release();
+
+        assertArrayEquals(new float[] {1f, 2f, 3f, 4f}, view.toFloatArray());
+        assertDoesNotThrow(view::release);
+        backend.close();
     }
 
     @Test
