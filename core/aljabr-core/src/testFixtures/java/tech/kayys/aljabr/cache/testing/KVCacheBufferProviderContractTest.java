@@ -35,7 +35,7 @@ public abstract class KVCacheBufferProviderContractTest {
     }
 
     @Test
-    void exportsConformantRegionsAndPreservesBorrowedPrefix() {
+    public void exportsConformantRegionsAndPreservesBorrowedPrefix() {
         Assumptions.assumeTrue(isProviderAvailable(), "Provider is not available on this host");
         KVCacheLayout layout = new KVCacheLayout(
                 5, new int[] {1, 2}, new int[] {2, 3});
