@@ -64,6 +64,19 @@ public final class MetalKVCacheAttentionConsumer {
         if (!keyLayout.equals(valueLayout)) {
             throw new IllegalArgumentException("K and V logical layouts must match");
         }
+        if (queryHeads % keyLayout.kvHeads() != 0) {
+            throw new IllegalArgumentException("Query heads must be divisible by KV heads");
+        }
+        if (!Float.isFinite(scale) || scale <= 0.0f
+                || !Float.isFinite(softCap) || softCap < 0.0f) {
+            throw new IllegalArgumentException("Attention scale must be positive and softCap non-negative");
+        }
+        long queryBytes = Math.multiplyExact(
+                Math.multiplyExact((long) queryHeads, keyLayout.headDimension()), Float.BYTES);
+        if (query.byteSize() < queryBytes || output.byteSize() < queryBytes) {
+            throw new IllegalArgumentException(
+                    "Query and output segments must each contain queryHeads * headDimension FLOAT32 values");
+        }
 
         KVCacheBufferRegion keyRegion = lease.keyRegion(layer);
         KVCacheBufferRegion valueRegion = lease.valueRegion(layer);
