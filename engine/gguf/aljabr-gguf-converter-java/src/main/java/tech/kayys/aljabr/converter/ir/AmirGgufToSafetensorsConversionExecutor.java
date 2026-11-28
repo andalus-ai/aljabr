@@ -50,6 +50,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
     private static final String TARGET_FORMAT = "safetensors";
     private static final int COPY_BUFFER_BYTES = 1024 * 1024;
     private static final int BLOCKS_PER_BATCH = 1024;
+    private static final int[] MXFP4_VALUES = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
     private static final int[] IQ4_NL_VALUES = {
             -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113
     };
@@ -479,12 +480,14 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
      * The shared E2M1 codebook is stored doubled, so the scale is E8M0 / 2.
      */
     private static void dequantizeMXFP4Block(byte[] source, int base, ByteBuffer output) {
-        final int[] codebook = {0, 1, 2, 3, 4, 6, 8, 12, 0, -1, -2, -3, -4, -6, -8, -12};
         float scale = e8m0ToFloatHalf(source[base] & 0xff);
         for (int lane = 0; lane < 16; lane++) {
             int packed = source[base + 1 + lane] & 0xff;
-            output.putFloat(codebook[packed & 0x0f] * scale);
-            output.putFloat(codebook[packed >>> 4] * scale);
+            output.putFloat(MXFP4_VALUES[packed & 0x0f] * scale);
+        }
+        for (int lane = 0; lane < 16; lane++) {
+            int packed = source[base + 1 + lane] & 0xff;
+            output.putFloat(MXFP4_VALUES[packed >>> 4] * scale);
         }
     }
 
