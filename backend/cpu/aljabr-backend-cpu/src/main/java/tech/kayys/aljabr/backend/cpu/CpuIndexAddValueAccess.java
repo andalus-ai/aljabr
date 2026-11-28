@@ -4,6 +4,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 import tech.kayys.aljabr.core.tensor.DType;
+import tech.kayys.aljabr.core.tensor.TensorLayout;
 
 /**
  * Typed scalar access for the CPU indexAdd kernel.
