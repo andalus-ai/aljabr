@@ -37,7 +37,8 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
     private final CpuAttentionExecution attentionExecution;
     private final CpuSpatialExecution spatialExecution;
     private final CpuReductionExecution reductionExecution;
-    private final CpuNormalizationExecution normalizationExecution;\n    private final CpuIndexAddExecution indexAddExecution;
+    private final CpuNormalizationExecution normalizationExecution;
+    private final CpuIndexAddExecution indexAddExecution;
 
     public CpuBackend() {
         this(null, PoolOwnership.BORROWED, null);
@@ -72,7 +73,8 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
         this.attentionExecution = new CpuAttentionExecution(this, this::allocateOutput, this::out);
         this.spatialExecution = new CpuSpatialExecution(this::allocateOutput, this::out);
         this.reductionExecution = new CpuReductionExecution(this::allocateOutput, this::out);
-        this.normalizationExecution = new CpuNormalizationExecution(this::allocateOutput, this::out);\n        this.indexAddExecution = new CpuIndexAddExecution(this);
+        this.normalizationExecution = new CpuNormalizationExecution(this::allocateOutput, this::out);
+        this.indexAddExecution = new CpuIndexAddExecution(this);
     }
 
     @Override
