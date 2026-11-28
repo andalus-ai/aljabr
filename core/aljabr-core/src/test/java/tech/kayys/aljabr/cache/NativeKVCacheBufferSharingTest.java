@@ -28,7 +28,7 @@ class NativeKVCacheBufferSharingTest {
                         new float[] {segment.get(ValueLayout.JAVA_FLOAT, 0),
                                 segment.get(ValueLayout.JAVA_FLOAT, Float.BYTES)});
                 assertArrayEquals(new float[] {1, 2}, observed);
-                assertThrows(UnsupportedOperationException.class, () ->
+                assertThrows(IllegalArgumentException.class, () ->
                         NativeKVCacheBufferAccess.withReadOnlySegment(lease, key, segment -> {
                             segment.set(ValueLayout.JAVA_FLOAT, 0, 99);
                             return null;
