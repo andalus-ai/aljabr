@@ -54,7 +54,7 @@ public final class WordPieceTokenizer implements Tokenizer {
 
     @Override
     public long[] encode(String text, EncodeOptions options) {
-        if (text == null || text.isEmpty()) return new long[0];
+        if (text == null) return new long[0];
         EncodeOptions effective = options == null ? EncodeOptions.defaultOptions() : options;
         List<Long> ids = new ArrayList<>();
         if (effective.addBos && clsId >= 0) ids.add((long) clsId);
