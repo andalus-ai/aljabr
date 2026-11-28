@@ -50,6 +50,7 @@ dependencies {
     implementation("org.jboss.logging:jboss-logging:3.6.1.Final")
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api:4.1.0")
     testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation(testFixtures(project(":core:aljabr-core")))
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
