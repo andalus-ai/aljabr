@@ -19,6 +19,8 @@ public record AmirFormatCapabilities(
 
     public enum Feature {
         TYPED_TENSOR_METADATA,
+        TYPED_MODEL_METADATA,
+        ARCHITECTURE_DESCRIPTOR,
         GRAPH_COLLECTION,
         ASSET_COLLECTION,
         COMPONENT_COLLECTION,
@@ -44,9 +46,11 @@ public record AmirFormatCapabilities(
     public static AmirFormatCapabilities safetensors() {
         return new AmirFormatCapabilities("safetensors", EnumSet.of(
                 Feature.TYPED_TENSOR_METADATA,
+                Feature.TYPED_MODEL_METADATA,
+                Feature.ARCHITECTURE_DESCRIPTOR,
                 Feature.GRAPH_COLLECTION,
                 Feature.ASSET_COLLECTION,
-                Feature.COMPONENT_COLLECTION), false);
+                Feature.COMPONENT_COLLECTION), true);
     }
 
     /** Capabilities of the AMIR GGUF metadata-envelope writer. */
