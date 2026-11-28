@@ -67,6 +67,8 @@ Treat this roadmap as the shared architectural direction. It is a sequence of de
 
 ### Phase 0 — Source-of-truth repository audit
 
+- Maintain `docs/architecture/SDK_VISION_ALIGNMENT_AUDIT.md` as the current targeted audit of SDK vision alignment, evidence-backed gaps and the next lifecycle/ownership conformance increment. Refresh it when module paths, public contracts or build inclusion materially change.
+
 - Inventory actual Gradle projects/modules, source sets, public APIs, implementations, tests, dependencies, and build conventions.
 - Map existing tensors, arrays, operators, numerical kernels, model abstractions, execution backends, provider/plugin mechanisms, and native integrations.
 - Identify duplicate abstractions, circular dependencies, API leaks, compatibility constraints, incomplete implementations, and missing tests.
