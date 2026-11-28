@@ -31,10 +31,9 @@ import java.util.Objects;
 /**
  * Executes AMIR conversions to GGUF without materializing tensor payloads.
  *
- * <p>Source metadata and opaque model/tensor extensions are carried as
- * namespaced GGUF string metadata. Versioned envelopes preserve typed assets
- * and components without graph bindings. Graph collections and graph-bound
- * components remain untransferred and require an acknowledged PARTIAL plan.
+ * <p>Source metadata, opaque model/tensor extensions, and versioned AMIR
+ * graph, asset, and component envelopes are carried as GGUF metadata. Fidelity
+ * requirements are evaluated from the shared target-format capability profile.
  */
 public final class AmirGgufConversionExecutor implements ModelConversionExecutor {
 
@@ -124,12 +123,12 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        boolean hasUnrepresentableLayers = "unknown".equalsIgnoreCase(model.architecture())
-                || model.graphCollection().isPresent()
-                || model.componentCollection().filter(collection ->
-                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent();
-        if (hasUnrepresentableLayers && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("Typed architecture, graph, asset, or component layers require a PARTIAL plan");
+        CompatibilityReport assessed = new AmirFidelityEvaluator().evaluate(
+                model, AmirFormatCapabilities.forTarget(TARGET_FORMAT));
+        if (assessed.fidelity() == CompatibilityReport.ConversionFidelity.PARTIAL
+                && fidelity == CompatibilityReport.ConversionFidelity.FULL) {
+            throw new IOException("The target capability profile requires PARTIAL fidelity: "
+                    + assessed.diagnostics());
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !request.acknowledgePartial()) {
             throw new IOException("GGUF conversion is PARTIAL; explicit acknowledgement is required: "
@@ -220,10 +219,6 @@ public final class AmirGgufConversionExecutor implements ModelConversionExecutor
 
     private static List<String> untransferredKeys(ModelDescriptor model) {
         List<String> keys = new ArrayList<>();
-        model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
-        model.componentCollection().filter(collection ->
-                !AmirModelLayerCodec.hasNoGraphBindings(collection))
-                .ifPresent(ignored -> keys.add("model:componentCollection"));
         return List.copyOf(keys);
     }
 

@@ -7,6 +7,14 @@ import org.junit.jupiter.api.io.TempDir;
 import tech.kayys.aljabr.spi.model.ir.AssetCollection;
 import tech.kayys.aljabr.spi.model.ir.AssetReference;
 import tech.kayys.aljabr.spi.model.ir.ComponentCollection;
+import tech.kayys.aljabr.spi.model.ir.TensorType;
+import tech.kayys.aljabr.spi.model.ir.TensorShape;
+import tech.kayys.aljabr.spi.model.ir.TensorDataType;
+import tech.kayys.aljabr.spi.model.ir.GraphValue;
+import tech.kayys.aljabr.spi.model.ir.GraphSignature;
+import tech.kayys.aljabr.spi.model.ir.GraphDescriptor;
+import tech.kayys.aljabr.spi.model.ir.GraphCollection;
+import tech.kayys.aljabr.spi.model.ir.ComponentGraphBinding;
 import tech.kayys.aljabr.spi.model.ir.ConfigurationValue;
 import tech.kayys.aljabr.spi.model.ir.ModelComponent;
 import tech.kayys.aljabr.spi.model.ir.ModelComponentKind;
@@ -92,12 +100,21 @@ class AmirGgufConversionExecutorTest {
         var tensor = new TensorDescriptor("weight", "F32", List.of(2L), "contiguous", null, payload);
         var model = new ModelDescriptor(ModelIdentity.of("model-layers"), "decoder", "safetensors",
                 Map.of(), Map.of(), List.of(tensor))
+                .withGraphCollection(new GraphCollection(List.of(GraphDescriptor.of(
+                        "vision-encoder",
+                        List.of(new GraphValue("pixels", TensorType.of(
+                                TensorDataType.F32, TensorShape.of(1)))),
+                        List.of(),
+                        new GraphSignature(Map.of("pixels", "pixels"), Map.of("embedding", "pixels"))))))
                 .withAssetCollection(new AssetCollection(List.of(
                         AssetReference.of("tokenizer", "assets/tokenizer.json"))))
                 .withComponentCollection(new ComponentCollection(List.of(new ModelComponent(
                         "text-tokenizer", ModelComponentKind.TOKENIZER,
                         Map.of("normalization", new ConfigurationValue.StringValue("NFKC")),
-                        List.of("tokenizer"), List.of(), Map.of("vendor.impl", "custom")))));
+                        List.of("tokenizer"),
+                        List.of(new ComponentGraphBinding("vision-encoder",
+                                Map.of("image", "pixels"), Map.of("embedding", "embedding"))),
+                        Map.of("vendor.impl", "custom")))));
         Path output = temporaryDirectory.resolve("model-layers.gguf");
 
         var result = new AmirGgufConversionExecutor().execute(model,
@@ -106,6 +123,7 @@ class AmirGgufConversionExecutorTest {
 
         assertTrue(result.untransferredMetadataKeys().isEmpty());
         ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
+        assertEquals(model.graphCollection(), restored.graphCollection());
         assertEquals(model.assetCollection(), restored.assetCollection());
         assertEquals(model.componentCollection(), restored.componentCollection());
     }

@@ -150,7 +150,7 @@ class AmirSafetensorsConversionExecutorTest {
     }
 
     @Test
-    void typedModelLayersRequirePartialFidelityAndAreReported() throws Exception {
+    void typedModelLayersAreTransferredWithoutPartialFidelity() throws Exception {
         Path source = writeSource("typed-model-layers.safetensors");
         ModelDescriptor model = model(source, Map.of(), Map.of())
                 .withGraphCollection(new GraphCollection(List.of(
@@ -162,12 +162,14 @@ class AmirSafetensorsConversionExecutorTest {
         var executor = new AmirSafetensorsConversionExecutor();
         var output = temporaryDirectory.resolve("typed-model-layers-output.safetensors");
 
-        assertThrows(java.io.IOException.class, () -> executor.execute(
-                model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false));
-
         var result = executor.execute(
-                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL), output, true);
-        assertEquals(List.of("model:graphCollection"), result.untransferredExtensionKeys());
+                model, plan(model, CompatibilityReport.ConversionFidelity.FULL), output, false);
+        assertTrue(result.untransferredExtensionKeys().isEmpty());
+
+        ModelDescriptor restored = new AmirModelDescriptorReader().read(output);
+        assertEquals(model.graphCollection(), restored.graphCollection());
+        assertEquals(model.assetCollection(), restored.assetCollection());
+        assertEquals(model.componentCollection(), restored.componentCollection());
     }
 
     @Test

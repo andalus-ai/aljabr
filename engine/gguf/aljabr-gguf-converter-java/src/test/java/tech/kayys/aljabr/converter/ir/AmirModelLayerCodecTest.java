@@ -73,7 +73,8 @@ class AmirModelLayerCodecTest {
 
         Map<String, String> encoded = AmirModelLayerCodec.encode(source);
 
-        assertFalse(encoded.containsKey(AmirModelLayerCodec.COMPONENTS_KEY));
+        assertTrue(encoded.containsKey(AmirModelLayerCodec.GRAPHS_KEY));
+        assertTrue(encoded.containsKey(AmirModelLayerCodec.COMPONENTS_KEY));
         assertTrue(AmirModelLayerCodec.hasNoGraphBindings(
                 new ComponentCollection(List.of(ModelComponent.of("tokenizer", ModelComponentKind.TOKENIZER)))));
     }

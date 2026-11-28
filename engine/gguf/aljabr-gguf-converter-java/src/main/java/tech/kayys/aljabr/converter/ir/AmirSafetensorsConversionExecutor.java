@@ -34,9 +34,9 @@ import java.util.Objects;
  * Safetensors. Tensor payloads are copied directly from their referenced
  * source ranges in bounded chunks; no tensor is materialized as a heap array.
  *
- * <p>Versioned metadata envelopes preserve typed assets and components that
- * do not bind to computation graphs. Graph collections and graph-bound
- * components remain untransferred and require an acknowledged PARTIAL plan.
+ * <p>Versioned metadata envelopes preserve typed tensors, graph collections,
+ * assets, and components. Opaque model/tensor extensions that have no
+ * Safetensors representation are reported by the shared fidelity evaluator.
  */
 public final class AmirSafetensorsConversionExecutor implements ModelConversionExecutor {
 
@@ -205,10 +205,12 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         if (fidelity == CompatibilityReport.ConversionFidelity.UNSUPPORTED) {
             throw new IOException("Conversion plan is UNSUPPORTED: " + plan.compatibility().diagnostics());
         }
-        if (hasUntransferredData(model)
-                && fidelity != CompatibilityReport.ConversionFidelity.PARTIAL) {
-            throw new IOException("Untransferred AMIR model or tensor data cannot be silently omitted; "
-                    + "the plan must be PARTIAL");
+        CompatibilityReport assessed = new AmirFidelityEvaluator().evaluate(
+                model, AmirFormatCapabilities.forTarget(TARGET_FORMAT));
+        if (assessed.fidelity() == CompatibilityReport.ConversionFidelity.PARTIAL
+                && fidelity == CompatibilityReport.ConversionFidelity.FULL) {
+            throw new IOException("The target capability profile requires PARTIAL fidelity: "
+                    + assessed.diagnostics());
         }
         if (fidelity == CompatibilityReport.ConversionFidelity.PARTIAL && !acknowledgePartial) {
             throw new IOException("Conversion plan is PARTIAL; explicit acknowledgement is required: "
@@ -216,23 +218,11 @@ public final class AmirSafetensorsConversionExecutor implements ModelConversionE
         }
     }
 
-    private static boolean hasUntransferredData(ModelDescriptor model) {
-        return !model.extensions().isEmpty()
-                || model.tensors().stream().anyMatch(tensor -> !tensor.extensions().isEmpty())
-                || model.graphCollection().isPresent()
-                || model.componentCollection().filter(collection ->
-                        !AmirModelLayerCodec.hasNoGraphBindings(collection)).isPresent();
-    }
-
     private static List<String> untransferredExtensionKeys(ModelDescriptor model) {
         List<String> keys = new ArrayList<>();
         model.extensions().keySet().forEach(key -> keys.add("model:" + key));
         model.tensors().forEach(tensor -> tensor.extensions().keySet()
                 .forEach(key -> keys.add("tensor:" + tensor.name() + ":" + key)));
-        model.graphCollection().ifPresent(ignored -> keys.add("model:graphCollection"));
-        model.componentCollection().filter(collection ->
-                !AmirModelLayerCodec.hasNoGraphBindings(collection))
-                .ifPresent(ignored -> keys.add("model:componentCollection"));
         return List.copyOf(keys);
     }
 

@@ -89,7 +89,7 @@ final class AmirTensorTypeCodec {
         }
     }
 
-    private static String encodeType(TensorType type) {
+    static String encodeType(TensorType type) {
         JsonObject root = new JsonObject();
         root.add("dataType", encodeDataType(type.dataType()));
         JsonArray dimensions = new JsonArray();
@@ -129,7 +129,7 @@ final class AmirTensorTypeCodec {
         return root.toString();
     }
 
-    private static TensorType decodeType(String encoded) {
+    static TensorType decodeType(String encoded) {
         JsonObject root = JsonParser.parseString(encoded).getAsJsonObject();
         TensorDataType dataType = decodeDataType(root.getAsJsonObject("dataType"));
         List<Dimension> dimensions = new ArrayList<>();
