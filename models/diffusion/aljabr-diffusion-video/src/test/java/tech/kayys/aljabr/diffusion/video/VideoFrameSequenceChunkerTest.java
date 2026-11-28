@@ -23,12 +23,18 @@ class VideoFrameSequenceChunkerTest {
         return VideoFrameSequence.of(frames);
     }
 
+    private static List<VideoFrameSequence> collect(Iterable<VideoFrameSequence> chunks) {
+        List<VideoFrameSequence> collected = new ArrayList<>();
+        chunks.forEach(collected::add);
+        return List.copyOf(collected);
+    }
+
     @Test
     void emitsContiguousChunksAndPreservesOriginalProvenance() {
         var chunks = VideoFrameSequenceChunker.chunks(
                 sequence(5), 2, VideoFrameSequenceChunker.TailPolicy.INCLUDE_PARTIAL);
 
-        var collected = new ArrayList<>(chunks);
+        var collected = collect(chunks);
 
         assertEquals(List.of(2, 2, 1), collected.stream()
                 .map(VideoFrameSequence::frameCount).toList());
@@ -39,7 +45,7 @@ class VideoFrameSequenceChunkerTest {
 
     @Test
     void dropsIncompleteFinalChunkWhenRequested() {
-        var chunks = new ArrayList<>(VideoFrameSequenceChunker.chunks(
+        var chunks = collect(VideoFrameSequenceChunker.chunks(
                 sequence(5), 2, VideoFrameSequenceChunker.TailPolicy.DROP_PARTIAL));
 
         assertEquals(2, chunks.size());
