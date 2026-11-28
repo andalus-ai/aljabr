@@ -35,7 +35,8 @@ public final class WhisperEncoderCpuKernels {
         int batch = input.length;
         int inputChannels = requireRectangular3d(input, "input");
         int outputChannels = weights.length;
-        int kernelSize = requireRectangular3d(weights, "weights");
+        requireRectangular3d(weights, "weights");
+        int kernelSize = weights[0][0].length;
         if (batch == 0 || inputChannels == 0 || outputChannels == 0 || kernelSize == 0) {
             throw new IllegalArgumentException("convolution dimensions must be non-zero");
         }
