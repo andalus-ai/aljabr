@@ -22,7 +22,7 @@ public final class AmirFidelityEvaluator {
         Objects.requireNonNull(capabilities, "capabilities must not be null");
 
         List<CompatibilityReport.Diagnostic> diagnostics = new ArrayList<>();
-        requireWhenPresent(model.tensors().stream().anyMatch(tensor -> tensor.type().isPresent()),
+        requireWhenPresent(model.tensors().stream().anyMatch(tensor -> tensor.tensorType().isPresent()),
                 AmirFormatCapabilities.Feature.TYPED_TENSOR_METADATA,
                 capabilities, diagnostics);
         requireWhenPresent(model.graphCollection().isPresent(),
