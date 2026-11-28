@@ -668,3 +668,13 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Keep streaming lifecycle, cancellation, backpressure, batching and serving policy explicit. AQLI owns serving orchestration and client-facing serving behavior; Aljabr owns reusable computational/session primitives only where they are genuinely model- or provider-independent.
 - Reuse existing Whisper, SpeechT5, Bark, Qwen-Audio and multimodal audio work after inspecting dependencies and tests. Do not create parallel abstractions or move code merely to match a proposed directory diagram.
 - Speech APIs must remain Java-native and must not require Python, PyTorch or LibTorch.
+
+
+### 19.5 Reusable audio processing boundaries
+
+- Keep generic PCM transformations in the reusable audio engine, not copied into each model frontend. Start with demonstrated shared operations such as channel mixing and sample-rate conversion.
+- Audio transforms must state input/output format, frame-count behavior, normalization/clipping policy, numerical limitations and ownership. Inputs remain caller-owned; newly allocated outputs are caller-owned and closeable.
+- Preserve channels and channel layout for per-channel transforms. A downmix must declare its mixing policy; do not silently reinterpret multichannel layouts.
+- Keep model-specific frontend semantics (for example Whisper's exact FFT, Mel filter bank, chunk geometry and log normalization) in the model module unless multiple real consumers demonstrate identical semantics.
+- Add deterministic tests for impulse/constant/sine inputs, frame counts, channel preservation, non-finite samples, edge behavior and same-rate/no-op paths. Do not claim DSP parity without numerical reference fixtures.
+- Keep the portable Java implementation dependency-light. Optimized Vector API, FFM or hardware paths are optional providers with conformance tests against the reference behavior.
