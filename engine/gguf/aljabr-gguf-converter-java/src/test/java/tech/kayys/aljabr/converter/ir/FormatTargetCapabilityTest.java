@@ -125,7 +125,7 @@ class FormatTargetCapabilityTest {
         var report = new SafetensorsTargetCapability().assess(source);
 
         assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL, report.fidelity());
-        assertEquals("extensions.gguf.metadata.json", report.diagnostics().getFirst().path().orElseThrow());
+        assertEquals("/extensions/gguf.metadata.json", report.diagnostics().getFirst().path().orElseThrow());
     }
 
     @Test
