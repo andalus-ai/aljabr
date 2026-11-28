@@ -415,12 +415,12 @@ int aljabr_metal_sdpa_borrowed_kv(
     return -3;
   if (out == NULL || q == NULL || k_buffer == NULL || v_buffer == NULL ||
       num_heads <= 0 || kv_heads <= 0 || head_dim <= 0 ||
-      sequence_stride < kv_heads * head_dim || position < 0 ||
+      (int64_t)sequence_stride < (int64_t)kv_heads * head_dim || position < 0 ||
       start_position < 0 || start_position > position ||
       num_heads % kv_heads != 0 || !isfinite(scale) || scale <= 0.0f ||
       !isfinite(soft_cap) || soft_cap < 0.0f)
     return -2;
-  if (position + 1 > 4096 || pipeline.maxTotalThreadsPerThreadgroup < 256)
+  if (position >= 4096 || pipeline.maxTotalThreadsPerThreadgroup < 256)
     return -8;
 
   @autoreleasepool {
