@@ -80,7 +80,7 @@ final class CpuIndexAddExecution {
 
             long sourceAxisSize = sourceDimensions[selectedAxis];
             CpuIndexedAxisTraversal.forEach(outer, sourceAxisSize, inner, selected,
-                    (outerIndex, selectionPosition, selectedIndex, innerIndex, sourceLogical) -> {
+                    (outerIndex, selectionPosition, selectedIndex, innerIndex, sourceLogical, outputLogical) -> {
                         long destinationLogical = Math.addExact(
                                 Math.multiplyExact(
                                         Math.addExact(Math.multiplyExact(outerIndex, destinationAxisSize), selectedIndex),
