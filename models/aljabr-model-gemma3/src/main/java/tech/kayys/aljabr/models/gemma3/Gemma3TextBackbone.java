@@ -403,14 +403,12 @@ public final class Gemma3TextBackbone {
             attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
             float[][] afterAttention = add(input, attentionOutput);
             normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
-            float[][] gate = linear(normalized, layer.feedForwardGate());
-            float[][] up = linear(normalized, layer.feedForwardUp());
-            for (int dimension = 0; dimension < gate[0].length; dimension++) {
-                gate[0][dimension] = geluTanh(gate[0][dimension]) * up[0][dimension];
-            }
-            float[][] feedForward = linear(gate, layer.feedForwardDown());
-            feedForward = rmsNorm(feedForward, layer.postFeedForwardNorm());
-            return add(afterAttention, feedForward);
+            float[] gated = gatedGeluProjection(
+                    normalized[0], layer.feedForwardGate(), layer.feedForwardUp());
+            float[] feedForward = linearVector(gated, layer.feedForwardDown());
+            rmsNormVectorInPlace(feedForward, layer.postFeedForwardNorm());
+            addVectorInPlace(feedForward, afterAttention[0]);
+            return new float[][] { feedForward };
         }
     }
 
@@ -667,6 +665,43 @@ public final class Gemma3TextBackbone {
             System.arraycopy(input[token], 0, output, token * width, width);
         }
         return output;
+    }
+
+    /**
+     * Computes the gated GELU feed-forward projection for one token.
+     *
+     * <p>The two independent matrix-vector products retain the same per-output
+     * accumulation order and float conversion as separate {@code linearVector}
+     * calls, but their temporary result vectors are not materialized.</p>
+     */
+    private static float[] gatedGeluProjection(
+            float[] input, float[][] gateWeight, float[][] upWeight) {
+        if (gateWeight.length != upWeight.length) {
+            throw new IllegalArgumentException("gate and up projections must have the same output width");
+        }
+        float[] output = new float[gateWeight.length];
+        for (int out = 0; out < output.length; out++) {
+            double gateSum = 0.0d;
+            double upSum = 0.0d;
+            for (int in = 0; in < input.length; in++) {
+                gateSum += (double) gateWeight[out][in] * input[in];
+                upSum += (double) upWeight[out][in] * input[in];
+            }
+            float gate = (float) gateSum;
+            float up = (float) upSum;
+            output[out] = geluTanh(gate) * up;
+        }
+        return output;
+    }
+
+    /** Adds a residual into a freshly allocated vector owned by the caller. */
+    private static void addVectorInPlace(float[] target, float[] residual) {
+        if (target.length != residual.length) {
+            throw new IllegalArgumentException("residual width must match target width");
+        }
+        for (int dimension = 0; dimension < target.length; dimension++) {
+            target[dimension] = residual[dimension] + target[dimension];
+        }
     }
 
     /** Projects one token vector without wrapping it in a temporary sequence tensor. */
