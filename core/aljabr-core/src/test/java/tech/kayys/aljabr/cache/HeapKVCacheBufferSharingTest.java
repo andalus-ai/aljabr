@@ -7,6 +7,38 @@ import static org.junit.jupiter.api.Assertions.*;
 class HeapKVCacheBufferSharingTest {
 
     @Test
+    void exposesScopedReadOnlyZeroCopyFloatBuffer() {
+        KVCacheLayout layout = KVCacheLayout.uniform(1, 4, 1, 2);
+        HeapKVCacheStorage storage = new HeapKVCacheStorage(layout);
+        KVCacheSession session = new KVCacheSession(storage);
+        float[] keys = {3.0f, 5.0f};
+        float[] values = {7.0f, 11.0f};
+        session.write(0, 0, keys, 0, values, 0);
+        session.commit(1);
+        KVCacheBufferReadView view = session.openBufferReadView();
+
+        try {
+            float sum = HeapKVCacheBufferAccess.withReadOnlyBuffer(
+                    view, view.keyRegion(0), buffer -> {
+                        assertTrue(buffer.isReadOnly());
+                        assertFalse(buffer.hasArray());
+                        assertEquals(2, buffer.remaining());
+                        return buffer.get() + buffer.get();
+                    });
+            assertEquals(8.0f, sum);
+            assertThrows(IllegalStateException.class, () ->
+                    HeapKVCacheBufferAccess.withReadOnlyBuffer(
+                            view, view.valueRegion(0), buffer -> buffer.get()));
+        } finally {
+            view.close();
+        }
+
+        assertThrows(IllegalStateException.class, () ->
+                HeapKVCacheBufferAccess.withReadOnlyBuffer(
+                        view, view.keyRegion(0), buffer -> buffer.get()));
+    }
+
+    @Test
     void exportsCommittedPrefixAsFloat32HeapRegions() {
         KVCacheLayout layout = KVCacheLayout.uniform(2, 8, 2, 4);
         HeapKVCacheStorage storage = new HeapKVCacheStorage(layout);
