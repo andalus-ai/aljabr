@@ -3,8 +3,6 @@ package tech.kayys.aljabr.backend.metal.cache;
 import java.lang.foreign.ValueLayout;
 import java.util.Optional;
 
-import tech.kayys.aljabr.cache.KVCacheBufferReadView;
-import tech.kayys.aljabr.cache.KVCacheBufferRegion;
 import tech.kayys.aljabr.cache.KVCacheLayout;
 import tech.kayys.aljabr.cache.KVCacheMemoryDomain;
 import tech.kayys.aljabr.cache.testing.KVCacheBufferProviderContractTest;
