@@ -403,9 +403,10 @@ public final class Gemma3TextBackbone {
             float[][] attentionOutput = { linearVector(attended, layer.attentionOutput()) };
             attentionOutput = rmsNorm(attentionOutput, layer.postAttentionNorm());
             float[][] afterAttention = add(input, attentionOutput);
-            normalized = rmsNorm(afterAttention, layer.preFeedForwardNorm());
+            float[] normalizedFeedForward = rmsNormVector(
+                    afterAttention[0], layer.preFeedForwardNorm());
             float[] gated = gatedGeluProjection(
-                    normalized[0], layer.feedForwardGate(), layer.feedForwardUp());
+                    normalizedFeedForward, layer.feedForwardGate(), layer.feedForwardUp());
             float[] feedForward = linearVector(gated, layer.feedForwardDown());
             rmsNormVectorInPlace(feedForward, layer.postFeedForwardNorm());
             addVectorInPlace(feedForward, afterAttention[0]);
