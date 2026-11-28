@@ -1,7 +1,7 @@
 package tech.kayys.aljabr.cache;
 
-import java.util.Objects;
 import java.nio.FloatBuffer;
+import java.util.Objects;
 import java.util.function.Function;
 
 /**
@@ -19,7 +19,10 @@ final class HeapKVCacheBufferHandle implements KVCacheBufferHandle {
         this.storage = Objects.requireNonNull(storage, "storage");
     }
 
-    <T> T withReadOnlyBuffer(KVCacheBufferReadView lease, KVCacheBufferRegion region, Function<FloatBuffer, T> consumer) {
+    <T> T withReadOnlyBuffer(
+            KVCacheBufferReadView lease,
+            KVCacheBufferRegion region,
+            Function<FloatBuffer, T> consumer) {
         return owner.withReadOnlyBuffer(lease, region, this, consumer);
     }
 
