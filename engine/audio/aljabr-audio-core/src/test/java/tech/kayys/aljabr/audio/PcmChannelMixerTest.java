@@ -24,6 +24,18 @@ class PcmChannelMixerTest {
     }
 
     @Test
+    void clippingPolicyCanPreserveModelFrontendAmplitudeSemantics() {
+        try (var input = HeapAudioBuffer.copyOf(AudioFormat.stereo(16_000), new float[]{2.0f, 0.0f});
+             var preserved = PcmChannelMixer.downmixToMono(
+                     input, PcmChannelMixer.ClippingPolicy.PRESERVE);
+             var clamped = PcmChannelMixer.downmixToMono(
+                     input, PcmChannelMixer.ClippingPolicy.CLAMP_TO_UNIT_RANGE)) {
+            assertEquals(1.0f, read(preserved)[0]);
+            assertEquals(0.5f, read(clamped)[0]);
+        }
+    }
+
+    @Test
     void rejectsNonFiniteSamples() {
         try (var input = HeapAudioBuffer.copyOf(AudioFormat.stereo(48_000),
                 new float[]{Float.NaN, 0.0f})) {

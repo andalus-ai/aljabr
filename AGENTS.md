@@ -678,3 +678,12 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Keep model-specific frontend semantics (for example Whisper's exact FFT, Mel filter bank, chunk geometry and log normalization) in the model module unless multiple real consumers demonstrate identical semantics.
 - Add deterministic tests for impulse/constant/sine inputs, frame counts, channel preservation, non-finite samples, edge behavior and same-rate/no-op paths. Do not claim DSP parity without numerical reference fixtures.
 - Keep the portable Java implementation dependency-light. Optimized Vector API, FFM or hardware paths are optional providers with conformance tests against the reference behavior.
+
+
+### 19.6 Model-specific PCM reference semantics
+
+- Reuse the shared PCM mixer and resampler when a model frontend has the same underlying operation, but preserve its published numerical choices explicitly.
+- Downmix clipping policy must be explicit: preserve input amplitudes or clamp each channel sample to the normalized PCM range. Do not silently change the policy during extraction.
+- Resampling options must identify the window function and cutoff margin. The default reference path is not automatically equivalent to every model's reference frontend.
+- When extracting a model-local DSP implementation, add deterministic numerical reference fixtures before deleting the old implementation. Verify the shared implementation against those fixtures, including boundary samples.
+- Keep FFT, Mel filter bank, framing, masks, model token-budget truncation and model-specific normalization in the model frontend unless shared numerical semantics are demonstrated.

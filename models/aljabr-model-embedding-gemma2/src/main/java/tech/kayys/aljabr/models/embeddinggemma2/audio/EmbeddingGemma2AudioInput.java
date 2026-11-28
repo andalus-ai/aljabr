@@ -1,29 +1,27 @@
 package tech.kayys.aljabr.models.embeddinggemma2.audio;
 
 import java.util.Objects;
+import tech.kayys.aljabr.audio.HeapAudioBuffer;
+import tech.kayys.aljabr.audio.PcmChannelMixer;
+import tech.kayys.aljabr.audio.WindowedSincPcmResampler;
+import tech.kayys.aljabr.spi.audio.AudioFormat;
 
 /**
- * Pure-Java PCM preparation for the EmbeddingGemma 2 audio frontend.
+ * EmbeddingGemma 2 PCM adapter over Aljabr's reusable audio engine.
  *
- * <p>Accepts interleaved floating-point PCM, averages channels to mono, and
- * converts the sample rate with a windowed-sinc low-pass resampler. It does
- * not decode containers (WAV/FLAC/MP3), infer channel layouts, or normalize
- * amplitude; those decisions belong to the caller.</p>
+ * <p>It retains the model's published Blackman-windowed sinc parameters and
+ * amplitude-preserving channel average. Container decoding, channel-layout
+ * interpretation, and amplitude normalization remain caller responsibilities.</p>
  */
 public final class EmbeddingGemma2AudioInput {
-    private static final int RESAMPLER_RADIUS = 16;
+    private static final WindowedSincPcmResampler.Options RESAMPLER_OPTIONS =
+            WindowedSincPcmResampler.Options.blackmanReference();
 
-    private EmbeddingGemma2AudioInput() {
-    }
+    private EmbeddingGemma2AudioInput() { }
 
     /**
      * Downmixes interleaved PCM to mono and resamples it to the target rate.
-     *
-     * @param interleavedPcm samples laid out frame-major, then channel
-     * @param channels number of channels in each frame
-     * @param sourceSampleRate input sample rate in Hz
-     * @param targetSampleRate desired output sample rate in Hz
-     * @return mono PCM at targetSampleRate
+     * The source array is copied into an owned AudioBuffer and is never mutated.
      */
     public static MonoPcm prepare(
             float[] interleavedPcm, int channels, int sourceSampleRate, int targetSampleRate) {
@@ -39,72 +37,23 @@ public final class EmbeddingGemma2AudioInput {
         }
 
         int inputFrames = interleavedPcm.length / channels;
-        float[] mono = new float[inputFrames];
-        for (int frame = 0; frame < inputFrames; frame++) {
-            double sum = 0.0;
-            for (int channel = 0; channel < channels; channel++) {
-                float sample = interleavedPcm[frame * channels + channel];
-                if (!Float.isFinite(sample)) {
-                    throw new IllegalArgumentException(
-                            "PCM contains a non-finite sample at frame " + frame + ", channel " + channel);
-                }
-                sum += sample;
-            }
-            mono[frame] = (float) (sum / channels);
+        AudioFormat inputFormat = new AudioFormat(sourceSampleRate, channels, AudioFormat.ChannelLayout.UNKNOWN);
+        try (HeapAudioBuffer input = HeapAudioBuffer.copyOf(inputFormat, interleavedPcm);
+             HeapAudioBuffer mono = PcmChannelMixer.downmixToMono(
+                     input, PcmChannelMixer.ClippingPolicy.PRESERVE);
+             HeapAudioBuffer resampled = sourceSampleRate == targetSampleRate
+                     ? HeapAudioBuffer.copyOf(mono.format(), readSamples(mono))
+                     : WindowedSincPcmResampler.resample(mono, targetSampleRate, RESAMPLER_OPTIONS)) {
+            float[] samples = readSamples(resampled);
+            return new MonoPcm(samples, targetSampleRate, channels, inputFrames);
         }
-
-        float[] resampled = sourceSampleRate == targetSampleRate
-                ? mono
-                : resample(mono, sourceSampleRate, targetSampleRate);
-        return new MonoPcm(resampled, targetSampleRate, channels, inputFrames);
     }
 
-    private static float[] resample(float[] input, int sourceRate, int targetRate) {
-        int outputLength = Math.toIntExact(Math.round((double) input.length * targetRate / sourceRate));
-        if (outputLength <= 0) {
-            throw new IllegalArgumentException("resampled waveform is empty");
-        }
-
-        float[] output = new float[outputLength];
-        double sourcePerOutput = (double) sourceRate / targetRate;
-        // Reduce the passband when downsampling to suppress frequencies above
-        // the new Nyquist frequency.
-        double cutoff = Math.min(1.0, (double) targetRate / sourceRate);
-        for (int out = 0; out < outputLength; out++) {
-            double center = out * sourcePerOutput;
-            int first = (int) Math.floor(center) - RESAMPLER_RADIUS + 1;
-            int last = (int) Math.floor(center) + RESAMPLER_RADIUS;
-            double weighted = 0.0;
-            double weightSum = 0.0;
-            for (int index = first; index <= last; index++) {
-                if (index < 0 || index >= input.length) {
-                    continue;
-                }
-                double distance = center - index;
-                double normalizedDistance = distance / RESAMPLER_RADIUS;
-                if (Math.abs(normalizedDistance) >= 1.0) {
-                    continue;
-                }
-                // Blackman-windowed, low-pass sinc. The window is centered
-                // around the fractional source position for every output sample.
-                double window = 0.42
-                        + 0.5 * Math.cos(Math.PI * normalizedDistance)
-                        + 0.08 * Math.cos(2.0 * Math.PI * normalizedDistance);
-                double weight = cutoff * sinc(cutoff * distance) * window;
-                weighted += input[index] * weight;
-                weightSum += weight;
-            }
-            output[out] = (float) (Math.abs(weightSum) < 1e-12 ? 0.0 : weighted / weightSum);
-        }
-        return output;
-    }
-
-    private static double sinc(double value) {
-        if (Math.abs(value) < 1e-12) {
-            return 1.0;
-        }
-        double x = Math.PI * value;
-        return Math.sin(x) / x;
+    private static float[] readSamples(HeapAudioBuffer audio) {
+        var samples = audio.samples();
+        float[] result = new float[samples.remaining()];
+        samples.get(result);
+        return result;
     }
 
     /** Immutable mono waveform result. */

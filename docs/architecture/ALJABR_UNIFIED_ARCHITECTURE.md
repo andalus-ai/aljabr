@@ -346,3 +346,8 @@ The initial module contracts are documented in [Audio and Speech Foundation](../
 ## Reusable audio processing
 
 Generic PCM operations belong in `:engine:audio:aljabr-audio-core`, behind the model-neutral audio SPI. The initial reusable operations are channel downmixing and windowed-sinc sample-rate conversion. They return independently owned buffers and never close or mutate caller-owned input. Model-specific feature extraction remains in model modules: Whisper's 128-bin large-v3 log-Mel geometry, FFT and normalization are not generic audio semantics. Extend shared processing only after auditing multiple real consumers and adding numerical conformance tests. See [Audio and Speech Foundation](../speech/AUDIO_AND_SPEECH_FOUNDATION.md).
+
+
+## Model-specific PCM reference semantics
+
+The audio engine supports explicit channel-mixing clipping policies and named windowed-sinc resampler options. This allows model frontends to reuse common PCM mechanics without silently changing amplitude handling or numerical filtering choices. EmbeddingGemma2 uses amplitude-preserving channel averaging and its Blackman-window reference settings; Whisper retains its own selected resampler settings. Model-specific feature extraction, masks and token-budget rules remain model-owned. Every extraction requires numerical reference fixtures, including edge samples.
