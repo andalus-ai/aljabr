@@ -127,6 +127,33 @@ public final class TensorFactory {
         return of(data, backend, backend::allocateStorage, shape);
     }
 
+    /**
+     * Creates a signed 8-bit integer tensor backed by the supplied compute backend.
+     * Both I8 and INT8 use the same one-byte signed storage representation.
+     */
+    public static Tensor of(byte[] data, ComputeBackend backend, DType dtype, long... shape) {
+        Objects.requireNonNull(data, "data must not be null");
+        Objects.requireNonNull(backend, "backend must not be null");
+        Objects.requireNonNull(dtype, "dtype must not be null");
+        if (dtype != DType.I8 && dtype != DType.INT8) {
+            throw new IllegalArgumentException("Byte tensor creation requires I8 or INT8; actual dtype=" + dtype);
+        }
+        long n = numel(shape);
+        if (data.length != n) {
+            throw new IllegalArgumentException("data length != shape numel");
+        }
+        long bytes = n;
+        TensorStorage storage = allocateStorage(backend::allocateStorage, bytes);
+        try {
+            java.lang.foreign.MemorySegment source = java.lang.foreign.MemorySegment.ofArray(data);
+            backend.copyFromHost(storage, source, bytes);
+            return new DefaultTensor(new Shape(shape), dtype, backend.deviceType(), storage, backend);
+        } catch (RuntimeException | Error failure) {
+            storage.release();
+            throw failure;
+        }
+    }
+
     /** Creates an I32 tensor backed by the supplied compute backend. */
     public static Tensor of(int[] data, ComputeBackend backend, long... shape) {
         Objects.requireNonNull(backend, "backend must not be null");
