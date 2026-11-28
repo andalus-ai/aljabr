@@ -35,7 +35,7 @@ import java.util.Objects;
  * Converts GGUF tensor payloads into Safetensors using bounded-memory streaming.
  *
  * <p>F32/F16/BF16/F64 and integer scalar payloads are copied without changing
- * their representation. IQ1_M, IQ1_S, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
+ * their representation. TQ2_0, IQ1_M, IQ1_S, IQ2_XXS, IQ2_XS, IQ2_S, IQ3_S, IQ3_XXS, IQ4_NL, IQ4_XS, Q2_0, Q2_K, Q3_K, Q4_K, Q4_0, Q4_1, Q5_0, Q5_1, Q5_K, Q6_K, and Q8_0 are dequantized to F32. Other quantized
  * GGML encodings are rejected until a verified decoder is available.
  *
  * <p>GGUF scalar and array metadata is retained in a versioned, type-tagged
@@ -161,6 +161,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
         return switch (dtype) {
             case "F32", "F16", "BF16", "F64", "I8", "I16", "I32", "I64" ->
                     TensorEncoding.raw(dtype, bytesPerElement(dtype));
+            case "TQ2_0" -> TensorEncoding.dequantized("TQ2_0", 66, 256);
             case "IQ1_M" -> TensorEncoding.dequantized("IQ1_M", 56, 256);
             case "IQ1_S" -> TensorEncoding.dequantized("IQ1_S", 50, 256);
             case "IQ2_XXS" -> TensorEncoding.dequantized("IQ2_XXS", 66, 256);
@@ -188,7 +189,7 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
 
     private static boolean isDequantizedType(String dtype) {
         return switch (dtype.toUpperCase(Locale.ROOT)) {
-            case "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
+            case "TQ2_0", "IQ1_M", "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_S", "IQ3_XXS", "IQ4_NL", "IQ4_XS", "Q2_0", "Q2_K", "Q3_K", "Q4_K", "Q4_0", "Q4_1", "Q5_0", "Q5_1", "Q5_K", "Q6_K", "Q8_0" -> true;
             default -> false;
         };
     }
@@ -289,6 +290,10 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
             values.clear();
             for (int i = 0; i < count; i++) {
                 int base = i * blockBytes;
+                if (type.equals("TQ2_0")) {
+                    dequantizeTQ2Block(source, base, values);
+                    continue;
+                }
                 if (type.equals("IQ1_M")) {
                     dequantizeIQ1MBlock(source, base, values);
                     continue;
@@ -453,6 +458,21 @@ public final class AmirGgufToSafetensorsConversionExecutor implements ModelConve
                 for (int lane = 0; lane < 8; lane++) {
                     float sign = (signs & (1 << lane)) != 0 ? -1.0f : 1.0f;
                     output.putFloat(vectorScale * Iq2XSGrid.value(gridIndex, lane) * sign);
+                }
+            }
+        }
+    }
+
+    /** Decodes one 256-value TQ2_0 block in GGML's four bit-plane groups. */
+    private static void dequantizeTQ2Block(byte[] source, int base, ByteBuffer values) {
+        float scale = halfToFloat(source[base] & 0xff, source[base + 1] & 0xff);
+        int quantizedBase = base + 2;
+        for (int byteGroup = 0; byteGroup < 64; byteGroup += 32) {
+            for (int plane = 0; plane < 4; plane++) {
+                int shift = plane * 2;
+                for (int lane = 0; lane < 32; lane++) {
+                    int quantized = ((source[quantizedBase + byteGroup + lane] & 0xff) >>> shift) & 0x03;
+                    values.putFloat((quantized - 1) * scale);
                 }
             }
         }
