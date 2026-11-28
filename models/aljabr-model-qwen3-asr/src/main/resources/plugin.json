@@ -1,0 +1,17 @@
+{
+  "id": "model-family/qwen3_asr",
+  "name": "Qwen3-ASR Model Family",
+  "version": "0.1.0-SNAPSHOT",
+  "description": "Qwen3-ASR checkpoint metadata and tokenizer routing; executable inference is not yet declared",
+  "vendor": "Kayys.tech",
+  "mainClass": "tech.kayys.aljabr.models.qwen3asr.Qwen3AsrModelFamilyPlugin",
+  "dependencies": [],
+  "optionalDependencies": [],
+  "properties": {
+    "extensionPoint": "model-family",
+    "bundleProfile": "optional",
+    "families": ["qwen3_asr", "qwen3_asr_encoder"],
+    "taskFamily": "automatic_speech_recognition",
+    "codecProvider": "external_optional_suling"
+  }
+}
