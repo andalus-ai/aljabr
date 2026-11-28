@@ -23,10 +23,6 @@ import tech.kayys.aljabr.safetensor.loader.SafetensorShardLoader.SafetensorShard
 import tech.kayys.aljabr.safetensor.quantization.quantizer.*;
 
 import java.io.IOException;
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -37,7 +33,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 /**
  * Quantization engine for model compression.
