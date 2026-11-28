@@ -602,13 +602,12 @@ public final class CpuBackend implements ComputeBackend, KVCacheAttentionBackend
             MemorySegment destination = output.segment();
             long[] sourceDimensions = input.shape().dims();
             TensorLayout sourceLayout = input.layout();
-            long[] destinationIndex = {0};
             CpuIndexedAxisTraversal.forEach(outer, axisSize, inner, selected,
-                    (outerIndex, selectionPosition, selectedIndex, innerIndex, logicalIndex) -> {
+                    (outerIndex, selectionPosition, selectedIndex, innerIndex, logicalIndex, outputLogicalIndex) -> {
                         long sourceElementOffset = CpuTensorLayoutAccess.logicalElementOffset(
                                 sourceDimensions, sourceLayout, logicalIndex);
                         long sourceByteOffset = Math.multiplyExact(sourceElementOffset, elementBytes);
-                        long destinationByteOffset = Math.multiplyExact(destinationIndex[0]++, elementBytes);
+                        long destinationByteOffset = Math.multiplyExact(outputLogicalIndex, elementBytes);
                         MemorySegment.copy(source, sourceByteOffset, destination, destinationByteOffset, elementBytes);
                     });
             return out(plan.outputShape(), input.dtype(), output);
