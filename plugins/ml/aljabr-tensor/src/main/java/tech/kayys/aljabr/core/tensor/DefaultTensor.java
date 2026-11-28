@@ -868,7 +868,6 @@ public final class DefaultTensor implements Tensor {
      */
     @Override
     public Tensor grad() {
-        ensureOpen();
         return grad;
     }
 
