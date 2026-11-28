@@ -38,7 +38,7 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
 
         for (TensorDescriptor tensor : source.tensors()) {
             String type = tensor.dataType().toUpperCase(Locale.ROOT);
-            String path = "tensors." + tensor.name() + ".dataType";
+            String path = "/tensors/" + pointerSegment(tensor.name()) + "/dataType";
             if (GGML_QUANTIZED.contains(type)) {
                 diagnostics.add(new CompatibilityReport.Diagnostic(
                         CompatibilityReport.Severity.WARNING,
@@ -57,6 +57,10 @@ public final class SafetensorsTargetCapability implements TargetFormatCapability
         }
 
         return report(diagnostics);
+    }
+
+    private static String pointerSegment(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
     }
 
     private static CompatibilityReport report(List<CompatibilityReport.Diagnostic> diagnostics) {
