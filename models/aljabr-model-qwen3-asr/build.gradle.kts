@@ -13,6 +13,8 @@ repositories { mavenCentral(); mavenLocal() }
 dependencies {
     implementation(project(":spi:aljabr-spi-model"))
     implementation(project(":spi:aljabr-spi-tokenizer"))
+    // Reuse Whisper-compatible PCM and log-Mel DSP; no Qwen-specific DSP fork.
+    implementation(project(":models:aljabr-model-whisper"))
     implementation("jakarta.enterprise:jakarta.enterprise.cdi-api")
     implementation("jakarta.inject:jakarta.inject-api")
     testImplementation("org.junit.jupiter:junit-jupiter")
