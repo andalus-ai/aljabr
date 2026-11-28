@@ -128,6 +128,17 @@ class SafetensorsTargetCapabilityTest {
     }
 
     @Test
+    void classifiesNVFP4AsPartialBecauseQuantizedStorageIsExpanded() {
+        var tensor = new TensorDescriptor("weight", "NVFP4", List.of(64L),
+                "contiguous", null, null, Map.of());
+        var model = new ModelDescriptor(ModelIdentity.of("nvfp4"), "llama", "gguf",
+                Map.of("general.architecture", "llama"), Map.of(), List.of(tensor));
+
+        assertEquals(CompatibilityReport.ConversionFidelity.PARTIAL,
+                new SafetensorsTargetCapability().assess(model).fidelity());
+    }
+
+    @Test
     void classifiesMXFP4AsPartialBecauseQuantizedStorageIsExpanded() {
         var tensor = new TensorDescriptor("weight", "MXFP4", List.of(32L),
                 "contiguous", null, null, Map.of());
