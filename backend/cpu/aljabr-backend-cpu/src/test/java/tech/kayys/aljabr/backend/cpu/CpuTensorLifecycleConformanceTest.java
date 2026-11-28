@@ -1,6 +1,6 @@
 package tech.kayys.aljabr.backend.cpu;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 import org.junit.jupiter.api.Test;
 
@@ -58,7 +58,7 @@ class CpuTensorLifecycleConformanceTest {
 
         // Closing the backend must not implicitly invalidate a tensor whose
         // storage is independently owned by that tensor.
-        assertEquals(1, tensor.numel());
+        assertArrayEquals(new float[] {0.0f}, tensor.toFloatArray());
         tensor.release();
     }
 }
