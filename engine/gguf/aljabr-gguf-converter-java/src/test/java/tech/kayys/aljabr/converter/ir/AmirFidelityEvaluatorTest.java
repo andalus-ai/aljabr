@@ -84,6 +84,24 @@ class AmirFidelityEvaluatorTest {
                 evaluator.evaluate(model, AmirFormatCapabilities.gguf()).fidelity());
     }
 
+
+    @Test
+    void escapesJsonPointerSegmentsForNamesAndMetadataKeys() {
+        var tensor = new TensorDescriptor("weight/0~draft", "F32", List.of(2L),
+                "contiguous", null, null, Map.of("vendor/scale~raw", "0.5"));
+        var model = new ModelDescriptor(ModelIdentity.of("pointer-fixture"), "llama", "gguf",
+                Map.of(), Map.of("vendor/metadata~raw", "opaque"), List.of(tensor));
+
+        var report = evaluator.evaluate(model, AmirFormatCapabilities.safetensors());
+
+        assertEquals(Set.of(
+                        "/extensions/vendor~1metadata~0raw",
+                        "/tensors/weight~10~0draft/extensions/vendor~1scale~0raw"),
+                report.diagnostics().stream()
+                        .map(diagnostic -> diagnostic.path().orElseThrow())
+                        .collect(java.util.stream.Collectors.toSet()));
+    }
+
     @Test
     void unknownTargetProfileIsRejectedRatherThanAssumedLossless() {
         assertThrows(IllegalArgumentException.class,
