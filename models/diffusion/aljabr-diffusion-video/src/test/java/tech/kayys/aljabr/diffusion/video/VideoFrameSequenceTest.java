@@ -8,6 +8,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
+import tech.kayys.aljabr.diffusion.api.DiffusionConditioningData;
+
 
 class VideoFrameSequenceTest {
     private static final Instant START = Instant.parse("2026-11-27T10:00:00Z");
