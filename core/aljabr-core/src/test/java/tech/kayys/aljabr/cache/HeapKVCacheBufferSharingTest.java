@@ -23,6 +23,8 @@ class HeapKVCacheBufferSharingTest {
                         assertTrue(buffer.isReadOnly());
                         assertFalse(buffer.hasArray());
                         assertEquals(2, buffer.remaining());
+                        assertThrows(java.nio.ReadOnlyBufferException.class,
+                                () -> buffer.put(0, 99.0f));
                         return buffer.get() + buffer.get();
                     });
             assertEquals(8.0f, sum);
@@ -118,6 +120,7 @@ class HeapKVCacheBufferSharingTest {
         second.close();
         assertDoesNotThrow(() -> storage.write(0, 1, vector, 0, vector, 0));
     }
+
     @Test
     void storageCannotCloseUntilLeaseIsReleased() {
         HeapKVCacheStorage storage = new HeapKVCacheStorage(
