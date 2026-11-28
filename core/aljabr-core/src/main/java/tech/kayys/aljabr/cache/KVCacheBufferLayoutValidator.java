@@ -49,14 +49,21 @@ public final class KVCacheBufferLayoutValidator {
      */
     public static void validateView(KVCacheBufferReadView view, int layer) {
         Objects.requireNonNull(view, "view");
-        if (layer < 0 || layer >= view.layout().layerCount()) {
+        KVCacheLayout cacheLayout = Objects.requireNonNull(view.layout(), "view.layout");
+        if (layer < 0 || layer >= cacheLayout.layerCount()) {
             throw new IndexOutOfBoundsException("KV layer index out of range: " + layer);
         }
 
         int visibleLength = view.visibleSequenceLength();
-        int expectedHeads = view.layout().kvHeads(layer);
-        int expectedHeadDimension = view.layout().headDimension(layer);
+        if (visibleLength < 0 || visibleLength > cacheLayout.maxSequenceLength()) {
+            throw new IllegalArgumentException("Visible KV prefix exceeds the declared cache capacity");
+        }
+        int expectedHeads = cacheLayout.kvHeads(layer);
+        int expectedHeadDimension = cacheLayout.headDimension(layer);
         String expectedBackend = view.backendId();
+        if (expectedBackend == null || expectedBackend.isBlank()) {
+            throw new IllegalArgumentException("Read view backend identifier must not be blank");
+        }
 
         validateViewRegion("key", expectedBackend, visibleLength,
                 expectedHeads, expectedHeadDimension,
