@@ -1,5 +1,7 @@
 package tech.kayys.aljabr.cache;
 
+import java.util.concurrent.CompletionStage;
+
 /**
  * Borrowed backend-aware view of target-owned KV storage.
  *
@@ -26,6 +28,13 @@ public interface KVCacheBufferReadView extends AutoCloseable {
 
     /** Borrowed V region for one layer. */
     KVCacheBufferRegion valueRegion(int layer);
+
+    /**
+     * Completes when all target writes represented by this lease are visible
+     * to a compatible consumer. Consumers must establish this dependency
+     * before submitting work that reads the borrowed regions.
+     */
+    CompletionStage<Void> readiness();
 
     /** Backend that owns/exports the borrowed regions. */
     String backendId();
