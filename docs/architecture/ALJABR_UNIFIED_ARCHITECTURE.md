@@ -351,3 +351,8 @@ Generic PCM operations belong in `:engine:audio:aljabr-audio-core`, behind the m
 ## Model-specific PCM reference semantics
 
 The audio engine supports explicit channel-mixing clipping policies and named windowed-sinc resampler options. This allows model frontends to reuse common PCM mechanics without silently changing amplitude handling or numerical filtering choices. EmbeddingGemma2 uses amplitude-preserving channel averaging and its Blackman-window reference settings; Whisper retains its own selected resampler settings. Model-specific feature extraction, masks and token-budget rules remain model-owned. Every extraction requires numerical reference fixtures, including edge samples.
+
+
+## External audio codec integration
+
+Aljabr's audio engine owns model-facing PCM contracts and reusable computational transforms, not media containers or codec implementations. Suling is an independent Java codec/media project and may be integrated through an optional adapter once its published artifact and compatibility policy are stable. Keep codec/container dependencies out of Aljabr's audio SPI, audio core and model modules. Provider PCM must cross an explicit ownership boundary; model code must also accept caller-supplied PCM without a codec provider.
