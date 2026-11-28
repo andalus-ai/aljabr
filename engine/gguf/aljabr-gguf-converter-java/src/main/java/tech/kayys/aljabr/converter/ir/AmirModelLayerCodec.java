@@ -163,7 +163,7 @@ final class AmirModelLayerCodec {
         return new ComponentCollection(components);
     }
 
-    private static JsonObject encodeValue(ConfigurationValue value) {
+    static JsonObject encodeValue(ConfigurationValue value) {
         JsonObject encoded = new JsonObject();
         if (value instanceof ConfigurationValue.StringValue v) {
             encoded.addProperty("type", "string"); encoded.addProperty("value", v.value());
@@ -186,7 +186,7 @@ final class AmirModelLayerCodec {
         return encoded;
     }
 
-    private static ConfigurationValue decodeValue(JsonElement element) {
+    static ConfigurationValue decodeValue(JsonElement element) {
         JsonObject value = element.getAsJsonObject();
         requireKeys(value, Set.of("type", "value"));
         return switch (requiredString(value, "type")) {
@@ -225,13 +225,13 @@ final class AmirModelLayerCodec {
         }
     }
 
-    private static JsonObject stringMap(Map<String, String> values) {
+    static JsonObject stringMap(Map<String, String> values) {
         JsonObject result = new JsonObject();
         values.forEach(result::addProperty);
         return result;
     }
 
-    private static Map<String, String> decodeStringMap(JsonObject object) {
+    static Map<String, String> decodeStringMap(JsonObject object) {
         Map<String, String> result = new LinkedHashMap<>();
         object.entrySet().forEach(entry -> {
             if (!entry.getValue().isJsonPrimitive()
@@ -254,7 +254,7 @@ final class AmirModelLayerCodec {
         return result;
     }
 
-    private static List<String> stringList(JsonArray values) {
+    static List<String> stringList(JsonArray values) {
         List<String> result = new ArrayList<>(values.size());
         values.forEach(value -> {
             if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
