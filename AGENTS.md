@@ -687,3 +687,11 @@ The diagnostics foundation now includes explicit execution lifecycle contracts i
 - Resampling options must identify the window function and cutoff margin. The default reference path is not automatically equivalent to every model's reference frontend.
 - When extracting a model-local DSP implementation, add deterministic numerical reference fixtures before deleting the old implementation. Verify the shared implementation against those fixtures, including boundary samples.
 - Keep FFT, Mel filter bank, framing, masks, model token-budget truncation and model-specific normalization in the model frontend unless shared numerical semantics are demonstrated.
+
+
+## External audio codec boundary
+
+- Keep Aljabr's audio SPI and audio core focused on model-facing PCM representation and computational transforms. Do not implement container parsing, media encoding/decoding, codec registries, or general-purpose PCM sample-format codecs when an independent provider owns those responsibilities.
+- Suling (`andalus-ai/suling`) is the preferred independent Java media/codec integration target. Integrate it through an optional adapter module only after artifact publication and compatibility coordinates are stable; never add it as a dependency of the audio SPI, audio core, or model modules.
+- Do not duplicate WAV/FLAC/FFmpeg/MP3/Opus/AAC implementations in Aljabr. Provider PCM must cross into Aljabr through an explicit copy/borrow/lifetime boundary. Aljabr owns resampling/channel transforms and model-specific feature extraction only where those are computational model inputs, not codec/container operations.
+- A model must accept caller-supplied PCM even when no codec provider is installed. Codec availability must not determine whether the model capability can be embedded or tested.
