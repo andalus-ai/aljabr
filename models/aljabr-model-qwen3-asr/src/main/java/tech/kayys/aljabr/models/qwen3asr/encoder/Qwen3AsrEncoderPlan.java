@@ -58,20 +58,18 @@ public final class Qwen3AsrEncoderPlan {
 
         List<AttentionWindow> windows = new ArrayList<>(
                 ceilDiv(chunks.size(), chunksPerAttentionWindow));
+        int firstToken = 0;
         for (int firstChunk = 0, windowIndex = 0;
                 firstChunk < chunks.size();
                 firstChunk += chunksPerAttentionWindow, windowIndex++) {
             int endChunk = Math.min(chunks.size(), firstChunk + chunksPerAttentionWindow);
-            int firstToken = 0;
-            for (int i = 0; i < firstChunk; i++) {
-                firstToken = Math.addExact(firstToken, chunks.get(i).outputTokenCount());
-            }
             int tokenCount = 0;
             for (int i = firstChunk; i < endChunk; i++) {
                 tokenCount = Math.addExact(tokenCount, chunks.get(i).outputTokenCount());
             }
             windows.add(new AttentionWindow(windowIndex, firstChunk,
                     endChunk - firstChunk, firstToken, tokenCount));
+            firstToken = Math.addExact(firstToken, tokenCount);
         }
 
         return new Plan(melFrameCount, totalTokens, chunks, windows);
@@ -90,7 +88,7 @@ public final class Qwen3AsrEncoderPlan {
     }
 
     private static int ceilDiv(int value, int divisor) {
-        return (value + divisor - 1) / divisor;
+        return 1 + (value - 1) / divisor;
     }
 
     public record ConvolutionChunk(
