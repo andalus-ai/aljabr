@@ -103,6 +103,37 @@ class AmirGgufToSafetensorsConversionExecutorTest {
     }
 
     @Test
+    void dequantizesIQ1MUsingSharedGridAndPackedMixedScales() throws Exception {
+        byte[] block = new byte[56];
+        block[48] = 0x08; // second scale of first sub-block is 3x
+        block[52] = (byte) 0xc0; // packed fp16 scale high nibble -> 0xC
+        block[54] = 0x30; // packed fp16 scale high nibble -> 0x3, giving fp16 1
+        block[32] = 0x09; // vector 0 grid index 256 and negative delta
+        Path source = writeContainer(block);
+        var tensor = tensor("weight", "IQ1_M", List.of(256L), source, 8L, block.length);
+        var model = model("iq1_m", "llama", List.of(tensor));
+        Path output = temporaryDirectory.resolve("iq1_m.safetensors");
+
+        var result = new AmirGgufToSafetensorsConversionExecutor().execute(
+                model, plan(model, CompatibilityReport.ConversionFidelity.PARTIAL),
+                new ConversionRequest(output.toUri(), true, Map.of()));
+
+        assertEquals(256L * Float.BYTES, result.payloadBytes());
+        byte[] file = Files.readAllBytes(output);
+        assertEquals("F32", header(file).getAsJsonObject("weight").get("dtype").getAsString());
+        ByteBuffer values = ByteBuffer.wrap(file, dataStart(file), 256 * Float.BYTES)
+                .slice().order(ByteOrder.LITTLE_ENDIAN);
+        float[] firstSubBlock = {
+                -1.125f, -0.125f, 0.875f, -0.125f, 0.875f, -1.125f, -0.125f, -1.125f,
+                -0.875f, -0.875f, -0.875f, -0.875f, -0.875f, -0.875f, -0.875f, -0.875f,
+                -2.625f, -2.625f, -2.625f, -2.625f, -2.625f, -2.625f, -2.625f, -2.625f,
+                -2.625f, -2.625f, -2.625f, -2.625f, -2.625f, -2.625f, -2.625f, -2.625f
+        };
+        for (float expected : firstSubBlock) assertEquals(expected, values.getFloat(), 0.0f);
+        for (int i = 32; i < 256; i++) assertEquals(-0.875f, values.getFloat(), 0.0f);
+    }
+
+    @Test
     void dequantizesIQ1SBlocksUsingCanonicalGridAndPackedScaleAndSign() throws Exception {
         byte[] block = new byte[50];
         block[1] = 0x3c; // fp16 base scale = 1; zero qh selects scale 1 and positive delta
