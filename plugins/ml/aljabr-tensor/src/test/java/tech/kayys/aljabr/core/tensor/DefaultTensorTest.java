@@ -592,7 +592,7 @@ class DefaultTensorTest {
 
         tensor.release();
 
-        assertThrows(IllegalStateException.class, tensor::grad);
+        assertNull(tensor.grad(), "Release clears the tensor-owned gradient reference");
         assertThrows(IllegalStateException.class, () -> tensor.setRequiresGrad(true));
         assertEquals(0, storage.references());
     }
